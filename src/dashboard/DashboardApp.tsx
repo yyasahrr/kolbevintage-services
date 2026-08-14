@@ -25,8 +25,10 @@ const DisputesPage = lazy(() => import("./pages/DisputesPage").then((m) => ({ de
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
-const SupplierPortalPage = lazy(() =>
-  import("./pages/SupplierPortalPage").then((m) => ({ default: m.SupplierPortalPage })),
+const ProductsPage = lazy(() => import("./pages/ProductsPage").then((m) => ({ default: m.ProductsPage })));
+const CataloguesPage = lazy(() => import("./pages/CataloguesPage").then((m) => ({ default: m.CataloguesPage })));
+const ApplicationsPage = lazy(() =>
+  import("./pages/ApplicationsPage").then((m) => ({ default: m.ApplicationsPage })),
 );
 
 function PageFallback() {
@@ -44,49 +46,46 @@ function PageFallback() {
 
 function PageBody({
   path,
-  params,
   openOrder,
   navigate,
   themeMode,
   setThemeMode,
 }: {
   path: string;
-  params: URLSearchParams;
   openOrder: (orderId: string) => void;
   navigate: (path: string, extra?: Record<string, string>) => void;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
 }) {
   switch (path) {
-    case "/orders":
+    case "/admin/orders":
       return <OrdersPage onOpenOrder={openOrder} />;
-    case "/fulfillment":
+    case "/admin/fulfillment":
       return <FulfillmentPage onOpenOrder={openOrder} />;
-    case "/suppliers":
-      return <SuppliersPage onSelectSupplier={(id) => navigate("/suppliers", { supplier: id, preset: "90d" })} />;
-    case "/vip-customers":
-      return <CustomersPage onSelectCustomer={(id) => navigate("/vip-customers", { customer: id, preset: "90d" })} />;
-    case "/catalogue":
-      return <CataloguePage onSelectCatalogue={(id) => navigate("/catalogue", { catalogue: id, preset: "90d" })} />;
-    case "/escrow":
+    case "/admin/suppliers":
+      return <SuppliersPage onSelectSupplier={(id) => navigate("/admin/suppliers", { supplier: id, preset: "90d" })} />;
+    case "/admin/applications":
+      return <ApplicationsPage onOpenSuppliers={() => navigate("/admin/suppliers")} />;
+    case "/admin/vip-customers":
+      return <CustomersPage onSelectCustomer={(id) => navigate("/admin/vip-customers", { customer: id, preset: "90d" })} />;
+    case "/admin/products":
+      return <ProductsPage />;
+    case "/admin/catalogues":
+      return <CataloguesPage onOpenProducts={() => navigate("/admin/products")} />;
+    case "/admin/catalogue-analytics":
+      return <CataloguePage onSelectCatalogue={(id) => navigate("/admin/catalogue-analytics", { catalogue: id, preset: "90d" })} />;
+    case "/admin/escrow":
       return <EscrowPage onOpenOrder={openOrder} />;
-    case "/settlements":
+    case "/admin/settlements":
       return <SettlementsPage onOpenOrder={openOrder} />;
-    case "/disputes":
+    case "/admin/disputes":
       return <DisputesPage onOpenOrder={openOrder} />;
-    case "/analytics":
+    case "/admin/analytics":
       return <AnalyticsPage onNavigate={navigate} />;
-    case "/reports":
+    case "/admin/reports":
       return <ReportsPage />;
-    case "/settings":
+    case "/admin/settings":
       return <SettingsPage themeMode={themeMode} onThemeChange={setThemeMode} />;
-    case "/supplier-portal":
-      return (
-        <SupplierPortalPage
-          supplierId={params.get("supplier") ?? "sup-1"}
-          onSelectSupplier={(id) => navigate("/supplier-portal", { supplier: id })}
-        />
-      );
     default:
       return <DashboardPage onOpenOrder={openOrder} onNavigate={navigate} />;
   }
@@ -114,7 +113,9 @@ function Shell({
 
   const orderId = params.get("order");
   const nav = NAV_ITEMS.find((n) => n.path === path) ?? NAV_ITEMS[0];
-  const isPortal = path === "/supplier-portal";
+  // catalogue/product management pages are not driven by the date-range filters
+  const hidesFilters =
+    path === "/admin/products" || path === "/admin/catalogues" || path === "/admin/applications" || path === "/admin/settings";
 
   const openOrder = useCallback(
     (id: string) => {
@@ -161,13 +162,11 @@ function Shell({
           onOpenPalette={() => setPaletteOpen(true)}
           now={now}
         />
-        {/* the supplier portal is deliberately excluded from Kolbe-side global filters */}
-        {isPortal ? null : <GlobalFilters data={data} filters={filters} onChange={setFilters} />}
+        {hidesFilters ? null : <GlobalFilters data={data} filters={filters} onChange={setFilters} />}
         <main className="flex-1 px-4 py-6 pb-[env(safe-area-inset-bottom)] sm:px-6" id="main">
           <Suspense fallback={<PageFallback />}>
             <PageBody
               path={path}
-              params={params}
               openOrder={openOrder}
               navigate={(p, extra) => navigate(p, { ...filtersToParams(filters), ...extra })}
               themeMode={mode}
@@ -177,9 +176,7 @@ function Shell({
         </main>
       </div>
 
-      {isPortal ? null : (
-        <OrderDetailDrawer orderId={orderId} data={data} index={index} now={now} onClose={closeOrder} />
-      )}
+      <OrderDetailDrawer orderId={orderId} data={data} index={index} now={now} onClose={closeOrder} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} data={data} navigate={navigate} />
       <Toasts />
     </div>

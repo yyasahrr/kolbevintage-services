@@ -1,4 +1,5 @@
 import type {
+  ApplicationStatus,
   Catalogue,
   Commission,
   Dispute,
@@ -19,6 +20,7 @@ import type {
   Shipment,
   ShipmentStatus,
   Supplier,
+  SupplierApplication,
   SupplierProductMapping,
   SupplierSettlement,
   TimelineEvent,
@@ -44,6 +46,8 @@ const DATASET = {
   products: 60,
   catalogues: 6,
   disputeRate: 0.07,
+  /** orders forced into the last 3 days to keep the operational pipeline alive */
+  freshOrders: 26,
 } as const;
 
 /** deterministic mulberry32 PRNG so every reload renders the same business state */
@@ -131,6 +135,30 @@ const PRODUCT_WORDS = [
 ];
 
 const COLOURS = ["Navy", "Teal", "Sand", "Olive", "Bordeaux", "Charcoal", "Ecru"];
+const PRODUCT_IMAGES = [
+  "/images/flat.jpg",
+  "/images/model-front.jpg",
+  "/images/model-full.jpg",
+  "/images/model-teal.jpg",
+  "/images/detail-collar.jpg",
+  "/images/detail-hem.jpg",
+];
+const CATALOGUE_COVERS = ["/images/banner.jpg", "/images/store.jpg", "/images/model-full.jpg"];
+const PRODUCT_DESCRIPTIONS = [
+  "دوخت کلاسیک با پارچه ممتاز، مناسب سفارش‌های عمده فصلی.",
+  "طراحی وینتیج بازآفرینی‌شده با الیاف طبیعی و رنگ‌بندی پایدار.",
+  "مدل پرفروش با قابلیت سفارش رنگ اختصاصی برای خریداران عمده.",
+  "کیفیت صادراتی با بسته‌بندی اختصاصی کلبه وینتیج.",
+];
+
+const APPLICATION_SEED: ReadonlyArray<[string, string, string, string, ApplicationStatus]> = [
+  ["Yekta Textile", "فرهاد یکتا", "تهران", "پارچه و بافت", "pending"],
+  ["Golrang Apparel", "مینا گلرنگ", "اصفهان", "پوشاک زنانه", "pending"],
+  ["Damavand Denim", "سعید کوهی", "کرج", "جین و دنیم", "in_review"],
+  ["Sepid Knit", "الناز سپیدی", "تبریز", "بافتنی", "pending"],
+  ["Bam Leather", "جواد بامی", "کرمان", "چرم", "approved"],
+  ["Nour Silk", "رها نوری", "یزد", "ابریشم", "rejected"],
+];
 const SIZES = ["S", "M", "L", "XL", "XXL"];
 const CARRIERS = ["Tipax", "Chapar", "DHL Wholesale", "Post Express", "Mahex"];
 const ADMINS = ["نازنین رحیمی", "سپهر یوسفی", "الهام کریمی", "بهزاد نوری"];
@@ -192,6 +220,9 @@ export function generateDataset(now = Date.now()): WholesaleDataset {
       season,
       category,
       views: randInt(1800, 14200),
+      status: i === DATASET.catalogues - 1 ? "draft" : "active",
+      coverImage: CATALOGUE_COVERS[i % CATALOGUE_COVERS.length],
+      description: `مجموعه ${name} برای خریداران عمده — ${season}`,
     }),
   );
 
@@ -210,6 +241,11 @@ export function generateDataset(now = Date.now()): WholesaleDataset {
       category: catalogue.category,
       unitPrice,
       supplierId: supplier.id,
+      moq: [12, 24, 36, 48, 60][i % 5],
+      stock: randInt(0, 1400),
+      status: i % 17 === 0 ? "draft" : "active",
+      image: PRODUCT_IMAGES[i % PRODUCT_IMAGES.length],
+      description: PRODUCT_DESCRIPTIONS[i % PRODUCT_DESCRIPTIONS.length],
     };
     products.push(product);
     mappings.push({
@@ -244,9 +280,14 @@ export function generateDataset(now = Date.now()): WholesaleDataset {
     const code = `KV-${25000 + i}`;
     const customer = customers[randInt(0, customers.length - 1)];
     const catalogue = catalogues[randInt(0, catalogues.length - 1)];
-    // skew orders towards recent days
-    const ageDays = Math.floor(Math.pow(rand(), 1.25) * DATASET.days);
-    const createdAt = now - ageDays * DAY - randInt(0, 23) * HOUR - randInt(0, 59) * 60_000;
+    // The first slice of orders is deliberately placed inside the last ~3 days so
+    // the pipeline always contains live work (awaiting acceptance, preparing,
+    // in transit) instead of a history where everything is already delivered.
+    const isFresh = i < DATASET.freshOrders;
+    const ageDays = isFresh ? 0 : Math.floor(Math.pow(rand(), 1.25) * DATASET.days);
+    const createdAt = isFresh
+      ? now - randInt(1, 76) * HOUR - randInt(0, 59) * 60_000
+      : now - ageDays * DAY - randInt(0, 23) * HOUR - randInt(0, 59) * 60_000;
 
     const catalogueProducts = products.filter((p) => p.catalogueId === catalogue.id);
     const lineCount = randInt(2, 6);
@@ -273,7 +314,7 @@ export function generateDataset(now = Date.now()): WholesaleDataset {
     const itemCount = items.reduce((s, it) => s + it.quantity, 0);
 
     // --- lifecycle progression driven by age + supplier reliability -------
-    const cancelled = rand() < 0.05 && ageDays > 3;
+    const cancelled = !isFresh && rand() < 0.05 && ageDays > 3;
     const hasDispute = !cancelled && rand() < DATASET.disputeRate;
 
     const paidAt = createdAt + randInt(2, 180) * 60_000;
@@ -688,9 +729,36 @@ export function generateDataset(now = Date.now()): WholesaleDataset {
     else c.segment = "active";
   }
 
+  const applications: SupplierApplication[] = APPLICATION_SEED.map(
+    ([companyName, contactName, city, specialty, status], i) => {
+      const submitted = now - randInt(1, 40) * DAY - randInt(0, 20) * HOUR;
+      const reviewed = status === "pending" ? undefined : submitted + randInt(4, 72) * HOUR;
+      return {
+        id: `app-${i + 1}`,
+        code: `APP-${2400 + i}`,
+        companyName,
+        contactName,
+        email: `${companyName.toLowerCase().replace(/[^a-z]/g, "")}@example.com`,
+        phone: `0912${randInt(1000000, 9999999)}`,
+        city,
+        specialty,
+        monthlyCapacity: randInt(500, 9000),
+        yearsActive: randInt(1, 22),
+        website: `https://${companyName.toLowerCase().replace(/[^a-z]/g, "")}.ir`,
+        note: "علاقه‌مند به همکاری بلندمدت با کلبه وینتیج در حوزه تولید عمده.",
+        status,
+        submittedAt: iso(submitted),
+        reviewedAt: reviewed ? iso(Math.min(reviewed, now)) : undefined,
+        reviewedBy: reviewed ? pick(ADMINS) : undefined,
+        rejectionReason: status === "rejected" ? "ظرفیت تولید پایین‌تر از حد نصاب کلبه وینتیج" : undefined,
+      };
+    },
+  );
+
   timeline.sort((a, b) => a.at.localeCompare(b.at));
 
   return {
+    applications,
     suppliers,
     customers,
     catalogues,

@@ -48,6 +48,15 @@ export default function Header() {
           <a className="hover:underline" href="#">Sustainability</a>
           <a className="hover:underline" href="#">Help</a>
           <a className="hover:underline" href="#">Stores</a>
+          <a className="font-medium hover:underline" href="#/supplier-apply">
+            Become a supplier
+          </a>
+          <a className="font-medium hover:underline" href="#/partner">
+            Supplier portal
+          </a>
+          <a className="font-medium hover:underline" href="#/admin">
+            Wholesale admin
+          </a>
           <button className="flex items-center gap-1.5 rounded border border-neutral-300 px-2 py-[3px] hover:bg-neutral-50">
             <span className="inline-block h-3 w-4 overflow-hidden rounded-[1px]">
               <svg viewBox="0 0 6 3" className="h-full w-full">

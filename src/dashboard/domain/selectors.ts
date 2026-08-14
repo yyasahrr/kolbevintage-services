@@ -576,7 +576,7 @@ export function buildAlerts(
       severity: "critical",
       title: `${waitingAccept.length} درخواست تأمین بیش از ${SLA.acceptHours} ساعت بی‌پاسخ مانده`,
       detail: "SLA پذیرش نقض شده است؛ تماس با تأمین‌کننده یا تخصیص مجدد لازم است",
-      href: "#/fulfillment?ff_status=requested",
+      href: "#/admin/fulfillment?ff_status=requested",
     });
   }
 
@@ -587,7 +587,7 @@ export function buildAlerts(
       severity: "warning",
       title: `${lateShipments.length} مرسوله از SLA ارسال عبور کرده`,
       detail: "زمان حمل بیش از ۷۲ ساعت شده است",
-      href: "#/fulfillment",
+      href: "#/admin/fulfillment",
     });
   }
 
@@ -600,7 +600,7 @@ export function buildAlerts(
       severity: "critical",
       title: `${Math.round(frozen / 1_000_000).toLocaleString("en-US")}M تومان به دلیل اختلاف مسدود شده`,
       detail: "تسویه این تأمین‌کنندگان تا رفع اختلاف متوقف است",
-      href: "#/disputes",
+      href: "#/admin/disputes",
     });
   }
 
@@ -612,7 +612,7 @@ export function buildAlerts(
       severity: "warning",
       title: `${endingSoon.length} سفارش کمتر از ۶ ساعت تا پایان بازرسی دارد`,
       detail: "پس از پایان بازه، وجه امانی آماده تسویه می‌شود",
-      href: "#/escrow",
+      href: "#/admin/escrow",
     });
   }
 
@@ -623,7 +623,7 @@ export function buildAlerts(
       severity: "critical",
       title: `${failed.length} تسویه تأمین‌کننده ناموفق بوده`,
       detail: "نیازمند بررسی اطلاعات بانکی و اجرای مجدد پرداخت",
-      href: "#/settlements?settlement_status=failed",
+      href: "#/admin/settlements?settlement_status=failed",
     });
   }
 
@@ -635,7 +635,7 @@ export function buildAlerts(
       severity: "warning",
       title: `نرخ پذیرش ${weak.supplierName} به ${weak.acceptanceRate.toFixed(0)}٪ رسیده`,
       detail: "عملکرد پایین‌تر از آستانه قابل قبول است",
-      href: `#/suppliers?supplier=${weak.supplierId}`,
+      href: `#/admin/suppliers?supplier=${weak.supplierId}`,
     });
   }
 

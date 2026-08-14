@@ -45,7 +45,7 @@ export function KPIGrid({ onDrill }: { onDrill: (path: string, params?: Record<s
         delta={kpis.grossRevenue.delta}
         hint="در برابر دوره قبل"
         tone="info"
-        onClick={() => onDrill("/orders")}
+        onClick={() => onDrill("/admin/orders")}
       />
       <MetricCard
         label="موجودی امانی"
@@ -53,35 +53,35 @@ export function KPIGrid({ onDrill }: { onDrill: (path: string, params?: Record<s
         delta={kpis.escrowBalance.delta}
         hint="اسنپ‌شات فعلی"
         tone="progress"
-        onClick={() => onDrill("/escrow")}
+        onClick={() => onDrill("/admin/escrow")}
       />
       <MetricCard
         label="آماده تسویه"
         value={formatMoneyCompact(kpis.readyForSettlement.value)}
         delta={kpis.readyForSettlement.delta}
         tone="success"
-        onClick={() => onDrill("/settlements")}
+        onClick={() => onDrill("/admin/settlements")}
       />
       <MetricCard
         label="کمیسیون کلبه وینتیج"
         value={formatMoneyCompact(kpis.commission.value)}
         delta={kpis.commission.delta}
         tone="warning"
-        onClick={() => onDrill("/settlements")}
+        onClick={() => onDrill("/admin/settlements")}
       />
       <MetricCard
         label="سفارش‌های فعال"
         value={formatNumber(kpis.activeOrders.value)}
         delta={kpis.activeOrders.delta}
         tone="info"
-        onClick={() => onDrill("/orders")}
+        onClick={() => onDrill("/admin/orders")}
       />
       <MetricCard
         label="تأمین‌های باز"
         value={formatNumber(kpis.openFulfillments.value)}
         delta={kpis.openFulfillments.delta}
         tone="progress"
-        onClick={() => onDrill("/fulfillment")}
+        onClick={() => onDrill("/admin/fulfillment")}
       />
       <MetricCard
         label="تأمین‌های تأخیردار"
@@ -89,7 +89,7 @@ export function KPIGrid({ onDrill }: { onDrill: (path: string, params?: Record<s
         delta={kpis.delayedFulfillments.delta}
         invertTrend
         tone="danger"
-        onClick={() => onDrill("/fulfillment", { ff_status: "requested" })}
+        onClick={() => onDrill("/admin/fulfillment", { ff_status: "requested" })}
       />
       <MetricCard
         label="اختلافات باز"
@@ -97,7 +97,7 @@ export function KPIGrid({ onDrill }: { onDrill: (path: string, params?: Record<s
         delta={kpis.openDisputes.delta}
         invertTrend
         tone="danger"
-        onClick={() => onDrill("/disputes")}
+        onClick={() => onDrill("/admin/disputes")}
       />
     </div>
   );

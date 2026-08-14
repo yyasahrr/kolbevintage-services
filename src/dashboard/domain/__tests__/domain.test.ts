@@ -229,6 +229,149 @@ describe("aggregations", () => {
   });
 });
 
+describe("catalogue and product management", () => {
+  it("creates, updates and archives products", () => {
+    const data = fresh();
+    const created = applyAction(data, {
+      type: "product/create",
+      product: {
+        name: "Test Overshirt",
+        sku: "KV-TEST-1",
+        catalogueId: data.catalogues[0].id,
+        supplierId: data.suppliers[0].id,
+        category: "linen",
+        unitPrice: 1_500_000,
+        moq: 24,
+        stock: 100,
+        status: "active",
+      },
+    }, NOW);
+    expect(created.dataset.products.length).toBe(data.products.length + 1);
+
+    const product = created.dataset.products[created.dataset.products.length - 1];
+    const updated = applyAction(created.dataset, {
+      type: "product/update",
+      productId: product.id,
+      patch: { unitPrice: 1_800_000 },
+    }, NOW);
+    expect(updated.dataset.products.find((p) => p.id === product.id)!.unitPrice).toBe(1_800_000);
+
+    const deleted = applyAction(updated.dataset, { type: "product/delete", productId: product.id }, NOW);
+    expect(deleted.dataset.products.find((p) => p.id === product.id)).toBeUndefined();
+  });
+
+  it("never hard-deletes a product that already has orders", () => {
+    const data = fresh();
+    const soldId = data.orders[0].items[0].productId;
+    const result = applyAction(data, { type: "product/delete", productId: soldId }, NOW);
+    const still = result.dataset.products.find((p) => p.id === soldId);
+    expect(still).toBeDefined();
+    expect(still!.status).toBe("discontinued");
+    expect(result.tone).toBe("warning");
+  });
+
+  it("refuses to delete a catalogue that still holds products", () => {
+    const data = fresh();
+    const target = data.catalogues[0];
+    const result = applyAction(data, { type: "catalogue/delete", catalogueId: target.id }, NOW);
+    expect(result.tone).toBe("danger");
+    expect(result.dataset.catalogues.find((c) => c.id === target.id)).toBeDefined();
+  });
+
+  it("creates and publishes a catalogue", () => {
+    const data = fresh();
+    const created = applyAction(data, {
+      type: "catalogue/create",
+      catalogue: { name: "Test Drop", season: "بهار", category: "linen", status: "draft" },
+    }, NOW);
+    const cat = created.dataset.catalogues[created.dataset.catalogues.length - 1];
+    expect(cat.status).toBe("draft");
+    const published = applyAction(created.dataset, {
+      type: "catalogue/update",
+      catalogueId: cat.id,
+      patch: { status: "active" },
+    }, NOW);
+    expect(published.dataset.catalogues.find((c) => c.id === cat.id)!.status).toBe("active");
+  });
+});
+
+describe("supplier onboarding", () => {
+  it("ships seeded applications awaiting review", () => {
+    const data = fresh();
+    expect(data.applications.length).toBeGreaterThan(0);
+    expect(data.applications.some((a) => a.status === "pending")).toBe(true);
+  });
+
+  it("submitting an application adds it to the review queue as pending", () => {
+    const data = fresh();
+    const result = applyAction(data, {
+      type: "application/submit",
+      application: {
+        companyName: "New Partner Co",
+        contactName: "علی رضایی",
+        email: "a@b.com",
+        phone: "09120000000",
+        city: "تهران",
+        specialty: "بافتنی",
+        monthlyCapacity: 3000,
+        yearsActive: 5,
+      },
+    }, NOW);
+    const created = result.dataset.applications[result.dataset.applications.length - 1];
+    expect(created.status).toBe("pending");
+    expect(created.code).toMatch(/^APP-/);
+    // an application is NOT a supplier until approved
+    expect(result.dataset.suppliers.length).toBe(data.suppliers.length);
+  });
+
+  it("approving an application creates the supplier account", () => {
+    const data = fresh();
+    const pending = data.applications.find((a) => a.status === "pending")!;
+    const result = applyAction(data, { type: "application/status", applicationId: pending.id, status: "approved" }, NOW);
+    expect(result.dataset.suppliers.length).toBe(data.suppliers.length + 1);
+    const app = result.dataset.applications.find((a) => a.id === pending.id)!;
+    expect(app.status).toBe("approved");
+    expect(app.createdSupplierId).toBeTruthy();
+    const supplier = result.dataset.suppliers.find((s) => s.id === app.createdSupplierId)!;
+    expect(supplier.name).toBe(pending.companyName);
+    expect(supplier.commissionTier).toBeGreaterThanOrEqual(8);
+    expect(supplier.commissionTier).toBeLessThanOrEqual(12);
+  });
+
+  it("rejecting an application records a reason and creates no supplier", () => {
+    const data = fresh();
+    const pending = data.applications.find((a) => a.status === "pending")!;
+    const result = applyAction(
+      data,
+      { type: "application/status", applicationId: pending.id, status: "rejected", reason: "ظرفیت ناکافی" },
+      NOW,
+    );
+    expect(result.dataset.suppliers.length).toBe(data.suppliers.length);
+    const app = result.dataset.applications.find((a) => a.id === pending.id)!;
+    expect(app.status).toBe("rejected");
+    expect(app.rejectionReason).toBe("ظرفیت ناکافی");
+  });
+
+  it("does not approve the same application twice", () => {
+    const data = fresh();
+    const pending = data.applications.find((a) => a.status === "pending")!;
+    const once = applyAction(data, { type: "application/status", applicationId: pending.id, status: "approved" }, NOW);
+    const twice = applyAction(once.dataset, { type: "application/status", applicationId: pending.id, status: "approved" }, NOW);
+    expect(twice.tone).toBe("warning");
+    expect(twice.dataset.suppliers.length).toBe(once.dataset.suppliers.length);
+  });
+
+  it("adds a supplier directly without an application", () => {
+    const data = fresh();
+    const result = applyAction(data, {
+      type: "supplier/create",
+      supplier: { name: "Direct Partner", city: "تهران", specialty: "چرم", commissionTier: 9 },
+    }, NOW);
+    expect(result.dataset.suppliers.length).toBe(data.suppliers.length + 1);
+    expect(result.dataset.applications.length).toBe(data.applications.length);
+  });
+});
+
 describe("operational actions", () => {
   it("accepting a request advances the order without touching its total", () => {
     const data = fresh();

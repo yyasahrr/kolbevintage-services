@@ -1,13 +1,18 @@
 import { SLA } from "./generate";
 import type {
+  ApplicationStatus,
+  Catalogue,
   Commission,
   Dispute,
   DisputeResolution,
   EscrowStatus,
   FulfillmentRequest,
   Order,
+  Product,
   SettlementAdjustment,
   Shipment,
+  Supplier,
+  SupplierApplication,
   SupplierSettlement,
   TimelineEvent,
   WholesaleDataset,
@@ -25,7 +30,19 @@ export type DashboardAction =
   | { type: "escrow/release"; orderId: string }
   | { type: "settlement/pay"; settlementId: string }
   | { type: "settlement/retry"; settlementId: string }
-  | { type: "data/reset" };
+  | { type: "data/reset" }
+  // ---- catalogue & product management -------------------------------------
+  | { type: "product/create"; product: Omit<Product, "id"> }
+  | { type: "product/update"; productId: string; patch: Partial<Product> }
+  | { type: "product/delete"; productId: string }
+  | { type: "catalogue/create"; catalogue: Omit<Catalogue, "id" | "views"> }
+  | { type: "catalogue/update"; catalogueId: string; patch: Partial<Catalogue> }
+  | { type: "catalogue/delete"; catalogueId: string }
+  // ---- supplier onboarding ------------------------------------------------
+  | { type: "application/submit"; application: Omit<SupplierApplication, "id" | "code" | "status" | "submittedAt"> }
+  | { type: "application/status"; applicationId: string; status: ApplicationStatus; reason?: string }
+  | { type: "supplier/create"; supplier: Omit<Supplier, "id" | "onboardedAt" | "reliability"> }
+  | { type: "supplier/update"; supplierId: string; patch: Partial<Supplier> };
 
 export interface ActionResult {
   dataset: WholesaleDataset;
@@ -505,6 +522,205 @@ export function applyAction(
 
     case "data/reset":
       return { dataset, message: "داده نمونه بازنشانی شد", tone: "success" };
+
+    /* ------------------------------------------------ catalogue & products */
+
+    case "product/create": {
+      const id = `prd-${dataset.products.length + 1}-${Math.random().toString(36).slice(2, 7)}`;
+      const product: Product = { ...action.product, id };
+      return {
+        dataset: { ...dataset, products: [...dataset.products, product] },
+        message: `محصول «${product.name}» ایجاد شد`,
+        tone: "success",
+      };
+    }
+
+    case "product/update": {
+      const existing = dataset.products.find((p) => p.id === action.productId);
+      if (!existing) return { dataset, message: "محصول یافت نشد", tone: "danger" };
+      return {
+        dataset: {
+          ...dataset,
+          products: dataset.products.map((p) => (p.id === action.productId ? { ...p, ...action.patch } : p)),
+        },
+        message: `محصول «${existing.name}» به‌روزرسانی شد`,
+        tone: "success",
+      };
+    }
+
+    case "product/delete": {
+      const existing = dataset.products.find((p) => p.id === action.productId);
+      if (!existing) return { dataset, message: "محصول یافت نشد", tone: "danger" };
+      // products already sold stay in the catalogue as discontinued so historical
+      // orders keep resolving to a real product
+      const sold = dataset.orders.some((o) => o.items.some((it) => it.productId === action.productId));
+      if (sold) {
+        return {
+          dataset: {
+            ...dataset,
+            products: dataset.products.map((p) =>
+              p.id === action.productId ? { ...p, status: "discontinued" as const } : p,
+            ),
+          },
+          message: `«${existing.name}» فروش داشته و بایگانی شد (حذف کامل ممکن نیست)`,
+          tone: "warning",
+        };
+      }
+      return {
+        dataset: {
+          ...dataset,
+          products: dataset.products.filter((p) => p.id !== action.productId),
+          variants: dataset.variants.filter((v) => v.productId !== action.productId),
+        },
+        message: `محصول «${existing.name}» حذف شد`,
+        tone: "success",
+      };
+    }
+
+    case "catalogue/create": {
+      const id = `cat-${dataset.catalogues.length + 1}-${Math.random().toString(36).slice(2, 7)}`;
+      const catalogue: Catalogue = { ...action.catalogue, id, views: 0 };
+      return {
+        dataset: { ...dataset, catalogues: [...dataset.catalogues, catalogue] },
+        message: `کاتالوگ «${catalogue.name}» ایجاد شد`,
+        tone: "success",
+      };
+    }
+
+    case "catalogue/update": {
+      const existing = dataset.catalogues.find((c) => c.id === action.catalogueId);
+      if (!existing) return { dataset, message: "کاتالوگ یافت نشد", tone: "danger" };
+      return {
+        dataset: {
+          ...dataset,
+          catalogues: dataset.catalogues.map((c) =>
+            c.id === action.catalogueId ? { ...c, ...action.patch } : c,
+          ),
+        },
+        message: `کاتالوگ «${existing.name}» به‌روزرسانی شد`,
+        tone: "success",
+      };
+    }
+
+    case "catalogue/delete": {
+      const existing = dataset.catalogues.find((c) => c.id === action.catalogueId);
+      if (!existing) return { dataset, message: "کاتالوگ یافت نشد", tone: "danger" };
+      const productCount = dataset.products.filter((p) => p.catalogueId === action.catalogueId).length;
+      if (productCount > 0) {
+        return {
+          dataset,
+          message: `«${existing.name}» شامل ${productCount} محصول است؛ ابتدا محصولات را منتقل کنید`,
+          tone: "danger",
+        };
+      }
+      return {
+        dataset: { ...dataset, catalogues: dataset.catalogues.filter((c) => c.id !== action.catalogueId) },
+        message: `کاتالوگ «${existing.name}» حذف شد`,
+        tone: "success",
+      };
+    }
+
+    /* ---------------------------------------------------- supplier intake */
+
+    case "application/submit": {
+      const id = `app-${dataset.applications.length + 1}-${Math.random().toString(36).slice(2, 7)}`;
+      const application: SupplierApplication = {
+        ...action.application,
+        id,
+        code: `APP-${2400 + dataset.applications.length}`,
+        status: "pending",
+        submittedAt: at,
+      };
+      return {
+        dataset: { ...dataset, applications: [...dataset.applications, application] },
+        message: `درخواست ${application.code} ثبت شد`,
+        tone: "success",
+      };
+    }
+
+    case "application/status": {
+      const application = dataset.applications.find((a) => a.id === action.applicationId);
+      if (!application) return { dataset, message: "درخواست یافت نشد", tone: "danger" };
+
+      // Approving an application is what actually creates the supplier record.
+      if (action.status === "approved") {
+        if (application.createdSupplierId)
+          return { dataset, message: `${application.code} قبلاً تأیید شده است`, tone: "warning" };
+        const supplierId = `sup-${dataset.suppliers.length + 1}-${Math.random().toString(36).slice(2, 7)}`;
+        const supplier: Supplier = {
+          id: supplierId,
+          name: application.companyName,
+          city: application.city,
+          specialty: application.specialty,
+          onboardedAt: at,
+          commissionTier: 10,
+          reliability: 0.75,
+        };
+        return {
+          dataset: {
+            ...dataset,
+            suppliers: [...dataset.suppliers, supplier],
+            applications: dataset.applications.map((a) =>
+              a.id === action.applicationId
+                ? { ...a, status: "approved" as const, reviewedAt: at, reviewedBy: "نازنین رحیمی", createdSupplierId: supplierId }
+                : a,
+            ),
+          },
+          message: `${application.companyName} تأیید و به فهرست تأمین‌کنندگان اضافه شد`,
+          tone: "success",
+        };
+      }
+
+      return {
+        dataset: {
+          ...dataset,
+          applications: dataset.applications.map((a) =>
+            a.id === action.applicationId
+              ? {
+                  ...a,
+                  status: action.status,
+                  reviewedAt: at,
+                  reviewedBy: "نازنین رحیمی",
+                  rejectionReason: action.status === "rejected" ? (action.reason ?? "شرایط همکاری احراز نشد") : undefined,
+                }
+              : a,
+          ),
+        },
+        message:
+          action.status === "rejected"
+            ? `درخواست ${application.code} رد شد`
+            : `درخواست ${application.code} در حال بررسی است`,
+        tone: action.status === "rejected" ? "warning" : "success",
+      };
+    }
+
+    case "supplier/create": {
+      const id = `sup-${dataset.suppliers.length + 1}-${Math.random().toString(36).slice(2, 7)}`;
+      const supplier: Supplier = {
+        ...action.supplier,
+        id,
+        onboardedAt: at,
+        reliability: 0.75,
+      };
+      return {
+        dataset: { ...dataset, suppliers: [...dataset.suppliers, supplier] },
+        message: `تأمین‌کننده «${supplier.name}» اضافه شد`,
+        tone: "success",
+      };
+    }
+
+    case "supplier/update": {
+      const existing = dataset.suppliers.find((s) => s.id === action.supplierId);
+      if (!existing) return { dataset, message: "تأمین‌کننده یافت نشد", tone: "danger" };
+      return {
+        dataset: {
+          ...dataset,
+          suppliers: dataset.suppliers.map((s) => (s.id === action.supplierId ? { ...s, ...action.patch } : s)),
+        },
+        message: `«${existing.name}» به‌روزرسانی شد`,
+        tone: "success",
+      };
+    }
 
     default:
       return { dataset, message: "اقدام ناشناخته", tone: "danger" };

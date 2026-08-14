@@ -90,6 +90,9 @@ export interface Catalogue {
   season: string;
   category: string;
   views: number;
+  description?: string;
+  status: "draft" | "active" | "archived";
+  coverImage?: string;
 }
 
 export interface Product {
@@ -98,8 +101,15 @@ export interface Product {
   name: string;
   catalogueId: string;
   category: string;
+  /** wholesale price per unit charged to the VIP customer */
   unitPrice: number;
   supplierId: string;
+  /** minimum order quantity for wholesale */
+  moq: number;
+  stock: number;
+  status: "active" | "draft" | "discontinued";
+  image?: string;
+  description?: string;
 }
 
 export interface ProductVariant {
@@ -284,7 +294,33 @@ export interface TimelineEvent {
   detail?: string;
 }
 
+export type ApplicationStatus = "pending" | "in_review" | "approved" | "rejected";
+
+/** A prospective supplier applying to work with Kolbe Vintage. */
+export interface SupplierApplication {
+  id: string;
+  code: string;
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  city: string;
+  specialty: string;
+  monthlyCapacity: number;
+  yearsActive: number;
+  website?: string;
+  note?: string;
+  status: ApplicationStatus;
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
+  /** set once approved and converted into a real supplier */
+  createdSupplierId?: string;
+}
+
 export interface WholesaleDataset {
+  applications: SupplierApplication[];
   suppliers: Supplier[];
   customers: VIPCustomer[];
   catalogues: Catalogue[];

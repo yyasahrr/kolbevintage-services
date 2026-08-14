@@ -1,7 +1,7 @@
 import { cn } from "@/utils/cn";
 import { GROUP_LABEL, NAV_ITEMS, type NavItem } from "../nav";
 
-const GROUPS: Array<NavItem["group"]> = ["operations", "finance", "insight", "partner"];
+const GROUPS: Array<NavItem["group"]> = ["operations", "catalogue", "finance", "insight"];
 
 export function Sidebar({
   currentPath,
@@ -87,13 +87,27 @@ export function Sidebar({
           ))}
         </nav>
 
-        <div className="border-t border-slate-100 p-3 dark:border-slate-800">
+        <div className="flex flex-col gap-0.5 border-t border-slate-100 p-3 dark:border-slate-800">
           <a
-            href="#/store"
+            href="#/"
             className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy dark:text-slate-400 dark:hover:bg-slate-800/60"
           >
             <span aria-hidden="true">↗</span>
-            نمایش فروشگاه دمو
+            فروشگاه
+          </a>
+          <a
+            href="#/partner"
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy dark:text-slate-400 dark:hover:bg-slate-800/60"
+          >
+            <span aria-hidden="true">◈</span>
+            پورتال تأمین‌کننده
+          </a>
+          <a
+            href="#/supplier-apply"
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy dark:text-slate-400 dark:hover:bg-slate-800/60"
+          >
+            <span aria-hidden="true">✉</span>
+            فرم درخواست همکاری
           </a>
         </div>
       </aside>

@@ -45,13 +45,7 @@ export function CommandPalette({
         id: `sup-${s.id}`,
         title: s.name,
         hint: "فیلتر بر اساس تأمین‌کننده",
-        run: () => navigate("/suppliers", { supplier: s.id, preset: "90d" }),
-      });
-      list.push({
-        id: `portal-${s.id}`,
-        title: `پورتال ${s.name}`,
-        hint: "نمای تأمین‌کننده",
-        run: () => navigate("/supplier-portal", { supplier: s.id }),
+        run: () => navigate("/admin/suppliers", { supplier: s.id, preset: "90d" }),
       });
     }
     for (const o of data.orders.slice(0, 60)) {
@@ -59,20 +53,20 @@ export function CommandPalette({
         id: `ord-${o.id}`,
         title: o.code,
         hint: "باز کردن سفارش",
-        run: () => navigate("/orders", { order: o.id, preset: "90d" }),
+        run: () => navigate("/admin/orders", { order: o.id, preset: "90d" }),
       });
     }
     list.push({
       id: "quick-disputes",
       title: "اختلافات باز",
       hint: "میان‌بر عملیاتی",
-      run: () => navigate("/disputes"),
+      run: () => navigate("/admin/disputes"),
     });
     list.push({
       id: "quick-pending",
       title: "تسویه‌های در انتظار",
       hint: "میان‌بر مالی",
-      run: () => navigate("/settlements", { settlement_status: "pending" }),
+      run: () => navigate("/admin/settlements", { settlement_status: "pending" }),
     });
     return list;
   }, [data, navigate]);
