@@ -1,8 +1,8 @@
 const items = [
-  { src: "/images/flat.jpg", alt: "The Heritage Polo in Navy Harbour, flat" },
+  { src: "/images/flat.jpg", alt: "The Classic Polo in Boulevards, flat" },
   {
     src: "/images/model-front.jpg",
-    alt: "Model wearing The Heritage Polo",
+    alt: "Model wearing The Classic Polo",
     caption: "Adam is 188 cm tall and wearing a size L.",
   },
   { src: "/images/model-full.jpg", alt: "Full length", shop: true },

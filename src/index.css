@@ -1,37 +1,19 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
-
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-navy: #011c3a;
+  --color-marvis: #011c3a;
 }
 
 html {
   scroll-behavior: smooth;
 }
 
-/* Storefront default: Latin typography, left-to-right. */
 body {
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  margin: 0;
-}
-
-/* Persian areas (admin, supplier portal, application form) opt into Vazirmatn. */
-html[dir="rtl"] body {
-  font-family: "Vazirmatn", "Inter", ui-sans-serif, system-ui, sans-serif;
-}
-
-/* numbers stay comparable across tables and cards */
-.tabular-nums {
-  font-variant-numeric: tabular-nums;
-}
-
-select,
-input,
-textarea {
-  color-scheme: inherit;
+  color: #011c3a;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -55,15 +37,4 @@ textarea {
 
 .sticky-purchase-in {
   animation: sticky-purchase-in 240ms ease-out both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
 }

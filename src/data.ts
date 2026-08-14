@@ -1,8 +1,8 @@
 export type Colour = { name: string; hex: string; angle: number };
 
-/** 24 colourways arranged on the Kolbe Vintage colour wheel */
+/** 24 colourways arranged on the MR MARVIS colour wheel */
 export const colours: Colour[] = [
-  { name: "Navy Harbour", hex: "#6fa4d8", angle: 0 },
+  { name: "Boulevards", hex: "#6fa4d8", angle: 0 },
   { name: "Kingfishers", hex: "#2f5c8a", angle: 15 },
   { name: "Avenues", hex: "#c6d7e4", angle: 30 },
   { name: "Gazettes", hex: "#dfe3e6", angle: 45 },
@@ -44,7 +44,7 @@ export const gallery = [
 export const accordions = [
   {
     title: "Description",
-    body: "Meet The Heritage Polo in Navy Harbour. A refined take on a timeless icon, knitted from breathable organic pique cotton with a subtle stretch. It has a clean two-button placket, a structured collar that keeps its shape wash after wash and side vents for extra comfort. Wear it tucked into your chinos or loose over your swim shorts — it is equally at home at the office and on the terrace.",
+    body: "Meet The Classic Polo in Boulevards. A refined take on a timeless icon, knitted from breathable organic pique cotton with a subtle stretch. It has a clean two-button placket, a structured collar that keeps its shape wash after wash and side vents for extra comfort. Wear it tucked into your chinos or loose over your swim shorts — it is equally at home at the office and on the terrace.",
   },
   {
     title: "Size & fit",
@@ -71,34 +71,34 @@ export const accordions = [
 export const related = [
   {
     name: "The Terry Polo",
-    colour: "Navy Harbour",
+    colour: "Boulevards",
     price: "€89",
     img: "/images/model-front.jpg",
     tags: [] as string[],
   },
   {
-    name: "The Heritage Polo Longsleeve",
+    name: "The Classic Polo Longsleeve",
     colour: "Ceramics",
     price: "€99",
     img: "/images/detail-collar.jpg",
     tags: ["New", "Limited edition"],
   },
   {
-    name: "The Heritage Polo Longsleeve",
+    name: "The Classic Polo Longsleeve",
     colour: "Kingfishers",
     price: "€99",
     img: "/images/model-teal.jpg",
     tags: ["New", "Limited edition"],
   },
   {
-    name: "The Heritage Polo Longsleeve",
+    name: "The Classic Polo Longsleeve",
     colour: "Avenues",
     price: "€99",
     img: "/images/model-full.jpg",
     tags: ["New", "Limited edition"],
   },
   {
-    name: "The Heritage Polo",
+    name: "The Classic Polo",
     colour: "Gazettes",
     price: "€79",
     img: "/images/flat.jpg",
@@ -110,7 +110,7 @@ export const reviews = [
   {
     stars: 4,
     colour: "Chillies",
-    product: "The heritage polo",
+    product: "The classic polo",
     author: "Fiona S.",
     date: "08/01/2026",
     text: "Great fit stylish",
@@ -118,7 +118,7 @@ export const reviews = [
   {
     stars: 5,
     colour: "Wimbledons",
-    product: "The heritage polo",
+    product: "The classic polo",
     author: "Graeme C.",
     date: "07/08/2026",
     text: "Superb cut and fabric. Well made and look great on.",
@@ -126,7 +126,7 @@ export const reviews = [
   {
     stars: 5,
     colour: "Chillies",
-    product: "The heritage polo",
+    product: "The classic polo",
     author: "James S.",
     date: "07/08/2026",
     text: "Vivid colour and excellent fit.",
@@ -134,7 +134,7 @@ export const reviews = [
   {
     stars: 5,
     colour: "Gazettes",
-    product: "The heritage polo",
+    product: "The classic polo",
     author: "Georg B.",
     date: "04/03/2026",
     text: "Color and fit as expected",
@@ -142,7 +142,7 @@ export const reviews = [
   {
     stars: 5,
     colour: "Bricks",
-    product: "The heritage polo",
+    product: "The classic polo",
     author: "Taha E.",
     date: "02/09/2026",
     text: "High quality and fit",
@@ -204,7 +204,7 @@ export const footerColumns = [
     items: [
       "The Polo Pullover",
       "The Cotton Crew",
-      { label: "The Heritage Polo Longsleeve", badge: "New" },
+      { label: "The Classic Polo Longsleeve", badge: "New" },
       { label: "The Zip Cardigan", badge: "New" },
       "The Midweight Crew",
       "The Merino Zip Pullover",
@@ -233,13 +233,13 @@ export const footerColumns = [
   {
     title: "Polos",
     items: [
-      "The Heritage Polo",
+      "The Classic Polo",
       "The Knitted Polo",
       "The Buttonless Polo",
       "The Airy Knit Polo",
       "The Terry Polo",
       "The Polo Pullover",
-      { label: "The Heritage Polo Longsleeve", badge: "New" },
+      { label: "The Classic Polo Longsleeve", badge: "New" },
     ],
   },
   {
