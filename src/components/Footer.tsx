@@ -27,7 +27,7 @@ function Col({ title, items }: { title: string; items: any[] }) {
 }
 
 const discover = [
-  { title: "MR MARVIS", items: ["Stores", "Sustainability", "Blog", "Press", "Careers", "NPS"] },
+  { title: "Kolbe Vintage", items: ["Stores", "Sustainability", "Blog", "Press", "Careers", "NPS"] },
   {
     title: "Support",
     items: [
@@ -129,7 +129,7 @@ export default function Footer() {
 
       <div className="border-t border-white/15">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-5 gap-y-2 px-6 py-4 text-[10.5px] text-white/60">
-          <span>© MR MARVIS 2026</span>
+          <span>© Kolbe Vintage 2026</span>
           {[
             "Terms & Conditions",
             "Privacy Policy",

@@ -82,9 +82,9 @@ export default function Header() {
             <Icon d="M3 6h18M3 12h18M3 18h18" className="h-6 w-6" />
           </button>
 
-          <a href="#" className="mx-auto lg:mx-0 lg:absolute lg:left-1/2 lg:-translate-x-1/2">
+          <a href="#/" className="mx-auto lg:mx-0 lg:absolute lg:left-1/2 lg:-translate-x-1/2">
             <span className="whitespace-nowrap text-[20px] font-semibold tracking-[0.28em] text-[#011c3a] lg:text-[22px]">
-              MR MARVIS
+              KOLBE VINTAGE
             </span>
           </a>
 

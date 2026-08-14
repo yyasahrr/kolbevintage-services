@@ -120,7 +120,7 @@ const CATALOGUES: ReadonlyArray<[string, string, string]> = [
 ];
 
 const PRODUCT_WORDS = [
-  "Boulevard Polo",
+  "Heritage Polo",
   "Archive Trench",
   "Selvedge Jean",
   "Merino Crewneck",

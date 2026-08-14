@@ -3,24 +3,24 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Vazirmatn", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-navy: #011c3a;
-  --color-marvis: #011c3a;
 }
 
 html {
   scroll-behavior: smooth;
 }
 
+/* Storefront default: Latin typography, left-to-right. */
 body {
-  font-family: "Vazirmatn", "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   margin: 0;
 }
 
-/* the preserved storefront demo keeps its original Latin typography */
-[dir="ltr"] {
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+/* Persian areas (admin, supplier portal, application form) opt into Vazirmatn. */
+html[dir="rtl"] body {
+  font-family: "Vazirmatn", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* numbers stay comparable across tables and cards */

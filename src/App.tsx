@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import StorefrontApp from "./StorefrontApp";
 import { useHashRoute } from "./dashboard/lib/useHashRoute";
 
@@ -34,9 +34,30 @@ function AreaFallback() {
   );
 }
 
+/**
+ * The document is LTR/English by default (the storefront). Persian areas flip
+ * `dir` and `lang` on <html> while they are mounted, then restore it on exit,
+ * so RTL styling never leaks into the shop.
+ */
+function useDocumentDirection(rtl: boolean) {
+  useEffect(() => {
+    const el = document.documentElement;
+    el.setAttribute("dir", rtl ? "rtl" : "ltr");
+    el.setAttribute("lang", rtl ? "fa" : "en");
+    return () => {
+      el.setAttribute("dir", "ltr");
+      el.setAttribute("lang", "en");
+    };
+  }, [rtl]);
+}
+
 export default function App() {
   const { location } = useHashRoute();
   const path = location.path;
+  const isPersianArea =
+    path.startsWith("/admin") || path.startsWith("/partner") || path === "/supplier-apply";
+
+  useDocumentDirection(isPersianArea);
 
   if (path.startsWith("/admin")) {
     return (

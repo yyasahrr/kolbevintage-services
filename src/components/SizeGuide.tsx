@@ -152,7 +152,7 @@ export default function SizeGuide({
                 <table className="w-full min-w-[650px] text-[12px]">
                   <thead className="bg-[#f5f4f1] text-neutral-700">
                     <tr>
-                      <th className="px-4 py-4 text-left font-semibold">The Classic Polo</th>
+                      <th className="px-4 py-4 text-left font-semibold">The Heritage Polo</th>
                       <th className="px-4 py-4 text-center font-semibold">Length</th>
                       <th className="px-4 py-4 text-center font-semibold">Shoulder width</th>
                       <th className="px-4 py-4 text-center font-semibold">Chest</th>

@@ -11,7 +11,7 @@ function Banner() {
     <section className="relative">
       <img
         src="/images/banner.jpg"
-        alt="Men enjoying summer in MR MARVIS"
+        alt="Men enjoying summer in Kolbe Vintage"
         className="h-[280px] w-full object-cover lg:h-[420px]"
       />
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-black/10 px-6 text-center">
@@ -44,7 +44,7 @@ function StoreSection() {
         </div>
         <img
           src="/images/store.jpg"
-          alt="MR MARVIS store"
+          alt="Kolbe Vintage store"
           className="h-[260px] w-full object-cover lg:h-[340px]"
         />
       </div>
@@ -86,7 +86,7 @@ function HelpAndNewsletter() {
       </div>
 
       <div>
-        <h3 className="text-[19px] font-medium">Join the world of MR MARVIS</h3>
+        <h3 className="text-[19px] font-medium">Join the world of Kolbe Vintage</h3>
         <p className="mt-3 text-[12.5px] text-neutral-600">
           Be the first to know about new products, events and special offers.
         </p>
@@ -118,7 +118,7 @@ function HelpAndNewsletter() {
 }
 
 export default function StorefrontApp() {
-  const [colour, setColour] = useState("Boulevards");
+  const [colour, setColour] = useState("Navy Harbour");
 
   return (
     <div className="min-h-screen bg-white">
