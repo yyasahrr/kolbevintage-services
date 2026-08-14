@@ -28,9 +28,10 @@ src/
   dashboard/
     DashboardApp.tsx          شل اپ: سایدبار، تاپ‌بار، فیلترها، کشو، پالت فرمان
     state.tsx                 Context: dataset، index، filtered، KPIs
-    nav.ts                    ۱۲ مسیر سایدبار
+    nav.ts                    ۱۳ مسیر سایدبار
     domain/
       types.ts                مدل کامل دامنه (۱۷ موجودیت)
+      actions.ts              موتور اقدامات: reducer خالص + بازمحاسبه سفارش
       generate.ts             تولید داده قطعی (seeded PRNG) نسبت به زمان اجرا
       filters.ts              فیلترهای سراسری + سریال‌سازی در URL
       labels.ts               برچسب‌ها و رنگ‌بندی وضعیت‌ها
@@ -38,15 +39,18 @@ src/
     components/
       primitives.tsx          MetricCard, StatusBadge, TrendIndicator, MoneyValue, …
       DataTable.tsx           جدول با مرتب‌سازی، صفحه‌بندی و حالت کارتی موبایل
+      ActionButton.tsx / Toasts.tsx
       charts.tsx              Recharts + نمودارهای SVG سفارشی (قیف و SLA)
       modules.tsx             ماژول‌های قابل استفاده مجدد داشبورد
       GlobalFilters.tsx       ۸ فیلتر سراسری + ۸ پریست تاریخ
       OrderDetailDrawer.tsx   ۹ بخش جزئیات سفارش + خط زمانی
       CommandPalette.tsx      ⌘K / Ctrl+K
       Sidebar.tsx / Topbar.tsx
-    pages/                    ۱۲ صفحه کامل
-    lib/                      format (تومان، تقویم دوگانه)، useHashRoute، useTheme
-tests/dashboard.spec.ts       ۱۵ تست Playwright (دسکتاپ + موبایل)
+    pages/                    ۱۳ صفحه کامل (شامل پورتال تأمین‌کننده)
+    lib/                      format، useHashRoute، useTheme، persistence
+src/dashboard/domain/__tests__/domain.test.ts   ۲۷ تست واحد Vitest
+tests/dashboard.spec.ts       ۲۲ تست Playwright (دسکتاپ + موبایل)
+.github/workflows/ci.yml      typecheck + unit + build، سپس e2e
 ```
 
 ## داده نمونه
@@ -95,9 +99,77 @@ tests/dashboard.spec.ts       ۱۵ تست Playwright (دسکتاپ + موبای�
 npm install
 npm run dev        # http://localhost:5173
 npm run typecheck  # tsc strict، بدون unused
-npm run build      # خروجی تک‌فایلی dist/index.html
-npm test           # Playwright (نیازمند نصب مرورگر: npx playwright install chromium)
+npm test           # ۲۷ تست واحد Vitest روی قواعد دامنه
+npm run build      # تقسیم کد + بارگذاری تنبل
+npm run test:e2e   # Playwright (نیازمند: npx playwright install chromium)
 ```
 
-> در سندباکس فعلی دانلود مرورگر Playwright به دلیل محدودیت شبکه ممکن نبود؛ تست‌ها نوشته
-> شده و روی محیطی با دسترسی اینترنت با `npx playwright install chromium` اجرا می‌شوند.
+> دانلود مرورگر Playwright در سندباکس به‌خاطر محدودیت شبکه ممکن نبود؛ تست‌های e2e
+> در گردش‌کار GitHub Actions اجرا می‌شوند. تست‌های واحد Vitest همین‌جا سبز هستند.
+
+
+## اقدامات عملیاتی (تغییر واقعی وضعیت)
+
+داشبورد فقط خواندنی نیست. اقدامات زیر از طریق یک reducer خالص در
+`domain/actions.ts` اجرا می‌شوند، KPIها و نمودارها را بلافاصله به‌روز می‌کنند،
+رویداد را در خط زمانی سفارش ثبت می‌کنند و اعلان (toast) نشان می‌دهند:
+
+| اقدام | محل | اثر دامنه‌ای |
+|---|---|---|
+| پذیرش / رد درخواست تأمین | تأمین و ارسال، پورتال | وضعیت سفارش بازمحاسبه می‌شود |
+| پیشبرد مرحله (آماده‌سازی ← ارسال ← تحویل) | تأمین و ارسال، پورتال | مرسوله ساخته می‌شود؛ با تحویل کامل، بازه بازرسی ۷۲ ساعته آغاز می‌شود |
+| تخصیص مجدد تأمین‌کننده | تأمین و ارسال | چرخه تأمین ریست می‌شود؛ سفارش و مبلغ مشتری دست‌نخورده می‌ماند |
+| حل اختلاف | اختلافات | امانی از حالت مسدود خارج، بازپرداخت از **مبلغ قابل پرداخت تأمین‌کننده** کسر می‌شود |
+| آزادسازی امانی | امانی | تسویه‌های در انتظار به «زمان‌بندی‌شده» می‌روند؛ روی وجه مسدود کار نمی‌کند |
+| پرداخت / اجرای مجدد تسویه | تسویه | با وجود اختلاف باز مسدود می‌ماند |
+
+قواعد محافظ که در تست‌ها تثبیت شده‌اند: مبلغ سفارش مشتری هرگز با هیچ اقدامی
+تغییر نمی‌کند · تسویه با اختلاف باز پرداخت نمی‌شود · وجه مسدود آزاد نمی‌شود ·
+بازه بازرسی همیشه دقیقاً ۷۲ ساعت است.
+
+## پورتال تأمین‌کننده (`#/supplier-portal`)
+
+نمای ایزوله‌ای که مرز دامنه را اثبات می‌کند. تأمین‌کننده فقط این‌ها را می‌بیند:
+درخواست‌های تأمین خودش، مرسولات خودش، تسویه‌های خودش و SLA خودش.
+
+آنچه عمداً وجود ندارد: هویت مشتری VIP، مبلغ سفارش مشتری، موجودی امانی، اختلافات
+مشتری و فیلترهای سراسری سمت کلبه. تستِ «۱۹» این جداسازی را با بازرسی متن صفحه
+تضمین می‌کند.
+
+## ماندگاری داده
+
+مجموعه داده و همه تغییرات کاربر در `localStorage` (کلید `kv-wholesale-dataset`،
+نسخه اسکیمای ۲) ذخیره می‌شوند و پس از بارگذاری مجدد بازیابی می‌شوند. دکمه
+«بازنشانی داده نمونه» در صفحه تنظیمات آن را پاک و مجموعه‌ای تازه تولید می‌کند.
+
+## خروجی build
+
+پیش‌فرض: تقسیم کد با بارگذاری تنبل صفحات.
+
+```
+index.html                   1.2 KB
+assets/index-*.js          188 KB  (gzip 53 KB)   ← بارگذاری اولیه
+assets/react-*.js          198 KB  (gzip 62 KB)
+assets/charts-*.js         424 KB  (gzip 120 KB)  ← فقط هنگام نیاز
+assets/<Page>-*.js        1–8 KB   هر صفحه جداگانه
+```
+
+برای خروجی تک‌فایلی قبلی:
+
+```bash
+SINGLE_FILE=1 npm run build   # dist/index.html خودکفا
+```
+
+## فعال‌سازی CI
+
+فایل گردش‌کار در `ci/github-actions-ci.yml` قرار دارد (توکن این نشست اجازه نوشتن
+مستقیم در `.github/workflows` را نداشت). برای فعال‌سازی:
+
+```bash
+mkdir -p .github/workflows
+cp ci/github-actions-ci.yml .github/workflows/ci.yml
+git add .github/workflows/ci.yml && git commit -m "ci: enable GitHub Actions" && git push
+```
+
+گردش‌کار دو مرحله دارد: `verify` (typecheck + تست واحد + build) و سپس `e2e`
+(نصب Chromium و اجرای Playwright با آپلود گزارش).

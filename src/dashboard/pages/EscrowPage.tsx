@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Card, CardHeader, MetricCard, MoneyValue, SectionTitle, StatusBadge } from "../components/primitives";
+import { ActionButton } from "../components/ActionButton";
 import { DataTable, type Column } from "../components/DataTable";
 import { DonutChart, CHART_COLORS } from "../components/charts";
 import { InspectionQueueCard } from "../components/modules";
@@ -10,7 +11,7 @@ import { useDashboard } from "../state";
 import type { EscrowStatus, EscrowTransaction } from "../domain/types";
 
 export function EscrowPage({ onOpenOrder }: { onOpenOrder: (orderId: string) => void }) {
-  const { index, filtered, kpis } = useDashboard();
+  const { index, filtered, kpis, dispatch } = useDashboard();
 
   const byStatus = useMemo(() => escrowByStatus(filtered), [filtered]);
   const frozen = filtered.escrows.filter((e) => e.status === "frozen").reduce((s, e) => s + e.amountHeld, 0);
@@ -50,6 +51,28 @@ export function EscrowPage({ onOpenOrder }: { onOpenOrder: (orderId: string) => 
     { key: "released", header: "آزادشده", value: (e) => e.amountReleased, align: "end", secondary: true, render: (e) => <MoneyValue amount={e.amountReleased} /> },
     { key: "refunded", header: "بازپرداخت", value: (e) => e.amountRefunded, align: "end", secondary: true, render: (e) => <MoneyValue amount={e.amountRefunded} /> },
     { key: "heldAt", header: "تاریخ نگهداری", value: (e) => e.heldAt, secondary: true, render: (e) => formatDateDual(e.heldAt) },
+    {
+      key: "actions",
+      header: "اقدام",
+      render: (e) => {
+        const releasable = e.status === "ready" || e.status === "held";
+        const frozen = e.status === "frozen";
+        if (!releasable) return <span className="text-[11px] text-slate-400">—</span>;
+        return (
+          <div className="flex justify-end">
+            <ActionButton
+              variant="primary"
+              disabled={frozen}
+              testId={`release-${e.orderId}`}
+              title={e.status === "held" ? "آزادسازی پیش از پایان بازرسی" : undefined}
+              onClick={() => dispatch({ type: "escrow/release", orderId: e.orderId })}
+            >
+              آزادسازی
+            </ActionButton>
+          </div>
+        );
+      },
+    },
   ];
 
   return (

@@ -1,4 +1,6 @@
 import { Card, CardHeader, SectionTitle } from "../components/primitives";
+import { ActionButton } from "../components/ActionButton";
+import { savedAt } from "../lib/persistence";
 import { SLA } from "../domain/generate";
 import { formatDateTimeDual } from "../lib/format";
 import { useDashboard } from "../state";
@@ -27,7 +29,8 @@ export function SettingsPage({
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
 }) {
-  const { data } = useDashboard();
+  const { data, resetData, persisted } = useDashboard();
+  const lastSaved = savedAt();
 
   return (
     <div className="flex flex-col gap-6">
@@ -95,7 +98,17 @@ export function SettingsPage({
           </Card>
 
           <Card>
-            <CardHeader title="داده‌ها" subtitle="مجموعه داده نمونه تولیدشده در زمان اجرا" />
+            <CardHeader
+              title="داده‌ها"
+              subtitle="ذخیره‌شده در localStorage — تغییرات شما بین بارگذاری‌ها حفظ می‌شود"
+              action={
+                <ActionButton variant="danger" onClick={resetData} testId="reset-data">
+                  بازنشانی داده نمونه
+                </ActionButton>
+              }
+            />
+            <Row label="وضعیت ذخیره‌سازی" value={persisted ? "ذخیره‌شده در مرورگر" : "داده تازه تولیدشده"} />
+            <Row label="آخرین ذخیره" value={lastSaved ? formatDateTimeDual(lastSaved) : "—"} />
             <Row label="زمان تولید" value={formatDateTimeDual(data.generatedAt)} />
             <Row label="سفارش‌ها" value={String(data.orders.length)} />
             <Row label="درخواست‌های تأمین" value={String(data.fulfillments.length)} />

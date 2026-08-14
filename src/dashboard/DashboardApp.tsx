@@ -1,39 +1,61 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { CommandPalette } from "./components/CommandPalette";
 import { GlobalFilters } from "./components/GlobalFilters";
 import { OrderDetailDrawer } from "./components/OrderDetailDrawer";
 import { Sidebar } from "./components/Sidebar";
+import { Toasts } from "./components/Toasts";
 import { Topbar } from "./components/Topbar";
 import { filtersFromParams, filtersToParams, type DashboardFilters } from "./domain/filters";
 import { useHashRoute } from "./lib/useHashRoute";
-import { useTheme } from "./lib/useTheme";
+import { useTheme, type ThemeMode } from "./lib/useTheme";
 import { NAV_ITEMS } from "./nav";
-import { AnalyticsPage } from "./pages/AnalyticsPage";
-import { CataloguePage } from "./pages/CataloguePage";
-import { CustomersPage } from "./pages/CustomersPage";
 import { DashboardPage } from "./pages/DashboardPage";
-import { DisputesPage } from "./pages/DisputesPage";
-import { EscrowPage } from "./pages/EscrowPage";
-import { FulfillmentPage } from "./pages/FulfillmentPage";
-import { OrdersPage } from "./pages/OrdersPage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { SettlementsPage } from "./pages/SettlementsPage";
-import { SuppliersPage } from "./pages/SuppliersPage";
 import { DashboardProvider, useDashboard } from "./state";
+
+// Route-level code splitting: only the dashboard overview ships in the initial
+// chunk; every other page (and the chart library it pulls in) loads on demand.
+const OrdersPage = lazy(() => import("./pages/OrdersPage").then((m) => ({ default: m.OrdersPage })));
+const FulfillmentPage = lazy(() => import("./pages/FulfillmentPage").then((m) => ({ default: m.FulfillmentPage })));
+const SuppliersPage = lazy(() => import("./pages/SuppliersPage").then((m) => ({ default: m.SuppliersPage })));
+const CustomersPage = lazy(() => import("./pages/CustomersPage").then((m) => ({ default: m.CustomersPage })));
+const CataloguePage = lazy(() => import("./pages/CataloguePage").then((m) => ({ default: m.CataloguePage })));
+const EscrowPage = lazy(() => import("./pages/EscrowPage").then((m) => ({ default: m.EscrowPage })));
+const SettlementsPage = lazy(() => import("./pages/SettlementsPage").then((m) => ({ default: m.SettlementsPage })));
+const DisputesPage = lazy(() => import("./pages/DisputesPage").then((m) => ({ default: m.DisputesPage })));
+const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const SupplierPortalPage = lazy(() =>
+  import("./pages/SupplierPortalPage").then((m) => ({ default: m.SupplierPortalPage })),
+);
+
+function PageFallback() {
+  return (
+    <div className="flex flex-col gap-4" data-testid="page-loading">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
+        ))}
+      </div>
+      <div className="h-64 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-900" />
+    </div>
+  );
+}
 
 function PageBody({
   path,
+  params,
   openOrder,
   navigate,
   themeMode,
   setThemeMode,
 }: {
   path: string;
+  params: URLSearchParams;
   openOrder: (orderId: string) => void;
-  navigate: (path: string, params?: Record<string, string>) => void;
-  themeMode: ReturnType<typeof useTheme>["mode"];
-  setThemeMode: ReturnType<typeof useTheme>["setMode"];
+  navigate: (path: string, extra?: Record<string, string>) => void;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
 }) {
   switch (path) {
     case "/orders":
@@ -58,6 +80,13 @@ function PageBody({
       return <ReportsPage />;
     case "/settings":
       return <SettingsPage themeMode={themeMode} onThemeChange={setThemeMode} />;
+    case "/supplier-portal":
+      return (
+        <SupplierPortalPage
+          supplierId={params.get("supplier") ?? "sup-1"}
+          onSelectSupplier={(id) => navigate("/supplier-portal", { supplier: id })}
+        />
+      );
     default:
       return <DashboardPage onOpenOrder={openOrder} onNavigate={navigate} />;
   }
@@ -85,11 +114,11 @@ function Shell({
 
   const orderId = params.get("order");
   const nav = NAV_ITEMS.find((n) => n.path === path) ?? NAV_ITEMS[0];
+  const isPortal = path === "/supplier-portal";
 
   const openOrder = useCallback(
     (id: string) => {
-      const next = { ...filtersToParams(filters), order: id };
-      setParams(next);
+      setParams({ ...filtersToParams(filters), order: id });
     },
     [filters, setParams],
   );
@@ -132,20 +161,27 @@ function Shell({
           onOpenPalette={() => setPaletteOpen(true)}
           now={now}
         />
-        <GlobalFilters data={data} filters={filters} onChange={setFilters} />
+        {/* the supplier portal is deliberately excluded from Kolbe-side global filters */}
+        {isPortal ? null : <GlobalFilters data={data} filters={filters} onChange={setFilters} />}
         <main className="flex-1 px-4 py-6 pb-[env(safe-area-inset-bottom)] sm:px-6" id="main">
-          <PageBody
-            path={path}
-            openOrder={openOrder}
-            navigate={(p, extra) => navigate(p, { ...filtersToParams(filters), ...extra })}
-            themeMode={mode}
-            setThemeMode={setMode}
-          />
+          <Suspense fallback={<PageFallback />}>
+            <PageBody
+              path={path}
+              params={params}
+              openOrder={openOrder}
+              navigate={(p, extra) => navigate(p, { ...filtersToParams(filters), ...extra })}
+              themeMode={mode}
+              setThemeMode={setMode}
+            />
+          </Suspense>
         </main>
       </div>
 
-      <OrderDetailDrawer orderId={orderId} data={data} index={index} now={now} onClose={closeOrder} />
+      {isPortal ? null : (
+        <OrderDetailDrawer orderId={orderId} data={data} index={index} now={now} onClose={closeOrder} />
+      )}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} data={data} navigate={navigate} />
+      <Toasts />
     </div>
   );
 }

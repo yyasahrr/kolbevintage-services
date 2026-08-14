@@ -148,3 +148,71 @@ test("۱۵. فروشگاه دمو در مسیر جدا حفظ شده است", as
   await expect(page.locator('[dir="ltr"]').first()).toBeVisible();
   await expect(page.getByRole("link", { name: /Back to wholesale dashboard/ })).toBeVisible();
 });
+
+test("۱۶. پذیرش درخواست تأمین وضعیت را تغییر می‌دهد و اعلان نشان می‌دهد", async ({ page }, testInfo) => {
+  test.skip(DESKTOP_ONLY(testInfo.project.use as never), "جدول اقدامات فقط در دسکتاپ");
+  await page.goto("/#/fulfillment?preset=90d&ff_status=requested");
+  const table = page.getByTestId("fulfillment-table");
+  const acceptButtons = table.getByRole("button", { name: "پذیرش" });
+  const count = await acceptButtons.count();
+  test.skip(count === 0, "درخواست بی‌پاسخی وجود ندارد");
+  await acceptButtons.first().click();
+  await expect(page.getByTestId("toasts")).toContainText("پذیرفته شد");
+});
+
+test("۱۷. حل اختلاف وجه مسدود را آزاد می‌کند", async ({ page }, testInfo) => {
+  test.skip(DESKTOP_ONLY(testInfo.project.use as never), "دیالوگ در دسکتاپ بررسی می‌شود");
+  await page.goto("/#/disputes?preset=90d");
+  const resolveButtons = page.getByRole("button", { name: "حل اختلاف" });
+  const count = await resolveButtons.count();
+  test.skip(count === 0, "اختلاف بازی وجود ندارد");
+  await resolveButtons.first().click();
+  const dialog = page.getByTestId("resolve-dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId("resolution-partial_settlement").click();
+  await expect(page.getByTestId("toasts")).toContainText("حل شد");
+});
+
+test("۱۸. تسویه مسدود قابل پرداخت نیست", async ({ page }, testInfo) => {
+  test.skip(DESKTOP_ONLY(testInfo.project.use as never), "جدول فقط در دسکتاپ");
+  await page.goto("/#/settlements?preset=90d");
+  const blocked = page.getByRole("button", { name: "مسدود" });
+  if ((await blocked.count()) > 0) await expect(blocked.first()).toBeDisabled();
+});
+
+test("۱۹. پورتال تأمین‌کننده هیچ داده مشتری VIP نشان نمی‌دهد", async ({ page }) => {
+  await page.goto("/#/supplier-portal?supplier=sup-1");
+  await expect(page.getByTestId("portal-fulfillments")).toBeVisible();
+  const body = await page.locator("main").innerText();
+  expect(body).not.toContain("مشتری VIP");
+  expect(body).not.toContain("امانی");
+  await expect(page.getByTestId("global-filters")).toBeHidden();
+});
+
+test("۲۰. تعویض تأمین‌کننده در پورتال داده‌ها را عوض می‌کند", async ({ page }) => {
+  await page.goto("/#/supplier-portal?supplier=sup-1");
+  const table = page.getByTestId("portal-fulfillments");
+  const before = await table.innerText();
+  await page.getByTestId("portal-supplier-sup-3").click();
+  await expect(page).toHaveURL(/supplier=sup-3/);
+  await expect.poll(async () => table.innerText()).not.toBe(before);
+});
+
+test("۲۱. تغییرات پس از بارگذاری مجدد حفظ می‌شوند", async ({ page }, testInfo) => {
+  test.skip(DESKTOP_ONLY(testInfo.project.use as never), "اقدامات در دسکتاپ بررسی می‌شوند");
+  await page.goto("/#/fulfillment?preset=90d&ff_status=requested");
+  const table = page.getByTestId("fulfillment-table");
+  const acceptButtons = table.getByRole("button", { name: "پذیرش" });
+  test.skip((await acceptButtons.count()) === 0, "درخواست بی‌پاسخی وجود ندارد");
+  const countBefore = await acceptButtons.count();
+  await acceptButtons.first().click();
+  await expect(page.getByTestId("toasts")).toBeVisible();
+  await page.reload();
+  await expect.poll(async () => table.getByRole("button", { name: "پذیرش" }).count()).toBeLessThan(countBefore);
+});
+
+test("۲۲. بازنشانی داده نمونه از تنظیمات کار می‌کند", async ({ page }) => {
+  await page.goto("/#/settings");
+  await page.getByTestId("reset-data").click();
+  await expect(page.getByTestId("toasts")).toContainText("بازنشانی");
+});

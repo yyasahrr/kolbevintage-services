@@ -1,7 +1,7 @@
 export interface NavItem {
   path: string;
   label: string;
-  group: "operations" | "finance" | "insight";
+  group: "operations" | "finance" | "insight" | "partner";
   icon: string;
   description: string;
 }
@@ -19,10 +19,18 @@ export const NAV_ITEMS: NavItem[] = [
   { path: "/analytics", label: "تحلیل‌ها", group: "insight", icon: "◔", description: "تحلیل عمیق کسب‌وکار" },
   { path: "/reports", label: "گزارش‌ها", group: "insight", icon: "⎙", description: "گزارش‌های قابل خروجی" },
   { path: "/settings", label: "تنظیمات", group: "insight", icon: "⚙", description: "قواعد کسب‌وکار و ظاهر" },
+  {
+    path: "/supplier-portal",
+    label: "پورتال تأمین‌کننده",
+    group: "partner",
+    icon: "◈",
+    description: "نمای ایزوله تأمین‌کننده — بدون دسترسی به داده مشتری",
+  },
 ];
 
 export const GROUP_LABEL: Record<NavItem["group"], string> = {
   operations: "عملیات",
   finance: "مالی",
   insight: "تحلیل و تنظیمات",
+  partner: "نمای شرکا",
 };

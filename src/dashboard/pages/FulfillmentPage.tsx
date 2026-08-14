@@ -1,5 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardHeader, MetricCard, MoneyValue, SectionTitle, StatusBadge } from "../components/primitives";
+import { ActionButton } from "../components/ActionButton";
+import { nextStepLabel } from "../domain/actions";
 import { DataTable, type Column } from "../components/DataTable";
 import { FulfillmentStatusChart, SlaCard } from "../components/modules";
 import {
@@ -13,7 +15,8 @@ import { useDashboard } from "../state";
 import type { FulfillmentRequest, Shipment } from "../domain/types";
 
 export function FulfillmentPage({ onOpenOrder }: { onOpenOrder: (orderId: string) => void }) {
-  const { index, filtered, now } = useDashboard();
+  const { data, index, filtered, now, dispatch } = useDashboard();
+  const [reassigning, setReassigning] = useState<string | null>(null);
 
   const delayed = useMemo(() => filtered.fulfillments.filter((f) => f.delayed).length, [filtered.fulfillments]);
   const inTransit = useMemo(
@@ -58,7 +61,38 @@ export function FulfillmentPage({ onOpenOrder }: { onOpenOrder: (orderId: string
         </span>
       ),
     },
+    {
+      key: "actions",
+      header: "اقدام",
+      render: (f) => {
+        const step = nextStepLabel(f.status);
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            {f.status === "requested" ? (
+              <>
+                <ActionButton variant="primary" onClick={() => dispatch({ type: "fulfillment/accept", fulfillmentId: f.id })}>
+                  پذیرش
+                </ActionButton>
+                <ActionButton variant="danger" onClick={() => dispatch({ type: "fulfillment/reject", fulfillmentId: f.id })}>
+                  رد
+                </ActionButton>
+              </>
+            ) : null}
+            {step ? (
+              <ActionButton variant="primary" onClick={() => dispatch({ type: "fulfillment/advance", fulfillmentId: f.id })}>
+                {step}
+              </ActionButton>
+            ) : null}
+            {f.status === "rejected" || f.delayed ? (
+              <ActionButton onClick={() => setReassigning(f.id)}>تخصیص مجدد</ActionButton>
+            ) : null}
+          </div>
+        );
+      },
+    },
   ];
+
+  const reassignTarget = reassigning ? filtered.fulfillments.find((f) => f.id === reassigning) : null;
 
   const shipColumns: Array<Column<Shipment>> = [
     { key: "tracking", header: "کد رهگیری", value: (s) => s.trackingCode },
@@ -135,6 +169,43 @@ export function FulfillmentPage({ onOpenOrder }: { onOpenOrder: (orderId: string
           )}
         />
       </Card>
+
+      {reassignTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="تخصیص مجدد تأمین‌کننده">
+          <button type="button" aria-label="انصراف" onClick={() => setReassigning(null)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+          <div className="relative w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900" data-testid="reassign-dialog">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">تخصیص مجدد {reassignTarget.code}</h2>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              تأمین‌کننده جدید انتخاب کنید. سفارش مشتری و مبلغ آن تغییری نمی‌کند و مشتری از این جابه‌جایی مطلع نمی‌شود.
+            </p>
+            <label className="mt-4 flex flex-col gap-1">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">تأمین‌کننده</span>
+              <select
+                data-testid="reassign-select"
+                defaultValue=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  dispatch({ type: "fulfillment/reassign", fulfillmentId: reassignTarget.id, supplierId: e.target.value });
+                  setReassigning(null);
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-navy dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              >
+                <option value="">انتخاب کنید…</option>
+                {data.suppliers
+                  .filter((s) => s.id !== reassignTarget.supplierId)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} — {s.city}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="mt-4 flex justify-start">
+              <ActionButton onClick={() => setReassigning(null)}>انصراف</ActionButton>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

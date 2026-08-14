@@ -1,7 +1,7 @@
 import { cn } from "@/utils/cn";
 import { GROUP_LABEL, NAV_ITEMS, type NavItem } from "../nav";
 
-const GROUPS: Array<NavItem["group"]> = ["operations", "finance", "insight"];
+const GROUPS: Array<NavItem["group"]> = ["operations", "finance", "insight", "partner"];
 
 export function Sidebar({
   currentPath,

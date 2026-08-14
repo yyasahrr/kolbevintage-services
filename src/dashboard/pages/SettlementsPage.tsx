@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Card, CardHeader, MetricCard, MoneyValue, SectionTitle, StatusBadge } from "../components/primitives";
+import { ActionButton } from "../components/ActionButton";
 import { DataTable, type Column } from "../components/DataTable";
 import { SettlementStatusMini } from "../components/modules";
 import { SETTLEMENT_STATUS_LABEL, SETTLEMENT_STATUS_TONE } from "../domain/labels";
@@ -10,7 +11,7 @@ import type { SupplierSettlement } from "../domain/types";
 const DAY = 86_400_000;
 
 export function SettlementsPage({ onOpenOrder }: { onOpenOrder: (orderId: string) => void }) {
-  const { index, filtered, kpis, now } = useDashboard();
+  const { data, index, filtered, kpis, now, dispatch } = useDashboard();
 
   const dueToday = useMemo(
     () =>
@@ -46,6 +47,29 @@ export function SettlementsPage({ onOpenOrder }: { onOpenOrder: (orderId: string
       header: "وضعیت",
       value: (s) => s.status,
       render: (s) => <StatusBadge label={SETTLEMENT_STATUS_LABEL[s.status]} tone={SETTLEMENT_STATUS_TONE[s.status]} />,
+    },
+    {
+      key: "actions",
+      header: "اقدام",
+      render: (s) => {
+        if (s.status === "paid") return <span className="text-[11px] text-slate-400">—</span>;
+        const blocked = data.disputes.some((d) => d.orderId === s.orderId && d.status !== "resolved");
+        return (
+          <div className="flex justify-end">
+            <ActionButton
+              variant={s.status === "failed" ? "danger" : "primary"}
+              disabled={blocked}
+              title={blocked ? "به دلیل اختلاف باز مسدود است" : undefined}
+              testId={`pay-${s.id}`}
+              onClick={() =>
+                dispatch({ type: s.status === "failed" ? "settlement/retry" : "settlement/pay", settlementId: s.id })
+              }
+            >
+              {blocked ? "مسدود" : s.status === "failed" ? "اجرای مجدد" : "پرداخت"}
+            </ActionButton>
+          </div>
+        );
+      },
     },
   ];
 

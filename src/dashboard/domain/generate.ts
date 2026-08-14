@@ -58,11 +58,9 @@ function createRng(seed: number) {
   };
 }
 
-const rng = createRng(20260814);
-const rand = () => rng();
-const randInt = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
-const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rand() * arr.length)];
 const iso = (ms: number) => new Date(ms).toISOString();
+
+const SEED = 20260814;
 
 const SUPPLIER_NAMES: ReadonlyArray<[string, string, string]> = [
   ["Atlas Textile", "تهران", "پارچه و بافت"],
@@ -154,6 +152,12 @@ function commissionRateFor(supplier: Supplier, orderValue: number): number {
 }
 
 export function generateDataset(now = Date.now()): WholesaleDataset {
+  // the RNG is created per call so the same anchor always yields the same dataset
+  const rng = createRng(SEED);
+  const rand = () => rng();
+  const randInt = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
+  const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rand() * arr.length)];
+
   const start = now - DATASET.days * DAY;
 
   const suppliers: Supplier[] = SUPPLIER_NAMES.slice(0, DATASET.suppliers).map(

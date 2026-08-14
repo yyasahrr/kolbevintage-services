@@ -47,6 +47,12 @@ export function CommandPalette({
         hint: "فیلتر بر اساس تأمین‌کننده",
         run: () => navigate("/suppliers", { supplier: s.id, preset: "90d" }),
       });
+      list.push({
+        id: `portal-${s.id}`,
+        title: `پورتال ${s.name}`,
+        hint: "نمای تأمین‌کننده",
+        run: () => navigate("/supplier-portal", { supplier: s.id }),
+      });
     }
     for (const o of data.orders.slice(0, 60)) {
       list.push({
