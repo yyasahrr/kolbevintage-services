@@ -54,7 +54,7 @@ export function ProductDetails({ colour }: { colour: string }) {
             <li className="flex gap-2">
               <Check />
               <span>
-                Find your MR MARVIS store:{" "}
+                Find your Kolbe Vintage store:{" "}
                 <a href="#" className="underline">
                   Check in-store availability
                 </a>
@@ -89,7 +89,7 @@ export function ProductDetails({ colour }: { colour: string }) {
               <div>
                 <p className="text-[12px] font-medium">Handmade in Portugal</p>
                 <p className="text-[11.5px] leading-relaxed text-neutral-500">
-                  MR MARVIS garments are crafted by hand using the highest quality materials.
+                  Kolbe Vintage garments are crafted by hand using the highest quality materials.
                 </p>
               </div>
             </div>
@@ -174,7 +174,7 @@ export default function ProductPanel({
             Polos
           </a>
           <span>›</span>
-          <span className="text-[#011c3a]">The Classic Polo</span>
+          <span className="text-[#011c3a]">The Heritage Polo</span>
         </nav>
 
         <div className="mt-3 flex items-start justify-between gap-4">
@@ -281,7 +281,7 @@ export default function ProductPanel({
           <div className="sticky-purchase-in fixed inset-x-0 bottom-0 z-[90] border-t border-neutral-200 bg-white/95 px-3 py-3 shadow-[0_-8px_25px_rgba(1,28,58,0.10)] backdrop-blur-md sm:px-5">
             <div className="mx-auto flex max-w-[1400px] items-center gap-2 sm:gap-3">
               <div className="mr-auto hidden min-w-[170px] md:block">
-                <p className="text-[13px] font-medium">The Classic Polo - {colour}</p>
+                <p className="text-[13px] font-medium">The Heritage Polo - {colour}</p>
                 <p className="mt-0.5 text-[11px] text-neutral-500">
                   €79 {size ? `- selected size ${size}` : "- select a size"}
                 </p>
