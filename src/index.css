@@ -18,6 +18,34 @@ body {
   color: #011c3a;
 }
 
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid #8ba3bb;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* اعداد فارسی‌شده در متن‌های فارسی */
 .num-fa {
   font-feature-settings: "ss01";
@@ -77,4 +105,23 @@ body {
 /* در حالت RTL جهت اسکرول افقی معکوس است؛ این کلاس چیدمان کارت‌ها را درست نگه می‌دارد */
 .rtl-rail {
   direction: rtl;
+}
+
+@media print {
+  .wholesale-page > * {
+    display: none !important;
+  }
+
+  .wholesale-page > .wholesale-catalog {
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .wholesale-catalog .print-hidden {
+    display: none !important;
+  }
+
+  .wholesale-catalog article {
+    break-inside: avoid;
+  }
 }

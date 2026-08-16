@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "../router";
+import { Link, useRouter } from "../router";
 import { productById, products, specLabels, specOrder, type Product } from "../data/catalog";
 import { looks } from "../siteData";
 import { useStore } from "../store";
@@ -180,21 +180,182 @@ function ColourWheel({
         <p className="text-[11px] text-neutral-500">رنگ انتخابی</p>
         <p className="mt-0.5 text-[14px] font-medium">{sel.name}</p>
         <p className="mt-2 text-[11.5px] text-neutral-500">{fa(n)} رنگ موجود</p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {product.colours.map((c, i) => (
-            <button
-              key={c.name}
-              onClick={() => onSelect(i)}
-              title={c.name}
-              aria-label={c.name}
-              className={
-                "h-6 w-6 rounded-full border-2 transition " +
-                (i === selected ? "border-[#011c3a]" : "border-neutral-200 hover:border-neutral-400")
-              }
-              style={{ background: c.hex }}
-            />
-          ))}
+      </div>
+    </div>
+  );
+}
+
+function WholesaleOrderPanel({
+  product,
+  colourIdx,
+  onColourChange,
+}: {
+  product: Product;
+  colourIdx: number;
+  onColourChange: (i: number) => void;
+}) {
+  type WholesaleLine = {
+    key: string;
+    productId: string;
+    productName: string;
+    productCode: string;
+    colour: string;
+    colourHex: string;
+    size: string;
+    qty: number;
+    collectionName?: string;
+    services?: string[];
+    customizationNote?: string;
+  };
+
+  const firstSize = product.sizes.find((s) => s.inStock)?.label ?? "";
+  const [selectedSize, setSelectedSize] = useState(firstSize);
+  const collectionPacks = [
+    { id: "starter", name: "کالکشن شروع", qty: 12, mix: "S×۲ · M×۴ · L×۴ · XL×۲" },
+    { id: "display", name: "کالکشن ویترین", qty: 24, mix: "S×۴ · M×۸ · L×۸ · XL×۴" },
+    { id: "complete", name: "کالکشن کامل", qty: 48, mix: "S×۸ · M×۱۶ · L×۱۶ · XL×۸" },
+  ];
+  const [packId, setPackId] = useState("display");
+  const [services, setServices] = useState<string[]>([]);
+  const [customizationNote, setCustomizationNote] = useState("");
+  const [lines, setLines] = useState<WholesaleLine[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("kv_wholesale_draft") ?? "[]") as WholesaleLine[];
+    } catch {
+      return [];
+    }
+  });
+  const [submitted, setSubmitted] = useState(false);
+  const colour = product.colours[colourIdx];
+  const pack = collectionPacks.find((item) => item.id === packId)!;
+  const qty = pack.qty;
+  const total = lines.reduce((sum, line) => sum + line.qty, 0);
+  const minimum = 12;
+  const baseWholesalePrice = Math.round(product.price * 0.68 / 10_000) * 10_000;
+  const unitPrice = qty >= 48 ? Math.round(baseWholesalePrice * 0.88 / 10_000) * 10_000 : qty >= 24 ? Math.round(baseWholesalePrice * 0.94 / 10_000) * 10_000 : baseWholesalePrice;
+
+  useEffect(() => {
+    setSelectedSize(product.sizes.find((s) => s.inStock)?.label ?? "");
+    setPackId("display");
+    setServices([]);
+    setCustomizationNote("");
+    setSubmitted(false);
+  }, [product.id]);
+
+  useEffect(() => {
+    localStorage.setItem("kv_wholesale_draft", JSON.stringify(lines));
+  }, [lines]);
+
+  const addLine = () => {
+    if (!selectedSize) return;
+    const key = `${product.id}|${colour.name}|${pack.id}`;
+    setSubmitted(false);
+    setLines((current) => {
+      const found = current.find((line) => line.key === key);
+      if (found) return current.map((line) => line.key === key ? { ...line, qty, services, customizationNote } : line);
+      return [...current, {
+        key,
+        productId: product.id,
+        productName: product.name,
+        productCode: product.specs.code,
+        colour: colour.name,
+        colourHex: colour.hex,
+        size: selectedSize,
+        qty,
+        collectionName: pack.name,
+        services,
+        customizationNote,
+      }];
+    });
+  };
+
+  return (
+    <div className="mt-6 border-t border-neutral-200 pt-6">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] tracking-[0.22em] text-neutral-400">WHOLESALE ORDER</p>
+          <h2 className="mt-1 text-[16px] font-medium">ترکیب سفارش عمده</h2>
         </div>
+        <span className="bg-[#f6f6f4] px-3 py-2 text-[10.5px] num-fa">{fa(lines.length)} ردیف سفارش</span>
+      </div>
+
+      <ColourWheel product={product} selected={colourIdx} onSelect={onColourChange} />
+
+      <div className="mt-5 border-y border-neutral-200 py-4">
+        <div className="flex items-end justify-between gap-4"><div><p className="text-[10px] text-neutral-500">قیمت عمده فعلی</p><p className="mt-1 text-[17px] font-medium num-fa">{toman(unitPrice)} <span className="text-[10px] font-normal text-neutral-400">/ عدد</span></p></div><p className="text-[10px] text-neutral-500">فروش فقط به‌صورت <strong className="font-medium">کالکشن آماده</strong></p></div>
+        <div className="mt-4 grid grid-cols-3 divide-x divide-x-reverse divide-neutral-200 bg-[#f6f6f4] p-3 text-center"><div><p className="text-[9px] text-neutral-400">۱۲–۲۳ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(baseWholesalePrice)}</p></div><div><p className="text-[9px] text-neutral-400">۲۴–۴۷ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(Math.round(baseWholesalePrice * 0.94 / 10_000) * 10_000)}</p></div><div><p className="text-[9px] text-neutral-400">۴۸+ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(Math.round(baseWholesalePrice * 0.88 / 10_000) * 10_000)}</p></div></div>
+      </div>
+
+      <div className="mt-6 border-y border-neutral-200 py-5">
+        <p className="mb-3 text-[11.5px] font-medium">انتخاب کالکشن آماده</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {collectionPacks.map((item) => <button key={item.id} type="button" onClick={() => setPackId(item.id)} className={(packId === item.id ? "border-[#011c3a] bg-[#f3f5f7]" : "border-neutral-200") + " border p-3 text-right transition hover:border-[#011c3a]"}><span className="block text-[11.5px] font-medium">{item.name}</span><span className="mt-1 block text-[10px] text-neutral-500 num-fa">{fa(item.qty)} عدد · {item.mix}</span></button>)}
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <label>
+            <span className="mb-1.5 block text-[10px] text-neutral-500">سایز مرجع الگو</span>
+            <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="h-10 w-full border border-neutral-300 bg-white px-2 text-[12px] outline-none focus:border-[#011c3a]">
+              {product.sizes.map((size) => <option key={size.label} value={size.label} disabled={!size.inStock}>{size.label} {!size.inStock ? "— ناموجود" : ""}</option>)}
+            </select>
+          </label>
+          <button type="button" onClick={addLine} className="h-10 self-end bg-[#011c3a] px-5 text-[11.5px] font-medium text-white transition-colors hover:bg-[#0a2c55] active:scale-[0.98]">
+            افزودن {pack.name}
+          </button>
+        </div>
+        <fieldset className="mt-5 border-t border-neutral-200 pt-4"><legend className="text-[11.5px] font-medium">خدمات اختصاصی این کالکشن</legend><div className="mt-3 grid gap-2 sm:grid-cols-2">{["لیبل اختصاصی برند", "دوخت لوگوی اختصاصی", "بسته‌بندی اختصاصی", "تگ قیمت و بارکد فروشگاه"].map(service=><label key={service} className="flex items-center gap-2 border border-neutral-200 p-3 text-[10.5px]"><input type="checkbox" checked={services.includes(service)} onChange={()=>setServices(current=>current.includes(service)?current.filter(x=>x!==service):[...current,service])} />{service}</label>)}</div><label className="mt-3 block text-[10px] text-neutral-500">توضیحات تولید، محل لوگو یا مشخصات فایل<textarea value={customizationNote} onChange={e=>setCustomizationNote(e.target.value)} rows={3} placeholder="مثلاً لوگو روی آستین چپ با نخ سرمه‌ای دوخته شود…" className="mt-1.5 w-full resize-y border border-neutral-300 p-3 text-[11px] outline-none focus:border-[#011c3a]" /></label></fieldset>
+        <p className="mt-3 text-[10px] text-neutral-500 num-fa">جمع این کالکشن: {fa(qty)} عدد · {toman(qty * unitPrice)}</p>
+      </div>
+
+      {lines.length > 0 && (
+        <div className="mt-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-[12.5px] font-medium">پیش‌سفارش کالکشن</h3>
+            <Link to="/wholesale?section=catalog" className="text-[10.5px] underline underline-offset-2">افزودن محصول دیگر</Link>
+          </div>
+          <div className="divide-y divide-neutral-200 border-y border-neutral-200">
+            {lines.map((line) => (
+              <div key={line.key} className="grid grid-cols-[1fr_auto] gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[11.5px] font-medium">{line.productName}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-neutral-500">
+                    <span className="h-3 w-3 rounded-full border border-neutral-300" style={{ background: line.colourHex }} />
+                    <span>{line.colour}</span><span>{line.collectionName ?? `سایز ${line.size}`}</span><span>کد {line.productCode}</span>
+                  </div>
+                  {line.services?.length ? <p className="mt-1 text-[9.5px] text-neutral-400">خدمات: {line.services.join("، ")}</p> : null}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[12px] font-medium num-fa">{fa(line.qty)} عدد</span>
+                  <button type="button" onClick={() => setLines((current) => current.filter((item) => item.key !== line.key))} aria-label="حذف ردیف" className="text-[10.5px] text-red-700 underline">حذف</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between bg-[#f6f6f4] p-4 text-[12px]">
+            <span>جمع کل کالکشن</span>
+            <strong className="text-[17px] font-medium num-fa">{fa(total)} عدد</strong>
+          </div>
+        </div>
+      )}
+
+      {submitted ? (
+        <div className="mt-4 border border-[#011c3a] bg-white p-4 text-center">
+          <Icon name="check" className="mx-auto h-5 w-5" strokeWidth={2.3} />
+          <p className="mt-2 text-[12.5px] font-medium">پیش‌سفارش برای بررسی ثبت شد</p>
+          <p className="mt-1 text-[10.5px] text-neutral-500">کارشناس فروش برای اعلام قیمت و موجودی نهایی با شما تماس می‌گیرد.</p>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={lines.length === 0}
+          onClick={() => setSubmitted(true)}
+          className="mt-4 h-12 w-full bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-neutral-300"
+        >
+          ثبت نهایی سفارش کالکشن و دریافت قیمت
+        </button>
+      )}
+      <div className="mt-3 flex items-center justify-between text-[10.5px] text-neutral-500">
+        <span>قیمت عمده پس از تأیید حساب همکار نمایش داده می‌شود.</span>
+        <Link to="/wholesale?section=form" className="shrink-0 underline underline-offset-2">درخواست حساب همکاری</Link>
       </div>
     </div>
   );
@@ -378,7 +539,8 @@ function Reviews({ product }: { product: Product }) {
 /* --------------------------------- صفحه ------------------------------------ */
 
 export default function ProductPage({ id }: { id: string }) {
-  
+  const { query } = useRouter();
+  const wholesale = query.get("wholesale") === "1";
   const product = productById(id);
   const { addToCart, toggleWish, isWished, toggleCompare, compare } = useStore();
 
@@ -475,6 +637,15 @@ export default function ProductPage({ id }: { id: string }) {
   return (
     <>
       <main>
+        {wholesale && (
+          <div className="flex items-center justify-between gap-4 bg-[#011c3a] px-4 py-3 text-white lg:px-8">
+            <div>
+              <p className="text-[10px] tracking-[0.25em] text-white/55">WHOLESALE CATALOG</p>
+              <p className="mt-0.5 text-[12px]">مشاهده محصول در حالت سفارش عمده</p>
+            </div>
+            <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
+          </div>
+        )}
         <div className="grid lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_480px]">
           <Gallery product={product} onOpen={(i) => setLightbox(i)} />
 
@@ -484,9 +655,11 @@ export default function ProductPage({ id }: { id: string }) {
                 <nav className="flex items-center gap-1.5 text-[11px] text-neutral-500">
                   <Link to="/" className="hover:underline">خانه</Link>
                   <span>›</span>
-                  <Link to={`/shop?cat=${product.category}`} className="hover:underline">
-                    {product.categoryLabel}
-                  </Link>
+                  {wholesale ? (
+                    <Link to="/wholesale?section=catalog" className="hover:underline">کاتالوگ عمده</Link>
+                  ) : (
+                    <Link to={`/shop?cat=${product.category}`} className="hover:underline">{product.categoryLabel}</Link>
+                  )}
                   <span>›</span>
                   <span className="text-[#011c3a]">{product.name}</span>
                 </nav>
@@ -498,7 +671,11 @@ export default function ProductPage({ id }: { id: string }) {
                       {product.latin.toUpperCase()}
                     </p>
                   </div>
-                  <span className="shrink-0 pt-1 text-[16px] num-fa">{toman(product.price)}</span>
+                  <span className="shrink-0 pt-1 text-left text-[13px]">
+                    {wholesale ? (
+                      <><span className="block font-medium">قیمت همکاری</span><span className="mt-0.5 block text-[10px] text-neutral-400">پس از تأیید حساب</span></>
+                    ) : toman(product.price)}
+                  </span>
                 </div>
 
                 <div className="mt-2.5 flex items-center justify-between gap-3">
@@ -509,6 +686,10 @@ export default function ProductPage({ id }: { id: string }) {
                   </a>
                 </div>
 
+                {wholesale ? (
+                  <WholesaleOrderPanel product={product} colourIdx={colourIdx} onColourChange={setColourIdx} />
+                ) : (
+                <>
                 {/* رنگ */}
                 <div className="mt-6">
                   <ColourWheel product={product} selected={colourIdx} onSelect={setColourIdx} />
@@ -610,6 +791,8 @@ export default function ProductPage({ id }: { id: string }) {
                 <div className="mt-6">
                   <SizeAdvisor product={product} onPick={setSize} />
                 </div>
+                </>
+                )}
               </div>
             </div>
           </aside>
@@ -746,7 +929,7 @@ export default function ProductPage({ id }: { id: string }) {
       </main>
 
       {/* نوار چسبان خرید */}
-      {sticky &&
+      {!wholesale && sticky &&
         createPortal(
           <div className="sticky-purchase-in fixed inset-x-0 bottom-0 z-[90] border-t border-neutral-200 bg-white/97 px-3 py-2.5 shadow-[0_-8px_25px_rgba(1,28,58,0.09)] backdrop-blur sm:px-5">
             <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 sm:gap-4">

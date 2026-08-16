@@ -5,6 +5,8 @@ import { products, productById, specLabels, specOrder } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import ProductCard from "../components/ProductCard";
+import { createCustomer, loadCustomer, saveCustomer } from "../customerIdentity";
+import { loadWholesaleMembership } from "../wholesaleMembership";
 
 const input =
   "h-10 w-full rounded-[3px] border border-neutral-300 px-3 text-[12.5px] outline-none transition focus:border-[#011c3a]";
@@ -309,7 +311,10 @@ export function Compare() {
 /* ------------------------------ حساب کاربری -------------------------------- */
 
 export function Account() {
+  const [customer, setCustomer] = useState(loadCustomer);
+  const [authForm, setAuthForm] = useState({ name: customer?.name ?? "", phone: customer?.phone ?? "", email: customer?.email ?? "" });
   const [tab, setTab] = useState("orders");
+  const membership = loadWholesaleMembership();
   const tabs = [
     { id: "orders", label: "سفارش‌های من" },
     { id: "addresses", label: "آدرس‌ها" },
@@ -322,6 +327,22 @@ export function Account() {
     { code: "KV-460055", date: "۱۰ تیر ۱۴۰۵", status: "تحویل شده", total: 980_000, items: 1 },
   ];
 
+  if (!customer) {
+    return (
+      <main className="mx-auto flex min-h-[65vh] w-full max-w-md flex-col justify-center px-4 py-16">
+        <p className="text-[9px] tracking-[0.25em] text-neutral-400">ONE ACCOUNT</p>
+        <h1 className="mt-2 text-[24px] font-medium">ورود یا ثبت‌نام</h1>
+        <p className="mt-3 text-[11.5px] leading-[1.9] text-neutral-500">این حساب برای خرید تک‌فروشی و دسترسی VIP عمده مشترک است.</p>
+        <form onSubmit={(e) => { e.preventDefault(); const identity = createCustomer(authForm.name, authForm.phone, authForm.email); saveCustomer(identity); setCustomer(identity); }} className="mt-7 space-y-3">
+          <label className="block text-[10px] text-neutral-500">نام و نام خانوادگی<input name="name" autoComplete="name" value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} className={input + " mt-1.5"} placeholder="مثلاً آرمان نیک‌پی…" required /></label>
+          <label className="block text-[10px] text-neutral-500">شماره موبایل<input name="phone" type="tel" inputMode="tel" autoComplete="tel" value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} className={input + " mt-1.5"} placeholder="مثلاً ۰۹۱۲۱۲۳۴۵۶۷…" minLength={10} required /></label>
+          <label className="block text-[10px] text-neutral-500">ایمیل (اختیاری)<input name="email" type="email" autoComplete="email" spellCheck={false} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} className={input + " mt-1.5"} placeholder="name@example.com…" /></label>
+          <button type="submit" className="h-11 w-full bg-[#011c3a] text-[12.5px] font-medium text-white">ورود و ادامه</button>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto w-full px-4 py-12 lg:px-8 lg:py-16">
       <h1 className="mb-8 text-[24px] font-medium">حساب کاربری</h1>
@@ -329,8 +350,8 @@ export function Account() {
       <div className="grid gap-8 lg:grid-cols-[200px_1fr] lg:gap-12">
         <aside>
           <div className="mb-5 rounded-[3px] border border-neutral-200 p-4">
-            <p className="text-[13px] font-medium">امیرحسین رضایی</p>
-            <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{fa("۰۹۱۲۳۴۵۶۷۸۹")}</p>
+            <div className="flex items-start justify-between gap-2"><p className="text-[13px] font-medium">{customer.name}</p>{membership?.customerId === customer.id && <span className="bg-[#011c3a] px-1.5 py-0.5 text-[8px] text-white">VIP</span>}</div>
+            <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{fa(customer.phone)}</p>
           </div>
           <nav className="space-y-1">
             {tabs.map((t) => (
@@ -347,6 +368,9 @@ export function Account() {
             ))}
             <Link to="/wishlist" className="block rounded-[3px] px-3 py-2.5 text-[12.5px] hover:bg-neutral-100">
               علاقه‌مندی‌ها
+            </Link>
+            <Link to="/wholesale" className="block rounded-[3px] px-3 py-2.5 text-[12.5px] font-medium hover:bg-neutral-100">
+              {membership?.customerId === customer.id ? "ورود به فروشگاه عمده" : "فعال‌سازی خرید عمده"}
             </Link>
           </nav>
         </aside>
@@ -402,11 +426,10 @@ export function Account() {
 
           {tab === "profile" && (
             <div className="grid max-w-lg gap-2.5">
-              <input className={input} defaultValue="امیرحسین" placeholder="نام" />
-              <input className={input} defaultValue="رضایی" placeholder="نام خانوادگی" />
-              <input className={input} defaultValue="09123456789" placeholder="موبایل" />
-              <input className={input} placeholder="ایمیل" />
-              <button className="mt-2 h-10 rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white">
+              <input className={input} value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} placeholder="نام و نام خانوادگی" />
+              <input className={input} value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} placeholder="موبایل" />
+              <input className={input} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} placeholder="ایمیل" />
+              <button onClick={() => { const updated = { ...customer, name: authForm.name, phone: authForm.phone, email: authForm.email || undefined }; saveCustomer(updated); setCustomer(updated); }} className="mt-2 h-10 rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white">
                 ذخیره تغییرات
               </button>
             </div>

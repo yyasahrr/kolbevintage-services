@@ -51,7 +51,7 @@ function Hero() {
 /* ------------------------------ ۲. جدیدترین کالکشن ---------------------------- */
 
 function NewArrivals() {
-  const items = [...products].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+  const items = [...products].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
   const [hero, ...rest] = items;
 
   return (
@@ -66,14 +66,16 @@ function NewArrivals() {
         </Link>
       </div>
 
-      {/* گرید نامتقارن: یکی بزرگ + بقیه کوچک */}
-      <div className="grid gap-x-4 gap-y-8 lg:grid-cols-[1.25fr_1fr_1fr]">
-        <div className="lg:row-span-2">
+      {/* یک محصول شاخص در کنار چهار محصول؛ بدون کارت تک‌افتاده در انتهای گرید */}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 lg:grid-cols-2 lg:items-start lg:gap-x-6">
+        <div className="col-span-2 lg:col-span-1">
           <ProductCard product={hero} />
         </div>
-        {rest.map((p) => (
-          <ProductCard key={p.id} product={p} />
-        ))}
+        <div className="col-span-2 grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 lg:col-span-1 lg:gap-y-10">
+          {rest.map((p) => (
+            <ProductCard key={p.id} product={p} />
+          ))}
+        </div>
       </div>
     </section>
   );

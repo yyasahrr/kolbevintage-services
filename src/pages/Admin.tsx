@@ -4,11 +4,13 @@ import { products, categories, specLabels, specOrder, type Product } from "../da
 import { styles, articles } from "../siteData";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
+import AdminBrief from "./AdminBrief";
 
 const input =
   "h-9 w-full rounded-[3px] border border-neutral-300 px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
 
 const nav = [
+  { id: "brief", label: "نیازسنجی ۱۰۰ سؤالی", icon: "check" },
   { id: "dashboard", label: "داشبورد", icon: "shield" },
   { id: "products", label: "محصولات", icon: "bag" },
   { id: "orders", label: "سفارش‌ها", icon: "truck" },
@@ -770,7 +772,7 @@ function ReportsPanel() {
 /* --------------------------------- پنل اصلی -------------------------------- */
 
 export default function Admin() {
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(() => window.location.hash.includes("section=brief") ? "brief" : "dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -818,6 +820,7 @@ export default function Admin() {
         {menuOpen && <div className="fixed inset-0 z-20 bg-black/30 lg:hidden" onClick={() => setMenuOpen(false)} />}
 
         <main className="min-w-0 flex-1 p-4 lg:p-6">
+          {page === "brief" && <AdminBrief />}
           {page === "dashboard" && <Dashboard />}
           {page === "products" && <ProductsPanel />}
           {page === "orders" && <OrdersPanel />}

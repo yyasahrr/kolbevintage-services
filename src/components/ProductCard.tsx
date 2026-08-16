@@ -8,16 +8,34 @@ import Icon from "./Icon";
 export default function ProductCard({ product, compact = false }: { product: Product; compact?: boolean }) {
   const [idx, setIdx] = useState(0);
   const [colourIdx, setColourIdx] = useState(0);
-  const { toggleWish, isWished, toggleCompare, compare } = useStore();
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const { addToCart, toggleWish, isWished, toggleCompare, compare } = useStore();
 
   const gallery = product.images;
   const shown = colourIdx > 0 ? product.colours[colourIdx].img : gallery[idx];
   const wished = isWished(product.id);
   const inCompare = compare.includes(product.id);
+  const selectedColour = product.colours[colourIdx];
 
   const step = (dir: number) => {
     setColourIdx(0);
     setIdx((i) => (i + dir + gallery.length) % gallery.length);
+  };
+
+  const quickBuy = () => {
+    if (!selectedSize) {
+      setSizeOpen(true);
+      return;
+    }
+    addToCart({
+      id: product.id,
+      name: product.name,
+      colour: selectedColour.name,
+      size: selectedSize,
+      price: product.price,
+      img: selectedColour.img,
+    });
   };
 
   return (
@@ -59,6 +77,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
           <button
             onClick={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               toggleWish(product.id);
             }}
             aria-label="افزودن به علاقه‌مندی‌ها"
@@ -77,6 +96,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
               <button
                 onClick={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   step(1);
                 }}
                 aria-label="عکس بعدی"
@@ -87,6 +107,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
               <button
                 onClick={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   step(-1);
                 }}
                 aria-label="عکس قبلی"
@@ -105,6 +126,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
                   key={i}
                   onClick={(e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     setColourIdx(0);
                     setIdx(i);
                   }}
@@ -164,6 +186,43 @@ export default function ProductCard({ product, compact = false }: { product: Pro
             </button>
           )}
         </div>
+
+        {sizeOpen && (
+          <div className="mt-3 grid grid-cols-4 gap-1 sm:grid-cols-7">
+            {product.sizes.map((size) => (
+              <button
+                key={size.label}
+                type="button"
+                disabled={!size.inStock}
+                onClick={() => setSelectedSize(size.label)}
+                className={
+                  "relative h-8 overflow-hidden border text-[10.5px] transition " +
+                  (!size.inStock
+                    ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-300 line-through"
+                    : selectedSize === size.label
+                      ? "border-[#011c3a] bg-[#011c3a] text-white"
+                      : "border-neutral-300 hover:border-[#011c3a]")
+                }
+              >
+                {size.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={quickBuy}
+          className={
+            "mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-[3px] text-[11.5px] font-medium transition active:scale-[0.99] " +
+            (selectedSize
+              ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]"
+              : "border border-[#011c3a] bg-white text-[#011c3a] hover:bg-[#f6f6f4]")
+          }
+        >
+          {selectedSize && <Icon name="bag" className="h-3.5 w-3.5" />}
+          {selectedSize ? `خرید سریع · سایز ${selectedSize}` : "انتخاب سایز"}
+        </button>
       </div>
     </div>
   );

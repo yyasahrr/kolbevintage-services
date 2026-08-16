@@ -19,11 +19,12 @@ import { BlogList, BlogPost } from "./pages/Blog";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import Wholesale from "./pages/Wholesale";
-import Admin from "./pages/Admin";
+import VIPPortal from "./pages/VIPPortal";
+import AdminPortal from "./pages/AdminPortal";
 import { About, Contact, Wishlist, Compare, Account, NotFound } from "./pages/Static";
 
 function Routes() {
-  const { path } = useRouter();
+  const { path, query } = useRouter();
 
   useEffect(() => {
     applySeo(path);
@@ -31,7 +32,10 @@ function Routes() {
 
   /* صفحات با چیدمان مستقل (هدر/فوتر اختصاصی) */
   if (path === "/wholesale") return <Wholesale />;
-  if (path === "/admin") return <Admin />;
+  if (path === "/wholesale-dashboard") return <VIPPortal />;
+  if (path === "/vip" || path.startsWith("/vip/")) return <VIPPortal />;
+  if (path.startsWith("/product/") && query.get("wholesale") === "1") return <VIPPortal />;
+  if (path === "/admin") return <AdminPortal />;
 
   let page: React.ReactNode;
 

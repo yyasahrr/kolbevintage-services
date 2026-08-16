@@ -59,6 +59,8 @@ export function Link({
       href={"#" + to}
       className={className}
       onClick={(e) => {
+        // Interactive controls inside a linked card can cancel navigation.
+        if (e.defaultPrevented) return;
         e.preventDefault();
         navigate(to);
       }}
