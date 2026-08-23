@@ -1,11 +1,20 @@
 {
-  "name": "react-vite-tailwind",
+  "name": "kolbevintage-platform",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "apps/supplier"
+  ],
   "scripts": {
     "dev": "vite",
+    "dev:storefront": "vite --host 127.0.0.1 --port 5173",
+    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal -- --host 127.0.0.1 --port 5174",
+    "dev:all": "node scripts/dev-all.mjs",
     "build": "vite build",
+    "build:storefront": "vite build",
+    "build:supplier": "npm run build --workspace kolbe-supplier-portal",
+    "build:all": "npm run build:storefront && npm run build:supplier",
     "preview": "vite preview"
   },
   "dependencies": {
