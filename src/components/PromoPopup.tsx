@@ -22,7 +22,7 @@ export default function PromoPopup() {
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/45" onClick={close} />
-      <div className="fade-up relative grid w-full max-w-2xl overflow-hidden rounded-[3px] bg-white sm:grid-cols-2">
+      <div className="promo-dialog liquid-surface fade-up relative grid w-full max-w-2xl overflow-hidden rounded-[3px] bg-white sm:grid-cols-2">
         <img src="/images/detail-collar.jpg" alt="" className="hidden h-full w-full object-cover sm:block" loading="lazy" />
         <div className="p-7">
           <button onClick={close} aria-label="بستن" className="absolute left-3 top-3 text-neutral-400 hover:text-[#011c3a]">

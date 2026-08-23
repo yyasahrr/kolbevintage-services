@@ -202,7 +202,7 @@ export default function Checkout() {
         </div>
 
         <aside className="self-start lg:sticky lg:top-[124px]">
-          <div className="rounded-[3px] border border-neutral-200 p-5">
+          <div className="liquid-panel rounded-[3px] border border-neutral-200 p-5">
             <h2 className="text-[14px] font-medium">خلاصه سفارش</h2>
             <div className="mt-4 max-h-64 space-y-3 overflow-y-auto border-b border-neutral-200 pb-4">
               {lines.map((l, i) => (

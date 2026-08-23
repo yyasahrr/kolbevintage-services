@@ -21,7 +21,7 @@ export default function Styles() {
   return (
     <main>
       {/* هیرو استایل */}
-      <section className="relative h-[52vh] min-h-[340px] w-full overflow-hidden">
+      <section className="page-hero relative h-[52vh] min-h-[340px] w-full overflow-hidden">
         <img src={style.img} alt={style.name} className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-transparent" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
@@ -32,7 +32,7 @@ export default function Styles() {
       </section>
 
       {/* تب استایل‌ها */}
-      <div className="sticky top-[104px] z-30 border-b border-neutral-200 bg-white">
+      <div className="liquid-toolbar sticky top-[104px] z-30 border-b border-neutral-200 bg-white">
         <div className="no-scrollbar mx-auto flex w-full gap-2 overflow-x-auto px-4 py-3 lg:justify-center lg:px-8">
           {styles.map((s, i) => (
             <button

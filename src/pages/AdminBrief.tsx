@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { adminQuestions, questionCategories } from "../data/adminQuestions";
+import { adminQuestions, questionCategories, type AdminQuestion } from "../data/adminQuestions";
 
 type Answers = Record<number, number>;
 
-const STORAGE_KEY = "kolbe-admin-brief-v1";
+const STORAGE_KEY = "kolbe-admin-brief-v2";
+
+const questionsByCategory = new Map(
+  questionCategories.map((category) => [
+    category.id,
+    adminQuestions.filter((question) => question.category === category.id),
+  ]),
+);
 
 function loadAnswers(): Answers {
   try {
@@ -27,21 +34,24 @@ export default function AdminBrief() {
 
   const currentIndex = adminQuestions.findIndex((question) => question.id === currentId);
   const currentQuestion = adminQuestions[currentIndex];
-  const answeredCount = Object.keys(answers).length;
+  const answeredCount = adminQuestions.reduce(
+    (count, question) => count + (answers[question.id] !== undefined ? 1 : 0),
+    0,
+  );
   const progress = Math.round((answeredCount / adminQuestions.length) * 100);
   const selectedAnswer = answers[currentId];
 
   const categoryStats = useMemo(
     () => questionCategories.map((category) => {
-      const questions = adminQuestions.filter((question) => question.category === category.id);
+      const questions = questionsByCategory.get(category.id) ?? [];
       const answered = questions.filter((question) => answers[question.id] !== undefined).length;
-      return { ...category, total: questions.length, answered, firstId: questions[0].id };
+      return { ...category, total: questions.length, answered, firstId: questions[0]?.id ?? 1 };
     }),
     [answers],
   );
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, answers, updatedAt: new Date().toISOString() }));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, answers, updatedAt: new Date().toISOString() }));
   }, [answers]);
 
   const selectAnswer = (optionIndex: number) => {
@@ -102,6 +112,7 @@ export default function AdminBrief() {
   };
 
   const currentCategory = questionCategories.find((category) => category.id === currentQuestion.category);
+  const currentCategoryQuestions = questionsByCategory.get(currentQuestion.category) ?? [];
 
   return (
     <div dir="rtl" className="mx-auto max-w-[1500px] pb-12">
@@ -113,22 +124,22 @@ export default function AdminBrief() {
               <span className="h-px w-8 bg-[#df6247]" />
               <span>نسخه تصمیم‌گیری</span>
             </div>
-            <h1 className="mt-4 max-w-2xl text-[26px] font-medium leading-tight sm:text-[34px]">پنل مدیریت باید دقیقاً چگونه کار کند؟</h1>
-            <p className="mt-3 max-w-xl text-[12.5px] leading-6 text-white/65">پاسخ‌ها خودکار ذخیره می‌شوند و مبنای معماری، اولویت‌بندی و برآورد نسخه اجرایی پنل خواهند بود.</p>
+            <h1 className="mt-4 max-w-2xl text-[26px] font-medium leading-tight sm:text-[34px]">ممیزی جامع کلبه وینتیج</h1>
+            <p className="mt-3 max-w-xl text-[12.5px] leading-6 text-white/65">هزار پرسش در ۲۰ حوزه؛ پاسخ‌ها خودکار ذخیره می‌شوند و مبنای تصمیم‌گیری محصول، طراحی، فنی، عملیات و کسب‌وکار خواهند بود.</p>
           </div>
           <div className="flex items-end gap-3">
             <strong className="text-[48px] font-medium leading-none text-[#df6247] num-fa">{faNumber(progress)}٪</strong>
-            <span className="pb-1 text-[11px] leading-5 text-white/55"><b className="block text-[14px] font-medium text-white num-fa">{faNumber(answeredCount)} از ۱۰۰</b>پاسخ ثبت شده</span>
+            <span className="pb-1 text-[11px] leading-5 text-white/55"><b className="block text-[14px] font-medium text-white num-fa">{faNumber(answeredCount)} از {faNumber(adminQuestions.length)}</b>پاسخ ثبت شده</span>
           </div>
         </div>
         <div className="h-1 bg-white/10"><div className="h-full bg-[#df6247] transition-[width] duration-500" style={{ width: `${progress}%` }} /></div>
       </section>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[270px_minmax(0,1fr)]">
-        <aside className="hidden self-start rounded-[3px] border border-neutral-200 bg-white p-3 xl:sticky xl:top-[76px] xl:block">
+        <aside className="hidden max-h-[calc(100vh-96px)] self-start overflow-y-auto rounded-[3px] border border-neutral-200 bg-white p-3 xl:sticky xl:top-[76px] xl:block">
           <div className="flex items-center justify-between px-2 pb-3">
             <h2 className="text-[12px] font-medium">حوزه‌های تصمیم‌گیری</h2>
-            <span className="text-[10px] text-neutral-400">۹ حوزه</span>
+            <span className="text-[10px] text-neutral-400">{faNumber(questionCategories.length)} حوزه</span>
           </div>
           <nav className="space-y-1" aria-label="دسته‌بندی پرسش‌ها">
             {categoryStats.map((category) => {
@@ -151,13 +162,13 @@ export default function AdminBrief() {
 
         <div className="min-w-0">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 xl:hidden">
-            <button type="button" onClick={() => setShowMap((open) => !open)} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-4 text-[11.5px]">{showMap ? "بستن نقشه" : "نقشه ۱۰۰ سؤال"}</button>
+            <button type="button" onClick={() => setShowMap((open) => !open)} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-4 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2">{showMap ? "بستن نقشه" : `نقشه ${faNumber(currentCategoryQuestions.length)} سؤال این حوزه`}</button>
             <button type="button" onClick={downloadAnswers} disabled={answeredCount === 0} className="h-9 rounded-[3px] bg-[#011c3a] px-4 text-[11.5px] text-white disabled:opacity-35">دانلود پاسخ‌ها</button>
           </div>
 
           {showMap ? (
             <div className="mb-5 rounded-[3px] border border-neutral-200 bg-white p-4 xl:hidden">
-              <QuestionMap answers={answers} currentId={currentId} onSelect={goToQuestion} />
+              <QuestionMap questions={currentCategoryQuestions} answers={answers} currentId={currentId} onSelect={goToQuestion} />
             </div>
           ) : null}
 
@@ -168,7 +179,7 @@ export default function AdminBrief() {
                   <span className="bg-[#eef1f3] px-2.5 py-1 text-[10.5px] text-[#53616e]">{currentCategory?.label}</span>
                   {selectedAnswer !== undefined ? <span className="bg-[#eef4ee] px-2.5 py-1 text-[10.5px] text-[#3d5c3a]">پاسخ داده شده</span> : <span className="bg-[#f7f4ea] px-2.5 py-1 text-[10.5px] text-[#7a6320]">در انتظار پاسخ</span>}
                 </div>
-                <span className="text-[11px] text-neutral-400 num-fa">سؤال {faNumber(currentQuestion.id)} از ۱۰۰</span>
+                <span className="text-[11px] text-neutral-400 num-fa">سؤال {faNumber(currentQuestion.id)} از {faNumber(adminQuestions.length)}</span>
               </div>
             </div>
 
@@ -190,13 +201,13 @@ export default function AdminBrief() {
             <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 px-5 py-4 sm:px-7">
               <button type="button" onClick={goPrevious} disabled={currentIndex === 0} className="h-9 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a] disabled:cursor-not-allowed disabled:opacity-30">سؤال قبلی</button>
               <button type="button" onClick={goNext} disabled={currentIndex === adminQuestions.length - 1} className="h-9 rounded-[3px] bg-[#011c3a] px-5 text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55] disabled:cursor-not-allowed disabled:opacity-30">سؤال بعدی</button>
-              {answeredCount < adminQuestions.length ? <button type="button" onClick={goToNextUnanswered} className="mr-auto h-9 text-[11px] text-neutral-500 underline decoration-neutral-300 underline-offset-4 hover:text-[#011c3a]">رفتن به پاسخ‌داده‌نشده بعدی</button> : <span className="mr-auto text-[11.5px] font-medium text-[#3d5c3a]">همه ۱۰۰ سؤال تکمیل شد</span>}
+              {answeredCount < adminQuestions.length ? <button type="button" onClick={goToNextUnanswered} className="mr-auto h-9 text-[11px] text-neutral-500 underline decoration-neutral-300 underline-offset-4 hover:text-[#011c3a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2">رفتن به پاسخ‌داده‌نشده بعدی</button> : <span className="mr-auto text-[11.5px] font-medium text-[#3d5c3a]">همه {faNumber(adminQuestions.length)} سؤال تکمیل شد</span>}
             </div>
           </section>
 
           <div className="mt-5 hidden rounded-[3px] border border-neutral-200 bg-white p-5 xl:block">
             <div className="mb-4 flex items-center justify-between"><h2 className="text-[12px] font-medium">نقشه پرسش‌ها</h2><span className="text-[10px] text-neutral-400">برای رفتن مستقیم، شماره را انتخاب کنید</span></div>
-            <QuestionMap answers={answers} currentId={currentId} onSelect={goToQuestion} />
+            <QuestionMap questions={currentCategoryQuestions} answers={answers} currentId={currentId} onSelect={goToQuestion} />
           </div>
         </div>
       </div>
@@ -204,10 +215,10 @@ export default function AdminBrief() {
   );
 }
 
-function QuestionMap({ answers, currentId, onSelect }: { answers: Answers; currentId: number; onSelect: (id: number) => void }) {
+function QuestionMap({ questions, answers, currentId, onSelect }: { questions: AdminQuestion[]; answers: Answers; currentId: number; onSelect: (id: number) => void }) {
   return (
     <div className="grid grid-cols-10 gap-1.5 sm:grid-cols-[repeat(20,minmax(0,1fr))]">
-      {adminQuestions.map((question) => {
+      {questions.map((question) => {
         const answered = answers[question.id] !== undefined;
         const active = currentId === question.id;
         return <button key={question.id} type="button" onClick={() => onSelect(question.id)} aria-label={`سؤال ${faNumber(question.id)}${answered ? "، پاسخ داده شده" : ""}`} className={`aspect-square min-h-6 rounded-[2px] text-[8px] transition sm:text-[9px] ${active ? "bg-[#df6247] text-white ring-2 ring-[#df6247]/25 ring-offset-1" : answered ? "bg-[#011c3a] text-white" : "border border-neutral-200 bg-[#f7f7f6] text-neutral-400 hover:border-[#011c3a]"}`}>{faNumber(question.id)}</button>;

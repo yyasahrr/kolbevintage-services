@@ -9,7 +9,7 @@ export default function CompareBar() {
   if (compare.length === 0) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[85] border-t border-neutral-200 bg-white/95 backdrop-blur">
+    <div className="compare-bar liquid-surface fixed bottom-0 left-0 right-0 z-[85] border-t border-neutral-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 lg:px-6">
         <span className="hidden shrink-0 text-[12px] font-medium sm:block">
           مقایسه ({fa(compare.length)})

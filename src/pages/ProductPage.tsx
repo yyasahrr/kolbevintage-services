@@ -14,14 +14,14 @@ import ProductCard from "../components/ProductCard";
 
 export function Stars({ value, size = 12 }: { value: number; size?: number }) {
   return (
-    <span className="inline-flex items-center gap-[1px]">
+    <span className="product-stars inline-flex items-center gap-[1px]">
       {[1, 2, 3, 4, 5].map((i) => (
         <svg
           key={i}
           width={size}
           height={size}
           viewBox="0 0 24 24"
-          className={i <= Math.round(value) ? "fill-[#011c3a]" : "fill-neutral-300"}
+          className={i <= Math.round(value) ? "star-filled" : "star-empty"}
         >
           <path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z" />
         </svg>
@@ -42,7 +42,7 @@ function ZoomImage({ src, alt, onOpen }: { src: string; alt: string; onOpen: () 
 
   return (
     <figure
-      className="relative cursor-zoom-in overflow-hidden bg-neutral-100"
+      className="product-gallery-media relative cursor-zoom-in overflow-hidden bg-neutral-100"
       onMouseEnter={() => setZoom(true)}
       onMouseLeave={() => setZoom(false)}
       onMouseMove={(e) => {
@@ -56,7 +56,7 @@ function ZoomImage({ src, alt, onOpen }: { src: string; alt: string; onOpen: () 
         alt={alt}
         loading="lazy"
         decoding="async"
-        className="aspect-[3/4] w-full object-cover transition-transform duration-300"
+        className="aspect-[4/5] max-h-[720px] w-full object-contain transition-transform duration-300"
         style={{ transform: zoom ? "scale(1.7)" : "scale(1)", transformOrigin: `${pos.x}% ${pos.y}%` }}
       />
     </figure>
@@ -65,33 +65,80 @@ function ZoomImage({ src, alt, onOpen }: { src: string; alt: string; onOpen: () 
 
 function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) => void }) {
   const media = product.images;
+  const mobileMediaCount = media.length + (product.video ? 1 : 0);
+  const mobileRailRef = useRef<HTMLDivElement>(null);
+  const [activeMobileMedia, setActiveMobileMedia] = useState(0);
+
+  const goToMobileMedia = (index: number) => {
+    const next = Math.max(0, Math.min(mobileMediaCount - 1, index));
+    const rail = mobileRailRef.current;
+    const slide = rail?.children.item(next) as HTMLElement | null;
+    slide?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    setActiveMobileMedia(next);
+  };
+
+  const updateActiveMobileMedia = () => {
+    const rail = mobileRailRef.current;
+    if (!rail) return;
+    const railBox = rail.getBoundingClientRect();
+    const railCenter = railBox.left + railBox.width / 2;
+    const closest = Array.from(rail.children).reduce(
+      (best, child, index) => {
+        const box = child.getBoundingClientRect();
+        const distance = Math.abs(box.left + box.width / 2 - railCenter);
+        return distance < best.distance ? { index, distance } : best;
+      },
+      { index: 0, distance: Number.POSITIVE_INFINITY },
+    );
+    setActiveMobileMedia(Math.min(closest.index, mobileMediaCount - 1));
+  };
 
   return (
     <>
-      {/* موبایل: اسکرول افقی */}
-      <div className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto lg:hidden">
-        {media.map((src, i) => (
-          <div key={i} className="w-full shrink-0 snap-center" onClick={() => onOpen(i)}>
-            <img src={src} alt={product.name} loading={i === 0 ? "eager" : "lazy"} className="aspect-[3/4] w-full object-cover" />
-          </div>
-        ))}
-        {product.video && (
-          <button
-            onClick={() => window.open(product.video!.url, "_blank")}
-            className="relative w-full shrink-0 snap-center"
-          >
-            <img src={product.video.poster} alt={product.video.title} loading="lazy" className="aspect-[3/4] w-full object-cover brightness-75" />
-            <span className="absolute inset-0 flex items-center justify-center">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 text-white">
-                <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
-              </span>
-            </span>
-          </button>
+      {/* موبایل: اسلایدر لمسی همراه تامنیل و فلش */}
+      <div className="product-gallery-mobile relative lg:hidden">
+        <div ref={mobileRailRef} onScroll={updateActiveMobileMedia} className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto">
+          {media.map((src, i) => (
+            <button key={src} type="button" className="w-full shrink-0 snap-center" onClick={() => onOpen(i)} aria-label={`نمایش تصویر ${fa(i + 1)} از ${fa(media.length)}`}>
+              <img src={src} alt={`${product.name} — تصویر ${fa(i + 1)}`} loading={i === 0 ? "eager" : "lazy"} className="product-gallery-media h-[46svh] max-h-[440px] min-h-[300px] w-full bg-neutral-100 px-5 object-contain" />
+            </button>
+          ))}
+          {product.video && (
+            <button type="button" onClick={() => window.open(product.video!.url, "_blank")} className="relative w-full shrink-0 snap-center" aria-label={product.video.title}>
+              <img src={product.video.poster} alt={product.video.title} loading="lazy" className="h-[40svh] max-h-[360px] min-h-[260px] w-full bg-neutral-100 px-5 object-contain brightness-75" />
+              <span className="absolute inset-0 flex items-center justify-center text-white"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70"><Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} /></span></span>
+            </button>
+          )}
+        </div>
+
+        {mobileMediaCount > 1 && (
+          <>
+            <button type="button" onClick={() => goToMobileMedia(activeMobileMedia - 1)} disabled={activeMobileMedia === 0} aria-label="تصویر قبلی" className="product-gallery-arrow gallery-arrow-pulse absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/80 text-[#011c3a] backdrop-blur-sm disabled:opacity-25">
+              <Icon name="chevronRight" className="h-5 w-5" strokeWidth={1.6} />
+            </button>
+            <button type="button" onClick={() => goToMobileMedia(activeMobileMedia + 1)} disabled={activeMobileMedia === mobileMediaCount - 1} aria-label="تصویر بعدی" className="product-gallery-arrow gallery-arrow-pulse absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/80 text-[#011c3a] backdrop-blur-sm disabled:opacity-25">
+              <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={1.6} />
+            </button>
+          </>
         )}
+
+        <div className="product-gallery-thumbs no-scrollbar flex gap-2 overflow-x-auto border-b border-neutral-200 bg-white px-4 py-3" aria-label="تصاویر کوچک محصول">
+          {media.map((src, i) => (
+            <button key={src} type="button" onClick={() => goToMobileMedia(i)} aria-label={`رفتن به تصویر ${fa(i + 1)}`} aria-current={activeMobileMedia === i ? "true" : undefined} className={(activeMobileMedia === i ? "border-[#011c3a]" : "border-transparent opacity-55") + " h-14 w-11 shrink-0 overflow-hidden border-2 transition"}>
+              <img src={src} alt="" className="h-full w-full object-cover" />
+            </button>
+          ))}
+          {product.video && (
+            <button type="button" onClick={() => goToMobileMedia(media.length)} aria-label="رفتن به ویدئوی محصول" aria-current={activeMobileMedia === media.length ? "true" : undefined} className={(activeMobileMedia === media.length ? "border-[#011c3a]" : "border-transparent opacity-55") + " relative h-14 w-11 shrink-0 overflow-hidden border-2 transition"}>
+              <img src={product.video.poster} alt="" className="h-full w-full object-cover brightness-75" />
+              <Icon name="play" className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-white" fill="currentColor" strokeWidth={0} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* دسکتاپ: گرید ۲ ستونه */}
-      <div className="hidden grid-cols-2 gap-[3px] lg:grid">
+      <div className="product-gallery-grid hidden grid-cols-2 gap-3 p-3 lg:grid">
         {media.map((src, i) => (
           <ZoomImage key={i} src={src} alt={`${product.name} — تصویر ${fa(i + 1)}`} onOpen={() => onOpen(i)} />
         ))}
@@ -104,7 +151,7 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
               src={product.video.poster}
               alt={product.video.title}
               loading="lazy"
-              className="aspect-[3/4] w-full object-cover opacity-70 transition group-hover:opacity-60"
+              className="aspect-[4/5] max-h-[720px] w-full object-contain opacity-70 transition group-hover:opacity-60"
             />
             <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
               <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
@@ -130,56 +177,21 @@ function ColourWheel({
   selected: number;
   onSelect: (i: number) => void;
 }) {
-  const SIZE = 190;
-  const C = SIZE / 2;
-  const R_OUT = 90;
-  const R_IN = 52;
   const n = product.colours.length;
-  const step = 360 / n;
-
-  const polar = (r: number, deg: number) => {
-    const a = ((deg - 90) * Math.PI) / 180;
-    return [C + r * Math.cos(a), C + r * Math.sin(a)];
-  };
-
-  const sector = (start: number, end: number) => {
-    const [x1, y1] = polar(R_OUT, start);
-    const [x2, y2] = polar(R_OUT, end);
-    const [x3, y3] = polar(R_IN, end);
-    const [x4, y4] = polar(R_IN, start);
-    const large = end - start > 180 ? 1 : 0;
-    return `M${x1} ${y1} A${R_OUT} ${R_OUT} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${R_IN} ${R_IN} 0 ${large} 0 ${x4} ${y4} Z`;
-  };
-
   const sel = product.colours[selected];
 
   return (
-    <div className="flex items-center gap-5">
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-[168px] w-[168px] shrink-0">
-        {product.colours.map((c, i) => {
-          const start = i * step;
-          const active = i === selected;
-          return (
-            <path
-              key={c.name}
-              d={sector(start + 1, start + step - 1)}
-              fill={c.hex}
-              stroke={active ? "#011c3a" : "#e5e5e5"}
-              strokeWidth={active ? 2 : 0.6}
-              className="cursor-pointer transition-opacity hover:opacity-80"
-              onClick={() => onSelect(i)}
-            >
-              <title>{c.name}</title>
-            </path>
-          );
-        })}
-        <circle cx={C} cy={C} r={R_IN - 4} fill={sel.hex} stroke="#e5e5e5" strokeWidth="1" />
-      </svg>
-
-      <div className="min-w-0">
-        <p className="text-[11px] text-neutral-500">رنگ انتخابی</p>
-        <p className="mt-0.5 text-[14px] font-medium">{sel.name}</p>
-        <p className="mt-2 text-[11.5px] text-neutral-500">{fa(n)} رنگ موجود</p>
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[12px] font-medium">انتخاب رنگ</p>
+        <p className="text-[11px] text-neutral-500"><span className="text-[#011c3a]">{sel.name}</span> · {fa(n)} رنگ</p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-3" role="radiogroup" aria-label="انتخاب رنگ محصول">
+        {product.colours.map((c, i) => (
+          <button key={c.name} type="button" role="radio" aria-checked={i === selected} aria-label={c.name} title={c.name} onClick={() => onSelect(i)} className={(i === selected ? "border-[#011c3a]" : "border-neutral-300 hover:border-neutral-500") + " flex h-9 w-9 items-center justify-center rounded-full border bg-white transition"}>
+            <span className="h-6 w-6 rounded-full border border-black/10" style={{ backgroundColor: c.hex }} />
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -363,30 +375,11 @@ function WholesaleOrderPanel({
 
 /* ------------------------------ راهنمای سایز ------------------------------- */
 
-function SizeGuide({ product }: { product: Product }) {
-  const [tab, setTab] = useState<"chart" | "how">("chart");
-
+function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" }) {
   return (
     <div className="mt-3 rounded-[3px] border border-neutral-200 bg-white p-4">
-      <div className="mb-4 flex gap-2">
-        {[
-          { id: "chart" as const, label: "جدول سایز" },
-          { id: "how" as const, label: "نحوه اندازه‌گیری" },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={
-              "rounded-[3px] px-3.5 py-1.5 text-[11.5px] transition " +
-              (tab === t.id ? "bg-[#011c3a] text-white" : "border border-neutral-300 hover:border-[#011c3a]")
-            }
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "chart" ? (
+      <h3 className="mb-4 text-[13px] font-medium">{mode === "chart" ? "جدول سایز محصول" : "راهنمای اندازه‌گیری"}</h3>
+      {mode === "chart" ? (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-[11.5px]">
@@ -467,12 +460,12 @@ function Reviews({ product }: { product: Product }) {
   ];
 
   return (
-    <section className="bg-[#f6f6f4]">
+    <section className="product-reviews bg-[#f6f6f4]">
       <div className="mx-auto w-full px-4 py-14 lg:px-8">
         <h2 className="mb-8 text-[20px] font-medium">نظرات مشتریان</h2>
 
-        <div className="grid gap-10 lg:grid-cols-[300px_1fr] lg:gap-16">
-          <div>
+        <div className="grid gap-5 lg:grid-cols-[320px_1fr] lg:gap-6">
+          <div className="review-summary liquid-panel">
             <div className="flex items-end gap-3">
               <span className="text-[44px] font-light leading-none num-fa">{fa(product.rating)}</span>
               <div className="pb-1">
@@ -488,7 +481,7 @@ function Reviews({ product }: { product: Product }) {
                 <div key={d.stars} className="flex items-center gap-2 text-[11px]">
                   <span className="w-8 num-fa">{fa(d.stars)} ★</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-200">
-                    <div className="h-full bg-[#011c3a]" style={{ width: `${(d.count / max) * 100}%` }} />
+                    <div className="review-meter-fill h-full" style={{ width: `${(d.count / max) * 100}%` }} />
                   </div>
                   <span className="w-6 text-left text-neutral-400 num-fa">{fa(d.count)}</span>
                 </div>
@@ -504,7 +497,7 @@ function Reviews({ product }: { product: Product }) {
                   </div>
                   <div className="relative mt-1.5 h-[3px] rounded-full bg-neutral-200">
                     <div
-                      className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#011c3a]"
+                      className="review-marker absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full"
                       style={{ right: `calc(${b.pos}% - 5px)` }}
                     />
                   </div>
@@ -513,7 +506,7 @@ function Reviews({ product }: { product: Product }) {
             </div>
           </div>
 
-          <div className="divide-y divide-neutral-200">
+          <div className="review-list liquid-panel divide-y divide-neutral-200">
             {product.reviews.map((r, i) => (
               <article key={i} className="py-5 first:pt-0">
                 <div className="flex items-start justify-between gap-4">
@@ -550,12 +543,16 @@ export default function ProductPage({ id }: { id: string }) {
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [sticky, setSticky] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sizeAdvisorOpen, setSizeAdvisorOpen] = useState(false);
+  const [stickySizeOpen, setStickySizeOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setColourIdx(0);
     setSize(null);
     setOpenAcc(null);
+    setSizeAdvisorOpen(false);
+    setStickySizeOpen(false);
   }, [id]);
 
   useEffect(() => {
@@ -650,7 +647,7 @@ export default function ProductPage({ id }: { id: string }) {
           <Gallery product={product} onOpen={(i) => setLightbox(i)} />
 
           <aside className="self-start lg:sticky lg:top-[108px]">
-            <div className="px-4 pb-8 pt-6 lg:px-8 lg:pb-10 lg:pt-8">
+            <div className="product-info-panel px-4 pb-8 pt-6 lg:px-8 lg:pb-10 lg:pt-8">
               <div className="mx-auto max-w-[440px] lg:mx-0">
                 <nav className="flex items-center gap-1.5 text-[11px] text-neutral-500">
                   <Link to="/" className="hover:underline">خانه</Link>
@@ -699,12 +696,11 @@ export default function ProductPage({ id }: { id: string }) {
                 <div id="size-picker" className="mt-6">
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] font-medium">انتخاب سایز</span>
-                    <button
-                      onClick={() => setOpenAcc(openAcc === "guide" ? null : "guide")}
-                      className="text-[11.5px] underline underline-offset-2"
-                    >
-                      راهنمای سایز
-                    </button>
+                    <div className="flex items-center gap-3 text-[11.5px]">
+                      <button onClick={() => setOpenAcc(openAcc === "size-chart" ? null : "size-chart")} className="underline underline-offset-2">جدول سایز</button>
+                      <span className="h-3 w-px bg-neutral-300" />
+                      <button onClick={() => setOpenAcc(openAcc === "size-guide" ? null : "size-guide")} className="underline underline-offset-2">راهنمای سایز</button>
+                    </div>
                   </div>
 
                   <div className="mt-3 grid grid-cols-4 gap-1.5 sm:grid-cols-7">
@@ -715,11 +711,11 @@ export default function ProductPage({ id }: { id: string }) {
                         disabled={!s.inStock}
                         title={s.inStock ? s.label : "ناموجود"}
                         className={
-                          "relative h-10 overflow-hidden rounded-[3px] border text-[12px] transition " +
+                          "product-size-option relative h-10 overflow-hidden rounded-xl border text-[12px] transition " +
                           (!s.inStock
-                            ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-300"
+                            ? "is-unavailable cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-300"
                             : size === s.label
-                              ? "border-[#011c3a] bg-[#011c3a] text-white"
+                              ? "is-selected"
                               : "border-neutral-300 hover:border-[#011c3a]")
                         }
                       >
@@ -733,15 +729,16 @@ export default function ProductPage({ id }: { id: string }) {
                     ))}
                   </div>
 
-                  {openAcc === "guide" && <SizeGuide product={product} />}
+                  {openAcc === "size-chart" && <SizeGuide product={product} mode="chart" />}
+                  {openAcc === "size-guide" && <SizeGuide product={product} mode="how" />}
                 </div>
 
                 {/* دکمه‌ها */}
                 <div ref={actionsRef} className="mt-5">
-                  <div className="flex gap-2">
+                  <div className="product-main-actions flex gap-2">
                     <button
                       onClick={handleAdd}
-                      className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
+                      className="storefront-primary-action flex h-12 flex-1 items-center justify-center gap-2 rounded-full text-[13px] font-medium"
                     >
                       <Icon name="bag" className="h-4 w-4" />
                       {size ? "افزودن به سبد خرید" : "یک سایز انتخاب کنید"}
@@ -749,7 +746,7 @@ export default function ProductPage({ id }: { id: string }) {
                     <button
                       onClick={() => toggleWish(product.id)}
                       aria-label="علاقه‌مندی"
-                      className="flex h-12 w-12 items-center justify-center rounded-[3px] border border-neutral-300 transition hover:border-[#011c3a]"
+                      className="storefront-icon-action flex h-12 w-12 items-center justify-center rounded-full border border-neutral-300 transition"
                     >
                       <Icon name="heart" className="h-4 w-4" fill={wished ? "#011c3a" : "none"} />
                     </button>
@@ -759,15 +756,15 @@ export default function ProductPage({ id }: { id: string }) {
                     <button
                       onClick={() => toggleCompare(product.id)}
                       className={
-                        "flex h-10 items-center justify-center gap-2 rounded-[3px] border text-[12px] transition " +
-                        (inCompare ? "border-[#011c3a] bg-[#f7f6f3]" : "border-neutral-300 hover:border-[#011c3a]")
+                        "storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full border text-[12px] transition " +
+                        (inCompare ? "is-active" : "")
                       }
                     >
                       {inCompare ? "در لیست مقایسه" : "افزودن به مقایسه"}
                     </button>
                     <button
                       onClick={share}
-                      className="flex h-10 items-center justify-center gap-2 rounded-[3px] border border-neutral-300 text-[12px] transition hover:border-[#011c3a]"
+                      className="storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full border text-[12px] transition"
                     >
                       {copied ? "لینک کپی شد" : "اشتراک‌گذاری"}
                     </button>
@@ -787,9 +784,13 @@ export default function ProductPage({ id }: { id: string }) {
                   ))}
                 </ul>
 
-                {/* پیشنهاد هوشمند سایز */}
-                <div className="mt-6">
-                  <SizeAdvisor product={product} onPick={setSize} />
+                <div className="mt-5 grid grid-cols-2 gap-2">
+                  <button onClick={() => setSizeAdvisorOpen(true)} className="size-advisor-trigger storefront-secondary-action flex min-h-12 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
+                    <Icon name="user" className="h-4 w-4" /> پیشنهاد هوشمند سایز
+                  </button>
+                  <Link to={`/try-on?top=${product.id}`} className="ai-tryon-button flex min-h-12 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
+                    <Icon name="star" className="h-4 w-4" /> Try On Me
+                  </Link>
                 </div>
                 </>
                 )}
@@ -800,8 +801,8 @@ export default function ProductPage({ id }: { id: string }) {
 
         {/* جزئیات + جدول مشخصات */}
         <section className="border-t border-neutral-200">
-          <div className="mx-auto grid w-full gap-10 px-4 py-14 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-8">
-            <div>
+          <div className="mx-auto w-full px-4 py-14 lg:px-8">
+            <div className="max-w-3xl">
               <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
               <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
 
@@ -843,35 +844,12 @@ export default function ProductPage({ id }: { id: string }) {
               </div>
             </div>
 
-            <div>
-              <h3 className="mb-5 text-[18px] font-medium">مشخصات فنی</h3>
-              <div className="overflow-hidden rounded-[3px] border border-neutral-200">
-                <table className="w-full text-[12.5px]">
-                  <tbody>
-                    {specOrder.map((key, i) => (
-                      <tr
-                        key={key}
-                        className={
-                          "grid grid-cols-[40%_60%] gap-x-4 px-4 py-2.5 " +
-                          (i % 2 === 0 ? "bg-white" : "bg-[#f7f6f3]")
-                        }
-                      >
-                        <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
-                        <td className="text-right">{product.specs[key]}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <button
-                onClick={() => toggleCompare(product.id)}
-                className="mt-3 text-[11.5px] text-neutral-500 underline hover:text-[#011c3a]"
-              >
-                افزودن این محصول به مقایسه
-              </button>
-            </div>
           </div>
         </section>
+
+        <div id="reviews">
+          <Reviews product={product} />
+        </div>
 
         {/* با این ست کنید */}
         {look && (
@@ -923,15 +901,35 @@ export default function ProductPage({ id }: { id: string }) {
           </div>
         </section>
 
-        <div id="reviews">
-          <Reviews product={product} />
-        </div>
+        {/* جدول مشخصات پس از پیشنهادها */}
+        <section className="product-specs border-t border-neutral-200 bg-[#f6f6f4]">
+          <div className="mx-auto w-full px-4 py-14 lg:px-8">
+            <div className="max-w-3xl">
+              <h2 className="mb-5 text-[18px] font-medium">مشخصات فنی</h2>
+              <div className="product-specs-table overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+                <table className="w-full text-[12.5px]">
+                  <tbody>
+                    {specOrder.map((key, i) => (
+                      <tr key={key} className={"product-spec-row grid grid-cols-[42%_58%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
+                        <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
+                        <td className="text-right">{product.specs[key]}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button onClick={() => toggleCompare(product.id)} className="mt-3 text-[11.5px] text-neutral-500 underline hover:text-[#011c3a]">
+                افزودن این محصول به مقایسه
+              </button>
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* نوار چسبان خرید */}
       {!wholesale && sticky &&
         createPortal(
-          <div className="sticky-purchase-in fixed inset-x-0 bottom-0 z-[90] border-t border-neutral-200 bg-white/97 px-3 py-2.5 shadow-[0_-8px_25px_rgba(1,28,58,0.09)] backdrop-blur sm:px-5">
+          <div className="product-sticky-purchase liquid-surface sticky-purchase-in fixed inset-x-0 bottom-0 z-[90] border-t border-neutral-200 bg-white/97 px-3 py-2.5 shadow-[0_-8px_25px_rgba(1,28,58,0.09)] backdrop-blur sm:px-5">
             <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 sm:gap-4">
               <img src={colour.img} alt="" className="hidden h-12 w-9 shrink-0 object-cover sm:block" />
               <div className="hidden min-w-0 md:block">
@@ -941,25 +939,60 @@ export default function ProductPage({ id }: { id: string }) {
                 </p>
               </div>
               <span className="mr-auto shrink-0 text-[13px] font-medium num-fa">{toman(product.price)}</span>
-              <select
-                value={size ?? ""}
-                onChange={(e) => setSize(e.target.value || null)}
-                className="h-10 shrink-0 rounded-[3px] border border-neutral-300 bg-white px-2 text-[12px] outline-none"
-              >
-                <option value="">سایز</option>
-                {product.sizes.filter((s) => s.inStock).map((s) => (
-                  <option key={s.label} value={s.label}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              <div className="sticky-size-picker relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStickySizeOpen((open) => !open)}
+                  aria-haspopup="listbox"
+                  aria-expanded={stickySizeOpen}
+                  className="storefront-secondary-action flex h-10 min-w-[82px] items-center justify-between gap-2 rounded-full px-3 text-[12px]"
+                >
+                  {size ?? "سایز"}
+                  <Icon name="chevronDown" className={`h-3.5 w-3.5 transition-transform ${stickySizeOpen ? "rotate-180" : ""}`} />
+                </button>
+                {stickySizeOpen && (
+                  <div role="listbox" aria-label="انتخاب سایز خرید" className="sticky-size-menu liquid-surface absolute bottom-12 left-0 grid min-w-[156px] grid-cols-3 gap-1.5 rounded-2xl border p-2">
+                    {product.sizes.filter((item) => item.inStock).map((item) => (
+                      <button
+                        key={item.label}
+                        role="option"
+                        aria-selected={size === item.label}
+                        onClick={() => { setSize(item.label); setStickySizeOpen(false); }}
+                        className={`h-9 rounded-xl text-[11px] ${size === item.label ? "storefront-primary-action" : "storefront-secondary-action"}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleAdd}
-                className="flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-[3px] bg-[#011c3a] px-4 text-[12px] font-medium text-white transition hover:bg-[#0a2c55] sm:w-[220px] sm:flex-none sm:text-[13px]"
+                className="storefront-primary-action flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-full px-4 text-[12px] font-medium sm:w-[220px] sm:flex-none sm:text-[13px]"
               >
                 <Icon name="bag" className="h-4 w-4 shrink-0" />
                 افزودن به سبد
               </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {sizeAdvisorOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="size-advisor-title">
+            <button className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={() => setSizeAdvisorOpen(false)} aria-label="بستن پیشنهاد سایز" />
+            <div className="size-advisor-modal liquid-surface relative max-h-[calc(100dvh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-[1.75rem] border p-3 sm:p-4">
+              <div className="flex items-center justify-between px-2 pb-3">
+                <div>
+                  <p className="text-[9px] tracking-[0.2em] text-neutral-400">SMART FIT</p>
+                  <h2 id="size-advisor-title" className="mt-1 text-[15px] font-medium">استایل‌ساز و پیشنهاد سایز</h2>
+                </div>
+                <button onClick={() => setSizeAdvisorOpen(false)} className="storefront-icon-action flex h-10 w-10 items-center justify-center rounded-full border" aria-label="بستن">
+                  <Icon name="close" className="h-4 w-4" />
+                </button>
+              </div>
+              <SizeAdvisor product={product} onPick={(pickedSize) => { setSize(pickedSize); setSizeAdvisorOpen(false); }} />
             </div>
           </div>,
           document.body,

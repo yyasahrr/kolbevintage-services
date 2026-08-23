@@ -39,15 +39,15 @@ export default function ProductCard({ product, compact = false }: { product: Pro
   };
 
   return (
-    <div className="group relative">
+    <article className="product-card group relative flex h-full flex-col">
       <Link to={`/product/${product.id}`} className="block">
-        <div className="relative overflow-hidden bg-neutral-100">
+        <div className="product-card-media relative overflow-hidden bg-neutral-100">
           <img
             src={shown}
             alt={product.name}
             loading="lazy"
             decoding="async"
-            className="aspect-[3/4] w-full object-cover transition-opacity duration-300"
+            className="aspect-[4/5] w-full object-cover transition-opacity duration-300"
           />
 
           {/* عکس دوم هنگام hover */}
@@ -56,7 +56,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
             alt=""
             loading="lazy"
             aria-hidden="true"
-            className="absolute inset-0 aspect-[3/4] w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+            className="absolute inset-0 aspect-[4/5] w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100"
           />
 
           {/* برچسب‌ها */}
@@ -81,7 +81,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
               toggleWish(product.id);
             }}
             aria-label="افزودن به علاقه‌مندی‌ها"
-            className="absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 backdrop-blur transition hover:bg-white"
+            className="product-glass-control absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 backdrop-blur transition hover:bg-white"
           >
             <Icon
               name="heart"
@@ -100,7 +100,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
                   step(1);
                 }}
                 aria-label="عکس بعدی"
-                className="absolute right-1.5 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 opacity-0 transition group-hover:opacity-100 lg:flex"
+                className="product-glass-control absolute right-1.5 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 opacity-0 transition group-hover:opacity-100 lg:flex"
               >
                 <Icon name="chevronRight" className="h-4 w-4" />
               </button>
@@ -111,7 +111,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
                   step(-1);
                 }}
                 aria-label="عکس قبلی"
-                className="absolute left-1.5 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 opacity-0 transition group-hover:opacity-100 lg:flex"
+                className="product-glass-control absolute left-1.5 top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 opacity-0 transition group-hover:opacity-100 lg:flex"
               >
                 <Icon name="chevronLeft" className="h-4 w-4" />
               </button>
@@ -142,7 +142,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
         </div>
       </Link>
 
-      <div className="mt-2.5">
+      <div className="product-card-content mt-2.5 flex flex-1 flex-col">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <Link to={`/product/${product.id}`} className="block truncate text-[12.5px] font-medium hover:underline">
@@ -187,43 +187,41 @@ export default function ProductCard({ product, compact = false }: { product: Pro
           )}
         </div>
 
-        {sizeOpen && (
-          <div className="mt-3 grid grid-cols-4 gap-1 sm:grid-cols-7">
-            {product.sizes.map((size) => (
-              <button
-                key={size.label}
-                type="button"
-                disabled={!size.inStock}
-                onClick={() => setSelectedSize(size.label)}
-                className={
-                  "relative h-8 overflow-hidden border text-[10.5px] transition " +
-                  (!size.inStock
-                    ? "cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-300 line-through"
-                    : selectedSize === size.label
-                      ? "border-[#011c3a] bg-[#011c3a] text-white"
-                      : "border-neutral-300 hover:border-[#011c3a]")
-                }
-              >
-                {size.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="product-card-purchase mt-auto pt-4">
+          {sizeOpen && (
+            <div className="product-card-size-picker no-scrollbar mb-2.5 flex gap-1.5 overflow-x-auto" role="group" aria-label="انتخاب سایز محصول">
+                {product.sizes.filter((size) => size.inStock).map((size) => (
+                  <button
+                    key={size.label}
+                    type="button"
+                    aria-pressed={selectedSize === size.label}
+                    onClick={() => setSelectedSize(size.label)}
+                    className={
+                      "product-size-option text-[10.5px] " +
+                      (selectedSize === size.label ? "is-selected" : "")
+                    }
+                  >
+                    {size.label}
+                  </button>
+                ))}
+            </div>
+          )}
 
-        <button
-          type="button"
-          onClick={quickBuy}
-          className={
-            "mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-[3px] text-[11.5px] font-medium transition active:scale-[0.99] " +
-            (selectedSize
-              ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]"
-              : "border border-[#011c3a] bg-white text-[#011c3a] hover:bg-[#f6f6f4]")
-          }
-        >
-          {selectedSize && <Icon name="bag" className="h-3.5 w-3.5" />}
-          {selectedSize ? `خرید سریع · سایز ${selectedSize}` : "انتخاب سایز"}
-        </button>
+          <button
+            type="button"
+            onClick={quickBuy}
+            className={
+              "product-card-action flex h-10 w-full items-center justify-center gap-2 rounded-full text-[11.5px] font-medium transition active:scale-[0.99] " +
+              (selectedSize
+                ? "storefront-primary-action"
+                : "storefront-secondary-action")
+            }
+          >
+            {selectedSize && <Icon name="bag" className="h-3.5 w-3.5" />}
+            {selectedSize ? `خرید سریع · سایز ${selectedSize}` : "انتخاب سایز"}
+          </button>
+        </div>
       </div>
-    </div>
+    </article>
   );
 }

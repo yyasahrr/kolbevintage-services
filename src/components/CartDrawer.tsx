@@ -24,12 +24,12 @@ export default function CartDrawer() {
   return (
     <div className="fixed inset-0 z-[95]">
       <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-      <aside className="absolute inset-y-0 left-0 flex w-full max-w-[420px] flex-col bg-white">
+      <aside className="cart-drawer liquid-surface absolute inset-y-0 left-0 flex w-full max-w-[420px] flex-col bg-white">
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
           <h2 className="text-[15px] font-medium">
             سبد خرید {lines.length > 0 && <span className="text-neutral-400">({fa(lines.length)})</span>}
           </h2>
-          <button onClick={() => setCartOpen(false)} aria-label="بستن">
+          <button onClick={() => setCartOpen(false)} aria-label="بستن" className="storefront-icon-action flex h-9 w-9 items-center justify-center rounded-full">
             <Icon name="close" className="h-5 w-5" />
           </button>
         </div>
@@ -41,7 +41,7 @@ export default function CartDrawer() {
             <Link
               to="/shop"
               onClick={() => setCartOpen(false)}
-              className="rounded-[3px] bg-[#011c3a] px-6 py-2.5 text-[12.5px] text-white"
+              className="storefront-primary-action rounded-full px-6 py-2.5 text-[12.5px]"
             >
               مشاهده محصولات
             </Link>
@@ -59,7 +59,7 @@ export default function CartDrawer() {
                 )}
               </p>
               <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-neutral-200">
-                <div className="h-full bg-[#011c3a] transition-all" style={{ width: `${progress}%` }} />
+                <div className="cart-progress-fill h-full transition-all" style={{ width: `${progress}%` }} />
               </div>
             </div>
 
@@ -80,10 +80,10 @@ export default function CartDrawer() {
                         {l.colour} — سایز {l.size}
                       </p>
                       <div className="mt-2.5 flex items-center justify-between">
-                        <div className="flex items-center border border-neutral-300">
+                        <div className="cart-quantity-control flex items-center rounded-full border border-neutral-300">
                           <button
                             onClick={() => setLineQty(k, l.qty - 1)}
-                            className="flex h-7 w-7 items-center justify-center hover:bg-neutral-50"
+                            className="flex h-8 w-8 items-center justify-center rounded-full"
                             aria-label="کاهش"
                           >
                             <Icon name="minus" className="h-3 w-3" />
@@ -91,7 +91,7 @@ export default function CartDrawer() {
                           <span className="w-8 text-center text-[12px] num-fa">{fa(l.qty)}</span>
                           <button
                             onClick={() => setLineQty(k, l.qty + 1)}
-                            className="flex h-7 w-7 items-center justify-center hover:bg-neutral-50"
+                            className="flex h-8 w-8 items-center justify-center rounded-full"
                             aria-label="افزایش"
                           >
                             <Icon name="plus" className="h-3 w-3" />
@@ -105,7 +105,7 @@ export default function CartDrawer() {
               })}
             </div>
 
-            <div className="border-t border-neutral-200 px-5 py-4">
+            <div className="cart-drawer-footer border-t border-neutral-200 px-5 py-4">
               <div className="flex items-center justify-between text-[13px]">
                 <span>جمع کل</span>
                 <span className="font-medium num-fa">{toman(cartTotal)}</span>
@@ -114,14 +114,14 @@ export default function CartDrawer() {
               <Link
                 to="/checkout"
                 onClick={() => setCartOpen(false)}
-                className="mt-4 flex h-11 items-center justify-center rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
+                className="storefront-primary-action mt-4 flex h-11 items-center justify-center rounded-full text-[13px] font-medium"
               >
                 ادامه و پرداخت
               </Link>
               <Link
                 to="/cart"
                 onClick={() => setCartOpen(false)}
-                className="mt-2 flex h-10 items-center justify-center rounded-[3px] border border-neutral-300 text-[12.5px] hover:border-[#011c3a]"
+                className="storefront-secondary-action mt-2 flex h-10 items-center justify-center rounded-full text-[12.5px]"
               >
                 مشاهده سبد خرید
               </Link>

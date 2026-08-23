@@ -5,19 +5,32 @@ import { styles, articles } from "../siteData";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import AdminBrief from "./AdminBrief";
+import { AccessSecurity, CommerceOperations, IntegrationsAutomation, InventoryOperations, SystemCenter } from "./AdminOperations";
+import AdminProductEditor from "./AdminProductEditor";
+import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
+import { loadHomepageJournalPins, saveHomepageJournalPins, saveManagedArticles } from "../journalSettings";
+import AdminCRM from "./AdminCRM";
+import { loadSiteSettings, saveSiteSettings, type HeroTemplate } from "../siteSettings";
+import RetailPolicyCenter from "./RetailPolicyCenter";
 
 const input =
   "h-9 w-full rounded-[3px] border border-neutral-300 px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
 
 const nav = [
-  { id: "brief", label: "نیازسنجی ۱۰۰ سؤالی", icon: "check" },
+  { id: "retail-settings", label: "تنظیمات خرده", icon: "check" },
+  { id: "brief", label: "ممیزی ۱۰۰۰ سؤالی", icon: "check" },
   { id: "dashboard", label: "داشبورد", icon: "shield" },
   { id: "products", label: "محصولات", icon: "bag" },
+  { id: "inventory", label: "موجودی و تأمین", icon: "pin" },
   { id: "orders", label: "سفارش‌ها", icon: "truck" },
-  { id: "customers", label: "مشتریان", icon: "user" },
+  { id: "commerce", label: "مرجوعی و ارسال", icon: "return" },
+  { id: "customers", label: "CRM مشتریان", icon: "user" },
   { id: "content", label: "محتوا و صفحات", icon: "mail" },
   { id: "wholesale", label: "درخواست‌های عمده", icon: "pin" },
   { id: "reports", label: "گزارش‌ها", icon: "clock" },
+  { id: "access", label: "دسترسی و امنیت", icon: "shield" },
+  { id: "integrations", label: "اتصال و اتوماسیون", icon: "plus" },
+  { id: "system", label: "مرکز سیستم", icon: "star" },
 ];
 
 const orders = [
@@ -137,8 +150,9 @@ function Dashboard() {
 
 /* -------------------------------- محصولات --------------------------------- */
 
-function ProductEditor({ product, onBack }: { product: Product; onBack: () => void }) {
+function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: () => void; onSave: (product: Product) => void }) {
   const [tab, setTab] = useState("basic");
+  const [saved, setSaved] = useState(false);
   const tabs = [
     { id: "basic", label: "اطلاعات پایه" },
     { id: "variants", label: "رنگ، سایز و موجودی" },
@@ -149,15 +163,16 @@ function ProductEditor({ product, onBack }: { product: Product; onBack: () => vo
   ];
 
   return (
-    <div>
+    <form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onSave({ ...product, name: String(data.get("name") || product.name), latin: String(data.get("latin") || product.latin), price: Number(data.get("price")) || 0, category: String(data.get("category") || product.category), categoryLabel: categories.find(item => item.slug === String(data.get("category")))?.label ?? product.categoryLabel, style: String(data.get("style") || product.style), description: String(data.get("description") || ""), specs: { ...product.specs, code: String(data.get("code") || product.specs.code) } }); setSaved(true); setTimeout(()=>setSaved(false),1800); }}>
       <div className="mb-5 flex items-center gap-3">
         <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-neutral-500 hover:text-[#011c3a]">
           <Icon name="chevronRight" className="h-4 w-4" />
           بازگشت
         </button>
         <h2 className="text-[16px] font-medium">{product.name}</h2>
-        <button className="mr-auto rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white">
-          ذخیره تغییرات
+        {saved && <span role="status" className="mr-auto text-[10.5px] text-[#36563a]">ذخیره شد</span>}
+        <button type="submit" className={(saved ? "mr-2" : "mr-auto") + " rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white"}>
+          {saved ? "ذخیره شد" : "ذخیره تغییرات"}
         </button>
       </div>
 
@@ -181,19 +196,19 @@ function ProductEditor({ product, onBack }: { product: Product; onBack: () => vo
           <div className="grid max-w-2xl gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">نام محصول</span>
-              <input className={input} defaultValue={product.name} />
+              <input name="name" required className={input} defaultValue={product.name} />
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">نام لاتین</span>
-              <input className={input} defaultValue={product.latin} />
+              <input name="latin" className={input} defaultValue={product.latin} />
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">قیمت (تومان)</span>
-              <input className={input} defaultValue={product.price} />
+              <input name="price" type="number" min="0" required className={input} defaultValue={product.price} />
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">دسته‌بندی</span>
-              <select className={input} defaultValue={product.category}>
+              <select name="category" className={input} defaultValue={product.category}>
                 {categories.map((c) => (
                   <option key={c.slug} value={c.slug}>{c.label}</option>
                 ))}
@@ -201,7 +216,7 @@ function ProductEditor({ product, onBack }: { product: Product; onBack: () => vo
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">استایل</span>
-              <select className={input} defaultValue={product.style}>
+              <select name="style" className={input} defaultValue={product.style}>
                 {styles.map((s) => (
                   <option key={s.slug} value={s.slug}>{s.name}</option>
                 ))}
@@ -209,11 +224,11 @@ function ProductEditor({ product, onBack }: { product: Product; onBack: () => vo
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">کد محصول</span>
-              <input className={input} defaultValue={product.specs.code} />
+              <input name="code" required className={input} defaultValue={product.specs.code} />
             </label>
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-[11px] text-neutral-600">توضیحات</span>
-              <textarea rows={5} className="w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[#011c3a]" defaultValue={product.description} />
+              <textarea name="description" rows={5} className="w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[#011c3a]" defaultValue={product.description} />
             </label>
           </div>
         )}
@@ -374,33 +389,48 @@ function ProductEditor({ product, onBack }: { product: Product; onBack: () => vo
           </div>
         )}
       </div>
-    </div>
+    </form>
   );
 }
 
 function ProductsPanel() {
-  const [editing, setEditing] = useState<Product | null>(null);
+  const [editing, setEditing] = useState<AdminProductRecord | null>(null);
   const [q, setQ] = useState("");
+  const [items, setItems] = useState<AdminProductRecord[]>(loadAdminProducts);
+  const [trash,setTrash]=useState<AdminProductRecord[]>(loadProductTrash);
+  const [view,setView]=useState<"active"|"trash">("active");
+  const [status,setStatus]=useState("all");
+  const [notice,setNotice]=useState("");
 
-  if (editing) return <ProductEditor product={editing} onBack={() => setEditing(null)} />;
+  const saveProduct = (next: AdminProductRecord) => { const exists = items.some(item=>item.id===next.id); const updated = exists ? items.map(item=>item.id===next.id?next:item) : [next,...items]; try { saveAdminProducts(updated); setItems(updated); setEditing(next); return null; } catch { return "فضای ذخیره‌سازی مرورگر کافی نیست؛ تصاویر حجیم را حذف کنید."; } };
+  const createProduct = () => setEditing(createAdminProduct());
+  const commit=(next:AdminProductRecord[])=>{saveAdminProducts(next);setItems(next);};
+  const remove=(product:AdminProductRecord)=>{const next=items.filter(x=>x.id!==product.id);const nextTrash=[product,...trash];commit(next);saveProductTrash(nextTrash);setTrash(nextTrash);setNotice("محصول به سطل زباله منتقل شد.");};
+  const restore=(product:AdminProductRecord)=>{const next=[product,...items];const nextTrash=trash.filter(x=>x.id!==product.id);commit(next);saveProductTrash(nextTrash);setTrash(nextTrash);setNotice("محصول بازیابی شد.");};
+  const duplicate=(product:AdminProductRecord)=>{const copy={...structuredClone(product),id:`copy-${Date.now()}`,name:`کپی ${product.name}`,specs:{...product.specs,code:`${product.specs.code}-COPY`},createdAt:Date.now(),sold:0,admin:{...structuredClone(product.admin),status:"draft" as const,versions:[]}};commit([copy,...items]);setEditing(copy);};
+  const exportCsv=()=>{const rows=[["name","latin","price","code","category","status"],...items.map(x=>[x.name,x.latin,String(x.price),x.specs.code,x.category,x.admin.status])];const csv="\uFEFF"+rows.map(row=>row.map(value=>`"${String(value).replace(/"/g,'""')}"`).join(",")).join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download="kolbe-products.csv";anchor.click();URL.revokeObjectURL(url);setNotice("خروجی CSV ساخته شد.");};
+  const importCsv=(file:File|null)=>{if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const lines=String(reader.result).replace(/^\uFEFF/,"").split(/\r?\n/).filter(Boolean);if(lines.length<2)throw new Error();const added=lines.slice(1).map((line,index)=>{const columns=line.match(/("(?:[^"]|"")*"|[^,]+)/g)?.map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"'))??[];const product=createAdminProduct();return {...product,id:`csv-${Date.now()}-${index}`,name:columns[0]??"",latin:columns[1]??"",price:Number(columns[2])||0,category:columns[4]||product.category,categoryLabel:categories.find(c=>c.slug===(columns[4]||product.category))?.label??product.categoryLabel,specs:{...product.specs,code:columns[3]||product.specs.code},admin:{...product.admin,status:(columns[5]==="published"?"published":"draft") as "published"|"draft"}}});commit([...added,...items]);setNotice(`${fa(added.length)} محصول از CSV وارد شد.`);}catch{setNotice("ساختار فایل CSV معتبر نیست.");}};reader.readAsText(file);};
 
-  const list = products.filter((p) => p.name.includes(q) || p.specs.code.includes(q));
+  if (editing) return <AdminProductEditor initial={editing} onBack={() => setEditing(null)} onSave={saveProduct} />;
+
+  const source=view==="active"?items:trash;
+  const list = source.filter((p) => (p.name.includes(q) || p.specs.code.includes(q)) && (status==="all"||p.admin.status===status));
 
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="text-[16px] font-medium">محصولات</h2>
-        <span className="text-[12px] text-neutral-500 num-fa">({fa(products.length)})</span>
+        <span className="text-[12px] text-neutral-500 num-fa">({fa(source.length)})</span>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="جستجو در محصولات..."
           className={input + " max-w-[220px]"}
         />
-        <button className="mr-auto rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white">
-          + ایجاد محصول
-        </button>
+        <select aria-label="فیلتر وضعیت محصول" value={status} onChange={e=>setStatus(e.target.value)} className={input+" max-w-40"}><option value="all">همه وضعیت‌ها</option><option value="draft">پیش‌نویس</option><option value="review">در انتظار بررسی</option><option value="published">منتشرشده</option></select>
+        <div className="mr-auto flex flex-wrap gap-2"><button onClick={()=>setView(view==="active"?"trash":"active")} className="border border-neutral-300 px-3 py-2 text-[10px]">{view==="active"?`سطل زباله (${fa(trash.length)})`:"بازگشت به محصولات"}</button><button onClick={exportCsv} className="border border-neutral-300 px-3 py-2 text-[10px]">خروجی CSV</button><label className="cursor-pointer border border-neutral-300 px-3 py-2 text-[10px]">ورود CSV<input aria-label="ورود CSV محصولات" type="file" accept=".csv,text/csv" className="sr-only" onChange={e=>importCsv(e.target.files?.[0]??null)}/></label>{view==="active"&&<button onClick={createProduct} className="rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white">+ ایجاد محصول</button>}</div>
       </div>
+      {notice&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}
 
       <div className="overflow-x-auto rounded-[3px] border border-neutral-200 bg-white">
         <table className="w-full min-w-[720px] text-[12px]">
@@ -412,6 +442,7 @@ function ProductsPanel() {
               <th className="p-3 font-medium">قیمت</th>
               <th className="p-3 font-medium">موجودی</th>
               <th className="p-3 font-medium">فروش</th>
+              <th className="p-3 font-medium">وضعیت</th>
               <th className="p-3 font-medium"></th>
             </tr>
           </thead>
@@ -422,7 +453,7 @@ function ProductsPanel() {
                 <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                   <td className="p-3">
                     <div className="flex items-center gap-2.5">
-                      <img src={p.images[0]} alt="" className="h-11 w-9 object-cover" loading="lazy" />
+                      <img src={p.images[0]??"/images/flat.jpg"} alt="" className="h-11 w-9 object-cover" loading="lazy" />
                       <div>
                         <p className="font-medium">{p.name}</p>
                         <p className="mt-0.5 text-[10.5px] text-neutral-500">{p.latin}</p>
@@ -438,16 +469,16 @@ function ProductsPanel() {
                     </span>
                   </td>
                   <td className="p-3 num-fa">{fa(p.sold)}</td>
+                  <td className="p-3"><span className="bg-neutral-100 px-2 py-1 text-[9.5px]">{p.admin.status==="published"?"منتشرشده":p.admin.status==="review"?"در انتظار بررسی":"پیش‌نویس"}</span></td>
                   <td className="p-3">
-                    <button onClick={() => setEditing(p)} className="text-[11.5px] underline hover:text-[#011c3a]">
-                      ویرایش
-                    </button>
+                    <div className="flex gap-2 text-[10px]">{view==="active"?<><button onClick={() => setEditing(p)} className="underline hover:text-[#011c3a]">ویرایش</button><button onClick={()=>duplicate(p)} className="underline">کپی</button><button onClick={()=>remove(p)} className="text-red-700 underline">حذف</button></>:<><button onClick={()=>restore(p)} className="underline">بازیابی</button><button onClick={()=>{const next=trash.filter(x=>x.id!==p.id);saveProductTrash(next);setTrash(next);setNotice("محصول برای همیشه حذف شد.")}} className="text-red-700 underline">حذف دائمی</button></>}</div>
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        {!list.length&&<div className="py-14 text-center text-[11px] text-neutral-400">محصولی با این فیلتر پیدا نشد.</div>}
       </div>
     </div>
   );
@@ -457,8 +488,11 @@ function ProductsPanel() {
 
 function OrdersPanel() {
   const [filter, setFilter] = useState("همه");
+  const [items, setItems] = useState(() => { try { const raw=localStorage.getItem("kv_admin_orders"); return raw ? JSON.parse(raw) as typeof orders : orders; } catch { return orders; } });
+  const [selected, setSelected] = useState<(typeof orders)[number] | null>(null);
   const statuses = ["همه", "پرداخت شده", "در حال پردازش", "در حال ارسال", "تحویل شده", "مرجوع شده"];
-  const list = filter === "همه" ? orders : orders.filter((o) => o.status === filter);
+  const list = filter === "همه" ? items : items.filter((o) => o.status === filter);
+  const updateStatus = (code:string,status:string) => { const next=items.map(order=>order.code===code?{...order,status}:order); setItems(next); localStorage.setItem("kv_admin_orders",JSON.stringify(next)); };
 
   return (
     <div>
@@ -500,7 +534,7 @@ function OrdersPanel() {
                 <td className="p-3 num-fa">{fa(o.items)}</td>
                 <td className="p-3 num-fa">{toman(o.total)}</td>
                 <td className="p-3">
-                  <select defaultValue={o.status} className="rounded-[3px] border border-neutral-300 px-2 py-1 text-[11px] outline-none">
+                  <select aria-label={`وضعیت سفارش ${o.code}`} value={o.status} onChange={event=>updateStatus(o.code,event.target.value)} className="rounded-[3px] border border-neutral-300 px-2 py-1 text-[11px] outline-none">
                     {statuses.slice(1).map((s) => (
                       <option key={s}>{s}</option>
                     ))}
@@ -508,8 +542,8 @@ function OrdersPanel() {
                 </td>
                 <td className="p-3">
                   <div className="flex gap-2 text-[11px]">
-                    <button className="underline">جزئیات</button>
-                    <button className="underline">فاکتور</button>
+                    <button onClick={()=>setSelected(o)} className="underline">جزئیات</button>
+                    <button onClick={()=>{setSelected(o);setTimeout(()=>window.print(),50)}} className="underline">فاکتور</button>
                   </div>
                 </td>
               </tr>
@@ -517,17 +551,22 @@ function OrdersPanel() {
           </tbody>
         </table>
       </div>
+      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">ORDER DETAIL</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین"],["روش ارسال","پست پیشتاز"],["کد پیگیری","در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[#f6f6f4] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl></section>}
     </div>
   );
 }
 
 function CustomersPanel() {
-  const customers = [
+  const initialCustomers = [
     { name: "امیرحسین رضایی", phone: "۰۹۱۲۳۴۵۶۷۸۹", orders: 7, total: 24_500_000, city: "تهران" },
     { name: "سهیل مرادی", phone: "۰۹۱۲۹۸۷۶۵۴۳", orders: 4, total: 12_800_000, city: "کرج" },
     { name: "نیما صادقی", phone: "۰۹۱۳۱۱۲۲۳۳۴", orders: 3, total: 8_400_000, city: "اصفهان" },
     { name: "بابک کریمی", phone: "۰۹۱۴۵۵۶۶۷۷۸", orders: 2, total: 9_100_000, city: "تبریز" },
   ];
+  const [customers, setCustomers] = useState(() => { try { const raw=localStorage.getItem("kv_admin_customers"); return raw ? JSON.parse(raw) as typeof initialCustomers : initialCustomers; } catch { return initialCustomers; } });
+  const [selected,setSelected]=useState<(typeof initialCustomers)[number]|null>(null);
+  const [wallet,setWallet]=useState(0);
+  const saveWallet=()=>{if(!selected)return;const key=`kv_wallet_${selected.phone}`;localStorage.setItem(key,String(wallet));};
 
   return (
     <div>
@@ -553,19 +592,27 @@ function CustomersPanel() {
                 <td className="p-3 num-fa">{fa(c.orders)}</td>
                 <td className="p-3 num-fa">{toman(c.total)}</td>
                 <td className="p-3">
-                  <button className="text-[11.5px] underline">پروفایل</button>
+                  <button onClick={()=>{setSelected(c);setWallet(Number(localStorage.getItem(`kv_wallet_${c.phone}`)||0));}} className="text-[11.5px] underline">پروفایل</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">CUSTOMER 360</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول مشتری</p><label className="mt-3 block text-[9.5px] text-white/70">موجودی (تومان)<input type="number" min="0" value={wallet} onChange={e=>setWallet(Number(e.target.value))} className="mt-1.5 h-10 w-full bg-white px-3 text-[11px] text-[#011c3a]"/></label><button onClick={saveWallet} className="mt-3 h-9 w-full border border-white/30 text-[10px] hover:border-white">ذخیره موجودی کیف پول</button></aside></section>}
     </div>
   );
 }
 
 function ContentPanel() {
   const [tab, setTab] = useState("articles");
+  const [articleItems,setArticleItems]=useState(()=>{try{const raw=localStorage.getItem("kv_admin_articles");return raw?JSON.parse(raw) as typeof articles:articles;}catch{return articles;}});
+  const [saved,setSaved]=useState(false);
+  const [homepagePins,setHomepagePins]=useState(loadHomepageJournalPins);
+  const [siteSettings,setSiteSettings]=useState(loadSiteSettings);
+  const persistSiteSettings=(next:typeof siteSettings)=>{setSiteSettings(next);saveSiteSettings(next);setSaved(true);setTimeout(()=>setSaved(false),1500);};
+  const persistArticles=(next:typeof articles)=>{setArticleItems(next);saveManagedArticles(next);setSaved(true);setTimeout(()=>setSaved(false),1500);};
+  const toggleHomepagePin=(slug:string)=>{const next=homepagePins.includes(slug)?homepagePins.filter(item=>item!==slug):[...homepagePins,slug];setHomepagePins(next);saveHomepageJournalPins(next);setSaved(true);setTimeout(()=>setSaved(false),1500);};
   const tabs = [
     { id: "articles", label: "مقالات" },
     { id: "pages", label: "صفحات" },
@@ -576,6 +623,7 @@ function ContentPanel() {
   return (
     <div>
       <h2 className="mb-5 text-[16px] font-medium">محتوا و صفحات</h2>
+      {saved&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10.5px] text-[#36563a]">محتوا ذخیره شد.</p>}
       <div className="mb-5 flex flex-wrap gap-2">
         {tabs.map((t) => (
           <button
@@ -594,15 +642,16 @@ function ContentPanel() {
       <div className="rounded-[3px] border border-neutral-200 bg-white p-5">
         {tab === "articles" && (
           <div className="space-y-2">
-            <button className="mb-3 rounded-[3px] bg-[#011c3a] px-4 py-2 text-[11.5px] text-white">+ مقاله جدید</button>
-            {articles.map((a) => (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><button onClick={()=>persistArticles([{...articles[0],slug:`draft-${Date.now()}`,title:"مقاله جدید",date:new Intl.DateTimeFormat("fa-IR").format(new Date())},...articleItems])} className="rounded-[3px] bg-[#011c3a] px-4 py-2 text-[11.5px] text-white">+ مقاله جدید</button><p className="text-[10.5px] text-neutral-500 num-fa">{fa(homepagePins.length)} مقاله در صفحه اصلی پین شده</p></div>
+            {articleItems.map((a,index) => (
               <div key={a.slug} className="flex items-center gap-3 border-b border-neutral-100 py-2.5">
                 <img src={a.img} alt="" className="h-10 w-14 object-cover" loading="lazy" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px]">{a.title}</p>
+                  <input aria-label={`عنوان ${a.slug}`} value={a.title} onChange={e=>persistArticles(articleItems.map((item,i)=>i===index?{...item,title:e.target.value}:item))} className="h-8 w-full border-b border-transparent bg-transparent text-[12px] outline-none focus:border-[#011c3a]"/>
                   <p className="mt-0.5 text-[10.5px] text-neutral-500">{a.category} — {a.date}</p>
                 </div>
-                <button className="text-[11px] underline">ویرایش</button>
+                <button type="button" onClick={()=>toggleHomepagePin(a.slug)} aria-pressed={homepagePins.includes(a.slug)} aria-label={`${homepagePins.includes(a.slug)?"برداشتن از":"پین در"} صفحه اصلی: ${a.title}`} className={(homepagePins.includes(a.slug)?"border-[#011c3a] bg-[#011c3a] text-white":"border-neutral-300 text-neutral-500 hover:border-[#011c3a]")+" flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"}><Icon name="pushPin" className="h-4 w-4" /></button>
+                <button onClick={()=>persistArticles(articleItems.filter((_,i)=>i!==index))} className="text-[11px] text-red-700 underline">حذف</button>
               </div>
             ))}
           </div>
@@ -613,66 +662,62 @@ function ContentPanel() {
             {["درباره ما", "تماس با ما", "قوانین و مقررات", "حریم خصوصی", "شرایط مرجوعی", "راهنمای سایز"].map((p) => (
               <div key={p} className="flex items-center justify-between border-b border-neutral-100 py-2.5">
                 <span className="text-[12px]">{p}</span>
-                <button className="text-[11px] underline">ویرایش</button>
+                <button onClick={()=>{localStorage.setItem(`kv_page_${p}`,JSON.stringify({updatedAt:Date.now()}));setSaved(true);setTimeout(()=>setSaved(false),1500);}} className="text-[11px] underline">ثبت ویرایش</button>
               </div>
             ))}
           </div>
         )}
 
         {tab === "banners" && (
-          <div className="space-y-4">
-            {[
-              { name: "بنر هیرو صفحه اصلی", img: "/images/model-front.jpg" },
-              { name: "بنر معرفی کالکشن", img: "/images/banner.jpg" },
-              { name: "پوستر ویدئوی برند", img: "/images/model-full.jpg" },
-            ].map((b) => (
-              <div key={b.name} className="flex items-center gap-4 rounded-[3px] border border-neutral-200 p-3">
-                <img src={b.img} alt="" className="h-16 w-28 object-cover" loading="lazy" />
-                <div className="flex-1">
-                  <p className="text-[12px] font-medium">{b.name}</p>
-                  <input className={input + " mt-2 max-w-sm"} placeholder="متن روی بنر" />
-                </div>
-                <button className="text-[11px] underline">تعویض تصویر</button>
+          <div className="space-y-6">
+            <section className="border border-neutral-200 p-4">
+              <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="text-[13px] font-medium">هیرو صفحه اصلی</h3><p className="mt-1 text-[10.5px] text-neutral-500">قالب، تصاویر، متن و دکمه‌ها را تغییر دهید.</p></div><Link to="/" className="text-[11px] underline">پیش‌نمایش سایت</Link></div>
+              <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                {([{id:"cover",label:"تمام تصویر"},{id:"split",label:"تصویر راست"},{id:"mosaic",label:"موزاییک"},{id:"duo",label:"دو تصویر"},{id:"minimal",label:"مینیمال"}] as {id:HeroTemplate;label:string}[]).map(template=><button key={template.id} type="button" onClick={()=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,template:template.id}})} className={(siteSettings.hero.template===template.id?"border-[#011c3a] bg-[#011c3a] text-white":"border-neutral-300 hover:border-[#011c3a]")+" min-h-16 border px-2 text-[10.5px]"}>{template.label}</button>)}
               </div>
-            ))}
-            <div className="rounded-[3px] border border-neutral-200 p-4">
-              <p className="mb-3 text-[12px] font-medium">ترتیب بخش‌های صفحه اصلی</p>
-              {["هیرو", "جدیدترین کالکشن", "بنر کالکشن", "خرید بر اساس استایل", "پرفروش‌ترین‌ها", "ویدئو", "ست‌های پیشنهادی", "مقالات", "اینستاگرام"].map((s, i) => (
-                <div key={s} className="flex items-center gap-3 border-b border-neutral-100 py-2 text-[12px] last:border-0">
-                  <span className="w-5 text-neutral-400 num-fa">{fa(i + 1)}</span>
-                  <span className="flex-1">{s}</span>
-                  <button className="text-neutral-400">↑</button>
-                  <button className="text-neutral-400">↓</button>
-                </div>
-              ))}
-            </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-[10.5px] text-neutral-500">بالانویس<input className={input+" mt-1.5"} value={siteSettings.hero.eyebrow} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,eyebrow:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500">عنوان<input className={input+" mt-1.5"} value={siteSettings.hero.title} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,title:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500 sm:col-span-2">توضیح<textarea className="mt-1.5 min-h-20 w-full border border-neutral-300 p-3 text-[12px] outline-none focus:border-[#011c3a]" value={siteSettings.hero.description} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,description:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500">متن دکمه اصلی<input className={input+" mt-1.5"} value={siteSettings.hero.primaryLabel} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,primaryLabel:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500">لینک دکمه اصلی<input dir="ltr" className={input+" mt-1.5 text-left"} value={siteSettings.hero.primaryTo} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,primaryTo:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500">متن دکمه دوم<input className={input+" mt-1.5"} value={siteSettings.hero.secondaryLabel} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,secondaryLabel:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500">لینک دکمه دوم<input dir="ltr" className={input+" mt-1.5 text-left"} value={siteSettings.hero.secondaryTo} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,secondaryTo:e.target.value}})}/></label>
+                {siteSettings.hero.images.map((image,index)=><label key={index} className="text-[10.5px] text-neutral-500">تصویر {fa(index+1)}<div className="mt-1.5 flex gap-2"><img src={image} alt="" className="h-9 w-12 object-cover"/><input dir="ltr" className={input+" text-left"} value={image} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,images:siteSettings.hero.images.map((item,i)=>i===index?e.target.value:item)}})}/></div></label>)}
+              </div>
+            </section>
+            <section className="border border-neutral-200 p-4">
+              <h3 className="mb-4 text-[13px] font-medium">بنر کالکشن</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-[10.5px] text-neutral-500">نوع رسانه<select className={input+" mt-1.5"} value={siteSettings.collectionBanner.mediaType} onChange={e=>persistSiteSettings({...siteSettings,collectionBanner:{...siteSettings.collectionBanner,mediaType:e.target.value as "image"|"video"}})}><option value="image">تصویر</option><option value="video">ویدیو</option></select></label>
+                <label className="text-[10.5px] text-neutral-500">آدرس تصویر یا ویدیو<input dir="ltr" className={input+" mt-1.5 text-left"} value={siteSettings.collectionBanner.mediaUrl} onChange={e=>persistSiteSettings({...siteSettings,collectionBanner:{...siteSettings.collectionBanner,mediaUrl:e.target.value}})}/></label>
+                {(["eyebrow","title","description","buttonLabel","buttonTo"] as const).map(key=><label key={key} className={(key==="description"?"sm:col-span-2 ":"")+"text-[10.5px] text-neutral-500"}>{({eyebrow:"بالانویس",title:"عنوان",description:"توضیح",buttonLabel:"متن دکمه",buttonTo:"لینک دکمه"})[key]}<input className={input+" mt-1.5"} value={siteSettings.collectionBanner[key]} onChange={e=>persistSiteSettings({...siteSettings,collectionBanner:{...siteSettings.collectionBanner,[key]:e.target.value}})}/></label>)}
+              </div>
+            </section>
           </div>
         )}
 
         {tab === "menus" && (
           <div className="grid gap-6 lg:grid-cols-2">
             <div>
-              <p className="mb-3 text-[12px] font-medium">منوی اصلی</p>
-              {["جدیدترین‌ها", "کالکشن پاییز", "کت و بلیزر", "پیراهن", "بافت و پلیور", "شلوار", "اکسسوری", "استایل‌ها", "مجله"].map((m) => (
-                <div key={m} className="flex items-center gap-2 border-b border-neutral-100 py-2">
-                  <input className={input + " flex-1"} defaultValue={m} />
-                  <button className="text-neutral-400 hover:text-[#9e4b3c]" aria-label="حذف">
-                    <Icon name="trash" className="h-3.5 w-3.5" />
-                  </button>
+              <p className="mb-3 text-[12px] font-medium">هدر و منوی اصلی</p>
+              <label className="mb-3 block text-[10.5px] text-neutral-500">نام برند<input className={input+" mt-1.5"} value={siteSettings.header.brand} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,brand:e.target.value}})}/></label>
+              <label className="mb-3 block text-[10.5px] text-neutral-500">عنوان دکمه برجسته فروشگاه<input className={input+" mt-1.5"} value={siteSettings.header.shopLabel} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,shopLabel:e.target.value}})}/></label>
+              {siteSettings.header.nav.map((item,index) => (
+                <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2 border-b border-neutral-100 py-2">
+                  <input aria-label={`عنوان منو ${index+1}`} className={input} value={item.label} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.map((navItem,i)=>i===index?{...navItem,label:e.target.value}:navItem)}})}/>
+                  <input aria-label={`لینک منو ${index+1}`} dir="ltr" className={input+" text-left"} value={item.to} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.map((navItem,i)=>i===index?{...navItem,to:e.target.value}:navItem)}})}/>
+                  <button onClick={()=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.filter((_,i)=>i!==index)}})} className="text-neutral-400 hover:text-[#9e4b3c]" aria-label="حذف"><Icon name="trash" className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
-              <button className="mt-2 h-9 w-full rounded-[3px] border border-dashed border-neutral-300 text-[11.5px] text-neutral-500">
+              <button onClick={()=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:[...siteSettings.header.nav,{label:"آیتم جدید",to:"/"}]}})} className="mt-2 h-9 w-full rounded-[3px] border border-dashed border-neutral-300 text-[11.5px] text-neutral-500">
                 + افزودن آیتم
               </button>
             </div>
             <div>
-              <p className="mb-3 text-[12px] font-medium">ستون‌های فوتر</p>
-              {["خرید", "استایل‌ها", "خدمات مشتریان", "کلبه وینتیج", "تماس با ما"].map((m) => (
-                <div key={m} className="flex items-center justify-between border-b border-neutral-100 py-2.5 text-[12px]">
-                  <span>{m}</span>
-                  <button className="text-[11px] underline">ویرایش</button>
-                </div>
-              ))}
+              <p className="mb-3 text-[12px] font-medium">محتوای فوتر</p>
+              {(["title","description","emailPlaceholder","address","phone","hours","email"] as const).map(key=><label key={key} className="mb-3 block text-[10.5px] text-neutral-500">{({title:"عنوان خبرنامه",description:"توضیح خبرنامه",emailPlaceholder:"متن ورودی ایمیل",address:"نشانی",phone:"تلفن",hours:"ساعت کاری",email:"ایمیل"})[key]}<input className={input+" mt-1.5"} value={siteSettings.footer[key]} onChange={e=>persistSiteSettings({...siteSettings,footer:{...siteSettings.footer,[key]:e.target.value}})}/></label>)}
+              {siteSettings.footer.columns.map((column,index)=><div key={index} className="mb-3 border-t border-neutral-200 pt-3"><input aria-label={`عنوان ستون فوتر ${index+1}`} className={input} value={column.title} onChange={e=>persistSiteSettings({...siteSettings,footer:{...siteSettings.footer,columns:siteSettings.footer.columns.map((item,i)=>i===index?{...item,title:e.target.value}:item)}})}/><textarea aria-label={`لینک‌های ستون فوتر ${index+1}`} className="mt-2 min-h-20 w-full border border-neutral-300 p-3 text-[11px] outline-none" value={column.items.join("\n")} onChange={e=>persistSiteSettings({...siteSettings,footer:{...siteSettings.footer,columns:siteSettings.footer.columns.map((item,i)=>i===index?{...item,items:e.target.value.split("\n")}:item)}})}/></div>)}
             </div>
           </div>
         )}
@@ -682,6 +727,9 @@ function ContentPanel() {
 }
 
 function WholesalePanel() {
+  const [requests,setRequests]=useState(()=>{try{const raw=localStorage.getItem("kv_admin_wholesale_requests");return raw?JSON.parse(raw) as typeof wholesaleRequests:wholesaleRequests;}catch{return wholesaleRequests;}});
+  const [selected,setSelected]=useState<(typeof wholesaleRequests)[number]|null>(null);
+  const update=(phone:string,status:string)=>{const next=requests.map(item=>item.phone===phone?{...item,status}:item);setRequests(next);localStorage.setItem("kv_admin_wholesale_requests",JSON.stringify(next));};
   return (
     <div>
       <h2 className="mb-5 text-[16px] font-medium">درخواست‌های عمده‌فروشی</h2>
@@ -699,7 +747,7 @@ function WholesalePanel() {
             </tr>
           </thead>
           <tbody>
-            {wholesaleRequests.map((r) => (
+            {requests.map((r) => (
               <tr key={r.phone} className="border-b border-neutral-100 hover:bg-neutral-50">
                 <td className="p-3 font-medium">{r.name}</td>
                 <td className="p-3">{r.store}</td>
@@ -707,20 +755,21 @@ function WholesalePanel() {
                 <td className="p-3 num-fa">{r.phone}</td>
                 <td className="p-3">{r.plan}</td>
                 <td className="p-3">
-                  <select defaultValue={r.status} className="rounded-[3px] border border-neutral-300 px-2 py-1 text-[11px] outline-none">
+                  <select aria-label={`وضعیت درخواست ${r.phone}`} value={r.status} onChange={e=>update(r.phone,e.target.value)} className="rounded-[3px] border border-neutral-300 px-2 py-1 text-[11px] outline-none">
                     {["جدید", "در تماس", "تأیید شده", "رد شده"].map((s) => (
                       <option key={s}>{s}</option>
                     ))}
                   </select>
                 </td>
                 <td className="p-3">
-                  <button className="text-[11.5px] underline">جزئیات</button>
+                  <button onClick={()=>setSelected(r)} className="text-[11.5px] underline">جزئیات</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {selected&&<section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات درخواست عمده"><div className="flex justify-between"><div><p className="text-[9px] text-neutral-400">WHOLESALE LEAD</p><h3 className="mt-2 text-[15px] font-medium">{selected.store}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-4 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["متقاضی",selected.name],["شهر",selected.city],["تماس",selected.phone],["پلن",selected.plan],["وضعیت",selected.status]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-neutral-400">{a}</p><p className="mt-1 font-medium num-fa">{b}</p></div>)}</div></section>}
     </div>
   );
 }
@@ -771,13 +820,13 @@ function ReportsPanel() {
 
 /* --------------------------------- پنل اصلی -------------------------------- */
 
-export default function Admin() {
+export default function Admin({ embedded = false }: { embedded?: boolean }) {
   const [page, setPage] = useState(() => window.location.hash.includes("section=brief") ? "brief" : "dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#f6f6f4]">
-      <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
+    <div className={embedded ? "min-h-[calc(100vh-73px)] bg-[#f6f6f4]" : "min-h-screen bg-[#f6f6f4]"}>
+      {!embedded && <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <div className="flex items-center gap-4">
             <button className="lg:hidden" onClick={() => setMenuOpen(!menuOpen)} aria-label="منو">
@@ -793,11 +842,13 @@ export default function Admin() {
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#011c3a] text-[11px] text-white">م</span>
           </div>
         </div>
-      </header>
+      </header>}
 
+      {embedded && <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-2.5 lg:hidden"><button type="button" onClick={() => setMenuOpen(!menuOpen)} aria-label="منوی مدیریت" className="flex h-10 items-center gap-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]"><Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />منوی مدیریت</button><Link to="/" className="text-[10.5px] text-neutral-500 underline underline-offset-4">مشاهده سایت</Link></div>}
       <div className="flex">
-        <aside className={"fixed inset-y-0 right-0 z-30 w-56 border-l border-neutral-200 bg-white pt-20 lg:sticky lg:top-[57px] lg:h-[calc(100vh-57px)] lg:pt-0 lg:block " + (menuOpen ? "block" : "hidden")}>
-          <nav className="space-y-1 p-3">
+        <aside className={(embedded ? "fixed bottom-0 right-0 top-[73px] lg:sticky lg:top-[73px] lg:h-[calc(100vh-73px)] " : "fixed inset-y-0 right-0 pt-20 lg:sticky lg:top-[57px] lg:h-[calc(100vh-57px)] lg:pt-0 ") + "z-30 w-64 overflow-y-auto border-l border-neutral-200 bg-white lg:block lg:w-60 " + (menuOpen ? "block" : "hidden")}>
+          <div className="border-b border-neutral-100 px-5 py-4"><p className="text-[9px] text-neutral-400">فضای مدیریت</p><p className="mt-1 text-[11.5px] font-medium">فروشگاه کلبه وینتیج</p></div>
+          <nav className="space-y-1 p-3 pb-8">
             {nav.map((n) => (
               <button
                 key={n.id}
@@ -820,14 +871,20 @@ export default function Admin() {
         {menuOpen && <div className="fixed inset-0 z-20 bg-black/30 lg:hidden" onClick={() => setMenuOpen(false)} />}
 
         <main className="min-w-0 flex-1 p-4 lg:p-6">
+          {page === "retail-settings" && <RetailPolicyCenter />}
           {page === "brief" && <AdminBrief />}
           {page === "dashboard" && <Dashboard />}
           {page === "products" && <ProductsPanel />}
+          {page === "inventory" && <InventoryOperations />}
           {page === "orders" && <OrdersPanel />}
-          {page === "customers" && <CustomersPanel />}
+          {page === "commerce" && <CommerceOperations />}
+          {page === "customers" && <AdminCRM />}
           {page === "content" && <ContentPanel />}
           {page === "wholesale" && <WholesalePanel />}
           {page === "reports" && <ReportsPanel />}
+          {page === "access" && <AccessSecurity />}
+          {page === "integrations" && <IntegrationsAutomation />}
+          {page === "system" && <SystemCenter />}
         </main>
       </div>
     </div>

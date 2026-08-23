@@ -313,7 +313,7 @@ export default function Shop() {
     (cols === 2 ? "lg:grid-cols-2" : cols === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4");
 
   return (
-    <main className="mx-auto w-full px-4 py-8 lg:px-8 lg:py-12">
+    <main className="storefront-page mx-auto w-full px-4 py-8 lg:px-8 lg:py-12">
       <nav className="mb-4 flex items-center gap-1.5 text-[11px] text-neutral-500">
         <a href="#/" className="hover:underline">خانه</a>
         <span>›</span>
@@ -329,7 +329,7 @@ export default function Shop() {
 
       <div className="grid gap-8 lg:grid-cols-[248px_1fr] lg:gap-10">
         {/* فیلتر دسکتاپ */}
-        <aside className="hidden self-start lg:sticky lg:top-[124px] lg:block">
+        <aside className="liquid-panel hidden self-start lg:sticky lg:top-[82px] lg:block">
           <FilterPanel f={draft} set={set} reset={resetAll} results={filtered.length} />
           <button
             onClick={applyDraft}
@@ -341,7 +341,7 @@ export default function Shop() {
 
         <div>
           {/* نوار ابزار */}
-          <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-neutral-200 pb-4">
+          <div className="liquid-toolbar mb-5 flex flex-wrap items-center gap-3 border-b border-neutral-200 pb-4">
             <button
               onClick={() => setDrawer(true)}
               className="flex items-center gap-2 rounded-[3px] border border-neutral-300 px-3.5 py-2 text-[12px] lg:hidden"
@@ -461,7 +461,7 @@ export default function Shop() {
       {drawer && (
         <div className="fixed inset-0 z-[95] lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
-          <div className="absolute inset-y-0 right-0 flex w-[88%] max-w-[340px] flex-col bg-white">
+          <div className="liquid-surface absolute inset-y-0 right-0 flex w-[88%] max-w-[340px] flex-col bg-white">
             <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
               <span className="text-[14px] font-medium">فیلترها</span>
               <button onClick={() => setDrawer(false)} aria-label="بستن">

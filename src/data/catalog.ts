@@ -1014,3 +1014,18 @@ export const filterColours = [
 ];
 
 export const allSizes = ["XS", "S", "M", "L", "XL", "XXL", "3XL"];
+
+// The current prototype has no backend yet. Hydrate the public catalogue from
+// products published in the admin workspace so publish/unpublish is reflected
+// across the storefront after a reload as well as during the current session.
+if (typeof localStorage !== "undefined") {
+  try {
+    const raw = localStorage.getItem("kv_admin_products_v2");
+    if (raw) {
+      const saved = JSON.parse(raw) as Array<Product & { admin?: { status?: string } }>;
+      products.splice(0, products.length, ...saved.filter((item) => item.admin?.status === "published"));
+    }
+  } catch {
+    // Keep the bundled catalogue when browser storage is unavailable/corrupt.
+  }
+}

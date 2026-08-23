@@ -1,61 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "../router";
 import { products } from "../data/catalog";
-import { styles, looks, articles, trustBadges } from "../siteData";
+import { styles, looks, trustBadges } from "../siteData";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import ProductCard from "../components/ProductCard";
 import Icon from "../components/Icon";
+import { loadHomepageArticles, subscribeToJournalSettings } from "../journalSettings";
+import HomepageHero from "../components/HomepageHero";
+import { useSiteSettings } from "../siteSettings";
 
 /* ---------------------------------- ۱. هیرو ---------------------------------- */
-
-function Hero() {
-  return (
-    <section className="relative h-[100svh] min-h-[560px] w-full overflow-hidden bg-neutral-200">
-      <img
-        src="/images/model-front.jpg"
-        alt="کالکشن پاییز کلبه وینتیج"
-        fetchPriority="high"
-        decoding="async"
-        className="h-full w-full object-cover object-center"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-
-      <div className="absolute inset-0 flex items-center justify-center px-6">
-        <div className="fade-up max-w-2xl text-center text-white">
-          <p className="text-[11px] tracking-[0.4em] text-white/80">کالکشن پاییز ۱۴۰۵</p>
-          <h1 className="mt-4 text-[32px] font-medium leading-[1.35] sm:text-[42px] lg:text-[52px]">
-            لباسی که با گذر زمان
-            <br />
-            زیباتر می‌شود
-          </h1>
-          <p className="mx-auto mt-5 max-w-md text-[13px] leading-relaxed text-white/85 sm:text-[14px]">
-            پارچه‌های نجیب، برش‌های کلاسیک و دوخت دست در کارگاه کلبه. قطعاتی که یک عمر همراه شما می‌مانند.
-          </p>
-          <Link
-            to="/collection"
-            className="mt-8 inline-flex items-center gap-2 rounded-[3px] bg-white px-8 py-3 text-[13px] font-medium text-[#011c3a] transition hover:bg-neutral-100"
-          >
-            مشاهده کالکشن
-          </Link>
-        </div>
-      </div>
-
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/70">
-        <Icon name="chevronDown" className="h-5 w-5 animate-bounce" />
-      </div>
-    </section>
-  );
-}
 
 /* ------------------------------ ۲. جدیدترین کالکشن ---------------------------- */
 
 function NewArrivals() {
   const items = [...products].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
-  const [hero, ...rest] = items;
 
   return (
-    <section className="mx-auto w-full px-4 py-16 lg:px-8 lg:py-24">
+    <section className="mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20">
       <div className="mb-8 flex items-end justify-between gap-4">
         <div>
           <p className="text-[11px] tracking-[0.3em] text-neutral-400">NEW ARRIVALS</p>
@@ -66,16 +29,10 @@ function NewArrivals() {
         </Link>
       </div>
 
-      {/* یک محصول شاخص در کنار چهار محصول؛ بدون کارت تک‌افتاده در انتهای گرید */}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 lg:grid-cols-2 lg:items-start lg:gap-x-6">
-        <div className="col-span-2 lg:col-span-1">
-          <ProductCard product={hero} />
-        </div>
-        <div className="col-span-2 grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 lg:col-span-1 lg:gap-y-10">
-          {rest.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-5 lg:gap-x-5">
+        {items.map((p) => (
+          <ProductCard key={p.id} product={p} />
+        ))}
       </div>
     </section>
   );
@@ -84,30 +41,25 @@ function NewArrivals() {
 /* ------------------------------ ۳. بنر کالکشن ------------------------------- */
 
 function CollectionBanner() {
+  const { collectionBanner: banner } = useSiteSettings();
   return (
-    <section className="relative h-[70vh] min-h-[420px] w-full overflow-hidden">
-      <img
-        src="/images/banner.jpg"
-        alt="کالکشن پاییز"
-        loading="lazy"
-        decoding="async"
-        className="h-full w-full object-cover"
-      />
+    <section className="storefront-feature-banner relative h-[52svh] min-h-[360px] max-h-[620px] w-full overflow-hidden">
+      {banner.mediaType === "video" ? <video src={banner.mediaUrl} poster={banner.posterUrl} autoPlay muted loop playsInline className="h-full w-full object-cover" /> : <img src={banner.mediaUrl} alt={banner.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
       <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-white">
         <div>
-          <p className="text-[11px] tracking-[0.4em] text-white/80">AUTUMN COLLECTION</p>
+          <p className="text-[11px] tracking-[0.4em] text-white/80">{banner.eyebrow}</p>
           <h2 className="mt-4 text-[26px] font-medium leading-snug sm:text-[34px] lg:text-[40px]">
-            پاییز، فصل پارچه‌های سنگین
+            {banner.title}
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-[13px] leading-relaxed text-white/85">
-            پشم شورون، بافت کابلی و کشمیر. کالکشنی که برای سردترین روزهای سال دوخته شده است.
+            {banner.description}
           </p>
           <Link
-            to="/collection"
+            to={banner.buttonTo}
             className="mt-7 inline-block rounded-[3px] bg-white px-8 py-3 text-[13px] font-medium text-[#011c3a] transition hover:bg-neutral-100"
           >
-            کاوش در کالکشن
+            {banner.buttonLabel}
           </Link>
         </div>
       </div>
@@ -119,7 +71,7 @@ function CollectionBanner() {
 
 function ShopByStyle() {
   return (
-    <section className="mx-auto w-full px-4 py-16 lg:px-8 lg:py-24">
+    <section className="mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20">
       <div className="mb-8 text-center">
         <p className="text-[11px] tracking-[0.3em] text-neutral-400">SHOP BY STYLE</p>
         <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">خرید بر اساس استایل</h2>
@@ -129,31 +81,27 @@ function ShopByStyle() {
       </div>
 
       {/* گرید نامتقارن ۲ + ۳ */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-        {styles.map((s, i) => (
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5">
+        {styles.map((s) => (
           <Link
             key={s.slug}
             to={`/styles?s=${s.slug}`}
-            className={
-              "group relative overflow-hidden bg-neutral-100 " +
-              (i < 2 ? "lg:col-span-3" : "lg:col-span-2")
-            }
+            className="style-tile group relative overflow-hidden bg-neutral-100"
           >
             <img
               src={s.img}
               alt={s.name}
               loading="lazy"
               decoding="async"
-              className={
-                "w-full object-cover transition-opacity duration-500 group-hover:opacity-90 " +
-                (i < 2 ? "aspect-[16/10]" : "aspect-[4/5]")
-              }
+              className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 p-5 text-white">
-              <h3 className="text-[17px] font-medium lg:text-[19px]">{s.name}</h3>
-              <p className="mt-0.5 text-[10px] tracking-[0.25em] text-white/70">{s.latin.toUpperCase()}</p>
-              <p className="mt-2 text-[11.5px] text-white/80">{fa(s.count)} محصول</p>
+            <div className="absolute inset-x-0 bottom-0 p-3 text-white sm:p-4">
+              <h3 className="text-[14px] font-medium sm:text-[16px]">{s.name}</h3>
+              <div className="mt-1 flex items-center justify-between gap-2 text-[9.5px] text-white/75 sm:text-[10px]">
+                <span className="truncate tracking-[0.18em]">{s.latin.toUpperCase()}</span>
+                <span className="shrink-0">{fa(s.count)} محصول</span>
+              </div>
             </div>
           </Link>
         ))}
@@ -165,11 +113,10 @@ function ShopByStyle() {
 /* ----------------------------- ۵. پرفروش‌ترین‌ها ------------------------------ */
 
 function BestSellers() {
-  const items = [...products].sort((a, b) => b.sold - a.sold).slice(0, 8);
+  const items = [...products].sort((a, b) => b.sold - a.sold).slice(0, 5);
 
   return (
-    <section className="bg-[#f6f6f4] py-16 lg:py-24">
-      <div className="mx-auto w-full px-4 lg:px-8">
+    <section className="best-sellers-section mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <p className="text-[11px] tracking-[0.3em] text-neutral-400">BESTSELLERS</p>
@@ -180,14 +127,13 @@ function BestSellers() {
           </Link>
         </div>
 
-        <div className="rtl-rail no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-5 lg:gap-x-5">
           {items.map((p) => (
-            <div key={p.id} className="w-[62%] shrink-0 sm:w-[38%] lg:w-[23.5%]">
+            <div key={p.id}>
               <ProductCard product={p} />
             </div>
           ))}
         </div>
-      </div>
     </section>
   );
 }
@@ -198,7 +144,7 @@ function BrandVideo() {
   const [playing, setPlaying] = useState(false);
 
   return (
-    <section className="relative h-[75vh] min-h-[440px] w-full overflow-hidden bg-black">
+    <section className="storefront-feature-banner relative h-[55svh] min-h-[360px] max-h-[620px] w-full overflow-hidden bg-black">
       {playing ? (
         <div className="flex h-full w-full flex-col items-center justify-center gap-4 text-center text-white">
           <Icon name="play" className="h-10 w-10 opacity-40" fill="currentColor" strokeWidth={0} />
@@ -272,7 +218,7 @@ function ShopTheLook() {
   };
 
   return (
-    <section className="mx-auto w-full px-4 py-16 lg:px-8 lg:py-24">
+    <section className="shop-look-section liquid-panel mx-auto my-12 w-[calc(100%_-_1rem)] max-w-[1200px] px-4 py-10 sm:w-[calc(100%_-_2rem)] lg:my-20 lg:px-8 lg:py-12">
       <div className="mb-8 text-center">
         <p className="text-[11px] tracking-[0.3em] text-neutral-400">SHOP THE LOOK</p>
         <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">استایل‌های پیشنهادی</h2>
@@ -287,7 +233,7 @@ function ShopTheLook() {
             key={l.id}
             onClick={() => setActive(i)}
             className={
-              "rounded-[3px] border px-4 py-1.5 text-[11.5px] transition " +
+              "rounded-full border px-4 py-2 text-[11.5px] transition " +
               (i === active ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]")
             }
           >
@@ -296,16 +242,19 @@ function ShopTheLook() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-12">
+      <div className="shop-look-layout grid gap-6 lg:grid-cols-[0.82fr_1.18fr] lg:gap-10">
         {/* عکس با نقطه‌های تعاملی */}
-        <div className="relative overflow-hidden bg-neutral-100">
+        <div className="shop-look-visual relative mx-auto w-[82%] overflow-hidden rounded-[1.4rem] border border-neutral-200 bg-neutral-100 p-1.5 sm:w-[56%] lg:w-full">
           <img
             src={look.img}
             alt={look.title}
             loading="lazy"
             decoding="async"
-            className="aspect-[4/5] w-full object-cover lg:aspect-[3/4]"
+            className="aspect-[4/5] w-full object-cover"
           />
+          <span className="absolute right-4 top-4 rounded-full border border-white/35 bg-[#011c3a]/85 px-3 py-1.5 text-[9.5px] text-white backdrop-blur-sm">
+            روی نشانگرها بزنید
+          </span>
           {look.items.map((item, i) => {
             const pos = [
               { top: "26%", right: "38%" },
@@ -313,26 +262,28 @@ function ShopTheLook() {
               { top: "16%", right: "60%" },
             ][i];
             return (
-              <button
+              <Link
                 key={item.productId}
-                title={item.name}
-                className="group absolute flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-white/40 backdrop-blur transition hover:bg-white"
+                to={`/product/${item.productId}`}
+                aria-label={`مشاهده ${item.name}`}
+                className="group absolute z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#011c3a] text-[10px] font-medium text-white shadow-[0_2px_12px_rgba(1,28,58,0.3)] transition hover:scale-110 focus-visible:scale-110"
                 style={pos}
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-white group-hover:bg-[#011c3a]" />
-                <span className="pointer-events-none absolute top-8 whitespace-nowrap rounded-[3px] bg-[#011c3a] px-2 py-1 text-[10px] text-white opacity-0 transition group-hover:opacity-100">
+                <span className="absolute inset-[-7px] -z-10 rounded-full border border-white/80 bg-white/20 animate-ping" aria-hidden="true" />
+                <span>{fa(i + 1)}</span>
+                <span className="pointer-events-none absolute top-10 whitespace-nowrap border border-white/15 bg-[#011c3a] px-2.5 py-1.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
                   {item.name}
                 </span>
-              </button>
+              </Link>
             );
           })}
         </div>
 
-        <div className="self-center">
+        <div className="shop-look-details self-center rounded-[1.35rem] border border-neutral-200 p-4 sm:p-6">
           <p className="text-[11px] tracking-[0.25em] text-neutral-400">{look.season.toUpperCase()}</p>
           <h3 className="mt-2 text-[20px] font-medium lg:text-[24px]">{look.title}</h3>
 
-          <div className="mt-6 divide-y divide-neutral-200 border-y border-neutral-200">
+          <div className="shop-look-list mt-6 divide-y divide-neutral-200 border-y border-neutral-200">
             {look.items.map((item) => {
               const p = products.find((x) => x.id === item.productId);
               return (
@@ -357,7 +308,7 @@ function ShopTheLook() {
                         img: p?.images[0] ?? look.img,
                       })
                     }
-                    className="shrink-0 rounded-[3px] border border-neutral-300 px-3 py-1.5 text-[11px] transition hover:border-[#011c3a]"
+                    className="shrink-0 rounded-full border border-neutral-300 px-3 py-1.5 text-[11px] transition hover:border-[#011c3a]"
                   >
                     افزودن
                   </button>
@@ -373,7 +324,7 @@ function ShopTheLook() {
 
           <button
             onClick={addAll}
-            className="mt-4 flex h-11 w-full items-center justify-center rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
+            className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
           >
             خرید کل ست
           </button>
@@ -386,11 +337,15 @@ function ShopTheLook() {
 /* --------------------------------- ۸. مقالات -------------------------------- */
 
 function Journal() {
-  const items = articles.slice(0, 4);
+  const [items, setItems] = useState(loadHomepageArticles);
+
+  useEffect(() => subscribeToJournalSettings(() => setItems(loadHomepageArticles())), []);
+
+  if (!items.length) return null;
 
   return (
-    <section className="bg-[#f6f6f4] py-16 lg:py-24">
-      <div className="mx-auto w-full px-4 lg:px-8">
+    <section className="journal-section bg-[#f6f6f4] py-16 lg:py-24">
+      <div className="mx-auto w-full max-w-[1200px] px-4 lg:px-8">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <p className="text-[11px] tracking-[0.3em] text-neutral-400">JOURNAL</p>
@@ -401,24 +356,40 @@ function Journal() {
           </Link>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((a) => (
-            <Link key={a.slug} to={`/blog/${a.slug}`} className="group relative overflow-hidden bg-neutral-200">
+        <div className="journal-grid grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-12 lg:auto-rows-[13rem]">
+          {items.map((a, index) => {
+            const pattern = index % 4;
+            return (
+            <Link
+              key={a.slug}
+              to={`/blog/${a.slug}`}
+              className={
+                "editorial-tile group relative overflow-hidden rounded-[1.35rem] bg-neutral-200 " +
+                (pattern === 0
+                  ? "col-span-2 aspect-[16/10] lg:col-span-6 lg:row-span-2 lg:aspect-auto"
+                  : pattern === 1
+                    ? "aspect-[4/5] lg:col-span-6 lg:aspect-auto"
+                    : pattern === 2
+                      ? "aspect-[4/5] lg:col-span-3 lg:aspect-auto"
+                      : "col-span-2 aspect-[16/9] lg:col-span-3 lg:aspect-auto")
+              }
+            >
               <img
                 src={a.img}
                 alt={a.title}
                 loading="lazy"
                 decoding="async"
-                className="aspect-[3/4] w-full object-cover transition-opacity duration-500 group-hover:opacity-90"
+                className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025] group-hover:opacity-90"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+              <div className="absolute inset-x-0 bottom-0 p-3 text-white sm:p-4">
                 <span className="text-[9.5px] tracking-[0.2em] text-white/70">{a.category}</span>
-                <h3 className="mt-2 text-[14px] font-medium leading-relaxed">{a.title}</h3>
+                <h3 className="mt-1.5 text-[12px] font-medium leading-relaxed sm:mt-2 sm:text-[14px]">{a.title}</h3>
                 <p className="mt-2 text-[10.5px] text-white/65">{fa(a.readTime)} دقیقه مطالعه</p>
               </div>
             </Link>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -491,7 +462,7 @@ function TrustRow() {
 export default function Home() {
   return (
     <>
-      <Hero />
+      <HomepageHero />
       <NewArrivals />
       <CollectionBanner />
       <ShopByStyle />

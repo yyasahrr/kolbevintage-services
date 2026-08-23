@@ -72,7 +72,7 @@ export default function Cart() {
         </div>
 
         <aside className="self-start lg:sticky lg:top-[124px]">
-          <div className="rounded-[3px] border border-neutral-200 p-5">
+          <div className="liquid-panel rounded-[3px] border border-neutral-200 p-5">
             <h2 className="text-[15px] font-medium">خلاصه سفارش</h2>
             <div className="mt-4 space-y-2.5 border-b border-neutral-200 pb-4 text-[12.5px]">
               <div className="flex justify-between">

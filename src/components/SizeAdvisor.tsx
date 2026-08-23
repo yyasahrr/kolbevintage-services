@@ -20,7 +20,7 @@ function BuildShape({ id, active }: { id: Build; active: boolean }) {
     full: { s: 19, w: 17 },
   };
   const { s, w } = widths[id];
-  const stroke = active ? "#011c3a" : "#b8bcc2";
+  const stroke = active ? "currentColor" : "#9aa5ad";
   return (
     <svg viewBox="0 0 40 56" className="h-14 w-10">
       <circle cx="20" cy="8" r="5.5" fill="none" stroke={stroke} strokeWidth="1.5" />
@@ -91,7 +91,7 @@ export default function SizeAdvisor({
   };
 
   return (
-    <div className="rounded-[3px] border border-neutral-200 bg-[#f7f6f3] p-4">
+    <div className="size-advisor-panel rounded-2xl border border-neutral-200 p-4 sm:p-5">
       <div className="flex items-center gap-2">
         <Icon name="user" className="h-4 w-4" />
         <h4 className="text-[13px] font-medium">پیشنهاد هوشمند سایز</h4>
@@ -108,7 +108,7 @@ export default function SizeAdvisor({
             value={height}
             onChange={(e) => setHeight(e.target.value.replace(/\D/g, ""))}
             placeholder="۱۷۸"
-            className="h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
           />
         </label>
         <label className="block">
@@ -118,7 +118,7 @@ export default function SizeAdvisor({
             value={weight}
             onChange={(e) => setWeight(e.target.value.replace(/\D/g, ""))}
             placeholder="۷۵"
-            className="h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
           />
         </label>
         <label className="block">
@@ -128,7 +128,7 @@ export default function SizeAdvisor({
             value={age}
             onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))}
             placeholder="۳۲"
-            className="h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
           />
         </label>
         <label className="block">
@@ -136,7 +136,7 @@ export default function SizeAdvisor({
           <select
             value={usual}
             onChange={(e) => setUsual(e.target.value)}
-            className="h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-2 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-2 text-[12.5px] outline-none focus:border-[#011c3a]"
           >
             <option value="">نمی‌دانم</option>
             {scale.map((s) => (
@@ -156,12 +156,12 @@ export default function SizeAdvisor({
               key={b.id}
               onClick={() => setBuild(b.id)}
               className={
-                "flex flex-col items-center gap-1 rounded-[3px] border bg-white py-2 transition " +
-                (build === b.id ? "border-[#011c3a]" : "border-neutral-300 hover:border-neutral-400")
+                "advisor-build flex flex-col items-center gap-1 rounded-xl border py-2 transition " +
+                (build === b.id ? "is-selected" : "border-neutral-300 hover:border-neutral-400")
               }
             >
               <BuildShape id={b.id} active={build === b.id} />
-              <span className={"text-[10.5px] " + (build === b.id ? "text-[#011c3a]" : "text-neutral-500")}>
+              <span className={"text-[10.5px] " + (build === b.id ? "font-medium" : "text-neutral-500")}>
                 {b.label}
               </span>
             </button>
@@ -172,13 +172,13 @@ export default function SizeAdvisor({
       <button
         onClick={compute}
         disabled={!height || !weight}
-        className="mt-4 h-10 w-full rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white transition hover:bg-[#0a2c55] disabled:cursor-not-allowed disabled:bg-neutral-300"
+        className="storefront-primary-action mt-4 h-11 w-full rounded-full text-[12.5px] font-medium disabled:cursor-not-allowed disabled:opacity-40"
       >
         پیشنهاد سایز به من
       </button>
 
       {result && (
-        <div className="fade-up mt-4 rounded-[3px] border border-neutral-200 bg-white p-4">
+        <div className="advisor-result fade-up mt-4 rounded-2xl border border-neutral-200 p-4">
           <p className="text-[11.5px] text-neutral-500">بر اساس اطلاعات شما:</p>
           <div className="mt-3 grid grid-cols-2 gap-2.5">
             {[
@@ -191,7 +191,7 @@ export default function SizeAdvisor({
                   key={r.label}
                   disabled={!available}
                   onClick={() => onPick(r.size)}
-                  className="rounded-[3px] border border-neutral-300 p-3 text-center transition hover:border-[#011c3a] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="storefront-secondary-action rounded-xl border border-neutral-300 p-3 text-center transition disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="block text-[10.5px] text-neutral-500">{r.label}</span>
                   <span className="mt-1 block text-[18px] font-medium">{r.size}</span>

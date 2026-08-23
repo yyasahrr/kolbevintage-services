@@ -1,28 +1,51 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Admin from "./Admin";
+import WholesaleAdmin from "./WholesaleAdmin";
 import Icon from "../components/Icon";
-import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
-import { loadWholesaleMembership } from "../wholesaleMembership";
-import { fa } from "../utils/format";
+import { Link } from "../router";
+import { isSupabaseConfigured } from "../lib/supabase";
+import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
 
-const ADMIN_USER = "kolbe.admin";
-const ADMIN_PASS = "KvAdmin#1405";
+type Workspace = "retail" | "wholesale";
+const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
 
 export default function AdminPortal() {
-  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem("kv_admin_auth") === "1");
-  const [section, setSection] = useState<"retail" | "wholesale">("retail");
+  const [authenticated, setAuthenticated] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+  const [workspace, setWorkspace] = useState<Workspace>("retail");
   const [credentials, setCredentials] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    restoreAdminSession().then(setAuthenticated).finally(() => setRestoring(false));
+  }, []);
+  const logout = () => { signOutAdmin().catch(() => undefined); setAuthenticated(false); setCredentials({ username: "", password: "" }); };
 
-  if (!authenticated) return <main className="flex min-h-screen items-center justify-center bg-[#eef0f2] px-4"><form onSubmit={(e) => { e.preventDefault(); if (credentials.username === ADMIN_USER && credentials.password === ADMIN_PASS) { sessionStorage.setItem("kv_admin_auth", "1"); setAuthenticated(true); } else setError("نام کاربری یا رمز عبور درست نیست."); }} className="w-full max-w-sm bg-white p-7"><p className="text-[9px] tracking-[0.25em] text-neutral-400">KOLBE CONTROL ROOM</p><h1 className="mt-2 text-[22px] font-medium">ورود مدیریت</h1><p className="mt-2 text-[10.5px] leading-[1.8] text-neutral-500">ورود مستقل مدیریت فروشگاه و بخش عمده‌فروشی.</p><label className="mt-6 block text-[10px] text-neutral-500">نام کاربری<input autoFocus name="admin-username" autoComplete="username" value={credentials.username} onChange={(e) => setCredentials((value) => ({ ...value, username: e.target.value }))} className="mt-1.5 h-10 w-full border border-neutral-300 px-3 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" /></label><label className="mt-3 block text-[10px] text-neutral-500">رمز عبور<input name="admin-password" type="password" autoComplete="current-password" value={credentials.password} onChange={(e) => setCredentials((value) => ({ ...value, password: e.target.value }))} className="mt-1.5 h-10 w-full border border-neutral-300 px-3 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" /></label>{error && <p role="alert" className="mt-3 text-[10.5px] text-red-700">{error}</p>}<button type="submit" className="mt-5 h-11 w-full bg-[#011c3a] text-[12px] font-medium text-white">ورود به پنل مدیریت</button></form></main>;
+  if (restoring) return <main className="admin-system grid min-h-screen place-items-center bg-[#f4f3ef]"><div role="status" className="text-center"><span className="mx-auto block h-8 w-8 animate-spin rounded-full border-2 border-[#011c3a]/20 border-t-[#011c3a]"/><p className="mt-4 text-[11px] text-neutral-500">در حال بررسی نشست امن…</p></div></main>;
 
-  return <div className="min-h-screen bg-[#f5f5f3]"><div className="sticky top-0 z-50 flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3"><div className="flex gap-1"><button onClick={() => setSection("retail")} className={(section === "retail" ? "bg-[#011c3a] text-white" : "bg-neutral-100") + " px-4 py-2 text-[11px]"}>کلبه وینتیج</button><button onClick={() => setSection("wholesale")} className={(section === "wholesale" ? "bg-[#011c3a] text-white" : "bg-neutral-100") + " px-4 py-2 text-[11px]"}>مدیریت عمده‌فروشی</button></div><button onClick={() => { sessionStorage.removeItem("kv_admin_auth"); setAuthenticated(false); }} className="text-[10.5px] text-neutral-500 underline">خروج امن</button></div>{section === "retail" ? <Admin /> : <WholesaleAdmin />}</div>;
-}
+  if (!authenticated) return (
+    <main className="admin-system grid min-h-screen bg-[#f4f3ef] lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="relative hidden min-h-screen overflow-hidden bg-[#011c3a] text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
+        <img src="/images/store.jpg" alt="فضای فروشگاه کلبه وینتیج" className="absolute inset-0 h-full w-full object-cover opacity-30" /><span className="absolute inset-0 bg-[#011c3a]/65" aria-hidden="true" />
+        <div className="relative"><p className="text-[18px] font-semibold tracking-[0.14em]">کلبه وینتیج</p><p className="mt-2 text-[8px] tracking-[0.38em] text-white/50">KOLBE VINTAGE</p></div>
+        <div className="relative max-w-lg"><p className="text-[10px] tracking-[0.22em] text-white/45">CONTROL ROOM</p><h1 className="mt-4 text-[34px] font-medium leading-[1.6]">یک مرکز کنترل برای فروشگاه و همکاری‌های عمده</h1><p className="mt-4 max-w-md text-[12px] leading-7 text-white/60">محصول، سفارش، محتوا و عملیات همکاران تجاری را از دو فضای کاری مستقل مدیریت کنید.</p></div>
+        <p className="relative text-[9.5px] text-white/35">دسترسی مدیریت · نشست امن مرورگر</p>
+      </section>
+      <section className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-8"><form onSubmit={async (event) => { event.preventDefault(); setSubmitting(true); setError(""); try { await signInAdmin(credentials.username, credentials.password); setAuthenticated(true); } catch (reason) { setError(reason instanceof Error ? reason.message : "ورود انجام نشد."); } finally { setSubmitting(false); } }} className="w-full max-w-sm">
+        <div className="mb-9 lg:hidden"><p className="text-[18px] font-semibold tracking-[0.14em]">کلبه وینتیج</p><p className="mt-2 text-[8px] tracking-[0.38em] text-neutral-400">KOLBE VINTAGE</p></div>
+        <p className="text-[9px] tracking-[0.24em] text-neutral-400">ADMIN ACCESS</p><h1 className="mt-3 text-[25px] font-medium tracking-tight">ورود به مرکز مدیریت</h1><p className="mt-2 text-[11px] leading-6 text-neutral-500">برای مدیریت فروشگاه و سرویس عمده‌فروشی وارد شوید.</p>
+        <div className="mt-7 space-y-4"><label className="block text-[10.5px] text-neutral-600">ایمیل مدیر<input autoFocus name="admin-username" type="email" autoComplete="username" value={credentials.username} onChange={(event) => setCredentials((value) => ({ ...value, username: event.target.value }))} className={`mt-1.5 h-11 w-full border border-neutral-300 bg-white px-3 text-[12px] ${focusRing}`} /></label><label className="block text-[10.5px] text-neutral-600">رمز عبور<input name="admin-password" type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials((value) => ({ ...value, password: event.target.value }))} className={`mt-1.5 h-11 w-full border border-neutral-300 bg-white px-3 text-[12px] ${focusRing}`} /></label></div>
+        {error && <p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2.5 text-[10.5px] text-red-700">{error}</p>}
+        {!isSupabaseConfigured && <p role="alert" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10.5px] text-amber-800">اتصال امن Supabase تنظیم نشده است؛ ورود محلی غیرفعال است.</p>}
+        <button type="submit" disabled={submitting || !isSupabaseConfigured} className={`mt-5 h-11 w-full bg-[#011c3a] text-[12px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}>{submitting ? "در حال بررسی…" : "ورود به پنل مدیریت"}</button>
+        <Link to="/" className={`mt-5 flex items-center justify-center gap-2 text-[10.5px] text-neutral-500 underline-offset-4 hover:underline ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />بازگشت به وب‌سایت</Link>
+      </form></section>
+    </main>
+  );
 
-function WholesaleAdmin() {
-  const [tickets, setTickets] = useState(loadTickets);
-  const membership = loadWholesaleMembership();
-  const orders = (() => { try { return JSON.parse(localStorage.getItem("kv_wholesale_orders") ?? "[]") as Array<{ code: string; totalQty: number; status: string; date: string }>; } catch { return []; } })();
-  const updateTicket = (id: string, status: SupportTicket["status"]) => { const next = tickets.map((ticket) => ticket.id === id ? { ...ticket, status } : ticket); setTickets(next); saveTickets(next); };
-  return <main className="p-4 lg:p-7"><div><p className="text-[9px] tracking-[0.2em] text-neutral-400">WHOLESALE MANAGEMENT</p><h1 className="mt-2 text-[22px] font-medium">مدیریت سرویس عمده‌فروشی</h1></div><section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[[membership ? "۱" : "۰", "عضو VIP فعال"], [fa(orders.length), "سفارش عمده"], [fa(orders.reduce((sum, order) => sum + order.totalQty, 0)), "واحد سفارش‌شده"], [fa(tickets.filter((ticket) => ticket.status === "باز").length), "تیکت باز"]].map(([value, label]) => <div key={label} className="border-t-2 border-[#011c3a] bg-white p-4"><p className="text-[20px] font-medium num-fa">{value}</p><p className="mt-2 text-[10px] text-neutral-500">{label}</p></div>)}</section><section className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]"><div className="bg-white p-5"><h2 className="text-[14px] font-medium">تیکت‌های پشتیبانی</h2><div className="mt-4 divide-y divide-neutral-200">{tickets.map((ticket) => <article key={ticket.id} className="py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[11.5px] font-medium">{ticket.subject}</p><p className="mt-1 text-[9.5px] text-neutral-400">{ticket.id} · {ticket.category} · {ticket.createdAt}</p></div><span className="bg-neutral-100 px-2 py-1 text-[9px]">{ticket.status}</span></div><p className="mt-2 text-[10.5px] leading-[1.8] text-neutral-600">{ticket.message}</p><div className="mt-3 flex gap-2"><button onClick={() => updateTicket(ticket.id, "پاسخ داده شده")} className="border border-[#011c3a] px-3 py-1.5 text-[9.5px]">ثبت پاسخ</button><button onClick={() => updateTicket(ticket.id, "بسته")} className="text-[9.5px] text-neutral-500 underline">بستن</button></div></article>)}{!tickets.length && <p className="py-10 text-center text-[10.5px] text-neutral-400">تیکتی ثبت نشده است.</p>}</div></div><div className="bg-white p-5"><h2 className="text-[14px] font-medium">آخرین سفارش‌های عمده</h2><div className="mt-4 divide-y divide-neutral-200">{orders.map((order) => <div key={order.code} className="flex items-center justify-between py-3 text-[10.5px]"><div><p className="font-medium num-fa">{order.code}</p><p className="mt-1 text-neutral-400">{order.date}</p></div><span>{order.status}</span><span className="num-fa">{fa(order.totalQty)} عدد</span></div>)}{!orders.length && <p className="py-10 text-center text-[10.5px] text-neutral-400">سفارشی ثبت نشده است.</p>}</div></div></section></main>;
+  return <div className="admin-system min-h-screen bg-[#f6f6f4]"><header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/95 backdrop-blur-md"><div className="mx-auto flex min-h-[73px] max-w-[1800px] items-center gap-3 px-4 lg:px-6">
+    <div className="hidden min-w-44 flex-col leading-none sm:flex"><span className="text-[15px] font-semibold tracking-[0.12em]">کلبه وینتیج</span><span className="mt-1.5 text-[7.5px] tracking-[0.34em] text-neutral-400">MANAGEMENT SYSTEM</span></div>
+    <div className="flex min-w-0 flex-1 items-center justify-center"><div className="grid w-full max-w-[410px] grid-cols-2 border border-neutral-200 bg-[#f6f6f4] p-1" role="tablist" aria-label="انتخاب فضای مدیریت"><button role="tab" aria-selected={workspace === "retail"} onClick={() => setWorkspace("retail")} className={`h-10 px-3 text-[10.5px] font-medium transition ${focusRing} ${workspace === "retail" ? "bg-[#011c3a] text-white" : "text-neutral-500 hover:bg-white hover:text-neutral-900"}`}>مدیریت کلبه</button><button role="tab" aria-selected={workspace === "wholesale"} onClick={() => setWorkspace("wholesale")} className={`h-10 px-3 text-[10.5px] font-medium transition ${focusRing} ${workspace === "wholesale" ? "bg-[#011c3a] text-white" : "text-neutral-500 hover:bg-white hover:text-neutral-900"}`}>مدیریت عمده‌فروشی</button></div></div>
+    <div className="flex min-w-fit items-center justify-end gap-2 sm:min-w-44"><Link to="/" aria-label="مشاهده وب‌سایت" className={`hidden h-10 items-center gap-2 px-2 text-[10.5px] text-neutral-500 hover:text-[#011c3a] md:flex ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />مشاهده سایت</Link><button type="button" onClick={logout} aria-label="خروج امن" className={`flex h-10 w-10 items-center justify-center border border-neutral-200 text-neutral-500 transition hover:border-red-200 hover:text-red-700 ${focusRing}`}><Icon name="user" className="h-4 w-4" /></button></div>
+  </div></header>{workspace === "retail" ? <Admin embedded /> : <WholesaleAdmin />}</div>;
 }

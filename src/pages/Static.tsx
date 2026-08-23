@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
 import { products, productById, specLabels, specOrder } from "../data/catalog";
@@ -7,6 +7,7 @@ import Icon from "../components/Icon";
 import ProductCard from "../components/ProductCard";
 import { createCustomer, loadCustomer, saveCustomer } from "../customerIdentity";
 import { loadWholesaleMembership } from "../wholesaleMembership";
+import { restoreSiteCustomer, signInSiteCustomer, signOutSiteCustomer, signUpSiteCustomer } from "../lib/siteAuthApi";
 
 const input =
   "h-10 w-full rounded-[3px] border border-neutral-300 px-3 text-[12.5px] outline-none transition focus:border-[#011c3a]";
@@ -29,7 +30,7 @@ export function About() {
 
   return (
     <main>
-      <section className="relative h-[55vh] min-h-[340px] w-full overflow-hidden">
+      <section className="page-hero relative h-[55vh] min-h-[340px] w-full overflow-hidden">
         <img src="/images/store.jpg" alt="کارگاه کلبه وینتیج" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-black/15" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
@@ -311,8 +312,12 @@ export function Compare() {
 /* ------------------------------ حساب کاربری -------------------------------- */
 
 export function Account() {
-  const [customer, setCustomer] = useState(loadCustomer);
-  const [authForm, setAuthForm] = useState({ name: customer?.name ?? "", phone: customer?.phone ?? "", email: customer?.email ?? "" });
+  const [customer, setCustomer] = useState<ReturnType<typeof loadCustomer>>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authError, setAuthError] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authForm, setAuthForm] = useState({ name: "", phone: "", email: "", password: "" });
   const [tab, setTab] = useState("orders");
   const membership = loadWholesaleMembership();
   const tabs = [
@@ -327,18 +332,31 @@ export function Account() {
     { code: "KV-460055", date: "۱۰ تیر ۱۴۰۵", status: "تحویل شده", total: 980_000, items: 1 },
   ];
 
+  useEffect(() => { restoreSiteCustomer().then((identity) => { if (identity) { setCustomer(identity); setAuthForm((form) => ({ ...form, name: identity.name, phone: identity.phone, email: identity.email ?? "" })); } }).finally(() => setAuthLoading(false)); }, []);
+  const submitAuth = async (event: FormEvent) => { event.preventDefault(); setAuthError(""); setAuthSubmitting(true); try { const identity = authMode === "login" ? await signInSiteCustomer(authForm.email, authForm.password) : await signUpSiteCustomer(authForm); saveCustomer(identity); setCustomer(identity); } catch (reason) { setAuthError(reason instanceof Error ? reason.message : "ورود انجام نشد."); } finally { setAuthSubmitting(false); } };
+
+  if (authLoading) return <main className="flex min-h-[60vh] items-center justify-center text-[11px] text-neutral-500">در حال بررسی حساب کلبه…</main>;
+
   if (!customer) {
     return (
-      <main className="mx-auto flex min-h-[65vh] w-full max-w-md flex-col justify-center px-4 py-16">
-        <p className="text-[9px] tracking-[0.25em] text-neutral-400">ONE ACCOUNT</p>
-        <h1 className="mt-2 text-[24px] font-medium">ورود یا ثبت‌نام</h1>
-        <p className="mt-3 text-[11.5px] leading-[1.9] text-neutral-500">این حساب برای خرید تک‌فروشی و دسترسی VIP عمده مشترک است.</p>
-        <form onSubmit={(e) => { e.preventDefault(); const identity = createCustomer(authForm.name, authForm.phone, authForm.email); saveCustomer(identity); setCustomer(identity); }} className="mt-7 space-y-3">
-          <label className="block text-[10px] text-neutral-500">نام و نام خانوادگی<input name="name" autoComplete="name" value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} className={input + " mt-1.5"} placeholder="مثلاً آرمان نیک‌پی…" required /></label>
-          <label className="block text-[10px] text-neutral-500">شماره موبایل<input name="phone" type="tel" inputMode="tel" autoComplete="tel" value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} className={input + " mt-1.5"} placeholder="مثلاً ۰۹۱۲۱۲۳۴۵۶۷…" minLength={10} required /></label>
-          <label className="block text-[10px] text-neutral-500">ایمیل (اختیاری)<input name="email" type="email" autoComplete="email" spellCheck={false} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} className={input + " mt-1.5"} placeholder="name@example.com…" /></label>
-          <button type="submit" className="h-11 w-full bg-[#011c3a] text-[12.5px] font-medium text-white">ورود و ادامه</button>
-        </form>
+      <main className="account-entry mx-auto w-full max-w-[620px] px-4 py-8 sm:py-12 lg:px-8">
+        <div>
+          <section className="liquid-panel account-auth-panel flex flex-col justify-center p-5 sm:p-7 lg:p-8">
+            <p className="text-[9px] tracking-[0.25em] text-neutral-400">ONE ACCOUNT</p>
+            <h1 className="mt-2 text-[25px] font-medium">ورود یا ساخت حساب</h1>
+            <p className="mt-2 max-w-md text-[11.5px] leading-[1.9] text-neutral-500">سفارش‌ها، سایزهای ذخیره‌شده، آدرس‌ها و تصویرهای Try On Me را در یک حساب نگه دارید.</p>
+            <div className="mt-5 grid grid-cols-2 border border-neutral-200 p-1"><button type="button" onClick={()=>setAuthMode("login")} className={(authMode==="login"?"bg-[#011c3a] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ورود</button><button type="button" onClick={()=>setAuthMode("register")} className={(authMode==="register"?"bg-[#011c3a] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ساخت حساب</button></div>
+            <form onSubmit={submitAuth} className="mt-4 grid gap-3">
+              {authMode === "register" && <><label className="block text-[10px] text-neutral-500">نام و نام خانوادگی<input name="name" autoComplete="name" value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} className={input + " mt-1.5"} required /></label><label className="block text-[10px] text-neutral-500">شماره موبایل<input name="phone" type="tel" inputMode="tel" autoComplete="tel" value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} className={input + " mt-1.5"} minLength={10} required /></label></>}
+              <label className="block text-[10px] text-neutral-500">ایمیل<input name="email" type="email" autoComplete="email" spellCheck={false} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} className={input + " mt-1.5"} required /></label>
+              <label className="block text-[10px] text-neutral-500">رمز عبور<input name="password" type="password" minLength={8} autoComplete={authMode==="login"?"current-password":"new-password"} value={authForm.password} onChange={(e) => setAuthForm((form) => ({ ...form, password: e.target.value }))} className={input + " mt-1.5"} required /></label>
+              {authError && <p role="alert" className="border border-red-200 bg-red-50 p-3 text-[10px] text-red-700">{authError}</p>}
+              <button type="submit" disabled={authSubmitting} className="storefront-primary-action mt-1 h-11 w-full rounded-[3px] text-[12.5px] font-medium disabled:opacity-50">{authSubmitting?"در حال بررسی…":authMode==="login"?"ورود به حساب کلبه":"ساخت حساب کلبه"}</button>
+            </form>
+            <p className="mt-4 text-[9.5px] leading-relaxed text-neutral-400">با ادامه، قوانین خرید و سیاست حریم خصوصی کلبه را می‌پذیرید.</p>
+          </section>
+
+        </div>
       </main>
     );
   }

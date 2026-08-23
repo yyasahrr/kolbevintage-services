@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type CartLine = {
   id: string;
@@ -56,6 +56,7 @@ const load = <T,>(key: string, fallback: T): T => {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>(() => load("kv_cart", [] as CartLine[]));
   const [wishlist, setWishlist] = useState<string[]>(() => load("kv_wish", [] as string[]));
+  const wishlistRef = useRef(wishlist);
   const [compare, setCompare] = useState<string[]>(() => load("kv_compare", [] as string[]));
   const [cartOpen, setCartOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -97,11 +98,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const toggleWish = useCallback(
     (id: string) => {
-      setWishlist((prev) => {
-        const has = prev.includes(id);
-        notify(has ? "از علاقه‌مندی‌ها حذف شد" : "به علاقه‌مندی‌ها اضافه شد");
-        return has ? prev.filter((x) => x !== id) : [...prev, id];
-      });
+      const has = wishlistRef.current.includes(id);
+      const nextWishlist = has ? wishlistRef.current.filter((itemId) => itemId !== id) : [...wishlistRef.current, id];
+      wishlistRef.current = nextWishlist;
+      setWishlist(nextWishlist);
+      notify(has ? "از علاقه‌مندی‌ها حذف شد" : "به علاقه‌مندی‌ها اضافه شد");
     },
     [notify],
   );

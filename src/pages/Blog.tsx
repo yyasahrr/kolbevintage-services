@@ -12,7 +12,7 @@ export function BlogList() {
   const [hero, ...rest] = items;
 
   return (
-    <main className="mx-auto w-full px-4 py-10 lg:px-8 lg:py-16">
+    <main className="storefront-page mx-auto w-full px-4 py-10 lg:px-8 lg:py-16">
       <div className="mb-8 text-center">
         <p className="text-[11px] tracking-[0.3em] text-neutral-400">JOURNAL</p>
         <h1 className="mt-2 text-[26px] font-medium lg:text-[32px]">مجله استایل</h1>
@@ -37,7 +37,7 @@ export function BlogList() {
       </div>
 
       {hero && (
-        <Link to={`/blog/${hero.slug}`} className="group relative mb-4 block overflow-hidden bg-neutral-200">
+        <Link to={`/blog/${hero.slug}`} className="editorial-tile group relative mb-4 block overflow-hidden bg-neutral-200">
           <img
             src={hero.img}
             alt={hero.title}
@@ -57,7 +57,7 @@ export function BlogList() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {rest.map((a) => (
-          <Link key={a.slug} to={`/blog/${a.slug}`} className="group relative overflow-hidden bg-neutral-200">
+          <Link key={a.slug} to={`/blog/${a.slug}`} className="editorial-tile group relative overflow-hidden bg-neutral-200">
             <img
               src={a.img}
               alt={a.title}
@@ -93,7 +93,7 @@ export function BlogPost({ slug }: { slug: string }) {
 
   return (
     <main>
-      <div className="relative h-[45vh] min-h-[300px] w-full overflow-hidden">
+      <div className="page-hero relative h-[45vh] min-h-[300px] w-full overflow-hidden">
         <img src={a.img} alt={a.title} className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-black/20" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
@@ -107,7 +107,7 @@ export function BlogPost({ slug }: { slug: string }) {
 
       <div className="mx-auto grid w-full gap-10 px-4 py-12 lg:grid-cols-[220px_1fr] lg:gap-16 lg:px-8 lg:py-16">
         {/* فهرست مطالب */}
-        <aside className="self-start lg:sticky lg:top-[124px]">
+        <aside className="liquid-panel self-start lg:sticky lg:top-[82px]">
           <p className="text-[12px] font-medium">فهرست مطالب</p>
           <ol className="mt-3 space-y-2 border-r border-neutral-200 pr-3">
             {a.body.map((p, i) => (
@@ -146,7 +146,7 @@ export function BlogPost({ slug }: { slug: string }) {
           <h3 className="mb-6 text-[17px] font-medium">مقالات دیگر</h3>
           <div className="grid gap-4 sm:grid-cols-3">
             {more.map((m) => (
-              <Link key={m.slug} to={`/blog/${m.slug}`} className="group relative overflow-hidden bg-neutral-200">
+              <Link key={m.slug} to={`/blog/${m.slug}`} className="editorial-tile group relative overflow-hidden bg-neutral-200">
                 <img src={m.img} alt={m.title} loading="lazy" className="aspect-[4/3] w-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-4 text-white">

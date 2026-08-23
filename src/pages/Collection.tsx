@@ -8,7 +8,7 @@ export default function Collection() {
 
   return (
     <main>
-      <section className="relative h-[70vh] min-h-[420px] w-full overflow-hidden">
+      <section className="page-hero relative h-[70vh] min-h-[420px] w-full overflow-hidden">
         <img src="/images/banner.jpg" alt="کالکشن پاییز ۱۴۰۵" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
@@ -42,7 +42,7 @@ export default function Collection() {
           <h2 className="mb-8 text-center text-[20px] font-medium">ست‌های این کالکشن</h2>
           <div className="grid gap-4 sm:grid-cols-3">
             {looks.map((l) => (
-              <Link key={l.id} to="/" className="group relative overflow-hidden bg-neutral-200">
+              <Link key={l.id} to="/" className="editorial-tile group relative overflow-hidden bg-neutral-200">
                 <img
                   src={l.img}
                   alt={l.title}

@@ -9,6 +9,7 @@ import CartDrawer from "./components/CartDrawer";
 import CompareBar from "./components/CompareBar";
 import Toasts from "./components/Toasts";
 import PromoPopup from "./components/PromoPopup";
+import MobileTryOnButton from "./components/MobileTryOnButton";
 
 import Home from "./pages/Home";
 import Shop from "./pages/Shop";
@@ -22,6 +23,7 @@ import Wholesale from "./pages/Wholesale";
 import VIPPortal from "./pages/VIPPortal";
 import AdminPortal from "./pages/AdminPortal";
 import { About, Contact, Wishlist, Compare, Account, NotFound } from "./pages/Static";
+import TryOn from "./pages/TryOn";
 
 function Routes() {
   const { path, query } = useRouter();
@@ -31,7 +33,7 @@ function Routes() {
   }, [path]);
 
   /* صفحات با چیدمان مستقل (هدر/فوتر اختصاصی) */
-  if (path === "/wholesale") return <Wholesale />;
+  if (path === "/wholesale" || path === "/wholesale/join") return <Wholesale />;
   if (path === "/wholesale-dashboard") return <VIPPortal />;
   if (path === "/vip" || path.startsWith("/vip/")) return <VIPPortal />;
   if (path.startsWith("/product/") && query.get("wholesale") === "1") return <VIPPortal />;
@@ -53,13 +55,15 @@ function Routes() {
   else if (path === "/wishlist") page = <Wishlist />;
   else if (path === "/compare") page = <Compare />;
   else if (path === "/account") page = <Account />;
+  else if (path === "/try-on") page = <TryOn />;
   else page = <NotFound />;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div className="storefront-shell flex min-h-screen flex-col bg-white">
       <SiteHeader />
       <div className="flex-1">{page}</div>
       <SiteFooter />
+      <MobileTryOnButton />
       <CartDrawer />
       <CompareBar />
       <Toasts />
