@@ -672,7 +672,7 @@ export default function ProductPage({ id }: { id: string }) {
         <div>
           <Gallery product={product} onOpen={(i) => setLightbox(i)} />
 
-          <div className="lg:grid lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)] lg:items-start lg:gap-12">
+          <div className="lg:grid lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)] lg:gap-12">
           <aside>
             <div className="product-info-panel px-4 pb-8 pt-6 lg:px-6 lg:pb-10 lg:pt-10">
               <div className="mx-auto max-w-[440px] lg:mx-0 lg:max-w-[430px]">
@@ -827,8 +827,7 @@ export default function ProductPage({ id }: { id: string }) {
 
           {/* مشخصات فنی: ستون چپ، همتراز با باکس خرید */}
           <section className="border-t border-neutral-200 px-4 pt-10 lg:border-t-0 lg:px-0 lg:pt-2">
-            <h2 className="text-[18px] font-medium">مشخصات فنی</h2>
-            <div className="product-specs-table mt-5 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+            <div className="product-specs-table overflow-hidden rounded-2xl border border-neutral-200 bg-white">
               <table className="w-full text-[12.5px]">
                 <tbody>
                   {specOrder.map((key, i) => (
@@ -840,9 +839,6 @@ export default function ProductPage({ id }: { id: string }) {
                 </tbody>
               </table>
             </div>
-            <button onClick={() => toggleCompare(product.id)} className="mt-3 text-[11.5px] text-neutral-500 underline hover:text-[#011c3a]">
-              افزودن این محصول به مقایسه
-            </button>
           </section>
           </div>
         </div>
