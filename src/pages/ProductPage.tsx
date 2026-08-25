@@ -36,13 +36,25 @@ function Check() {
 
 /* --------------------------------- گالری ----------------------------------- */
 
-function ZoomImage({ src, alt, onOpen }: { src: string; alt: string; onOpen: () => void }) {
+function ZoomImage({
+  src,
+  alt,
+  onOpen,
+  figureClassName = "",
+  imgClassName = "aspect-[4/5] max-h-[720px]",
+}: {
+  src: string;
+  alt: string;
+  onOpen: () => void;
+  figureClassName?: string;
+  imgClassName?: string;
+}) {
   const [zoom, setZoom] = useState(false);
   const [pos, setPos] = useState({ x: 50, y: 50 });
 
   return (
     <figure
-      className="product-gallery-media relative cursor-zoom-in overflow-hidden bg-neutral-100"
+      className={"product-gallery-media relative cursor-zoom-in overflow-hidden bg-neutral-100 " + figureClassName}
       onMouseEnter={() => setZoom(true)}
       onMouseLeave={() => setZoom(false)}
       onMouseMove={(e) => {
@@ -56,7 +68,7 @@ function ZoomImage({ src, alt, onOpen }: { src: string; alt: string; onOpen: () 
         alt={alt}
         loading="lazy"
         decoding="async"
-        className="aspect-[4/5] max-h-[720px] w-full object-contain transition-transform duration-300"
+        className={"w-full object-contain transition-transform duration-300 " + imgClassName}
         style={{ transform: zoom ? "scale(1.7)" : "scale(1)", transformOrigin: `${pos.x}% ${pos.y}%` }}
       />
     </figure>
@@ -137,21 +149,18 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
         </div>
       </div>
 
-      {/* دسکتاپ: گرید ۲ ستونه */}
-      <div className="product-gallery-grid hidden grid-cols-2 gap-3 p-3 lg:grid">
-        {media.map((src, i) => (
-          <ZoomImage key={i} src={src} alt={`${product.name} — تصویر ${fa(i + 1)}`} onOpen={() => onOpen(i)} />
-        ))}
-        {product.video && (
+      {/* دسکتاپ: گرید ناهماهنگ - بزرگترین خانه متعلق به ویدئو محصول است */}
+      <div className="product-gallery-grid hidden gap-3 p-3 lg:grid lg:grid-cols-4 lg:grid-flow-row-dense lg:auto-rows-[225px]">
+        {product.video ? (
           <button
             onClick={() => window.open(product.video!.url, "_blank")}
-            className="group relative overflow-hidden bg-neutral-900"
+            className="group relative col-span-2 row-span-2 overflow-hidden bg-neutral-900"
           >
             <img
               src={product.video.poster}
               alt={product.video.title}
               loading="lazy"
-              className="aspect-[4/5] max-h-[720px] w-full object-contain opacity-70 transition group-hover:opacity-60"
+              className="h-full w-full object-contain opacity-70 transition group-hover:opacity-60"
             />
             <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
               <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
@@ -160,7 +169,23 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
               <span className="text-[11.5px]">{product.video.title}</span>
             </span>
           </button>
-        )}
+        ) : null}
+        {media.map((src, i) => {
+          /* چینش ناهماهنگ: خانه بزرگ = ویدئو (یا تصویر اول در نبود ویدئو)، بعد یک خانه کشیده و یک خانه عریض */
+          const figureClassName = product.video
+            ? i === 0 ? "lg:row-span-2" : i === 3 ? "lg:col-span-2" : ""
+            : i === 0 ? "lg:col-span-2 lg:row-span-2" : i === 3 ? "lg:col-span-2" : "";
+          return (
+            <ZoomImage
+              key={i}
+              src={src}
+              alt={`${product.name} — تصویر ${fa(i + 1)}`}
+              onOpen={() => onOpen(i)}
+              figureClassName={figureClassName}
+              imgClassName="h-full"
+            />
+          );
+        })}
       </div>
     </>
   );
@@ -643,12 +668,13 @@ export default function ProductPage({ id }: { id: string }) {
             <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
           </div>
         )}
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_480px]">
+        {/* دسکتاپ: گرید ناهماهنگ رسانه در بالا، مشخصات محصول در پایین */}
+        <div>
           <Gallery product={product} onOpen={(i) => setLightbox(i)} />
 
-          <aside className="self-start lg:sticky lg:top-[108px]">
-            <div className="product-info-panel px-4 pb-8 pt-6 lg:px-8 lg:pb-10 lg:pt-8">
-              <div className="mx-auto max-w-[440px] lg:mx-0">
+          <aside>
+            <div className="product-info-panel px-4 pb-8 pt-6 lg:px-8 lg:pb-10 lg:pt-10">
+              <div className="mx-auto max-w-[440px] lg:max-w-[620px]">
                 <nav className="flex items-center gap-1.5 text-[11px] text-neutral-500">
                   <Link to="/" className="hover:underline">خانه</Link>
                   <span>›</span>
