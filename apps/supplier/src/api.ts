@@ -51,7 +51,7 @@ export async function signInSupplier(email: string, password: string): Promise<S
     body: { email: email.trim(), password },
   }).catch((error) => {
     if (error instanceof ApiError) {
-      if (error.code === 'NETWORK' || error.code === 'BAD_API_KEY') throw new Error(error.message)
+      if (error.code === 'NETWORK' || error.code === 'BAD_API_KEY' || error.code.startsWith('HTTP_5')) throw new Error('اتصال به بک‌اند برقرار نیست؛ از آخرین تب پیش‌نمایش استفاده کنید.')
       if (error.code === 'SUPPLIER_ACCESS_INACTIVE') throw new Error('برای این حساب، دسترسی تأمین‌کننده فعال نشده است.')
     }
     throw new Error('ایمیل یا رمز عبور درست نیست.')

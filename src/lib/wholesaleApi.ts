@@ -55,7 +55,7 @@ export async function signInAdmin(email: string, password: string) {
     method: "POST",
     body: { email: email.trim(), password, role: "admin" },
   }).catch((error) => {
-    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY")) throw new Error(error.message);
+    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY" || error.code.startsWith("HTTP_5"))) throw new Error("اتصال به بک‌اند برقرار نیست؛ اگر این پیام را می‌بینید احتمالاً روی پیش‌نمایش قدیمی هستید — از آخرین تب پیش‌نمایش استفاده کنید.");
     throw new Error("ایمیل یا رمز عبور درست نیست.");
   });
   if (data.user.role !== "admin") throw new Error("این حساب دسترسی مدیریت کلبه را ندارد.");

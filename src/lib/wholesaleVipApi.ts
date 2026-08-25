@@ -49,7 +49,7 @@ export async function signInWholesaleVip(email: string, password: string) {
     method: "POST",
     body: { email, password },
   }).catch((error) => {
-    if (error instanceof ApiError && error.code === "NETWORK") throw new Error("اتصال به سرور برقرار نشد.");
+    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY" || error.code.startsWith("HTTP_5"))) throw new Error("اتصال به بک‌اند برقرار نیست؛ از آخرین تب پیش‌نمایش استفاده کنید.");
     throw new Error("ایمیل یا رمز عبور درست نیست.");
   });
   saveToken("vip", data.token);
