@@ -7,6 +7,45 @@ import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
 import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
 
 type Workspace = "retail" | "wholesale";
+
+/** مارکر نسخه - با هر تغییر کد آپدیت میشود تا تب قدیمی فوراً شناسایی شود */
+const BUILD = "b-601206f";
+
+function BackendStatus() {
+  const [state, setState] = useState<{ ok: boolean; detail: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const ping = async () => {
+      const started = performance.now();
+      try {
+        const res = await fetch("/store/kolbe/health", {
+          headers: { "x-publishable-api-key": import.meta.env.VITE_MEDUSA_PUBLISHABLE_KEY ?? "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee" },
+        });
+        if (!alive) return;
+        setState(res.ok
+          ? { ok: true, detail: `\u200e${Math.round(performance.now() - started)}ms` }
+          : { ok: false, detail: `HTTP ${res.status}` });
+      } catch (error) {
+        if (alive) setState({ ok: false, detail: error instanceof Error ? error.name : "NETWORK" });
+      }
+    };
+    ping();
+    const timer = window.setInterval(ping, 10_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, []);
+  return (
+    <div className="mt-6 flex items-center justify-between gap-3 border-t border-neutral-200 pt-4 text-[9.5px] text-neutral-400" dir="rtl">
+      <span className="num-fa">نسخه {BUILD}</span>
+      {state === null ? (
+        <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neutral-300" />در حال بررسی بک‌اند…</span>
+      ) : state.ok ? (
+        <span className="flex items-center gap-1.5 text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />بک‌اند متصل ({state.detail})</span>
+      ) : (
+        <span className="flex items-center gap-1.5 text-red-600"><span className="h-1.5 w-1.5 rounded-full bg-red-500" />بک‌اند در دسترس نیست ({state.detail})</span>
+      )}
+    </div>
+  );
+}
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
 
 export default function AdminPortal() {
@@ -38,7 +77,8 @@ export default function AdminPortal() {
         {error && <p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2.5 text-[10.5px] text-red-700">{error}</p>}
         {!isSupabaseConfigured && <p role="alert" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10.5px] text-amber-800">اتصال بک‌اند تنظیم نشده است؛ ورود محلی غیرفعال است.</p>}
         <button type="submit" disabled={submitting || !isSupabaseConfigured} className={`mt-5 h-11 w-full bg-[#011c3a] text-[12px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}>{submitting ? "در حال بررسی…" : "ورود به پنل مدیریت"}</button>
-        <Link to="/" className={`mt-5 flex items-center justify-center gap-2 text-[10.5px] text-neutral-500 underline-offset-4 hover:underline ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />بازگشت به وب‌سایت</Link>
+        <BackendStatus />
+        <Link to="/" className={`mt-3 flex items-center justify-center gap-2 text-[10.5px] text-neutral-500 underline-offset-4 hover:underline ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />بازگشت به وب‌سایت</Link>
       </form></section>
     </main>
   );
