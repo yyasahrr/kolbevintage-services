@@ -5,7 +5,7 @@ import { products } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadWholesaleMembership } from "../wholesaleMembership";
-import { isSupabaseConfigured } from "../lib/supabase";
+import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
 import { answerSupplierTicket, approveWholesaleOrder, cancelWholesaleOrder, listWholesaleFulfillmentOrders, listSupplierApplications, listSupplierCatalogProducts, listSuppliers, listSupplierTickets, updateSupplierApplication, updateSupplierProductStatus, type AdminSupplier, type AdminSupplierProduct } from "../lib/wholesaleApi";
 
 type WholesaleTab = "overview" | "members" | "orders" | "support" | "catalog";
@@ -57,7 +57,7 @@ export default function WholesaleAdmin() {
     }).catch(() => setRemoteError("خواندن داده‌های مشترک انجام نشد؛ دسترسی حساب ادمین یا RLS را بررسی کنید.")).finally(() => setLoading(false));
   }, []);
 
-  const persistLeads = (next: WholesaleLead[]) => { const changed = next.find((item, index) => item.status !== leads[index]?.status); setLeads(next); localStorage.setItem(leadKey, JSON.stringify(next)); setNotice("وضعیت درخواست همکاری ذخیره شد."); if (changed?.id && isSupabaseConfigured) updateSupplierApplication(changed.id, changed.status === "جدید" ? "pending" : changed.status === "در تماس" ? "reviewing" : changed.status === "تأیید شده" ? "approved" : "rejected").catch(() => setRemoteError("ثبت وضعیت درخواست در Supabase انجام نشد.")); };
+  const persistLeads = (next: WholesaleLead[]) => { const changed = next.find((item, index) => item.status !== leads[index]?.status); setLeads(next); localStorage.setItem(leadKey, JSON.stringify(next)); setNotice("وضعیت درخواست همکاری ذخیره شد."); if (changed?.id && isSupabaseConfigured) updateSupplierApplication(changed.id, changed.status === "جدید" ? "pending" : changed.status === "در تماس" ? "reviewing" : changed.status === "تأیید شده" ? "approved" : "rejected").catch(() => setRemoteError("ثبت وضعیت درخواست در بک‌اند انجام نشد.")); };
   const persistOrders = async (next: WholesaleOrder[]) => { const changed = next.find((item, index) => item.status !== orders[index]?.status); if (!changed?.id) return; setRemoteError(""); try { if (changed.status === "تأیید شده") await approveWholesaleOrder(changed.id); else if (changed.status === "لغو شده") await cancelWholesaleOrder(changed.id); else throw new Error("وضعیت‌های اجرا و ارسال فقط توسط ساپلایر تغییر می‌کنند."); setOrders(next); setNotice(changed.status === "تأیید شده" ? "سفارش تأیید و برای ساپلایرها تفکیک شد." : "سفارش لغو و موجودی رزروشده آزاد شد."); } catch (reason) { setRemoteError(reason instanceof Error ? reason.message : "تغییر وضعیت سفارش انجام نشد."); } };
   const persistTickets = (next: SupportTicket[]) => { const changed = next.find((item, index) => item.status !== tickets[index]?.status); setTickets(next); saveTickets(next); setNotice("وضعیت تیکت ذخیره شد."); if (changed && isSupabaseConfigured) answerSupplierTicket(changed.id, changed.status === "باز" ? "open" : changed.status === "پاسخ داده شده" ? "answered" : "closed").catch(() => setRemoteError("ثبت وضعیت تیکت در Supabase انجام نشد.")); };
   const pendingUnits = orders.filter((order) => !["تحویل شده", "لغو شده"].includes(order.status)).reduce((sum, order) => sum + order.totalQty, 0);

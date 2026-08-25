@@ -7,12 +7,12 @@
 ## راهاندازی
 
 ```bash
-# پیشنیاز: PostgreSQL در دسترس (می توانید از همان دیتابیس Supabase یک dump بگیرید)
-cp .env.example .env.local
-npm install            # داخل همین پوشه
-npx medusa migrations create
-npx medusa migrations run
-npm run dev            # http://localhost:9000 + /app
+# پیشنیاز: PostgreSQL در دسترس
+cp .env.example .env    # DATABASE_URL و JWT_SECRET را تنظیم کنید
+npm install              # داخل همین پوشه
+npx medusa db:setup --db kolbe_medusa --no-interactive --execute-safe-links
+npx medusa develop       # http://localhost:9000 + /app
+node scripts/seed.mjs    # داده اولیه + تست E2E کل زنجیره
 ```
 
 ## نقشه دامنه ثابت → مدوسا

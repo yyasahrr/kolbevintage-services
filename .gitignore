@@ -7,3 +7,4 @@ test-results/
 .claude/
 .freebuff/
 supabase/.temp/
+.env

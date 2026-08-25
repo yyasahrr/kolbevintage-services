@@ -1,47 +1,93 @@
-import { isSupabaseConfigured, supabase } from './supabase'
+/**
+ * لایه API پنل ساپلایر روی بک‌اند مدوسا (کوکوبه).
+ * درخواستها نسبی هستند و از پروکسی vite به سرور ۹۰۰۰ میروند.
+ * توکن نشست ساپلایر: kv_medusa_supplier
+ */
+const TOKEN_KEY = 'kv_medusa_supplier'
+const PUBLISHABLE_KEY = 'pk_8e2ce63e67780f16eee06e44142b0cebdf8982dcd2ecf75e1806ae6d52dcb456'
 
 export type SupplierContext = { supplierId: string; displayName: string; legalName: string }
 
-function requireClient() {
-  if (!supabase) throw new Error('اتصال Supabase تنظیم نشده است. فایل .env.local را بر اساس .env.example بسازید.')
-  return supabase
+export const isBackendConfigured = true
+
+export class ApiError extends Error {
+  code: string
+  constructor(code: string, message?: string) { super(message ?? code); this.code = code }
+}
+
+async function api<T = unknown>(path: string, init?: { method?: string; body?: unknown; token?: string | null }): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(path, {
+      method: init?.method ?? 'GET',
+      headers: { 'content-type': 'application/json', 'x-publishable-api-key': PUBLISHABLE_KEY, ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}) },
+      body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    })
+  } catch { throw new ApiError('NETWORK', 'اتصال به سرور برقرار نشد.') }
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new ApiError(String((data as any)?.error ?? `HTTP_${response.status}`))
+  return data as T
+}
+
+function loadToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
+}
+
+function saveToken(token: string) {
+  try { localStorage.setItem(TOKEN_KEY, token) } catch { /* ignore */ }
+}
+
+export function clearSession() {
+  try { localStorage.removeItem(TOKEN_KEY) } catch { /* ignore */ }
 }
 
 export async function signInSupplier(email: string, password: string): Promise<SupplierContext> {
-  const client = requireClient()
-  const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password })
-  if (error) throw new Error('ایمیل یا رمز عبور درست نیست.')
-  const { data: membership, error: membershipError } = await client.from('supplier_members').select('supplier_id, suppliers(display_name, legal_name, status)').eq('user_id', data.user.id).maybeSingle()
-  if (membershipError || !membership) { await client.auth.signOut(); throw new Error('برای این حساب، دسترسی تأمین‌کننده فعال نشده است.') }
-  const supplier = Array.isArray(membership.suppliers) ? membership.suppliers[0] : membership.suppliers
-  if (!supplier || supplier.status !== 'approved') { await client.auth.signOut(); throw new Error('حساب تأمین‌کننده هنوز تأیید نشده است.') }
-  return { supplierId: membership.supplier_id, displayName: supplier.display_name, legalName: supplier.legal_name }
+  const data = await api<{ token: string; supplier: SupplierContext }>('/store/kolbe/supplier/auth/login', {
+    method: 'POST',
+    body: { email: email.trim(), password },
+  }).catch((error) => {
+    if (error instanceof ApiError) {
+      if (error.code === 'NETWORK') throw new Error('اتصال به سرور برقرار نشد.')
+      if (error.code === 'SUPPLIER_ACCESS_INACTIVE') throw new Error('برای این حساب، دسترسی تأمین‌کننده فعال نشده است.')
+    }
+    throw new Error('ایمیل یا رمز عبور درست نیست.')
+  })
+  saveToken(data.token)
+  return data.supplier
 }
 
 export async function restoreSupplierSession(): Promise<SupplierContext | null> {
-  if (!supabase) return null
-  const { data } = await supabase.auth.getSession()
-  if (!data.session) return null
-  const { data: membership } = await supabase.from('supplier_members').select('supplier_id, suppliers(display_name, legal_name, status)').eq('user_id', data.session.user.id).maybeSingle()
-  const supplier = Array.isArray(membership?.suppliers) ? membership?.suppliers[0] : membership?.suppliers
-  if (!membership || !supplier || supplier.status !== 'approved') return null
-  return { supplierId: membership.supplier_id, displayName: supplier.display_name, legalName: supplier.legal_name }
+  const token = loadToken()
+  if (!token) return null
+  try {
+    const data = await api<{ supplier: SupplierContext }>('/store/kolbe/supplier/session', { token })
+    return data.supplier
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'NETWORK') return null
+    clearSession()
+    return null
+  }
 }
 
-export async function signOutSupplier() { if (supabase) await supabase.auth.signOut() }
+export async function signOutSupplier() { clearSession() }
 
 export async function submitSupplierApplication(input: { companyName: string; representativeName: string; phone: string; category: string; monthlyCapacity: number | null }) {
-  const client = requireClient()
-  const { data, error } = await client.from('supplier_applications').insert({ company_name: input.companyName.trim(), representative_name: input.representativeName.trim(), phone: input.phone.trim(), category: input.category, monthly_capacity: input.monthlyCapacity }).select('id').single()
-  if (error) throw new Error('ثبت درخواست انجام نشد. اطلاعات را بررسی و دوباره تلاش کنید.')
-  return data.id as string
+  const data = await api<{ id: string }>('/store/kolbe/supplier/apply', {
+    method: 'POST',
+    body: input,
+  }).catch((error) => {
+    if (error instanceof ApiError && error.code === 'NETWORK') throw new Error('اتصال به سرور برقرار نشد؛ بعداً تلاش کنید.')
+    throw new Error('ثبت درخواست انجام نشد. اطلاعات را بررسی و دوباره تلاش کنید.')
+  })
+  return data.id
 }
 
 export async function loadSupplierProducts(supplierId: string) {
-  const client = requireClient()
-  const { data, error } = await client.from('supplier_products').select('id, name, sku, category, wholesale_price, image_url, status, updated_at, product_variants(id, inventory(on_hand, reserved))').eq('supplier_id', supplierId).order('updated_at', { ascending: false })
-  if (error) throw error
-  return data ?? []
+  void supplierId
+  const token = loadToken()
+  if (!token) return []
+  const data = await api<{ products: Array<any> }>('/store/kolbe/supplier/products', { token })
+  return data.products ?? []
 }
 
 export type CreateSupplierProductInput = {
@@ -58,67 +104,72 @@ export type CreateSupplierProductInput = {
 }
 
 export async function createSupplierProduct(input: CreateSupplierProductInput) {
-  const client = requireClient()
-  const sku = input.sku.trim().toUpperCase()
-  const { data: product, error: productError } = await client.from('supplier_products').insert({
-    supplier_id: input.supplierId,
-    name: input.name.trim(),
-    sku,
-    category: input.category,
-    description: input.description.trim(),
-    wholesale_price: input.wholesalePrice,
-    image_url: input.imageUrl?.trim() || null,
-    status: 'submitted',
-  }).select('id, name, sku, status').single()
-  if (productError) {
-    if (productError.code === '23505') throw new Error('این SKU قبلاً برای حساب شما ثبت شده است.')
+  const token = loadToken()
+  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
+  try {
+    const data = await api<{ product: { id: string; name: string; sku: string; status: string } }>('/store/kolbe/supplier/products', {
+      method: 'POST',
+      token,
+      body: {
+        name: input.name, sku: input.sku, category: input.category, description: input.description,
+        wholesalePrice: input.wholesalePrice, imageUrl: input.imageUrl, color: input.color,
+        size: input.size, stock: input.stock,
+      },
+    })
+    return data.product
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'DUPLICATE_SKU') throw new Error('این SKU قبلاً ثبت شده است.')
     throw new Error('ثبت محصول انجام نشد. دوباره تلاش کنید.')
   }
-
-  const variantSku = `${sku}-${input.color.trim().toUpperCase() || 'DEFAULT'}-${input.size.trim().toUpperCase() || 'ONE'}`
-  const { data: variant, error: variantError } = await client.from('product_variants').insert({
-    product_id: product.id,
-    sku: variantSku,
-    color: input.color.trim() || 'بدون رنگ',
-    size: input.size.trim() || 'تک‌سایز',
-    cost: input.wholesalePrice,
-  }).select('id').single()
-  if (variantError) {
-    await client.from('supplier_products').delete().eq('id', product.id)
-    throw new Error(variantError.code === '23505' ? 'SKU واریانت تکراری است.' : 'ثبت واریانت محصول انجام نشد.')
-  }
-
-  const { error: inventoryError } = await client.from('inventory').insert({ variant_id: variant.id, on_hand: input.stock, reserved: 0 })
-  if (inventoryError) {
-    await client.from('supplier_products').delete().eq('id', product.id)
-    throw new Error('ثبت موجودی محصول انجام نشد.')
-  }
-  return product
 }
 
 export async function loadSupplierOrders(supplierId: string) {
-  const client = requireClient()
-  const { data, error } = await client.from('purchase_orders').select('id, order_code, status, due_date, total_amount, tracking_code, shipped_at, delivered_at, created_at, purchase_order_items(id, product_name, sku, quantity, unit_price)').eq('supplier_id', supplierId).order('created_at', { ascending: false })
-  if (error) throw error
-  return data ?? []
+  void supplierId
+  const token = loadToken()
+  if (!token) return []
+  const data = await api<{ orders: Array<any> }>('/store/kolbe/supplier/orders', { token })
+  return data.orders ?? []
 }
 
 export async function updateSupplierPurchaseOrder(orderId: string, status: 'preparing' | 'shipped' | 'delivered', trackingCode?: string) {
-  const client = requireClient()
-  const { data, error } = await client.rpc('update_supplier_purchase_order', { p_order_id: orderId, p_status: status, p_tracking_code: trackingCode?.trim() || null })
-  if (error) {
-    if (error.message.includes('INVALID_STATUS_TRANSITION')) throw new Error('این تغییر وضعیت در مرحله فعلی مجاز نیست.')
-    if (error.message.includes('TRACKING_CODE_REQUIRED')) throw new Error('برای ثبت ارسال، کد رهگیری لازم است.')
+  const token = loadToken()
+  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
+  try {
+    return await api(`/store/kolbe/supplier/orders/${orderId}/status`, {
+      method: 'POST',
+      token,
+      body: { status, trackingCode: trackingCode?.trim() || null },
+    })
+  } catch (error) {
+    if (error instanceof ApiError) {
+      if (error.code === 'INVALID_STATUS_TRANSITION') throw new Error('این تغییر وضعیت در مرحله فعلی مجاز نیست.')
+      if (error.code === 'TRACKING_CODE_REQUIRED') throw new Error('برای ثبت ارسال، کد رهگیری لازم است.')
+    }
     throw new Error('به‌روزرسانی سفارش انجام نشد.')
   }
-  return data
 }
 
 export async function loadSupplierRfqs(supplierId: string) {
-  const client = requireClient()
-  const { data, error } = await client.from('rfqs').select('id, reference_code, title, customer_name, quantity, requested_delivery_date, specifications, status, created_at').eq('supplier_id', supplierId).order('created_at', { ascending: false })
-  if (error) throw error
-  return data ?? []
+  void supplierId
+  const token = loadToken()
+  if (!token) return []
+  const data = await api<{ rfqs: Array<any> }>('/store/kolbe/supplier/rfqs', { token })
+  return data.rfqs ?? []
 }
 
-export { isSupabaseConfigured }
+/** ارسال پیشنهاد قیمت برای یک RFQ. */
+export async function submitSupplierQuote(rfqId: string, quote: { unitPrice: number; leadTimeDays: number; notes?: string }) {
+  const token = loadToken()
+  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
+  await api(`/store/kolbe/supplier/rfqs/${rfqId}/quote`, { method: 'POST', token, body: quote })
+}
+
+/** آیا سرور در دسترس است؟ (برای نمایش مسیر دمو وقتی بک‌اند بالا نیست) */
+export async function backendHealth(): Promise<boolean> {
+  try {
+    await api('/store/kolbe/health')
+    return true
+  } catch {
+    return false
+  }
+}

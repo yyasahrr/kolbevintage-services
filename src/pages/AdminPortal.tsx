@@ -3,7 +3,7 @@ import Admin from "./Admin";
 import WholesaleAdmin from "./WholesaleAdmin";
 import Icon from "../components/Icon";
 import { Link } from "../router";
-import { isSupabaseConfigured } from "../lib/supabase";
+import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
 import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
 
 type Workspace = "retail" | "wholesale";
@@ -36,7 +36,7 @@ export default function AdminPortal() {
         <p className="text-[9px] tracking-[0.24em] text-neutral-400">ADMIN ACCESS</p><h1 className="mt-3 text-[25px] font-medium tracking-tight">ورود به مرکز مدیریت</h1><p className="mt-2 text-[11px] leading-6 text-neutral-500">برای مدیریت فروشگاه و سرویس عمده‌فروشی وارد شوید.</p>
         <div className="mt-7 space-y-4"><label className="block text-[10.5px] text-neutral-600">ایمیل مدیر<input autoFocus name="admin-username" type="email" autoComplete="username" value={credentials.username} onChange={(event) => setCredentials((value) => ({ ...value, username: event.target.value }))} className={`mt-1.5 h-11 w-full border border-neutral-300 bg-white px-3 text-[12px] ${focusRing}`} /></label><label className="block text-[10.5px] text-neutral-600">رمز عبور<input name="admin-password" type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials((value) => ({ ...value, password: event.target.value }))} className={`mt-1.5 h-11 w-full border border-neutral-300 bg-white px-3 text-[12px] ${focusRing}`} /></label></div>
         {error && <p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2.5 text-[10.5px] text-red-700">{error}</p>}
-        {!isSupabaseConfigured && <p role="alert" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10.5px] text-amber-800">اتصال امن Supabase تنظیم نشده است؛ ورود محلی غیرفعال است.</p>}
+        {!isSupabaseConfigured && <p role="alert" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10.5px] text-amber-800">اتصال بک‌اند تنظیم نشده است؛ ورود محلی غیرفعال است.</p>}
         <button type="submit" disabled={submitting || !isSupabaseConfigured} className={`mt-5 h-11 w-full bg-[#011c3a] text-[12px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}>{submitting ? "در حال بررسی…" : "ورود به پنل مدیریت"}</button>
         <Link to="/" className={`mt-5 flex items-center justify-center gap-2 text-[10.5px] text-neutral-500 underline-offset-4 hover:underline ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />بازگشت به وب‌سایت</Link>
       </form></section>

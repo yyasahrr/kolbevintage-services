@@ -3,6 +3,7 @@ import { Link } from "../router";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
+import { api, ApiError } from "../lib/medusa";
 
 const provinces = [
   "تهران", "البرز", "اصفهان", "فارس", "خراسان رضوی", "آذربایجان شرقی", "آذربایجان غربی",
@@ -65,6 +66,9 @@ export default function Checkout() {
   const [ship, setShip] = useState("pishtaz");
   const [pay, setPay] = useState("gateway");
   const [done, setDone] = useState(false);
+  const [orderCode, setOrderCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [orderError, setOrderError] = useState("");
   const [form, setForm] = useState({
     name: "", family: "", phone: "", email: "",
     province: "تهران", city: "", postal: "", address: "", plaque: "", unit: "", note: "",
@@ -83,7 +87,7 @@ export default function Checkout() {
         </div>
         <h1 className="text-[22px] font-medium">سفارش شما ثبت شد</h1>
         <p className="text-[12.5px] leading-relaxed text-neutral-600">
-          کد پیگیری: <span className="font-medium num-fa">KV-{fa(Math.floor(Math.random() * 900000) + 100000)}</span>
+          کد پیگیری: <span className="font-medium num-fa">{orderCode}</span>
           <br />
           جزئیات سفارش به شماره {form.phone || "ثبت‌شده"} پیامک شد.
         </p>
@@ -190,14 +194,52 @@ export default function Checkout() {
               ))}
             </div>
             <button
-              onClick={() => {
-                clearCart();
-                setDone(true);
+              onClick={async () => {
+                if (!form.name.trim() || !form.phone.trim()) {
+                  setOrderError("نام و شماره موبایل برای ثبت سفارش لازم است.");
+                  setStep(1);
+                  return;
+                }
+                setSubmitting(true);
+                setOrderError("");
+                try {
+                  const result = await api<{ orderCode: string }>("/store/kolbe/retail/orders", {
+                    method: "POST",
+                    body: {
+                      customer: { name: `${form.name} ${form.family}`.trim(), phone: form.phone, email: form.email },
+                      lines: lines.map((l) => ({ id: l.id, name: l.name, colour: l.colour, size: l.size, price: l.price, qty: l.qty, img: l.img })),
+                      address: {
+                        province: form.province, city: form.city, address: form.address,
+                        plaque: form.plaque, unit: form.unit, postal: form.postal, note: form.note,
+                      },
+                      shipping: shippingMethods.find((m) => m.id === ship),
+                      payMethod: pay,
+                      totals: { items: cartTotal, shipping: total - cartTotal, total },
+                    },
+                  });
+                  setOrderCode(result.orderCode);
+                  clearCart();
+                  setDone(true);
+                } catch (error) {
+                  if (error instanceof ApiError && error.code === "NETWORK") {
+                    setOrderError("اتصال به سرور برقرار نشد؛ لطفاً دوباره تلاش کنید.");
+                  } else {
+                    setOrderError("ثبت سفارش انجام نشد؛ اطلاعات را بررسی و دوباره تلاش کنید.");
+                  }
+                } finally {
+                  setSubmitting(false);
+                }
               }}
-              className="mt-5 h-11 w-full rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
+              disabled={submitting}
+              className="mt-5 h-11 w-full rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
             >
-              پرداخت و ثبت نهایی سفارش
+              {submitting ? "در حال ثبت سفارش…" : "پرداخت و ثبت نهایی سفارش"}
             </button>
+            {orderError ? (
+              <p role="alert" className="mt-3 rounded-[3px] border border-red-200 bg-red-50 px-3 py-2.5 text-[11.5px] text-red-700">
+                {orderError}
+              </p>
+            ) : null}
           </Step>
         </div>
 

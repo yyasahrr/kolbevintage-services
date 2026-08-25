@@ -4,7 +4,6 @@ import { products, categories, specLabels, specOrder, type Product } from "../da
 import { styles, articles } from "../siteData";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
-import AdminBrief from "./AdminBrief";
 import { AccessSecurity, CommerceOperations, IntegrationsAutomation, InventoryOperations, SystemCenter } from "./AdminOperations";
 import AdminProductEditor from "./AdminProductEditor";
 import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
@@ -18,7 +17,6 @@ const input =
 
 const nav = [
   { id: "retail-settings", label: "تنظیمات خرده", icon: "check" },
-  { id: "brief", label: "ممیزی ۱۰۰۰ سؤالی", icon: "check" },
   { id: "dashboard", label: "داشبورد", icon: "shield" },
   { id: "products", label: "محصولات", icon: "bag" },
   { id: "inventory", label: "موجودی و تأمین", icon: "pin" },
@@ -821,7 +819,7 @@ function ReportsPanel() {
 /* --------------------------------- پنل اصلی -------------------------------- */
 
 export default function Admin({ embedded = false }: { embedded?: boolean }) {
-  const [page, setPage] = useState(() => window.location.hash.includes("section=brief") ? "brief" : "dashboard");
+  const [page, setPage] = useState("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -872,7 +870,6 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
 
         <main className="min-w-0 flex-1 p-4 lg:p-6">
           {page === "retail-settings" && <RetailPolicyCenter />}
-          {page === "brief" && <AdminBrief />}
           {page === "dashboard" && <Dashboard />}
           {page === "products" && <ProductsPanel />}
           {page === "inventory" && <InventoryOperations />}

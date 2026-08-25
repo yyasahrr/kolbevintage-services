@@ -1,34 +1,48 @@
-import { supabase } from "./supabase";
+import { api, ApiError, clearToken, loadToken, saveToken, TOKEN_KEYS } from "./medusa";
 import type { CustomerIdentity } from "../customerIdentity";
 
-function requireClient() { if (!supabase) throw new Error("اتصال حساب کاربری تنظیم نشده است."); return supabase; }
+type LoginResponse = { token: string; user: { id: string; email: string; role: string; name: string | null; phone: string | null } };
 
-async function loadIdentity(userId: string, email?: string): Promise<CustomerIdentity> {
-  const client = requireClient();
-  const { data } = await client.from("profiles").select("full_name, phone").eq("id", userId).maybeSingle();
-  return { id: userId, name: data?.full_name || email?.split("@")[0] || "کاربر کلبه", phone: data?.phone || "—", email };
+async function identityFromToken(): Promise<CustomerIdentity | null> {
+  const token = loadToken("customer");
+  if (!token) return null;
+  try {
+    const me = await api<{ id: string; name: string; phone: string; email?: string }>("/store/kolbe/me", { token });
+    return { id: me.id, name: me.name, phone: me.phone, email: me.email };
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "NETWORK") return null;
+    clearToken("customer");
+    return null;
+  }
 }
 
 export async function restoreSiteCustomer() {
-  if (!supabase) return null;
-  const { data } = await supabase.auth.getSession();
-  return data.session ? loadIdentity(data.session.user.id, data.session.user.email) : null;
+  return identityFromToken();
 }
 
 export async function signInSiteCustomer(email: string, password: string) {
-  const client = requireClient();
-  const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-  if (error) throw new Error("ایمیل یا رمز عبور درست نیست.");
-  return loadIdentity(data.user.id, data.user.email);
+  const data = await api<LoginResponse>("/store/kolbe/auth/login", {
+    method: "POST",
+    body: { email, password },
+  }).catch((error) => {
+    if (error instanceof ApiError && error.code === "NETWORK") throw new Error("اتصال به سرور برقرار نشد.");
+    throw new Error("ایمیل یا رمز عبور درست نیست.");
+  });
+  saveToken("customer", data.token);
+  return { id: data.user.id, name: data.user.name ?? email.split("@")[0], phone: data.user.phone ?? "—", email: data.user.email } as CustomerIdentity;
 }
 
 export async function signUpSiteCustomer(input: { name: string; phone: string; email: string; password: string }) {
-  const client = requireClient();
-  const { data, error } = await client.auth.signUp({ email: input.email.trim(), password: input.password, options: { data: { full_name: input.name.trim(), phone: input.phone.trim() } } });
-  if (error) throw new Error(error.message.includes("already") ? "این ایمیل قبلاً ثبت شده است." : "ساخت حساب انجام نشد.");
-  if (!data.user) throw new Error("ساخت حساب انجام نشد.");
-  if (data.session) await client.from("profiles").update({ full_name: input.name.trim(), phone: input.phone.trim() }).eq("id", data.user.id);
-  return loadIdentity(data.user.id, data.user.email);
+  await api("/store/kolbe/auth/register", {
+    method: "POST",
+    body: { email: input.email.trim(), password: input.password, name: input.name.trim(), phone: input.phone.trim(), role: "customer" },
+  }).catch((error) => {
+    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "INVALID_INPUT")) throw new Error("ساخت حساب انجام نشد؛ اطلاعات را بررسی کنید.");
+    throw new Error("این ایمیل قبلاً ثبت شده است.");
+  });
+  return signInSiteCustomer(input.email, input.password);
 }
 
-export async function signOutSiteCustomer() { if (supabase) await supabase.auth.signOut(); }
+export async function signOutSiteCustomer() {
+  clearToken("customer");
+}

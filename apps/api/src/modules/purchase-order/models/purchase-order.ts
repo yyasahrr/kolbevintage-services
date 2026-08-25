@@ -1,40 +1,36 @@
 import { model } from "@medusajs/framework/utils";
 
 /**
- * مدل سفارش خرید از تأمینکننده - معادل purchase_orders + purchase_order_items
- * در اسکیمای فعلی Supabase. زنجیره وضعیت همان order_status فعلی حفظ شده است:
+ * سفارش خرید از تأمینکننده - معادل purchase_orders + purchase_order_items.
+ * زنجیره وضعیت همان order_status فعلی حفظ شده است:
  * pending -> confirmed -> preparing -> shipped -> delivered (یا cancelled)
  */
-const PurchaseOrderItem = model.define("purchase_order_item", {
+export const PurchaseOrderItem = model.define("purchase_order_item", {
   id: model.id().primaryKey(),
+  purchaseOrderId: model.text(),
   productName: model.text(),
   sku: model.text().nullable(),
+  variantId: model.text().nullable(),
   quantity: model.number().default(1),
-  unitAmount: model.number().nullable(),
-  totalAmount: model.number().nullable(),
+  unitPrice: model.number().default(0),
+  totalAmount: model.number().default(0),
 });
 
-const PurchaseOrder = model.define("purchase_order", {
+export const PurchaseOrder = model.define("purchase_order", {
   id: model.id().primaryKey(),
   orderCode: model.text().unique(),
   supplierId: model.text(),
+  wholesaleOrderId: model.text().nullable(),
   status: model
-    .enum("order_status", [
-      "pending",
-      "confirmed",
-      "preparing",
-      "shipped",
-      "delivered",
-      "cancelled",
-    ])
+    .enum(["pending", "confirmed", "preparing", "shipped", "delivered", "cancelled"])
     .default("pending"),
-  dueDate: model.date().nullable(),
+  dueDate: model.dateTime().nullable(),
   trackingCode: model.text().nullable(),
-  totalAmount: model.number().nullable(),
+  totalAmount: model.number().default(0),
   currency: model.text().default("IRR"),
   notes: model.text().nullable(),
-  items: model.hasMany(() => PurchaseOrderItem),
+  shippedAt: model.dateTime().nullable(),
+  deliveredAt: model.dateTime().nullable(),
 });
 
-export { PurchaseOrderItem, PurchaseOrder };
 export default PurchaseOrder;
