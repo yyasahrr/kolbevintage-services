@@ -1,3 +1,4 @@
+import HeroStudio from "./HeroStudio";
 import { useState } from "react";
 import { Link } from "../router";
 import { products, categories, specLabels, specOrder, type Product } from "../data/catalog";
@@ -17,6 +18,7 @@ const input =
 
 const nav = [
   { id: "retail-settings", label: "تنظیمات خرده", icon: "check" },
+  { id: "hero-studio", label: "استودیوی هیرو", icon: "star" },
   { id: "dashboard", label: "داشبورد", icon: "shield" },
   { id: "products", label: "محصولات", icon: "bag" },
   { id: "inventory", label: "موجودی و تأمین", icon: "pin" },
@@ -871,6 +873,7 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
         <main className="min-w-0 flex-1 p-4 lg:p-6">
           {page === "retail-settings" && <RetailPolicyCenter />}
           {page === "dashboard" && <Dashboard />}
+          {page === "hero-studio" && <HeroStudio />}
           {page === "products" && <ProductsPanel />}
           {page === "inventory" && <InventoryOperations />}
           {page === "orders" && <OrdersPanel />}

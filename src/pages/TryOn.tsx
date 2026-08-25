@@ -29,7 +29,7 @@ export default function TryOn() {
   const [ready, setReady] = useState(false);
   const selectedItems = useMemo(() => slotMeta.map((slot) => selected[slot.key]), [selected]);
 
-  useEffect(() => () => portrait && URL.revokeObjectURL(portrait), [portrait]);
+  useEffect(() => () => { if (portrait) URL.revokeObjectURL(portrait); }, [portrait]);
 
   return (
     <main className="tryon-page px-3 pb-8 pt-5 sm:px-5 lg:px-8 lg:pt-8">

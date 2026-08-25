@@ -1,3 +1,4 @@
+import { HeroStudioRenderer } from "../components/heroTemplates";
 import { useEffect, useState } from "react";
 import { Link } from "../router";
 import { products } from "../data/catalog";
@@ -460,9 +461,10 @@ function TrustRow() {
 /* ---------------------------------- صفحه ----------------------------------- */
 
 export default function Home() {
+  const { heroStudio } = useSiteSettings();
   return (
     <>
-      <HomepageHero />
+      {heroStudio.published ? <HeroStudioRenderer config={heroStudio} /> : <HomepageHero />}
       <NewArrivals />
       <CollectionBanner />
       <ShopByStyle />

@@ -150,7 +150,7 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
       </div>
 
       {/* دسکتاپ: گرید ناهماهنگ - بزرگترین خانه متعلق به ویدئو محصول است */}
-      <div className="product-gallery-grid hidden gap-3 p-3 lg:grid lg:grid-cols-4 lg:grid-flow-row-dense lg:auto-rows-[225px]">
+      <div className="product-gallery-grid hidden gap-3 p-3 lg:mx-auto lg:max-w-[1060px] lg:grid lg:grid-cols-4 lg:grid-flow-row-dense lg:auto-rows-[185px]">
         {product.video ? (
           <button
             onClick={() => window.open(product.video!.url, "_blank")}
@@ -668,13 +668,14 @@ export default function ProductPage({ id }: { id: string }) {
             <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
           </div>
         )}
-        {/* دسکتاپ: گرید ناهماهنگ رسانه در بالا، مشخصات محصول در پایین */}
+        {/* دسکتاپ: موزاییک رسانه کوچک در بالا؛ راست = باکس خرید، چپ = جزئیات و توضیحات */}
         <div>
           <Gallery product={product} onOpen={(i) => setLightbox(i)} />
 
+          <div className="lg:grid lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)] lg:items-start lg:gap-12">
           <aside>
-            <div className="product-info-panel px-4 pb-8 pt-6 lg:px-8 lg:pb-10 lg:pt-10">
-              <div className="mx-auto max-w-[440px] lg:max-w-[620px]">
+            <div className="product-info-panel px-4 pb-8 pt-6 lg:px-6 lg:pb-10 lg:pt-10">
+              <div className="mx-auto max-w-[440px] lg:mx-0 lg:max-w-[430px]">
                 <nav className="flex items-center gap-1.5 text-[11px] text-neutral-500">
                   <Link to="/" className="hover:underline">خانه</Link>
                   <span>›</span>
@@ -823,11 +824,9 @@ export default function ProductPage({ id }: { id: string }) {
               </div>
             </div>
           </aside>
-        </div>
 
-        {/* جزئیات + جدول مشخصات */}
-        <section className="border-t border-neutral-200">
-          <div className="mx-auto w-full px-4 py-14 lg:px-8">
+          {/* جزئیات + توضیحات: ستون چپ، همتراز با باکس خرید */}
+          <section className="border-t border-neutral-200 px-4 pt-10 lg:border-t-0 lg:px-0 lg:pt-2">
             <div className="max-w-3xl">
               <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
               <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
@@ -869,9 +868,9 @@ export default function ProductPage({ id }: { id: string }) {
                 ))}
               </div>
             </div>
-
+          </section>
           </div>
-        </section>
+        </div>
 
         <div id="reviews">
           <Reviews product={product} />

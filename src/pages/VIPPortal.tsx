@@ -6,6 +6,7 @@ import Icon from "../components/Icon";
 import { loadWholesaleMembership } from "../wholesaleMembership";
 import ProductPage from "./ProductPage";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
+import { loadCustomer } from "../customerIdentity";
 import { loadWholesaleCustomerOrders, loadWholesaleVipProducts, restoreWholesaleVip, signInWholesaleVip, signOutWholesaleVip, submitWholesaleCustomerOrder, type WholesaleCustomerOrder, type WholesaleVipAccount, type WholesaleVipProduct } from "../lib/wholesaleVipApi";
 
 type WholesaleLine = { key: string; productId: string; variantId?: string; productName: string; productCode: string; colour: string; colourHex: string; size: string; qty: number; unitPrice?: number; collectionName?: string };

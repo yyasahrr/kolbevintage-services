@@ -3,8 +3,52 @@ import { footerColumnsFa, mainNav, type NavItem } from "./siteData";
 
 export type HeroTemplate = "cover" | "split" | "mosaic" | "duo" | "minimal";
 
+/** پیکربندی استودیوی هیرو - تمپلیت + پسزمینه دلخواه + شمارنده جشنواره */
+export type HeroStudioConfig = {
+  published: boolean;
+  template: 1 | 2 | 3 | 4;
+  bgImage: string;
+  overlay: number;
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  ctaLabel: string;
+  ctaTo: string;
+  countdown: {
+    enabled: boolean;
+    label: string;
+    target: string;
+    style: "glass" | "dark" | "light" | "solid";
+    bgColor: string;
+    bgImage: string;
+    accent: string;
+  };
+};
+
+export const defaultHeroStudio: HeroStudioConfig = {
+  published: false,
+  template: 1,
+  bgImage: "/images/model-front.jpg",
+  overlay: 0.45,
+  eyebrow: "جشنواره فروش فوق‌العاده کلبه",
+  title: "کالکشن وینتیج، با تخفیف استثنایی",
+  subtitle: "چند روز بیشتر نمانده؛ قطعات منتخب پاییزی با قیمت جشنواره.",
+  ctaLabel: "مشاهده پیشنهادها",
+  ctaTo: "/shop",
+  countdown: {
+    enabled: true,
+    label: "پایان جشنواره",
+    target: "",
+    style: "glass",
+    bgColor: "",
+    bgImage: "",
+    accent: "#c9654d",
+  },
+};
+
 export type SiteSettings = {
   header: { brand: string; latinBrand: string; shopLabel: string; nav: NavItem[] };
+  heroStudio: HeroStudioConfig;
   hero: {
     template: HeroTemplate;
     eyebrow: string;
@@ -45,6 +89,7 @@ export const defaultSiteSettings: SiteSettings = {
     shopLabel: "فروشگاه",
     nav: mainNav.filter((item) => ["جدیدترین‌ها", "کالکشن پاییز", "استایل‌ها", "مجله"].includes(item.label)),
   },
+  heroStudio: defaultHeroStudio,
   hero: {
     template: "cover",
     eyebrow: "کالکشن پاییز ۱۴۰۵",
@@ -94,6 +139,7 @@ export function loadSiteSettings(): SiteSettings {
       ...defaultSiteSettings,
       ...saved,
       header: { ...defaultSiteSettings.header, ...saved.header },
+      heroStudio: { ...defaultHeroStudio, ...(saved.heroStudio ?? {}), countdown: { ...defaultHeroStudio.countdown, ...(saved.heroStudio?.countdown ?? {}) } },
       hero: { ...defaultSiteSettings.hero, ...saved.hero },
       collectionBanner: { ...defaultSiteSettings.collectionBanner, ...saved.collectionBanner },
       footer: { ...defaultSiteSettings.footer, ...saved.footer },
