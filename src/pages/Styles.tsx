@@ -32,7 +32,7 @@ export default function Styles() {
       </section>
 
       {/* تب استایل‌ها */}
-      <div className="liquid-toolbar sticky top-[104px] z-30 border-b border-neutral-200 bg-white">
+      <div className="liquid-toolbar border-b border-neutral-200 bg-white">
         <div className="no-scrollbar mx-auto flex w-full gap-2 overflow-x-auto px-4 py-3 lg:justify-center lg:px-8">
           {styles.map((s, i) => (
             <button
