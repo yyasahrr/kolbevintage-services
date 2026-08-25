@@ -9,6 +9,9 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="../frontend-supplier/src/main.tsx"></script>
+    <script type="module">
+      /* ماژول بیرون از root این پروژه است؛ از طریق middleware سرور dev سرو میشود */
+      import("/frontend-supplier/src/main.tsx");
+    </script>
   </body>
 </html>

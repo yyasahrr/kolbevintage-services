@@ -23,6 +23,32 @@ const KOLBE_CORS_HEADERS: Record<string, string> = {
   "access-control-max-age": "600",
 };
 
+/**
+ * پنل ساپلایر روی همین سرور (/supplier.html):
+ * مرورگر /frontend-supplier/src/main.tsx را میخواهد؛ به /@fs بازنویسی میشود
+ * تا ماژولهای بیرون از root این پروژه سرو شوند.
+ */
+function kolbeSupplierEntryPlugin(): Plugin {
+  const repoRoot = path.resolve(__dirname, "..");
+  const rewrite = (req: any, _res: any, next: () => void) => {
+    const url = req.url ?? "";
+    if (url.startsWith("/frontend-supplier/")) {
+      const [pathname, search = ""] = url.split("?");
+      req.url = "/@fs" + path.join(repoRoot, pathname) + (search ? "?" + search : "");
+    }
+    next();
+  };
+  return {
+    name: "kolbe-supplier-entry",
+    configureServer(server) {
+      server.middlewares.use(rewrite);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(rewrite);
+    },
+  };
+}
+
 function kolbeApiCorsPlugin(): Plugin {
   const middleware = (req: any, res: any, next: () => void) => {
     const url = req.url ?? "";
@@ -71,7 +97,7 @@ const kolbeProxy = {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(), viteSingleFile(), kolbeApiCorsPlugin()],
+  plugins: [react(), tailwindcss(), viteSingleFile(), kolbeSupplierEntryPlugin(), kolbeApiCorsPlugin()],
   // درخواستهای API بک‌اند مدوسا (پروکسی سرور->سرور؛ مرورگر هرگز localhost صدا نمیزند)
   server: {
     host: "0.0.0.0",
