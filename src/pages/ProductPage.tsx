@@ -825,49 +825,24 @@ export default function ProductPage({ id }: { id: string }) {
             </div>
           </aside>
 
-          {/* جزئیات + توضیحات: ستون چپ، همتراز با باکس خرید */}
+          {/* مشخصات فنی: ستون چپ، همتراز با باکس خرید */}
           <section className="border-t border-neutral-200 px-4 pt-10 lg:border-t-0 lg:px-0 lg:pt-2">
-            <div className="max-w-3xl">
-              <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
-              <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
-
-              <div className="mt-7 border-t border-neutral-200">
-                {accordions.map((a) => (
-                  <div key={a.title} className="border-b border-neutral-200">
-                    <button
-                      onClick={() => setOpenAcc(openAcc === a.title ? null : a.title)}
-                      className="flex w-full items-center justify-between py-3.5 text-right text-[13px]"
-                    >
-                      {a.title}
-                      <Icon
-                        name={openAcc === a.title ? "minus" : "plus"}
-                        className="h-3.5 w-3.5 text-neutral-400"
-                      />
-                    </button>
-                    {openAcc === a.title && (
-                      <p className="pb-4 pl-4 text-[12.5px] leading-[2] text-neutral-600">{a.body}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-7 space-y-4">
-                {[
-                  { icon: "needle", title: "دوخت دست", text: "هر قطعه در کارگاه کلبه و با نظارت خیاط ارشد دوخته می‌شود." },
-                  { icon: "shield", title: "ضمانت کیفیت", text: "تا یک سال پس از خرید، تعمیرات دوخت رایگان است." },
-                ].map((f) => (
-                  <div key={f.title} className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-300">
-                      <Icon name={f.icon} className="h-4 w-4" strokeWidth={1.3} />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-medium">{f.title}</p>
-                      <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">{f.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <h2 className="text-[18px] font-medium">مشخصات فنی</h2>
+            <div className="product-specs-table mt-5 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+              <table className="w-full text-[12.5px]">
+                <tbody>
+                  {specOrder.map((key, i) => (
+                    <tr key={key} className={"product-spec-row grid grid-cols-[42%_58%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
+                      <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
+                      <td className="text-right">{product.specs[key]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+            <button onClick={() => toggleCompare(product.id)} className="mt-3 text-[11.5px] text-neutral-500 underline hover:text-[#011c3a]">
+              افزودن این محصول به مقایسه
+            </button>
           </section>
           </div>
         </div>
@@ -926,26 +901,49 @@ export default function ProductPage({ id }: { id: string }) {
           </div>
         </section>
 
-        {/* جدول مشخصات پس از پیشنهادها */}
-        <section className="product-specs border-t border-neutral-200 bg-[#f6f6f4]">
+        {/* جزئیات و توضیحات محصول - تمامعرض، زیر دو ستون خرید و مشخصات */}
+        <section className="border-t border-neutral-200 bg-[#f6f6f4]">
           <div className="mx-auto w-full px-4 py-14 lg:px-8">
-            <div className="max-w-3xl">
-              <h2 className="mb-5 text-[18px] font-medium">مشخصات فنی</h2>
-              <div className="product-specs-table overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-                <table className="w-full text-[12.5px]">
-                  <tbody>
-                    {specOrder.map((key, i) => (
-                      <tr key={key} className={"product-spec-row grid grid-cols-[42%_58%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
-                        <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
-                        <td className="text-right">{product.specs[key]}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="max-w-5xl">
+              <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
+              <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
+
+              <div className="mt-7 border-t border-neutral-200">
+                {accordions.map((a) => (
+                  <div key={a.title} className="border-b border-neutral-200">
+                    <button
+                      onClick={() => setOpenAcc(openAcc === a.title ? null : a.title)}
+                      className="flex w-full items-center justify-between py-3.5 text-right text-[13px]"
+                    >
+                      {a.title}
+                      <Icon
+                        name={openAcc === a.title ? "minus" : "plus"}
+                        className="h-3.5 w-3.5 text-neutral-400"
+                      />
+                    </button>
+                    {openAcc === a.title && (
+                      <p className="pb-4 pl-4 text-[12.5px] leading-[2] text-neutral-600">{a.body}</p>
+                    )}
+                  </div>
+                ))}
               </div>
-              <button onClick={() => toggleCompare(product.id)} className="mt-3 text-[11.5px] text-neutral-500 underline hover:text-[#011c3a]">
-                افزودن این محصول به مقایسه
-              </button>
+
+              <div className="mt-7 grid gap-4 sm:grid-cols-2">
+                {[
+                  { icon: "needle", title: "دوخت دست", text: "هر قطعه در کارگاه کلبه و با نظارت خیاط ارشد دوخته می‌شود." },
+                  { icon: "shield", title: "ضمانت کیفیت", text: "تا یک سال پس از خرید، تعمیرات دوخت رایگان است." },
+                ].map((f) => (
+                  <div key={f.title} className="flex gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-300">
+                      <Icon name={f.icon} className="h-4 w-4" strokeWidth={1.3} />
+                    </div>
+                    <div>
+                      <p className="text-[12px] font-medium">{f.title}</p>
+                      <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">{f.text}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
