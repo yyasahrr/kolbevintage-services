@@ -5,7 +5,7 @@
  */
 const BASE = process.argv[2] || "http://127.0.0.1:9000";
 const BOOTSTRAP = process.env.KOLBE_BOOTSTRAP_SECRET || "kolbe-bootstrap-2026";
-const PK = process.env.KOLBE_PUBLISHABLE_KEY || "pk_8e2ce63e67780f16eee06e44142b0cebdf8982dcd2ecf75e1806ae6d52dcb456";
+const PK = process.env.KOLBE_PUBLISHABLE_KEY || "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee";
 
 async function api(path, { method = "GET", body, token } = {}) {
   const res = await fetch(`${BASE}${path}`, {

@@ -13,7 +13,7 @@ export const TOKEN_KEYS = {
 export type Role = keyof typeof TOKEN_KEYS;
 
 const BASE = import.meta.env.VITE_KOLBE_API ?? "";
-const PUBLISHABLE_KEY = import.meta.env.VITE_MEDUSA_PUBLISHABLE_KEY ?? "pk_8e2ce63e67780f16eee06e44142b0cebdf8982dcd2ecf75e1806ae6d52dcb456";
+const PUBLISHABLE_KEY = import.meta.env.VITE_MEDUSA_PUBLISHABLE_KEY ?? "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee";
 
 export class ApiError extends Error {
   code: string;

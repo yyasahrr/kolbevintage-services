@@ -4,7 +4,7 @@
  * توکن نشست ساپلایر: kv_medusa_supplier
  */
 const TOKEN_KEY = 'kv_medusa_supplier'
-const PUBLISHABLE_KEY = 'pk_8e2ce63e67780f16eee06e44142b0cebdf8982dcd2ecf75e1806ae6d52dcb456'
+const PUBLISHABLE_KEY = 'pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee'
 
 export type SupplierContext = { supplierId: string; displayName: string; legalName: string }
 
