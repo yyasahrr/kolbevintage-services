@@ -4,6 +4,7 @@ import { products, type Product } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import { loadWholesaleMembership } from "../wholesaleMembership";
+import { PANELS_PREVIEW_MODE, DEMO_VIP_MEMBERSHIP } from "../previewMode";
 import ProductPage from "./ProductPage";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadCustomer } from "../customerIdentity";
@@ -33,9 +34,9 @@ export default function VIPPortal() {
   const [loading, setLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => { restoreWholesaleVip().then(async (account) => { setMembership(account); if (account) setVipProducts(await loadWholesaleVipProducts()); }).catch(() => setCatalogError("بازیابی حساب VIP انجام نشد.")).finally(() => setLoading(false)); }, []);
+  useEffect(() => { restoreWholesaleVip().then(async (account) => { const effective = account ?? (PANELS_PREVIEW_MODE ? (DEMO_VIP_MEMBERSHIP as unknown as WholesaleVipAccount) : null); setMembership(effective); if (account) setVipProducts(await loadWholesaleVipProducts()); }).catch(() => { if (PANELS_PREVIEW_MODE) setMembership(DEMO_VIP_MEMBERSHIP as unknown as WholesaleVipAccount); else setCatalogError("بازیابی حساب VIP انجام نشد."); }).finally(() => setLoading(false)); }, []);
   const authenticated = async (account: WholesaleVipAccount) => { setMembership(account); setCatalogError(""); try { setVipProducts(await loadWholesaleVipProducts()); navigate("/vip/store"); } catch (error) { setCatalogError(error instanceof Error ? error.message : "دریافت کاتالوگ انجام نشد."); } };
-  const logout = async () => { await signOutWholesaleVip(); setMembership(null); setVipProducts([]); navigate("/wholesale"); };
+  const logout = async () => { await signOutWholesaleVip(); if (PANELS_PREVIEW_MODE) { setMembership(DEMO_VIP_MEMBERSHIP as unknown as WholesaleVipAccount); return; } setMembership(null); setVipProducts([]); navigate("/wholesale"); };
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#f3f3f0] text-[12px] text-neutral-500" aria-live="polite">در حال بررسی عضویت VIP…</main>;
   if (!membership) return <WholesaleVipLogin onAuthenticated={authenticated} />;
   return <div className="vip-portal-shell min-h-screen bg-[#f3f3f0] text-[#011c3a]">
@@ -43,7 +44,7 @@ export default function VIPPortal() {
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#011c3a] px-4 text-white lg:px-7">
       <div className="flex items-center gap-3"><button aria-label="باز کردن منو" onClick={() => setMenuOpen((open) => !open)} className="flex h-9 w-9 items-center justify-center border border-white/20 lg:hidden"><Icon name={menuOpen ? "close" : "menu"} /></button><Link to="/vip" className="text-[13px] font-semibold tracking-[0.1em]">کلبه وینتیج <span className="mr-2 text-[8px] font-normal tracking-[0.25em] text-white/45">VIP PROFESSIONAL</span></Link></div>
       <div className="flex items-center gap-2 sm:gap-3"><Link to="/vip/store" className="hidden text-[10.5px] text-white/65 hover:text-white sm:block">ورود به فروشگاه عمده</Link><button aria-label="اعلان‌ها" className="relative flex h-9 w-9 items-center justify-center border border-white/20"><Icon name="mail" className="h-4 w-4" /><span className="absolute -left-1 -top-1 h-4 min-w-4 bg-white px-1 text-[8px] leading-4 text-[#011c3a]">۲</span></button><div className="hidden border-r border-white/20 pr-3 text-[10px] sm:block"><p>{membership.storeName}</p><p className="mt-0.5 text-[8px] text-white/45">{membership.planName} · فعال</p></div><button type="button" onClick={logout} className="h-9 border border-white/25 px-3 text-[10px] text-white/75 transition hover:border-white hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="خروج از حساب کاربری">خروج</button></div>
-    </header>
+    </header>{PANELS_PREVIEW_MODE && <div role="status" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-[10.5px] text-amber-800">حالت پیش‌نمایش فعال است — کاتالوگ و سفارشهای زنده در دسترس نیستند.</div>}
     <div className="grid lg:grid-cols-[238px_1fr]">
       <aside className={(menuOpen ? "fixed inset-x-0 top-16 z-30 block" : "hidden") + " border-l border-neutral-200 bg-white p-4 lg:sticky lg:top-16 lg:block lg:h-[calc(100vh-64px)] lg:overflow-y-auto"}>
         <Link to="/vip" onClick={() => setMenuOpen(false)} className={(path === "/vip" ? "bg-[#011c3a] text-white" : "hover:bg-neutral-100") + " flex items-center gap-2 px-3 py-2.5 text-[11.5px]"}><Icon name="user" className="h-3.5 w-3.5" />خانه</Link>

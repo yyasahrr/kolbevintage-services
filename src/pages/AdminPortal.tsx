@@ -5,6 +5,7 @@ import Icon from "../components/Icon";
 import { Link } from "../router";
 import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
 import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
+import { PANELS_PREVIEW_MODE } from "../previewMode";
 
 type Workspace = "retail" | "wholesale";
 
@@ -49,16 +50,17 @@ function BackendStatus() {
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
 
 export default function AdminPortal() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [restoring, setRestoring] = useState(true);
+  const [authenticated, setAuthenticated] = useState(PANELS_PREVIEW_MODE);
+  const [restoring, setRestoring] = useState(!PANELS_PREVIEW_MODE);
   const [workspace, setWorkspace] = useState<Workspace>("retail");
   const [credentials, setCredentials] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   useEffect(() => {
+    if (PANELS_PREVIEW_MODE) return;
     restoreAdminSession().then(setAuthenticated).finally(() => setRestoring(false));
   }, []);
-  const logout = () => { signOutAdmin().catch(() => undefined); setAuthenticated(false); setCredentials({ username: "", password: "" }); };
+  const logout = () => { if (PANELS_PREVIEW_MODE) return; signOutAdmin().catch(() => undefined); setAuthenticated(false); setCredentials({ username: "", password: "" }); };
 
   if (restoring) return <main className="admin-system grid min-h-screen place-items-center bg-[#f4f3ef]"><div role="status" className="text-center"><span className="mx-auto block h-8 w-8 animate-spin rounded-full border-2 border-[#011c3a]/20 border-t-[#011c3a]"/><p className="mt-4 text-[11px] text-neutral-500">در حال بررسی نشست امن…</p></div></main>;
 
@@ -87,5 +89,5 @@ export default function AdminPortal() {
     <div className="hidden min-w-44 flex-col leading-none sm:flex"><span className="text-[15px] font-semibold tracking-[0.12em]">کلبه وینتیج</span><span className="mt-1.5 text-[7.5px] tracking-[0.34em] text-neutral-400">MANAGEMENT SYSTEM</span></div>
     <div className="flex min-w-0 flex-1 items-center justify-center"><div className="grid w-full max-w-[410px] grid-cols-2 border border-neutral-200 bg-[#f6f6f4] p-1" role="tablist" aria-label="انتخاب فضای مدیریت"><button role="tab" aria-selected={workspace === "retail"} onClick={() => setWorkspace("retail")} className={`h-10 px-3 text-[10.5px] font-medium transition ${focusRing} ${workspace === "retail" ? "bg-[#011c3a] text-white" : "text-neutral-500 hover:bg-white hover:text-neutral-900"}`}>مدیریت کلبه</button><button role="tab" aria-selected={workspace === "wholesale"} onClick={() => setWorkspace("wholesale")} className={`h-10 px-3 text-[10.5px] font-medium transition ${focusRing} ${workspace === "wholesale" ? "bg-[#011c3a] text-white" : "text-neutral-500 hover:bg-white hover:text-neutral-900"}`}>مدیریت عمده‌فروشی</button></div></div>
     <div className="flex min-w-fit items-center justify-end gap-2 sm:min-w-44"><Link to="/" aria-label="مشاهده وب‌سایت" className={`hidden h-10 items-center gap-2 px-2 text-[10.5px] text-neutral-500 hover:text-[#011c3a] md:flex ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />مشاهده سایت</Link><button type="button" onClick={logout} aria-label="خروج امن" className={`flex h-10 w-10 items-center justify-center border border-neutral-200 text-neutral-500 transition hover:border-red-200 hover:text-red-700 ${focusRing}`}><Icon name="user" className="h-4 w-4" /></button></div>
-  </div></header>{workspace === "retail" ? <Admin embedded /> : <WholesaleAdmin />}</div>;
+  </div></header>{PANELS_PREVIEW_MODE && <div role="status" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-[10.5px] text-amber-800">حالت پیش‌نمایش فعال است — ورود ادمین موقتاً غیرفعال و داده‌های زنده در دسترس نیستند.</div>}{workspace === "retail" ? <Admin embedded /> : <WholesaleAdmin />}</div>;
 }
