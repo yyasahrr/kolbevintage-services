@@ -25,7 +25,11 @@ async function api<T = unknown>(path: string, init?: { method?: string; body?: u
     })
   } catch { throw new ApiError('NETWORK', 'اتصال به سرور برقرار نشد.') }
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new ApiError(String((data as any)?.error ?? `HTTP_${response.status}`))
+  if (!response.ok) {
+    const message = String((data as any)?.message ?? '')
+    if (message.includes('Publishable API key') || (data as any)?.type === 'not_allowed') throw new ApiError('BAD_API_KEY', 'نسخه صفحه قدیمی است؛ صفحه را با Ctrl+Shift+R رفرش کنید.')
+    throw new ApiError(String((data as any)?.error ?? `HTTP_${response.status}`))
+  }
   return data as T
 }
 
@@ -47,7 +51,7 @@ export async function signInSupplier(email: string, password: string): Promise<S
     body: { email: email.trim(), password },
   }).catch((error) => {
     if (error instanceof ApiError) {
-      if (error.code === 'NETWORK') throw new Error('اتصال به سرور برقرار نشد.')
+      if (error.code === 'NETWORK' || error.code === 'BAD_API_KEY') throw new Error(error.message)
       if (error.code === 'SUPPLIER_ACCESS_INACTIVE') throw new Error('برای این حساب، دسترسی تأمین‌کننده فعال نشده است.')
     }
     throw new Error('ایمیل یا رمز عبور درست نیست.')

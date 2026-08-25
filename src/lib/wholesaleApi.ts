@@ -55,7 +55,7 @@ export async function signInAdmin(email: string, password: string) {
     method: "POST",
     body: { email: email.trim(), password, role: "admin" },
   }).catch((error) => {
-    if (error instanceof ApiError && error.code === "NETWORK") throw new Error("اتصال به سرور برقرار نشد.");
+    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY")) throw new Error(error.message);
     throw new Error("ایمیل یا رمز عبور درست نیست.");
   });
   if (data.user.role !== "admin") throw new Error("این حساب دسترسی مدیریت کلبه را ندارد.");

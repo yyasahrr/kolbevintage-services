@@ -64,7 +64,13 @@ export async function api<T = unknown>(path: string, init?: { method?: string; b
     throw new ApiError("NETWORK", "اتصال به سرور برقرار نشد.");
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(String((data as any)?.error ?? `HTTP_${response.status}`));
+  if (!response.ok) {
+    const message = String((data as any)?.message ?? "");
+    if (message.includes("Publishable API key") || (data as any)?.type === "not_allowed") {
+      throw new ApiError("BAD_API_KEY", "نسخه صفحه قدیمی است؛ صفحه را با Ctrl+Shift+R رفرش کنید.");
+    }
+    throw new ApiError(String((data as any)?.error ?? `HTTP_${response.status}`));
+  }
   return data as T;
 }
 
