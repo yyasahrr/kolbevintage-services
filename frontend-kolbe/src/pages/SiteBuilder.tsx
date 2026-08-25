@@ -4,6 +4,8 @@ import {
   type SiteBuilder, type BuilderStyleCard, type BuilderPost, type BuilderInstaCard, type BuilderHotspot,
 } from "../siteSettings";
 import { fileToOptimizedDataUrl } from "../lib/imageUpload";
+import { VisualHotspotCanvas, ImageDropField, SortableList } from "../components/visualBuilder";
+import { toman } from "../utils/format";
 
 const input = "h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
 const label = "mb-1.5 block text-[10.5px] font-medium text-neutral-500";
@@ -118,12 +120,12 @@ export default function SiteBuilder() {
             </Row>
             <label className="block"><span className={label}>{builder.banner.mediaType === "video" ? "آدرس ویدیو (mp4/webm)" : "تصویر اصلی"}</span>
               <input className={input} dir="ltr" value={builder.banner.media} onChange={(e) => patch({ banner: { ...builder.banner, media: e.target.value } })} />
-              {builder.banner.mediaType === "image" ? <div className="mt-1.5"><ImageField value={builder.banner.media} onChange={(url) => patch({ banner: { ...builder.banner, media: url } })} /></div> : <p className="mt-1 text-[9.5px] text-neutral-400">برای ویدیو آدرس مستقیم فایل را وارد کنید (مثلاً /videos/hero.mp4).</p>}
+              {builder.banner.mediaType === "image" ? <div className="mt-1.5"><ImageDropField value={builder.banner.media} onChange={(url) => patch({ banner: { ...builder.banner, media: url } })} /></div> : <p className="mt-1 text-[9.5px] text-neutral-400">برای ویدیو آدرس مستقیم فایل را وارد کنید (مثلاً /videos/hero.mp4).</p>}
             </label>
             {builder.banner.mode === "grid3" && (
               <Row>
-                <label className="block"><span className={label}>تصویر تکه دوم</span><ImageField value={builder.banner.tile2} onChange={(url) => patch({ banner: { ...builder.banner, tile2: url } })} /></label>
-                <label className="block"><span className={label}>تصویر تکه سوم</span><ImageField value={builder.banner.tile3} onChange={(url) => patch({ banner: { ...builder.banner, tile3: url } })} /></label>
+                <div><span className={label}>تصویر تکه دوم (درگ‌اند‌دراپ)</span><ImageDropField value={builder.banner.tile2} onChange={(url) => patch({ banner: { ...builder.banner, tile2: url } })} /></div>
+                <div><span className={label}>تصویر تکه سوم (درگ‌اند‌دراپ)</span><ImageDropField value={builder.banner.tile3} onChange={(url) => patch({ banner: { ...builder.banner, tile3: url } })} /></div>
               </Row>
             )}
             <label className="block max-w-sm"><span className={label}>تیرگی پوشش: {Math.round(builder.banner.overlay * 100)}٪</span>
@@ -140,22 +142,27 @@ export default function SiteBuilder() {
         </section>
       )}
 
-      {/* ---------------- کارت استایلها ---------------- */}
+      {/* ---------------- کارت استایلها (ویرایشگر تصویری درگ‌اند‌دراپ) ---------------- */}
       {tab === "styles" && (
         <section className={card}>
           <div className="flex items-center justify-between">
-            <h3 className="text-[12.5px] font-medium">بخش «خرید بر اساس استایل»</h3>
+            <h3 className="text-[12.5px] font-medium">کارت‌های استایل — ویرایشگر تصویری</h3>
             <label className="flex items-center gap-2 text-[11px]">
               <input type="checkbox" checked={builder.stylesSection.fullBleed} onChange={(e) => patch({ stylesSection: { ...builder.stylesSection, fullBleed: e.target.checked } })} className="accent-[#011c3a]" />
               تمام‌عرض (فول‌سایز)
             </label>
           </div>
-          <p className="mt-2 text-[10.5px] text-neutral-500">اگر کارتی اضافه کنید، به‌جای کارت‌های پیش‌فرض نمایش داده می‌شوند.</p>
-          <div className="mt-3 space-y-3">
-            {builder.stylesSection.cards.map((c, i) => (
-              <StyleCardEditor key={c.id} card={c} onChange={(next) => { const cards = [...builder.stylesSection.cards]; cards[i] = next; patch({ stylesSection: { ...builder.stylesSection, cards } }); }} onRemove={() => patch({ stylesSection: { ...builder.stylesSection, cards: builder.stylesSection.cards.filter((x) => x.id !== c.id) } })} />
-            ))}
-            <button onClick={() => patch({ stylesSection: { ...builder.stylesSection, cards: [...builder.stylesSection.cards, { id: `st-${Date.now()}`, name: "استایل جدید", latin: "NEW STYLE", img: "/images/flat.jpg", tagline: "", count: "۰" }] } })} className={btnPrimary}>+ کارت استایل جدید</button>
+          <p className="mt-2 text-[10.5px] text-neutral-500">کارت را بگیر و جابه‌جا کن تا چینش عوض شود. روی کارت کلیک کن تا ویرایشش باز شود. اگر کارتی اضافه کنی، جای کارت‌های پیش‌فرض را می‌گیرند.</p>
+
+          <div className="mt-4">
+            <SortableList
+              items={builder.stylesSection.cards.length > 0 ? builder.stylesSection.cards : []}
+              onReorder={(cards) => patch({ stylesSection: { ...builder.stylesSection, cards } })}
+              renderItem={(c, i) => (
+                <StyleCardVisual key={c.id} card={c} onChange={(next) => { const cards = [...builder.stylesSection.cards]; cards[i] = next; patch({ stylesSection: { ...builder.stylesSection, cards } }); }} onRemove={() => patch({ stylesSection: { ...builder.stylesSection, cards: builder.stylesSection.cards.filter((x) => x.id !== c.id) } })} />
+              )}
+            />
+            <button onClick={() => patch({ stylesSection: { ...builder.stylesSection, cards: [...builder.stylesSection.cards, { id: `st-${Date.now()}`, name: "استایل جدید", latin: "NEW STYLE", img: "/images/flat.jpg", tagline: "", count: "۰" }] } })} className={btnPrimary + " mt-3"}>+ کارت استایل جدید</button>
           </div>
         </section>
       )}
@@ -193,8 +200,8 @@ export default function SiteBuilder() {
               <label className="block"><span className={label}>رنگ متن</span><ColorField value={builder.popup.textColor} onChange={(v) => patch({ popup: { ...builder.popup, textColor: v } })} /></label>
               <label className="block"><span className={label}>رنگ تأکید (دکمه)</span><ColorField value={builder.popup.accent} onChange={(v) => patch({ popup: { ...builder.popup, accent: v } })} /></label>
               <label className="block"><span className={label}>کد تخفیف</span><input className={input} dir="ltr" value={builder.popup.couponCode} onChange={(e) => patch({ popup: { ...builder.popup, couponCode: e.target.value } })} /></label>
-              <label className="block sm:col-span-2"><span className={label}>تصویر کنار پاپ‌آپ</span><ImageField value={builder.popup.image} onChange={(url) => patch({ popup: { ...builder.popup, image: url } })} /></label>
-              <label className="block sm:col-span-2"><span className={label}>تصویر پس‌زمینه کل پاپ‌آپ (اختیاری)</span><ImageField value={builder.popup.bgImage} onChange={(url) => patch({ popup: { ...builder.popup, bgImage: url } })} /></label>
+              <div className="sm:col-span-2"><span className={label}>تصویر کنار پاپ‌آپ (درگ‌اند‌دراپ)</span><ImageDropField value={builder.popup.image} onChange={(url) => patch({ popup: { ...builder.popup, image: url } })} /></div>
+              <div className="sm:col-span-2"><span className={label}>تصویر پس‌زمینه کل پاپ‌آپ (اختیاری)</span><ImageDropField value={builder.popup.bgImage} onChange={(url) => patch({ popup: { ...builder.popup, bgImage: url } })} /></div>
               <label className="block sm:col-span-2"><span className={label}>تیتر</span><input className={input} value={builder.popup.title} onChange={(e) => patch({ popup: { ...builder.popup, title: e.target.value } })} /></label>
               <label className="block sm:col-span-2"><span className={label}>متن</span><textarea className="min-h-16 w-full rounded-[3px] border border-neutral-300 p-3 text-[12px]" value={builder.popup.body} onChange={(e) => patch({ popup: { ...builder.popup, body: e.target.value } })} /></label>
               <label className="block"><span className={label}>پلیسهولدر ورودی</span><input className={input} value={builder.popup.inputPlaceholder} onChange={(e) => patch({ popup: { ...builder.popup, inputPlaceholder: e.target.value } })} /></label>
@@ -208,22 +215,58 @@ export default function SiteBuilder() {
         </section>
       )}
 
-      {/* ---------------- پیشنهاد استایل (هاستاسپات) ---------------- */}
+      {/* ---------------- پیشنهاد استایل (ویرایشگر تصویری درگ‌اند‌دراپ) ---------------- */}
       {tab === "look" && (
         <section className={card}>
           <div className="flex items-center justify-between">
-            <h3 className="text-[12.5px] font-medium">بخش «با این ست کنید» و هات‌اسپات‌ها</h3>
+            <h3 className="text-[12.5px] font-medium">پیشنهاد استایل — ویرایشگر تصویری</h3>
             <label className="flex items-center gap-2 text-[11px]">
               <input type="checkbox" checked={builder.look.enabled} onChange={(e) => patch({ look: { ...builder.look, enabled: e.target.checked } })} className="accent-[#011c3a]" />
               نمایش کل قسمت
             </label>
           </div>
-          <p className="mt-2 text-[10.5px] text-neutral-500">جایگاه هر هات‌اسپات درصدی از تصویر است (راست/بالا). روی سایت با هاور نمایش داده می‌شود.</p>
-          <div className="mt-3 space-y-3">
-            {builder.look.hotspots.map((h, i) => (
-              <HotspotEditor key={h.id} hotspot={h} onChange={(next) => { const list = [...builder.look.hotspots]; list[i] = next; patch({ look: { ...builder.look, hotspots: list } }); }} onRemove={() => patch({ look: { ...builder.look, hotspots: builder.look.hotspots.filter((x) => x.id !== h.id) } })} />
-            ))}
-            <button onClick={() => patch({ look: { ...builder.look, hotspots: [...builder.look.hotspots, { id: `h-${Date.now()}`, x: 50, y: 50, label: "قطعه جدید", color: "#c9654d", visible: true }] } })} className={btnPrimary}>+ هات‌اسپات جدید</button>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block"><span className={label}>عنوان ست</span><input className={input} value={builder.look.title} onChange={(e) => patch({ look: { ...builder.look, title: e.target.value } })} /></label>
+            <label className="block"><span className={label}>زیرعنوان</span><input className={input} value={builder.look.subtitle} onChange={(e) => patch({ look: { ...builder.look, subtitle: e.target.value } })} /></label>
+          </div>
+
+          <div className="mt-4">
+            <VisualHotspotCanvas
+              image={builder.look.image}
+              hotspots={builder.look.hotspots}
+              onChange={(hotspots) => patch({ look: { ...builder.look, hotspots } })}
+              onImageChange={(image) => patch({ look: { ...builder.look, image } })}
+            />
+          </div>
+
+          {/* محصولات لینکشده — درگ برای چینش */}
+          <div className="mt-6">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[12px] font-medium">محصولات لینک‌شده به ست</h4>
+              <button onClick={() => patch({ look: { ...builder.look, products: [...builder.look.products, { id: `lp-${Date.now()}`, name: "محصول جدید", price: 1000000, img: "/images/flat.jpg", to: "/shop" }] } })} className={btnPrimary}>+ محصول</button>
+            </div>
+            <p className="mt-1 text-[10px] text-neutral-400">برای تغییر چینش، کارت را بگیر و روی جای دلخواه رها کن.</p>
+            <div className="mt-3">
+              <SortableList
+                items={builder.look.products}
+                onReorder={(products) => patch({ look: { ...builder.look, products } })}
+                renderItem={(lp, i) => (
+                  <div className="grid gap-2 rounded-[4px] border border-neutral-200 bg-white p-3 sm:grid-cols-[64px_1fr_130px_140px_auto] sm:items-center">
+                    <span className="cursor-grab select-none text-center text-[14px] text-neutral-300" title="بکش">⠿</span>
+                    <div className="flex items-center gap-2">
+                      <img src={lp.img} alt="" className="h-12 w-10 rounded-[3px] object-cover" />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <input className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px]" value={lp.name} placeholder="نام محصول" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, name: e.target.value }; patch({ look: { ...builder.look, products } }); }} />
+                        <input className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px]" dir="ltr" value={lp.to} placeholder="/product/…" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, to: e.target.value }; patch({ look: { ...builder.look, products } }); }} />
+                      </div>
+                    </div>
+                    <input type="number" className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px] num-fa" value={lp.price} placeholder="قیمت" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, price: Number(e.target.value) }; patch({ look: { ...builder.look, products } }); }} />
+                    <div className="scale-90 origin-right"><ImageDropField compact value={lp.img} onChange={(img) => { const products = [...builder.look.products]; products[i] = { ...lp, img }; patch({ look: { ...builder.look, products } }); }} /></div>
+                    <button onClick={() => patch({ look: { ...builder.look, products: builder.look.products.filter((_, j) => j !== i) } })} className={btn}>حذف</button>
+                  </div>
+                )}
+              />
+            </div>
           </div>
         </section>
       )}
@@ -372,6 +415,60 @@ function InstaCardEditor({ card, onChange, onRemove }: { card: BuilderInstaCard;
       <input className={input} value={card.title} onChange={(e) => onChange({ ...card, title: e.target.value })} placeholder="تیتر" />
       <input className={input} value={card.text} onChange={(e) => onChange({ ...card, text: e.target.value })} placeholder="متن" />
       <button onClick={onRemove} className={btn}>حذف</button>
+    </div>
+  );
+}
+
+
+/* ------------------- کارت استایل بصری (ویرایشگر تصویری) ------------------- */
+
+function StyleCardVisual({ card, onChange, onRemove }: { card: BuilderStyleCard; onChange: (c: BuilderStyleCard) => void; onRemove: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-[6px] border border-neutral-200 bg-white">
+      <div className="flex cursor-grab items-center gap-3 p-3" onClick={() => setOpen(!open)}>
+        <span className="select-none text-[14px] text-neutral-300" title="بکش و جابه‌جا کن">⠿</span>
+        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[3px] bg-neutral-100">
+          <img src={card.img} alt="" className="h-full w-full object-cover" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[12.5px] font-medium">{card.name}</p>
+          <p className="truncate text-[10px] tracking-[0.15em] text-neutral-400">{card.latin.toUpperCase()}</p>
+        </div>
+        <span className="shrink-0 text-[10px] text-neutral-400">{open ? "بستن ▲" : "ویرایش ▼"}</span>
+      </div>
+      {open && (
+        <div className="grid gap-3 border-t border-neutral-200 p-3 sm:grid-cols-2">
+          <label className="block"><span className={label}>نام استایل</span><input className={input} value={card.name} onChange={(e) => onChange({ ...card, name: e.target.value })} /></label>
+          <label className="block"><span className={label}>نام لاتین</span><input className={input} dir="ltr" value={card.latin} onChange={(e) => onChange({ ...card, latin: e.target.value })} /></label>
+          <label className="block"><span className={label}>تعداد محصول</span><input className={input} value={card.count ?? ""} onChange={(e) => onChange({ ...card, count: e.target.value })} /></label>
+          <div><span className={label}>تصویر کارت (درگ‌اند‌دراپ)</span><ImageDropField compact value={card.img} onChange={(img) => onChange({ ...card, img })} /></div>
+          <div className="sm:col-span-2"><button onClick={onRemove} className={btn}>حذف کارت</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------- پیشنمایش زنده بنر --------------------------- */
+
+function BannerPreview({ config }: { config: SiteBuilder["banner"] }) {
+  return (
+    <div className="relative min-h-[220px] overflow-hidden">
+      {config.mediaType === "video" && config.media ? (
+        <video src={config.media} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <img src={config.media} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      <div className="absolute inset-0" style={{ background: `rgba(7,20,34,${config.overlay})` }} />
+      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white">
+        <p className="text-[9px] tracking-[0.35em] text-white/80">{config.eyebrow}</p>
+        <h3 className="mt-2 text-[20px] font-medium">{config.title}</h3>
+        <p className="mt-2 max-w-sm text-[10.5px] text-white/80">{config.description}</p>
+        <button className="banner-cta mt-4 rounded-[3px] px-6 py-2.5 text-[11px] font-medium transition" style={{ background: config.buttonBg, color: config.buttonText, ["--banner-hover-bg" as string]: config.buttonHoverBg, ["--banner-hover-text" as string]: config.buttonHoverText }}>
+          {config.buttonLabel}
+        </button>
+      </div>
     </div>
   );
 }

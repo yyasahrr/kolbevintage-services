@@ -59,7 +59,16 @@ function CollectionBanner() {
       <h2 className="mt-4 text-[26px] font-medium leading-snug sm:text-[34px] lg:text-[40px]">{banner.title}</h2>
       {banner.description ? <p className="mx-auto mt-4 max-w-lg text-[13px] leading-relaxed text-white/85">{banner.description}</p> : null}
       {banner.buttonLabel ? (
-        <Link to={banner.buttonTo} className="mt-7 inline-block rounded-[3px] bg-white px-8 py-3 text-[13px] font-medium text-[#011c3a] transition hover:bg-neutral-100">
+        <Link
+          to={banner.buttonTo}
+          className="banner-cta mt-7 inline-block rounded-[3px] px-8 py-3 text-[13px] font-medium transition active:translate-y-px"
+          style={{
+            background: banner.buttonBg,
+            color: banner.buttonText,
+            ["--banner-hover-bg" as string]: banner.buttonHoverBg,
+            ["--banner-hover-text" as string]: banner.buttonHoverText,
+          }}
+        >
           {banner.buttonLabel}
         </Link>
       ) : null}

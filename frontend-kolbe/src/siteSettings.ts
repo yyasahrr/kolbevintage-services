@@ -68,6 +68,7 @@ export type BuilderPost = {
 };
 export type BuilderInstaCard = { id: string; icon: string; title: string; text: string; img?: string };
 export type BuilderHotspot = { id: string; x: number; y: number; label: string; color: string; visible: boolean };
+export type BuilderLookProduct = { id: string; name: string; price: number; img: string; to: string };
 
 export type SiteBuilder = {
   productCard: { hoverBg: string; hoverText: string };
@@ -78,6 +79,7 @@ export type SiteBuilder = {
     overlay: number;
     eyebrow: string; title: string; description: string;
     buttonLabel: string; buttonTo: string;
+    buttonBg: string; buttonText: string; buttonHoverBg: string; buttonHoverText: string;
     tile2: string; tile3: string;
   };
   stylesSection: { fullBleed: boolean; cards: BuilderStyleCard[] };
@@ -88,7 +90,14 @@ export type SiteBuilder = {
     title: string; body: string; inputPlaceholder: string; ctaLabel: string;
     couponCode: string; image: string;
   };
-  look: { enabled: boolean; hotspots: BuilderHotspot[] };
+  look: {
+    enabled: boolean;
+    image: string;
+    title: string;
+    subtitle: string;
+    products: BuilderLookProduct[];
+    hotspots: BuilderHotspot[];
+  };
   blog: { homeGrid: "2col" | "3col" | "list"; homeCount: number; posts: BuilderPost[] };
   instagram: {
     enabled: boolean; username: string;
@@ -113,6 +122,10 @@ export const defaultSiteBuilder: SiteBuilder = {
     description: "پشم شورون، بافت کابلی و کشمیر. کالکشنی که برای سردترین روزهای سال دوخته شده است.",
     buttonLabel: "کاوش در کالکشن",
     buttonTo: "/collection",
+    buttonBg: "#ffffff",
+    buttonText: "#011c3a",
+    buttonHoverBg: "#011c3a",
+    buttonHoverText: "#ffffff",
     tile2: "/images/model-teal.jpg",
     tile3: "/images/detail-hem.jpg",
   },
@@ -136,6 +149,14 @@ export const defaultSiteBuilder: SiteBuilder = {
   },
   look: {
     enabled: true,
+    image: "/images/model-teal.jpg",
+    title: "عصر پاییزی در کتابخانه",
+    subtitle: "پیشنهاد استایلیست‌های کلبه برای تکمیل این ست — شلوار، کفش و قطعات مکمل.",
+    products: [
+      { id: "lp-1", name: "پلیور بافت کابلی", price: 3180000, img: "/images/flat.jpg", to: "/shop" },
+      { id: "lp-2", name: "شلوار پیلی‌دار کلاسیک", price: 2950000, img: "/images/detail-hem.jpg", to: "/shop" },
+      { id: "lp-3", name: "شال گردن پشمی", price: 890000, img: "/images/detail-collar.jpg", to: "/shop" },
+    ],
     hotspots: [
       { id: "h1", x: 30, y: 40, label: "شلوار پلیسه", color: "#c9654d", visible: true },
       { id: "h2", x: 70, y: 65, label: "کفش چرم", color: "#c9654d", visible: true },

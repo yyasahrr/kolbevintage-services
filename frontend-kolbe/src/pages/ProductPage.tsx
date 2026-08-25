@@ -851,20 +851,18 @@ export default function ProductPage({ id }: { id: string }) {
         </div>
 
         {/* با این ست کنید — قابل کنترل کامل از سایتساز (هاستاسپاتها، متن، رنگ، نمایش) */}
-        {look && lookSettings.enabled && (
+        {lookSettings.enabled && (
           <section className="border-t border-neutral-200 bg-[#f6f6f4]">
             <div className="mx-auto w-full px-4 py-14 lg:px-8">
               <div className="mb-8">
                 <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
                 <h2 className="mt-2 text-[20px] font-medium">با این ست کنید</h2>
-                <p className="mt-2 text-[12.5px] text-neutral-500">
-                  پیشنهاد استایلیست‌های کلبه برای تکمیل این ست — شلوار، کفش و قطعات مکمل.
-                </p>
+                <p className="mt-2 text-[12.5px] text-neutral-500">{lookSettings.subtitle}</p>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
                 <div className="relative overflow-hidden bg-neutral-100">
-                  <img src={look.img} alt={look.title} loading="lazy" className="aspect-[3/4] w-full object-cover" />
+                  <img src={lookSettings.image} alt={lookSettings.title} loading="lazy" className="aspect-[3/4] w-full object-cover" />
                   {lookSettings.hotspots.filter((h) => h.visible).map((h) => (
                     <span key={h.id} className="group/hot absolute z-10" style={{ right: `${h.x}%`, top: `${h.y}%` }}>
                       <span className="block h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2 rounded-full border-2 border-white shadow-md transition group-hover/hot:scale-125" style={{ background: h.color }} />
@@ -874,9 +872,20 @@ export default function ProductPage({ id }: { id: string }) {
                 </div>
 
                 <div>
-                  <h3 className="text-[16px] font-medium">{look.title}</h3>
+                  <h3 className="text-[16px] font-medium">{lookSettings.title}</h3>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    {complementary.map((p) => (
+                    {(lookSettings.products.length > 0 ? lookSettings.products : []).map((lp) => (
+                      <Link key={lp.id} to={lp.to || "/shop"} className="group block overflow-hidden bg-white">
+                        <div className="overflow-hidden bg-neutral-100">
+                          <img src={lp.img} alt={lp.name} loading="lazy" className="aspect-[3/4] w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+                        </div>
+                        <div className="p-3">
+                          <p className="truncate text-[12px] font-medium">{lp.name}</p>
+                          <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{toman(lp.price)}</p>
+                        </div>
+                      </Link>
+                    ))}
+                    {lookSettings.products.length === 0 && complementary.map((p) => (
                       <ProductCard key={p.id} product={p} compact />
                     ))}
                   </div>

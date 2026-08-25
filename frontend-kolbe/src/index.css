@@ -1946,3 +1946,10 @@ textarea {
   background: var(--cta-hover-bg, #0a2c55) !important;
   color: var(--cta-hover-text, #ffffff) !important;
 }
+
+
+/* سایتساز: هاور دکمه بنر */
+.banner-cta:hover {
+  background: var(--banner-hover-bg, #011c3a) !important;
+  color: var(--banner-hover-text, #ffffff) !important;
+}
