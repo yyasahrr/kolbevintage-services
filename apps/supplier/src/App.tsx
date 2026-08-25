@@ -35,8 +35,10 @@ function App() {
   const [supplier, setSupplier] = useState<SupplierContext | null>(null)
   const [dataRefresh, setDataRefresh] = useState(0)
   const [, setDataVersion] = useState(0)
+  const [sessionNotice, setSessionNotice] = useState('')
+  const [dataSyncFailed, setDataSyncFailed] = useState(false)
 
-  useEffect(() => { restoreSupplierSession().then(context => { if (context) { setSupplier(context); setAccessView('portal') } }).catch(() => undefined) }, [])
+  useEffect(() => { setSessionNotice(''); restoreSupplierSession().then(context => { if (context) { setSupplier(context); setAccessView('portal') } }).catch(() => setSessionNotice('بازیابی نشست قبلی انجام نشد؛ لطفاً دوباره وارد شوید.')) }, [])
   useEffect(() => {
     if (!supplier) return
     Promise.all([loadSupplierProducts(supplier.supplierId), loadSupplierOrders(supplier.supplierId), loadSupplierRfqs(supplier.supplierId)]).then(([remoteProducts, remoteOrders, remoteRfqs]) => {
@@ -49,7 +51,8 @@ function App() {
       orderRows.splice(0, orderRows.length, ...remoteOrders.map(order => ({ databaseId: order.id, trackingCode: order.tracking_code, id: order.order_code, customer: 'کلبه وینتیج', product: order.purchase_order_items?.[0]?.product_name || 'سفارش چندمحصولی', pack: `${order.purchase_order_items?.length ?? 0} ردیف`, quantity: `${number.format(order.purchase_order_items?.length ?? 0)} ردیف`, pieces: `${number.format((order.purchase_order_items ?? []).reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0))} تکه`, value: `${number.format(order.total_amount)} تومان`, date: new Intl.DateTimeFormat('fa-IR').format(new Date(order.created_at)), due: order.due_date ? new Intl.DateTimeFormat('fa-IR').format(new Date(order.due_date)) : '—', status: order.status === 'pending' ? 'نیازمند تأیید' : order.status === 'confirmed' ? 'جدید' : order.status === 'preparing' ? 'در حال آماده‌سازی' : order.status === 'shipped' ? 'آماده ارسال' : order.status === 'delivered' ? 'تحویل شده' : 'لغو شده' })))
       rfqs.splice(0, rfqs.length, ...remoteRfqs.map(item => ({ id: item.reference_code, title: item.title, customer: item.customer_name, quantity: `${number.format(item.quantity)} تکه`, deadline: item.requested_delivery_date ? new Intl.DateTimeFormat('fa-IR').format(new Date(item.requested_delivery_date)) : 'تعیین نشده', fabric: String((item.specifications as Record<string, unknown>)?.fabric ?? 'طبق فایل مشخصات'), status: item.status === 'open' ? 'نیازمند قیمت‌گذاری' : item.status === 'quoted' ? 'پیشنهاد ارسال شد' : item.status, avatar: item.customer_name.slice(0, 1) })))
       setDataVersion(version => version + 1)
-    }).catch(() => undefined)
+      setDataSyncFailed(false)
+    }).catch(() => setDataSyncFailed(true))
   }, [supplier, dataRefresh])
 
   useEffect(() => {
@@ -63,13 +66,19 @@ function App() {
 
   const go = (target: Page) => { setPage(target); setSidebarOpen(false) }
 
-  if (accessView !== 'portal') return <AuthShell view={accessView} onChange={setAccessView} onAuthenticated={context => { setSupplier(context); setAccessView('portal') }} />
+  if (accessView !== 'portal') return <AuthShell view={accessView} notice={sessionNotice} onChange={setAccessView} onAuthenticated={context => { setSupplier(context); setAccessView('portal') }} />
   if (page === 'product-editor' && supplier) return <ProductEditor supplierId={supplier.supplierId} onClose={() => setPage('products')} onCreated={() => { setDataRefresh(version => version + 1); setPage('products') }} />
 
   return <div className="app-shell">
     <Sidebar page={page} onNavigate={go} open={sidebarOpen} onClose={() => setSidebarOpen(false)} supplierName={supplier?.displayName} />
     <div className="content-shell">
       <Topbar onMenu={() => setSidebarOpen(true)} onCommand={() => setCommandOpen(true)} onNotices={() => setNoticeOpen(!noticeOpen)} noticeOpen={noticeOpen} />
+      {dataSyncFailed ? (
+        <div className="sync-banner" role="alert">
+          <span>بارگذاری داده‌ها ناتمام ماند؛ اطلاعات نمایش‌داده‌شده ممکن است به‌روز نباشد.</span>
+          <button type="button" onClick={() => { setDataSyncFailed(false); setDataRefresh(version => version + 1) }}>تلاش دوباره</button>
+        </div>
+      ) : null}
       <main className="page-content">
         {page === 'dashboard' ? <Dashboard onNavigate={go} /> : null}
         {page === 'products' ? <Products onNavigate={go} query={query} setQuery={setQuery} /> : null}
@@ -95,7 +104,7 @@ function App() {
   </div>
 }
 
-function AuthShell({ view, onChange, onAuthenticated }: { view: Exclude<AccessView, 'portal'>; onChange: (view: AccessView) => void; onAuthenticated: (context: SupplierContext) => void }) {
+function AuthShell({ view, notice, onChange, onAuthenticated }: { view: Exclude<AccessView, 'portal'>; notice?: string; onChange: (view: AccessView) => void; onAuthenticated: (context: SupplierContext) => void }) {
   return <main className="auth-shell">
     <section className="auth-intro">
       <div className="auth-brand"><div className="brand-seal">K</div><div><strong>KOLBE</strong><span>Vintage · Supplier</span></div></div>
@@ -103,7 +112,7 @@ function AuthShell({ view, onChange, onAuthenticated }: { view: Exclude<AccessVi
       <div className="auth-assurance"><div><span className="assurance-icon"><ShieldCheck size={18}/></span><p><b>حساب‌های تأییدشده</b><small>دسترسی فقط برای تیم‌های تأمین‌کنندهٔ فعال کولبه</small></p></div><div><span className="assurance-icon"><Factory size={18}/></span><p><b>شبکهٔ تولید منتخب</b><small>بیش از ۴۸ کارخانه در دسته‌های پوشاک و اکسسوری</small></p></div></div>
       <p className="auth-copyright">© ۱۴۰۴ Kolbe Vintage. همهٔ حقوق محفوظ است.</p>
     </section>
-    <section className="auth-form-pane">{view === 'login' ? <LoginForm onRegister={() => onChange('register')} onSuccess={onAuthenticated} /> : <RegistrationForm onBack={() => onChange('login')} />}</section>
+    <section className="auth-form-pane">{notice ? <p className="auth-error" role="alert">{notice}</p> : null}{view === 'login' ? <LoginForm onRegister={() => onChange('register')} onSuccess={onAuthenticated} /> : <RegistrationForm onBack={() => onChange('login')} />}</section>
   </main>
 }
 

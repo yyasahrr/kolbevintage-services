@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* فونت وزیرمتن بهصورت محلی میزبانی میشود (OFL) تا وابستگی به CDN گوگل برداشته شود. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --font-sans: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
   --color-navy: #011c3a;
@@ -52,6 +61,10 @@ body {
 :where(.admin-system, .vip-portal-shell, .wholesale-system) :where(input, select, textarea):focus-visible { outline-color: var(--kv-focus); }
 :where(.admin-system, .vip-portal-shell, .wholesale-system) :where(h1, h2, h3) { color: var(--kv-ink); text-wrap: balance; }
 :where(.admin-system, .vip-portal-shell, .wholesale-system) p { text-wrap: pretty; }
+
+/* تایپوگرافی فروشگاه: شکستن خطوط سرصفحهها و پاراگرافها بهینه میشود. */
+.storefront-shell :where(h1, h2, h3) { text-wrap: balance; }
+.storefront-shell p { text-wrap: pretty; }
 :where(.admin-system, .vip-portal-shell, .wholesale-system) :where(button, a)[class*="bg-[#011c3a]"] {
   border-radius: var(--kv-radius-control);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
