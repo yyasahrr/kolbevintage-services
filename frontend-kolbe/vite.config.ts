@@ -77,6 +77,8 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5173,
     allowedHosts: true,
+    // پنل ساپلایر از همین سرور روی /supplier.html سرو میشود
+    fs: { allow: [path.resolve(__dirname, "..")] },
     proxy: {
       "/store/kolbe": kolbeProxy,
       "/admin/kolbe": kolbeProxy,

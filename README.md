@@ -1,52 +1,49 @@
 # Kolbe Vintage Platform
 
-این ریپازیتوری پلتفرم کامل کلبه است: فروشگاه خرده، پنل مدیریت، فضای VIP عمده، پنل ساپلایر و **بک‌اند Medusa v2** (جایگزین Supabase طبق `docs/adr/ADR-001-medusa-backend.md`). منطق کسبوکار ثابت مانده: تأمین بازار عمده توسط ساپلایرها، خرید عمده توسط VIPها و پنل ساپلایر — حالا روی مدوسا.
-
-## ساختار
+پلتفرم کامل کلبه وینتیج روی **Medusa v2** — چهار بخش مستقل و تمیز:
 
 ```text
-├── src/                  # فروشگاه، VIP و پنل مدیریت (React + Vite)
-├── apps/supplier/        # پنل مستقل ساپلایر (React + Vite)
-├── apps/api/             # بک‌اند Medusa v2 (ماژولهای دامنه + API + زرینپال + seed)
-├── docs/                 # ADR، رودمپ و ممیزی معماری
-├── public/               # assetها + فونت وزیرمتن (self-host)
-└── scripts/              # ابزارهای توسعه monorepo
+kolbevintage-services/
+├── backend/            ← بک‌اند (Medusa v2): API کلبه + API ساپلایر + دیتابیس واحد
+├── frontend-kolbe/     ← فرانت کلبه: فروشگاه، پنل ادمین، پورتال VIP، استودیوی هیرو
+├── frontend-supplier/  ← فرانت ساپلایر: پنل عملیات تأمین‌کننده
+├── docs/               ← ADR، رودمپ و ممیزی معماری
+└── scripts/            ← ابزارهای توسعه
 ```
 
-## معماری
+> **چرا بک‌اند یکی است و نه دو تا؟** زنجیره «ساپلایر → کلبه → VIP» یک دیتابیس و یک منطق مشترک دارد؛
+> دو بک‌اند جدا یعنی دو دیتابیس و شکستن زنجیره سفارش. داخل `backend` اما سرویس‌ها کاملاً جدا هستند:
+> APIهای ساپلایر زیر `/store/kolbe/supplier/*` و APIهای کلبه (فروشگاه/ادمین/VIP) زیر `/store/kolbe/*`.
 
-```text
-Storefront (5173) ──┐
-Supplier Portal (5174) ──┼── vite proxy ──> Medusa API (9000) ──> PostgreSQL
-```
-
-- **ماژولهای دامنه در `apps/api/src/modules`:** `account` (احراز هویت یکپارچه با scrypt + توکن HMAC)، `supplier` (تأمینکنندگان/کاتالوگ/موجودی)، `wholesale` (VIP/سفارش عمده/RFQ/تیکت)، `purchase_order` (زنجیره تأمین)، `retail` (سفارش خرده) + پرووایدر `payment-zarinpal`
-- **جریانهای دامنه در `src/lib/kolbe-flows.ts`:** ثبت سفارش عمده (رزرو موجودی + جبران خطا)، تأیید → ساخت PO برای هر ساپلایر، لغو، تحویل
-- درخواستهای مرورگر همیشه نسبی هستند (`/store/kolbe/...`) و با پروکسی vite به سرور ۹۰۰۰ میروند — بدون CORS
-
-## راهاندازی
-
-پیشنیاز: Node 20+ و PostgreSQL (برای dev محلی میتوانید از `embedded-postgres` استفاده کنید).
+## اجرا
 
 ```bash
-npm install
+npm install                # فرانت‌ها (workspaces)
 
-# بک‌اند
-cd apps/api && cp .env.example .env   # DATABASE_URL و JWT_SECRET را تنظیم کنید
+# بک‌اند (Medusa)
+cd backend && cp .env.example .env   # DATABASE_URL + JWT_SECRET
 npm install
 npx medusa db:setup --db kolbe_medusa --no-interactive --execute-safe-links
-npx medusa develop                     # http://localhost:9000 (+ /app)
-node scripts/seed.mjs                  # داده اولیه + تست E2E کل زنجیره
+npx medusa develop                   # http://localhost:9000
+node scripts/seed.mjs                # داده اولیه + تست E2E کل زنجیره
 
-# فرانتها (از ریشه)
-npm run dev          # فروشگاه: http://localhost:5173
-npm run dev:supplier # پنل ساپلایر: http://localhost:5174
+# فرانت‌ها (از ریشه)
+npm run dev              # فرانت کلبه: http://localhost:5173
+npm run dev:supplier     # فرانت ساپلایر: http://localhost:5174
 ```
+
+**میان‌بر:** پنل ساپلایر از روی همون سرور فرانت کلبه هم در دسترس است: **`/supplier.html`** — بدون نیاز به سرور دوم.
+
+## نقشه URLs (dev)
+
+| بخش | آدرس |
+|---|---|
+| فروشگاه کلبه | http://localhost:5173 |
+| پنل ادمین کلبه | http://localhost:5173/#/admin |
+| پورتال VIP عمده | http://localhost:5173/#/vip |
+| پنل ساپلایر | http://localhost:5173/supplier.html یا http://localhost:5174 |
+| API مدوسا + ادمین انگلیسی | http://localhost:9000 (+ /app) |
 
 حسابهای seed: ادمین `admin@kolbe.ir / KolbeAdmin1404!` — VIP `vip@boutique.ir / VipPass1404!` — ساپلایر `nilgoon@kolbe.ir / SupplierPass1404!`
 
-> کلید publishable درخواستهای Store API در `x-publishable-api-key` ارسال میشود؛ کلید sandbox dev بهصورت پیشفرض در کلاینتها هست و با `VITE_MEDUSA_PUBLISHABLE_KEY` قابل بازنویسی است.
-
-## مهاجرت از Supabase
-
-کامل انجام شد (`git log` برای جزئیات): ماژولها و RPCهای Supabase → ماژولهای Medusa + flows؛ `supabase-js` از هر دو فرانت حذف شد؛ پوشه `supabase/` بازنشسته شد (اسکیمای مرجع در تاریخ گیت موجود است).
+> حالت پیش‌نمایش پنل‌ها فعلاً فعال است (`frontend-kolbe/src/previewMode.ts`) — برای بازگرداندن ورود امن، مقدار را `false` کنید.

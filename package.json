@@ -1,37 +1,20 @@
 {
   "name": "kolbevintage-platform",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
   "workspaces": [
-    "apps/supplier"
+    "frontend-kolbe",
+    "frontend-supplier"
   ],
   "scripts": {
-    "dev": "vite",
-    "dev:storefront": "vite --host 127.0.0.1 --port 5173",
-    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal -- --host 0.0.0.0 --port 5174",
+    "dev": "npm run dev --workspace kolbe-storefront",
+    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal",
+    "dev:api": "npm --prefix backend run dev",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "vite build",
-    "build:storefront": "vite build",
+    "build": "npm run build --workspace kolbe-storefront",
     "build:supplier": "npm run build --workspace kolbe-supplier-portal",
-    "build:all": "npm run build:storefront && npm run build:supplier",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "clsx": "2.1.1",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "tailwind-merge": "3.4.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "4.1.17",
-    "@types/node": "22.19.17",
-    "@types/react": "19.2.7",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "5.1.1",
-    "tailwindcss": "4.1.17",
-    "typescript": "5.9.3",
-    "vite": "7.3.2",
-    "vite-plugin-singlefile": "2.3.0"
+    "build:api": "npm --prefix backend run build",
+    "seed": "npm --prefix backend run seed",
+    "preview": "npm run preview --workspace kolbe-storefront"
   }
 }

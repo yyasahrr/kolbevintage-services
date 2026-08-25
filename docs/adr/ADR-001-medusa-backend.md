@@ -6,12 +6,12 @@
 
 ## خروجی پیادهسازی (بهروزرسانی)
 
-- پنج ماژول دامنه در `apps/api/src/modules`: `account` / `supplier` / `wholesale` / `purchase_order` / `retail` + پرووایدر `payment-zarinpal`
+- پنج ماژول دامنه در `backend/src/modules`: `account` / `supplier` / `wholesale` / `purchase_order` / `retail` + پرووایدر `payment-zarinpal`
 - حدود ۳۴ endpoint سفارشی: فروشگاه (`/store/kolbe/...`)، پنل ساپلایر و عملیات ادمین (`/store/kolbe/admin/...` با نقشسنجی اختصاصی)
 - جریانهای چندماژولی با جبران خطا در `src/lib/kolbe-flows.ts` (ثبت/تأیید/لغو سفارش عمده، تحویل PO)
 - هر دو فرانت به Medusa وصل شدند؛ `supabase-js` حذف شد و حجم bundle فروشگاه ~۵۰٪ و ساپلایر ~۴۲٪ کم شد
 - چکاوت خرده دمویی با ثبت واقعی سفارش (`retail` module) جایگزین شد — ایراد P0 ممیزی بسته شد
-- seed کامل E2E: `apps/api/scripts/seed.mjs` کل مسیر ساپلایر → کاتالوگ → VIP → سفارش → PO → تحویل را میسازد
+- seed کامل E2E: `backend/scripts/seed.mjs` کل مسیر ساپلایر → کاتالوگ → VIP → سفارش → PO → تحویل را میسازد
 
 ## زمینه و مسئله
 
@@ -57,7 +57,7 @@
 
 | فاز | خروجی | زمان حدودی |
 |---|---|---|
-| ۰ | همین سند + اسکلت `apps/api` + رودمپ | انجامشده |
+| ۰ | همین سند + اسکلت `backend` + رودمپ | انجامشده |
 | ۱ | Spike: B2B Starter بالا، یک ساپلایر واقعی = یک stock location، فلوی quote با داده خودمان | ۱ هفته |
 | ۲ | کاتالوگ/موجودی روی مدوسا؛ فروشگاه به Store API | ۳-۴ هفته |
 | ۳ | سفارش عمده/VIP (B2B Starter) + پنل ساپلایر به Admin API | ۴-۶ هفته |
