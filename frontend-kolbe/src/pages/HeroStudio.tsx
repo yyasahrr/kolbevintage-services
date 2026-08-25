@@ -194,6 +194,29 @@ export default function HeroStudio() {
         </section>
       </div>
 
+      {/* رنگها و حالت */}
+      <section className="rounded-[6px] border border-neutral-200 p-4">
+        <h3 className="text-[12.5px] font-medium">۵. رنگ‌ها، شکل تصویر و حالت تیره</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <span className={label}>شکل تصویر (تمپلیت اسپلیت)</span>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([["rect", "مستطیل"], ["rounded", "گرد"], ["circle", "دایره‌ای"]] as const).map(([id, name]) => (
+                <button key={id} type="button" onClick={() => patch({ imageShape: id })} className={(config.imageShape === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]") + " h-9 rounded-[3px] border text-[10.5px] transition"}>{name}</button>
+              ))}
+            </div>
+          </div>
+          <label className="flex items-center gap-2 self-end text-[11.5px]">
+            <input type="checkbox" checked={config.dark} onChange={(e) => patch({ dark: e.target.checked })} className="accent-[#011c3a]" />
+            حالت تیره پس‌زمینه (تمپلیت اسپلیت)
+          </label>
+          <label className="block"><span className={label}>رنگ تیتر (خالی = پیش‌فرض)</span><input type="color" value={config.titleColor || "#ffffff"} onChange={(e) => patch({ titleColor: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
+          <label className="block"><span className={label}>رنگ زیرتیتر</span><input type="color" value={config.subtitleColor || "#ffffff"} onChange={(e) => patch({ subtitleColor: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
+          <label className="block"><span className={label}>رنگ دکمه هنگام هاور</span><input type="color" value={config.buttonHoverBg} onChange={(e) => patch({ buttonHoverBg: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
+          <label className="block"><span className={label}>متن دکمه هنگام هاور</span><input type="color" value={config.buttonHoverText} onChange={(e) => patch({ buttonHoverText: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
+        </div>
+      </section>
+
       <p className="text-[10px] leading-relaxed text-neutral-400">
         ذخیرهسازی فعلاً محلی (مرورگر همین دستگاه) است؛ مطابق رودمپ، در فاز بعد به بک‌اند منتقل می‌شود تا برای همه بازدیدکنندگان اعمال شود.
       </p>

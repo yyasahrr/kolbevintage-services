@@ -54,7 +54,7 @@ export default function SiteHeader() {
             <Icon name="menu" className="h-6 w-6" />
           </button>
 
-          <Link to="/" className="absolute right-1/2 flex translate-x-1/2 flex-col items-center leading-none lg:static lg:shrink-0 lg:translate-x-0">
+          <Link to="/" className="absolute right-1/2 flex translate-x-1/2 flex-col items-center leading-none">
             <span className="whitespace-nowrap text-[18px] font-semibold tracking-[0.14em] lg:text-[19px]">
               {settings.header.brand}
             </span>
@@ -64,12 +64,9 @@ export default function SiteHeader() {
           </Link>
 
           <nav
-            className="site-navigation hidden min-w-0 flex-1 items-center justify-center gap-5 text-[12px] lg:flex xl:gap-7 xl:text-[12.5px]"
+            className="site-navigation hidden flex-wrap items-center justify-center gap-x-8 gap-y-1 border-t border-neutral-200/70 py-1.5 text-[12px] lg:flex"
             onKeyDown={(event) => event.key === "Escape" && setCatalogOpen(false)}
           >
-            <Link to="/shop" aria-current={path === "/shop" ? "page" : undefined} className="shop-nav-link whitespace-nowrap rounded-full px-4 py-2 text-[12px] font-semibold">
-              {settings.header.shopLabel}
-            </Link>
             {desktopNav.map((item) => {
               const isActive = path === item.to.split("?")[0];
               return (
@@ -77,7 +74,7 @@ export default function SiteHeader() {
                   key={item.label}
                   to={item.to}
                   aria-current={isActive ? "page" : undefined}
-                  className={`whitespace-nowrap border-b py-2 transition ${
+                  className={`site-nav-underline whitespace-nowrap border-b py-2 transition ${
                     isActive ? "border-current font-medium" : "border-transparent hover:border-current"
                   }`}
                 >
@@ -91,7 +88,7 @@ export default function SiteHeader() {
                 onClick={() => setCatalogOpen((isOpen) => !isOpen)}
                 aria-haspopup="menu"
                 aria-expanded={catalogOpen}
-                className="flex items-center gap-1.5 whitespace-nowrap border-b border-transparent py-2 transition hover:border-current"
+                className="site-nav-underline flex items-center gap-1.5 whitespace-nowrap border-b border-transparent py-2 transition hover:border-current"
               >
                 دسته‌بندی‌ها
                 <Icon name="chevronDown" className={`h-3 w-3 transition-transform ${catalogOpen ? "rotate-180" : ""}`} />

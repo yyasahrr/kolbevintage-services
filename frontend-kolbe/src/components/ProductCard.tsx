@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import type { Product } from "../data/catalog";
 import Icon from "./Icon";
+import { useSiteSettings } from "../siteSettings";
 
 export default function ProductCard({ product, compact = false }: { product: Product; compact?: boolean }) {
   const [idx, setIdx] = useState(0);
@@ -11,6 +12,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
   const [sizeOpen, setSizeOpen] = useState(false);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const { addToCart, toggleWish, isWished, toggleCompare, compare } = useStore();
+  const { builder } = useSiteSettings();
 
   const gallery = product.images;
   const shown = colourIdx > 0 ? product.colours[colourIdx].img : gallery[idx];
@@ -210,6 +212,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
           <button
             type="button"
             onClick={quickBuy}
+            style={{ "--card-hover-bg": builder.productCard.hoverBg, "--card-hover-text": builder.productCard.hoverText } as React.CSSProperties}
             className={
               "product-card-action flex h-10 w-full items-center justify-center gap-2 rounded-full text-[11.5px] font-medium transition active:scale-[0.99] " +
               (selectedSize

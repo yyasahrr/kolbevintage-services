@@ -9,6 +9,12 @@ export type HeroStudioConfig = {
   template: 1 | 2 | 3 | 4;
   bgImage: string;
   overlay: number;
+  imageShape: "rect" | "rounded" | "circle";
+  dark: boolean;
+  titleColor: string;
+  subtitleColor: string;
+  buttonHoverBg: string;
+  buttonHoverText: string;
   eyebrow: string;
   title: string;
   subtitle: string;
@@ -30,6 +36,12 @@ export const defaultHeroStudio: HeroStudioConfig = {
   template: 1,
   bgImage: "/images/model-front.jpg",
   overlay: 0.45,
+  imageShape: "rect",
+  dark: false,
+  titleColor: "",
+  subtitleColor: "",
+  buttonHoverBg: "#0a2c55",
+  buttonHoverText: "#ffffff",
   eyebrow: "جشنواره فروش فوق‌العاده کلبه",
   title: "کالکشن وینتیج، با تخفیف استثنایی",
   subtitle: "چند روز بیشتر نمانده؛ قطعات منتخب پاییزی با قیمت جشنواره.",
@@ -46,9 +58,118 @@ export const defaultHeroStudio: HeroStudioConfig = {
   },
 };
 
+
+/* --------------------------------- سایتساز --------------------------------- */
+
+export type BuilderStyleCard = { id: string; name: string; latin: string; img: string; tagline: string; count?: string };
+export type BuilderPost = {
+  slug: string; title: string; excerpt: string; body: string; cover: string;
+  date: string; category: string; readTime: string; pinned?: boolean;
+};
+export type BuilderInstaCard = { id: string; icon: string; title: string; text: string; img?: string };
+export type BuilderHotspot = { id: string; x: number; y: number; label: string; color: string; visible: boolean };
+
+export type SiteBuilder = {
+  productCard: { hoverBg: string; hoverText: string };
+  banner: {
+    mode: "single" | "split" | "grid3";
+    mediaType: "image" | "video";
+    media: string;
+    overlay: number;
+    eyebrow: string; title: string; description: string;
+    buttonLabel: string; buttonTo: string;
+    tile2: string; tile3: string;
+  };
+  stylesSection: { fullBleed: boolean; cards: BuilderStyleCard[] };
+  popup: {
+    enabled: boolean; delaySec: number; oncePerSession: boolean;
+    direction: "rtl" | "ltr"; position: "center" | "bottom-right" | "bottom-left";
+    bg: string; bgImage: string; textColor: string; accent: string;
+    title: string; body: string; inputPlaceholder: string; ctaLabel: string;
+    couponCode: string; image: string;
+  };
+  look: { enabled: boolean; hotspots: BuilderHotspot[] };
+  blog: { homeGrid: "2col" | "3col" | "list"; homeCount: number; posts: BuilderPost[] };
+  instagram: {
+    enabled: boolean; username: string;
+    cards: BuilderInstaCard[];
+    cta: { enabled: boolean; title: string; text: string; buttonLabel: string; buttonTo: string; bg: string };
+  };
+  footer: {
+    newsletterEnabled: boolean;
+    socials: Array<{ icon: string; label: string; url: string }>;
+  };
+};
+
+export const defaultSiteBuilder: SiteBuilder = {
+  productCard: { hoverBg: "#011c3a", hoverText: "#ffffff" },
+  banner: {
+    mode: "single",
+    mediaType: "image",
+    media: "/images/banner.jpg",
+    overlay: 0.35,
+    eyebrow: "AUTUMN COLLECTION",
+    title: "پاییز، فصل پارچه‌های سنگین",
+    description: "پشم شورون، بافت کابلی و کشمیر. کالکشنی که برای سردترین روزهای سال دوخته شده است.",
+    buttonLabel: "کاوش در کالکشن",
+    buttonTo: "/collection",
+    tile2: "/images/model-teal.jpg",
+    tile3: "/images/detail-hem.jpg",
+  },
+  stylesSection: { fullBleed: false, cards: [] },
+  popup: {
+    enabled: true,
+    delaySec: 20,
+    oncePerSession: true,
+    direction: "rtl",
+    position: "center",
+    bg: "#ffffff",
+    bgImage: "",
+    textColor: "#011c3a",
+    accent: "#c9654d",
+    title: "به کلبه وینتیج خوش آمدید",
+    body: "برای دریافت ۱۰٪ تخفیف اولین خرید، ایمیل خود را وارد کنید.",
+    inputPlaceholder: "ایمیل شما",
+    ctaLabel: "دریافت کد تخفیف",
+    couponCode: "KOLBE10",
+    image: "/images/detail-collar.jpg",
+  },
+  look: {
+    enabled: true,
+    hotspots: [
+      { id: "h1", x: 30, y: 40, label: "شلوار پلیسه", color: "#c9654d", visible: true },
+      { id: "h2", x: 70, y: 65, label: "کفش چرم", color: "#c9654d", visible: true },
+    ],
+  },
+  blog: {
+    homeGrid: "3col",
+    homeCount: 3,
+    posts: [],
+  },
+  instagram: {
+    enabled: true,
+    username: "kolbe.vintage",
+    cards: [
+      { id: "i1", icon: "star", title: "امتحان مجازی", text: "پرو هوشمند با KOLBE AI" },
+      { id: "i2", icon: "needle", title: "دوخت دست", text: "تولید محدود در کارگاه کلبه" },
+      { id: "i3", icon: "truck", title: "ارسال سریع", text: "به سراسر ایران" },
+    ],
+    cta: { enabled: true, title: "اینستاگرام کلبه", text: "استایل‌های روزانه و پشت صحنه کارگاه", buttonLabel: "دنبال کنید", buttonTo: "https://instagram.com/kolbe.vintage", bg: "#011c3a" },
+  },
+  footer: {
+    newsletterEnabled: true,
+    socials: [
+      { icon: "mail", label: "اینستاگرام", url: "https://instagram.com/kolbe.vintage" },
+      { icon: "phone", label: "تلفن پشتیبانی", url: "tel:+982191002233" },
+      { icon: "mail", label: "تلگرام", url: "https://t.me/kolbevintage" },
+    ],
+  },
+};
+
 export type SiteSettings = {
   header: { brand: string; latinBrand: string; shopLabel: string; nav: NavItem[] };
   heroStudio: HeroStudioConfig;
+  builder: SiteBuilder;
   hero: {
     template: HeroTemplate;
     eyebrow: string;
@@ -87,9 +208,17 @@ export const defaultSiteSettings: SiteSettings = {
     brand: "کلبه وینتیج",
     latinBrand: "KOLBE VINTAGE",
     shopLabel: "فروشگاه",
-    nav: mainNav.filter((item) => ["جدیدترین‌ها", "کالکشن پاییز", "استایل‌ها", "مجله"].includes(item.label)),
+    nav: [
+      { label: "فروشگاه", to: "/shop" },
+      { label: "استایل‌ها", to: "/styles" },
+      { label: "درباره ما", to: "/about" },
+      { label: "تماس با ما", to: "/contact" },
+      { label: "مجله", to: "/blog" },
+      { label: "پیگیری سفارش", to: "/account" },
+    ],
   },
   heroStudio: defaultHeroStudio,
+  builder: defaultSiteBuilder,
   hero: {
     template: "cover",
     eyebrow: "کالکشن پاییز ۱۴۰۵",
@@ -140,6 +269,7 @@ export function loadSiteSettings(): SiteSettings {
       ...saved,
       header: { ...defaultSiteSettings.header, ...saved.header },
       heroStudio: { ...defaultHeroStudio, ...(saved.heroStudio ?? {}), countdown: { ...defaultHeroStudio.countdown, ...(saved.heroStudio?.countdown ?? {}) } },
+      builder: { ...defaultSiteBuilder, ...(saved.builder ?? {}) },
       hero: { ...defaultSiteSettings.hero, ...saved.hero },
       collectionBanner: { ...defaultSiteSettings.collectionBanner, ...saved.collectionBanner },
       footer: { ...defaultSiteSettings.footer, ...saved.footer },

@@ -5,12 +5,25 @@ import Icon from "./Icon";
 import { useSiteSettings } from "../siteSettings";
 
 export default function SiteFooter() {
-  const { footer } = useSiteSettings();
+  const { footer, builder } = useSiteSettings();
+  const socials = builder.footer.socials;
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
 
   return (
     <footer className="site-footer mx-2 mb-2 overflow-hidden rounded-[1.75rem] bg-[#011c3a] text-white sm:mx-3 sm:mb-3">
+      {socials.length > 0 && (
+        <div className="border-b border-white/10 px-5 py-3">
+          <div className="mx-auto flex max-w-[1240px] flex-wrap items-center justify-center gap-2 lg:px-3">
+            {socials.map((social, i) => (
+              <a key={i} href={social.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-full border border-white/20 px-4 py-1.5 text-[10.5px] text-white/80 transition hover:border-white hover:text-white">
+                <Icon name={social.icon} className="h-3.5 w-3.5" />
+                {social.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="site-footer__divider border-b border-white/12">
         <div className="mx-auto grid w-full max-w-[1240px] gap-5 px-5 py-7 md:grid-cols-[1fr_0.9fr] md:items-center lg:px-8">
           <div>
@@ -24,7 +37,7 @@ export default function SiteFooter() {
               e.preventDefault();
               if (email.trim()) setSent(true);
             }}
-            className="self-center"
+            className={builder.footer.newsletterEnabled ? "self-center" : "hidden"}
           >
             <div className="site-footer__input-row flex max-w-md items-center border-b border-white/40 pb-2">
               <input

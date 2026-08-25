@@ -1,3 +1,4 @@
+import { useSiteSettings } from "../siteSettings";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useRouter } from "../router";
@@ -614,7 +615,9 @@ export default function ProductPage({ id }: { id: string }) {
   const colour = product.colours[colourIdx];
   const wished = isWished(product.id);
   const inCompare = compare.includes(product.id);
+  const { builder } = useSiteSettings();
   const look = looks.find((l) => l.id === product.lookId);
+  const lookSettings = builder.look;
 
   const handleAdd = () => {
     if (!size) {
@@ -847,8 +850,8 @@ export default function ProductPage({ id }: { id: string }) {
           <Reviews product={product} />
         </div>
 
-        {/* با این ست کنید */}
-        {look && (
+        {/* با این ست کنید — قابل کنترل کامل از سایتساز (هاستاسپاتها، متن، رنگ، نمایش) */}
+        {look && lookSettings.enabled && (
           <section className="border-t border-neutral-200 bg-[#f6f6f4]">
             <div className="mx-auto w-full px-4 py-14 lg:px-8">
               <div className="mb-8">
@@ -860,8 +863,14 @@ export default function ProductPage({ id }: { id: string }) {
               </div>
 
               <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
-                <div className="overflow-hidden bg-neutral-100">
+                <div className="relative overflow-hidden bg-neutral-100">
                   <img src={look.img} alt={look.title} loading="lazy" className="aspect-[3/4] w-full object-cover" />
+                  {lookSettings.hotspots.filter((h) => h.visible).map((h) => (
+                    <span key={h.id} className="group/hot absolute z-10" style={{ right: `${h.x}%`, top: `${h.y}%` }}>
+                      <span className="block h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2 rounded-full border-2 border-white shadow-md transition group-hover/hot:scale-125" style={{ background: h.color }} />
+                      <span className="pointer-events-none absolute right-1/2 top-3 translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[9.5px] font-medium text-white opacity-0 shadow-md transition group-hover/hot:opacity-100" style={{ background: h.color }}>{h.label}</span>
+                    </span>
+                  ))}
                 </div>
 
                 <div>

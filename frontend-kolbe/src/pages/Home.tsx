@@ -42,28 +42,60 @@ function NewArrivals() {
 /* ------------------------------ ۳. بنر کالکشن ------------------------------- */
 
 function CollectionBanner() {
-  const { collectionBanner: banner } = useSiteSettings();
+  const { collectionBanner: legacy, builder } = useSiteSettings();
+  const banner = builder.banner;
+  const mediaEl =
+    banner.mediaType === "video" ? (
+      <video src={banner.media} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+    ) : (
+      <img src={banner.media} alt={banner.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+    );
+  void legacy;
+
+  const overlay = <div className="absolute inset-0" style={{ background: `rgba(7,20,34,${banner.overlay})` }} />;
+  const copy = (
+    <div className="text-white">
+      <p className="text-[11px] tracking-[0.4em] text-white/80">{banner.eyebrow}</p>
+      <h2 className="mt-4 text-[26px] font-medium leading-snug sm:text-[34px] lg:text-[40px]">{banner.title}</h2>
+      {banner.description ? <p className="mx-auto mt-4 max-w-lg text-[13px] leading-relaxed text-white/85">{banner.description}</p> : null}
+      {banner.buttonLabel ? (
+        <Link to={banner.buttonTo} className="mt-7 inline-block rounded-[3px] bg-white px-8 py-3 text-[13px] font-medium text-[#011c3a] transition hover:bg-neutral-100">
+          {banner.buttonLabel}
+        </Link>
+      ) : null}
+    </div>
+  );
+
+  if (banner.mode === "split") {
+    return (
+      <section className="grid overflow-hidden lg:grid-cols-2">
+        <div className="relative min-h-[320px] lg:min-h-[520px]">{mediaEl}{overlay}</div>
+        <div className="flex items-center justify-center bg-[#f7f5f0] px-8 py-16 text-center">{copy}</div>
+      </section>
+    );
+  }
+
+  if (banner.mode === "grid3") {
+    return (
+      <section className="mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <div className="relative min-h-[320px] overflow-hidden lg:col-span-2 lg:min-h-[460px]">{mediaEl}{overlay}
+            <div className="absolute inset-0 flex items-center justify-center px-6 text-center">{copy}</div>
+          </div>
+          <div className="grid gap-3">
+            <div className="relative min-h-[150px] overflow-hidden lg:min-h-[223px]"><img src={banner.tile2} alt="" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0" style={{ background: `rgba(7,20,34,${Math.min(banner.overlay, 0.3)})` }} /></div>
+            <div className="relative min-h-[150px] overflow-hidden lg:min-h-[223px]"><img src={banner.tile3} alt="" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0" style={{ background: `rgba(7,20,34,${Math.min(banner.overlay, 0.3)})` }} /></div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="storefront-feature-banner relative h-[52svh] min-h-[360px] max-h-[620px] w-full overflow-hidden">
-      {banner.mediaType === "video" ? <video src={banner.mediaUrl} poster={banner.posterUrl} autoPlay muted loop playsInline className="h-full w-full object-cover" /> : <img src={banner.mediaUrl} alt={banner.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
-      <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-white">
-        <div>
-          <p className="text-[11px] tracking-[0.4em] text-white/80">{banner.eyebrow}</p>
-          <h2 className="mt-4 text-[26px] font-medium leading-snug sm:text-[34px] lg:text-[40px]">
-            {banner.title}
-          </h2>
-          <p className="mx-auto mt-4 max-w-lg text-[13px] leading-relaxed text-white/85">
-            {banner.description}
-          </p>
-          <Link
-            to={banner.buttonTo}
-            className="mt-7 inline-block rounded-[3px] bg-white px-8 py-3 text-[13px] font-medium text-[#011c3a] transition hover:bg-neutral-100"
-          >
-            {banner.buttonLabel}
-          </Link>
-        </div>
-      </div>
+      {mediaEl}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" style={{ background: `linear-gradient(to top, rgba(7,20,34,${Math.min(banner.overlay + 0.25, 0.85)}), rgba(7,20,34,${banner.overlay * 0.3}))` }} />
+      <div className="absolute inset-0 flex items-center justify-center px-6 text-center">{copy}</div>
     </section>
   );
 }
@@ -71,8 +103,15 @@ function CollectionBanner() {
 /* ---------------------------- ۴. خرید بر اساس استایل --------------------------- */
 
 function ShopByStyle() {
+  const { builder } = useSiteSettings();
+  const cards = builder.stylesSection.cards.length > 0
+    ? builder.stylesSection.cards.map((c) => ({ slug: `custom-${c.id}`, name: c.name, latin: c.latin, img: c.img, count: Number(c.count ?? 0), tagline: c.tagline }))
+    : styles;
+  const sectionCls = builder.stylesSection.fullBleed
+    ? "w-full px-4 py-12 lg:px-10 lg:py-20"
+    : "mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20";
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20">
+    <section className={sectionCls}>
       <div className="mb-8 text-center">
         <p className="text-[11px] tracking-[0.3em] text-neutral-400">SHOP BY STYLE</p>
         <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">خرید بر اساس استایل</h2>
@@ -81,9 +120,9 @@ function ShopByStyle() {
         </p>
       </div>
 
-      {/* گرید نامتقارن ۲ + ۳ */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5">
-        {styles.map((s) => (
+      {/* گرید نامتقارن */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3" style={{ gridTemplateColumns: cards.length > 4 ? "repeat(auto-fit, minmax(180px, 1fr))" : undefined, ...(cards.length > 4 ? {} : {}) }} data-count={cards.length}>
+        {cards.map((s) => (
           <Link
             key={s.slug}
             to={`/styles?s=${s.slug}`}
@@ -338,11 +377,25 @@ function ShopTheLook() {
 /* --------------------------------- ۸. مقالات -------------------------------- */
 
 function Journal() {
+  const { builder } = useSiteSettings();
   const [items, setItems] = useState(loadHomepageArticles);
 
   useEffect(() => subscribeToJournalSettings(() => setItems(loadHomepageArticles())), []);
 
-  if (!items.length) return null;
+  type JournalItem = { slug: string; title: string; img: string; category: string; readTime: number; excerpt?: string; pinned?: boolean };
+  const settingsPosts: JournalItem[] = builder.blog.posts.map((post) => ({
+    slug: post.slug, title: post.title, img: post.cover, category: post.category,
+    readTime: Number(post.readTime) || 3, excerpt: post.excerpt, pinned: post.pinned,
+  }));
+  const fallbackItems: JournalItem[] = items.map((a) => ({
+    slug: a.slug, title: a.title, img: a.img, category: a.category, readTime: a.readTime,
+  }));
+  const merged = settingsPosts.length > 0
+    ? [...settingsPosts].sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false)).slice(0, builder.blog.homeCount)
+    : fallbackItems.slice(0, builder.blog.homeCount);
+  const gridCls = builder.blog.homeGrid === "2col" ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : builder.blog.homeGrid === "list" ? "flex flex-col gap-4" : "journal-grid grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-12 lg:auto-rows-[13rem]";
+
+  if (!merged.length) return null;
 
   return (
     <section className="journal-section bg-[#f6f6f4] py-16 lg:py-24">
@@ -357,9 +410,27 @@ function Journal() {
           </Link>
         </div>
 
-        <div className="journal-grid grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-12 lg:auto-rows-[13rem]">
-          {items.map((a, index) => {
+        <div className={gridCls}>
+          {merged.map((a, index) => {
             const pattern = index % 4;
+            const listMode = builder.blog.homeGrid === "list";
+            const twoCol = builder.blog.homeGrid === "2col";
+            if (listMode || twoCol) {
+              return (
+                <Link key={a.slug} to={`/blog/${a.slug}`} className="editorial-tile group grid gap-4 overflow-hidden rounded-[1.35rem] bg-white sm:grid-cols-[240px_1fr]">
+                  <img src={a.img} alt={a.title} loading="lazy" className="h-44 w-full object-cover sm:h-full" />
+                  <div className="p-4 sm:p-5">
+                    <div className="flex items-center gap-2">
+                      {a.pinned ? <span className="rounded-full bg-[#011c3a] px-2 py-0.5 text-[8.5px] text-white">سنجاق‌شده</span> : null}
+                      <span className="text-[9.5px] tracking-[0.2em] text-neutral-400">{a.category}</span>
+                    </div>
+                    <h3 className="mt-2 text-[14px] font-medium leading-relaxed">{a.title}</h3>
+                    <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-neutral-500">{a.excerpt ?? ""}</p>
+                    <p className="mt-3 text-[10.5px] text-neutral-400">{fa(a.readTime)} دقیقه مطالعه</p>
+                  </div>
+                </Link>
+              );
+            }
             return (
             <Link
               key={a.slug}
@@ -400,6 +471,8 @@ function Journal() {
 /* ------------------------------ ۹. اینستاگرام ------------------------------- */
 
 function InstagramGrid() {
+  const { builder } = useSiteSettings();
+  const insta = builder.instagram;
   const shots = [
     "/images/model-front.jpg",
     "/images/detail-collar.jpg",
@@ -408,13 +481,36 @@ function InstagramGrid() {
     "/images/model-full.jpg",
     "/images/detail-hem.jpg",
   ];
+  if (!insta.enabled) return null;
 
   return (
     <section className="mx-auto w-full px-4 py-16 lg:px-8 lg:py-20">
       <div className="mb-6 text-center">
-        <h2 className="text-[18px] font-medium lg:text-[20px]">@kolbevintage</h2>
+        <h2 className="text-[18px] font-medium lg:text-[20px]">@{insta.username || "kolbevintage"}</h2>
         <p className="mt-2 text-[12px] text-neutral-500">ما را در اینستاگرام دنبال کنید</p>
       </div>
+      {insta.cards.length > 0 && (
+        <div className="mb-6 grid gap-3 sm:grid-cols-3 lg:mb-8">
+          {insta.cards.map((card) => (
+            <div key={card.id} className="group flex items-center gap-3 border border-neutral-200 bg-white p-4 transition hover:border-[#011c3a]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f6f6f4]"><Icon name={card.icon} className="h-5 w-5" strokeWidth={1.4} /></span>
+              <div>
+                <p className="text-[12.5px] font-medium">{card.title}</p>
+                <p className="mt-0.5 text-[10.5px] text-neutral-500">{card.text}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {insta.cta.enabled && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-[3px] p-6 text-white lg:mb-8" style={{ background: insta.cta.bg }}>
+          <div>
+            <p className="text-[14px] font-medium">{insta.cta.title}</p>
+            <p className="mt-1 text-[11.5px] text-white/75">{insta.cta.text}</p>
+          </div>
+          <a href={insta.cta.buttonTo} target="_blank" rel="noreferrer" className="rounded-[3px] bg-white px-6 py-2.5 text-[12px] font-medium text-[#011c3a] transition hover:bg-neutral-100">{insta.cta.buttonLabel}</a>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
         {shots.map((s, i) => (
           <a

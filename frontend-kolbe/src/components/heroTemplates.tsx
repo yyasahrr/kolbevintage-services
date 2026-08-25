@@ -8,18 +8,18 @@ import type { HeroStudioConfig } from "../siteSettings";
 
 type TemplateProps = { config: HeroStudioConfig; preview?: boolean };
 
-function Cta({ config, dark }: TemplateProps & { dark?: boolean }) {
+function Cta({ config }: TemplateProps) {
   if (!config.ctaLabel) return null;
   return (
     <Link
       to={config.ctaTo || "/shop"}
-      className={
-        "inline-flex min-h-11 items-center gap-2 rounded-full px-6 py-3 text-[12.5px] font-medium transition " +
-        (dark
-          ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]"
-          : "bg-white/95 text-[#011c3a] hover:bg-white")
-      }
-      style={config.countdown.accent ? { background: config.countdown.accent, color: "#fff" } : undefined}
+      className="hero-cta inline-flex min-h-11 items-center gap-2 rounded-full px-6 py-3 text-[12.5px] font-medium transition active:translate-y-px"
+      style={{
+        background: config.countdown.accent || "#011c3a",
+        color: "#fff",
+        ["--cta-hover-bg" as string]: config.buttonHoverBg,
+        ["--cta-hover-text" as string]: config.buttonHoverText,
+      }}
     >
       {config.ctaLabel}
       <Icon name="arrowLeft" className="h-4 w-4" />
@@ -39,8 +39,8 @@ export function HeroTemplate1({ config }: TemplateProps) {
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" style={{ background: `rgba(7,20,34,${config.overlay})` }} />
       <div className="relative z-10 flex max-w-3xl flex-col items-center px-6 py-20 text-center text-white">
         {config.eyebrow ? <p className="text-[11px] tracking-[0.32em] text-white/80">{config.eyebrow}</p> : null}
-        <h1 className="fade-up mt-4 text-[30px] font-medium leading-[1.4] sm:text-[40px] lg:text-[52px]">{config.title}</h1>
-        {config.subtitle ? <p className="mt-4 max-w-xl text-[13px] leading-[2] text-white/85">{config.subtitle}</p> : null}
+        <h1 className="fade-up mt-4 text-[30px] font-medium leading-[1.4] sm:text-[40px] lg:text-[52px]" style={config.titleColor ? { color: config.titleColor } : undefined}>{config.title}</h1>
+        {config.subtitle ? <p className="mt-4 max-w-xl text-[13px] leading-[2] text-white/85" style={config.subtitleColor ? { color: config.subtitleColor } : undefined}>{config.subtitle}</p> : null}
         <div className="mt-8 flex flex-col items-center gap-6">
           <Cta config={config} />
           <Countdown config={config} size="lg" />
@@ -52,20 +52,27 @@ export function HeroTemplate1({ config }: TemplateProps) {
 
 /** ۲) اسپلیت ادیتوریال - متن راست روی سطح گرم، تصویر چپ تمامقد */
 export function HeroTemplate2({ config }: TemplateProps) {
+  const dark = config.dark;
+  const shapeCls =
+    config.imageShape === "circle" ? "aspect-square rounded-full p-6 lg:p-10" :
+    config.imageShape === "rounded" ? "rounded-[2rem] p-3 lg:p-5" : "";
+  const imgWrap = "relative overflow-hidden " + (config.imageShape === "circle" ? "aspect-square rounded-full" : config.imageShape === "rounded" ? "rounded-[2rem]" : "");
   return (
-    <section className="grid overflow-hidden lg:grid-cols-[1.05fr_1fr]">
-      <div className="flex items-center bg-[#f7f5f0] px-6 py-14 sm:px-12 lg:px-16">
+    <section className={"grid overflow-hidden lg:grid-cols-[1.05fr_1fr] " + (dark ? "bg-[#0a1622] text-white" : "bg-[#f7f5f0] text-[#011c3a]")}>
+      <div className="flex items-center px-6 py-14 sm:px-12 lg:px-16">
         <div className="max-w-xl">
           {config.eyebrow ? <p className="text-[11px] tracking-[0.32em] text-[#c9654d]">{config.eyebrow}</p> : null}
-          <h1 className="fade-up mt-4 text-[28px] font-medium leading-[1.45] text-[#011c3a] sm:text-[36px] lg:text-[44px]">{config.title}</h1>
-          {config.subtitle ? <p className="mt-4 text-[13px] leading-[2] text-neutral-600">{config.subtitle}</p> : null}
-          <div className="mt-8"><Cta config={config} dark /></div>
+          <h1 className="fade-up mt-4 text-[28px] font-medium leading-[1.45] sm:text-[36px] lg:text-[44px]" style={config.titleColor ? { color: config.titleColor } : undefined}>{config.title}</h1>
+          {config.subtitle ? <p className={"mt-4 text-[13px] leading-[2] " + (dark ? "text-white/70" : "text-neutral-600")} style={config.subtitleColor ? { color: config.subtitleColor } : undefined}>{config.subtitle}</p> : null}
+          <div className="mt-8"><Cta config={config} /></div>
           <div className="mt-8"><Countdown config={config} /></div>
         </div>
       </div>
-      <div className="relative min-h-[380px] overflow-hidden lg:min-h-[640px]">
-        <img src={config.bgImage} alt={config.title} fetchPriority="high" className="absolute inset-0 h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-[#011c3a]/10" style={{ background: `rgba(7,20,34,${Math.min(config.overlay, 0.5)})` }} />
+      <div className={"flex items-center justify-center " + shapeCls}>
+        <div className={imgWrap + " h-full w-full lg:h-[78%] lg:w-[86%]"}>
+          <img src={config.bgImage} alt={config.title} fetchPriority="high" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0" style={{ background: `rgba(7,20,34,${Math.min(config.overlay, 0.5)})` }} />
+        </div>
       </div>
     </section>
   );

@@ -1,14 +1,37 @@
 import { useMemo, useState } from "react";
 import { Link } from "../router";
 import { articles } from "../siteData";
+import { useSiteSettings, type BuilderPost } from "../siteSettings";
+
+/** مقالات سفارشی سایتساز روی مقالات پیشفرض اولویت دارند. */
+function useBlogArticles() {
+  const { builder } = useSiteSettings();
+  const custom = builder.blog.posts.map((post: BuilderPost) => ({
+    slug: post.slug,
+    title: post.title,
+    excerpt: post.excerpt ?? "",
+    img: post.cover,
+    category: post.category,
+    readTime: Number(post.readTime) || 3,
+    date: post.date,
+    body: post.body.split(/\n{2,}/).filter(Boolean),
+  })) as typeof articles;
+  const all = [...custom, ...articles];
+  return [...all].sort((a, b) => {
+    const pa = Number(builder.blog.posts.find((p) => p.slug === a.slug)?.pinned ?? false);
+    const pb = Number(builder.blog.posts.find((p) => p.slug === b.slug)?.pinned ?? false);
+    return pb - pa;
+  });
+}
 import { products } from "../data/catalog";
 import { fa } from "../utils/format";
 import ProductCard from "../components/ProductCard";
 
 export function BlogList() {
-  const cats = useMemo(() => ["همه", ...new Set(articles.map((a) => a.category))], []);
+  const allArticles = useBlogArticles();
+  const cats = useMemo(() => ["همه", ...new Set(allArticles.map((a) => a.category))], [allArticles]);
   const [cat, setCat] = useState("همه");
-  const items = cat === "همه" ? articles : articles.filter((a) => a.category === cat);
+  const items = cat === "همه" ? allArticles : allArticles.filter((a) => a.category === cat);
   const [hero, ...rest] = items;
 
   return (
@@ -80,7 +103,7 @@ export function BlogList() {
 }
 
 export function BlogPost({ slug }: { slug: string }) {
-  const a = articles.find((x) => x.slug === slug);
+  const a = useBlogArticles().find((x) => x.slug === slug);
   if (!a)
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -89,7 +112,7 @@ export function BlogPost({ slug }: { slug: string }) {
     );
 
   const related = products.slice(0, 4);
-  const more = articles.filter((x) => x.slug !== slug).slice(0, 3);
+  const more = useBlogArticles().filter((x) => x.slug !== slug).slice(0, 3);
 
   return (
     <main>

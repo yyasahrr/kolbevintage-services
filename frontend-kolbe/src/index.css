@@ -1929,3 +1929,20 @@ textarea {
     break-inside: avoid;
   }
 }
+
+
+/* سایتساز: رنگ هاور دکمه کارت محصول */
+.product-card-action {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+.product-card-action:hover:not(:disabled) {
+  background: var(--card-hover-bg, #011c3a) !important;
+  color: var(--card-hover-text, #ffffff) !important;
+  border-color: var(--card-hover-bg, #011c3a) !important;
+}
+
+/* سایتساز: هاور دکمه هیرو */
+.hero-cta:hover {
+  background: var(--cta-hover-bg, #0a2c55) !important;
+  color: var(--cta-hover-text, #ffffff) !important;
+}
