@@ -63,10 +63,42 @@ export default function SiteHeader() {
             </span>
           </Link>
 
-          <nav
-            className="site-navigation hidden flex-wrap items-center justify-center gap-x-8 gap-y-1 border-t border-neutral-200/70 py-1.5 text-[12px] lg:flex"
-            onKeyDown={(event) => event.key === "Escape" && setCatalogOpen(false)}
-          >
+          <div className="mr-auto flex shrink-0 items-center gap-4 lg:gap-4">
+            <Link to="/wholesale" className="hidden h-9 items-center rounded-full border border-neutral-300 px-4 text-[11px] font-medium transition hover:border-current lg:flex">خرید عمده</Link>
+            <button type="button" onClick={toggleTheme} aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
+              <Icon name={theme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
+            </button>
+            <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
+              <Icon name="search" />
+            </button>
+            <Link to="/account" aria-label="حساب کاربری" className="hidden hover:opacity-60 sm:block">
+              <Icon name="user" />
+            </Link>
+            <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
+              <Icon name="heart" />
+              {wishlist.length > 0 && (
+                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
+                  {fa(wishlist.length)}
+                </span>
+              )}
+            </Link>
+            <button aria-label="سبد خرید" className="relative hover:opacity-60" onClick={() => setCartOpen(true)}>
+              <Icon name="bag" />
+              {cartCount > 0 && (
+                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
+                  {fa(cartCount)}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* ردیف دوم: منوی دسکتاپ — وسطچین با هاور زیرخطی یکسان */}
+        <nav
+          className="site-navigation hidden border-t border-neutral-200/70 lg:block"
+          onKeyDown={(event) => event.key === "Escape" && setCatalogOpen(false)}
+        >
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-center gap-x-8 gap-y-1 px-4 py-1.5 text-[12px] lg:px-6">
             {desktopNav.map((item) => {
               const isActive = path === item.to.split("?")[0];
               return (
@@ -117,37 +149,8 @@ export default function SiteHeader() {
                 </div>
               )}
             </div>
-          </nav>
-
-          <div className="mr-auto flex shrink-0 items-center gap-4 lg:mr-0 lg:gap-4">
-            <Link to="/wholesale" className="hidden h-9 items-center rounded-full border border-neutral-300 px-4 text-[11px] font-medium transition hover:border-current lg:flex">خرید عمده</Link>
-            <button type="button" onClick={toggleTheme} aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
-              <Icon name={theme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
-            </button>
-            <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
-              <Icon name="search" />
-            </button>
-            <Link to="/account" aria-label="حساب کاربری" className="hidden hover:opacity-60 sm:block">
-              <Icon name="user" />
-            </Link>
-            <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
-              <Icon name="heart" />
-              {wishlist.length > 0 && (
-                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
-                  {fa(wishlist.length)}
-                </span>
-              )}
-            </Link>
-            <button aria-label="سبد خرید" className="relative hover:opacity-60" onClick={() => setCartOpen(true)}>
-              <Icon name="bag" />
-              {cartCount > 0 && (
-                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
-                  {fa(cartCount)}
-                </span>
-              )}
-            </button>
           </div>
-        </div>
+        </nav>
       </div>
 
       {/* جستجو */}

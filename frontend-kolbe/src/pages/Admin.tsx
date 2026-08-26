@@ -60,11 +60,19 @@ const wholesaleRequests = [
 /* -------------------------------- داشبورد --------------------------------- */
 
 function Dashboard() {
+  /* طبق نیازسنجی کارفرما: داشبورد همه شاخصها را همزمان نشان دهد (1-d)
+     و آمار با بازه دلخواه قابل تغییر باشد (2-d) */
+  const [range, setRange] = useState<"today" | "week" | "month" | "custom">("today");
+  const rangeLabel = range === "today" ? "امروز" : range === "week" ? "این هفته" : range === "month" ? "این ماه" : "بازه دلخواه";
+  const salesByRange: Record<string, string> = { today: "۱۸٬۴۵۰٬۰۰۰", week: "۱۰۴٬۳۲۰٬۰۰۰", month: "۴۱۲٬۷۸۰٬۰۰۰", custom: "—" };
+  const ordersByRange: Record<string, string> = { today: "۲۳", week: "۱۳۱", month: "۵۴۸", custom: "—" };
+  const lowStockCount = 4; // محصولات زیر حد آستانه (از تنبیه موجودی پنل محصولات)
+
   const stats = [
-    { label: "فروش امروز", value: "۱۸٬۴۵۰٬۰۰۰", unit: "تومان", change: "+۱۲٪" },
-    { label: "سفارش‌های امروز", value: "۲۳", unit: "سفارش", change: "+۵٪" },
+    { label: `فروش ${rangeLabel}`, value: salesByRange[range], unit: "تومان", change: "+۱۲٪" },
+    { label: "سفارش‌های جاری", value: ordersByRange[range], unit: "سفارش", change: "+۵٪" },
+    { label: "موجودی بحرانی", value: fa(lowStockCount), unit: "محصول زیر آستانه", change: "نیاز به شارژ", critical: true },
     { label: "نرخ تبدیل", value: "۳٫۸", unit: "درصد", change: "+۰٫۴" },
-    { label: "بازدید امروز", value: "۱٬۸۴۲", unit: "نفر", change: "-۳٪" },
   ];
 
   const bars = [42, 55, 38, 68, 74, 61, 88, 79, 95, 71, 84, 92];
@@ -72,17 +80,32 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11.5px] text-neutral-500">بازه آمار:</span>
+        {([["today", "روزانه"], ["week", "هفتگی"], ["month", "ماهانه"], ["custom", "بازه دلخواه"]] as const).map(([id, name]) => (
+          <button key={id} onClick={() => setRange(id)} className={(range === id ? "bg-[#011c3a] text-white" : "border border-neutral-300 text-neutral-600 hover:border-[#011c3a]") + " rounded-[3px] px-3 py-1.5 text-[10.5px] transition"}>{name}</button>
+        ))}
+        {range === "custom" && (
+          <span className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
+            <input type="date" aria-label="از تاریخ" className="h-8 rounded-[3px] border border-neutral-300 px-2" dir="ltr" />
+            تا
+            <input type="date" aria-label="تا تاریخ" className="h-8 rounded-[3px] border border-neutral-300 px-2" dir="ltr" />
+          </span>
+        )}
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-[3px] border border-neutral-200 bg-white p-4">
+          <div key={s.label} className={"rounded-[3px] border bg-white p-4 " + ((s as any).critical ? "border-[#d9b98f] bg-[#fffaf2]" : "border-neutral-200")}>
             <p className="text-[11.5px] text-neutral-500">{s.label}</p>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-[22px] font-medium num-fa">{s.value}</span>
               <span className="text-[11px] text-neutral-400">{s.unit}</span>
             </div>
-            <p className={"mt-1 text-[11px] num-fa " + (s.change.startsWith("-") ? "text-[#9e4b3c]" : "text-[#3d5c3a]")}>
-              {s.change} نسبت به دیروز
-            </p>
+            {!(s as any).critical && (
+              <p className={"mt-1 text-[11px] num-fa " + (s.change.startsWith("-") ? "text-[#9e4b3c]" : "text-[#3d5c3a]")}>
+                {s.change} نسبت به بازه قبل
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -403,6 +426,11 @@ function ProductsPanel() {
   const [view,setView]=useState<"active"|"trash">("active");
   const [status,setStatus]=useState("all");
   const [notice,setNotice]=useState("");
+  const [selectedIds,setSelectedIds]=useState<Set<string>>(new Set());
+  const [bulkMode,setBulkMode]=useState<"percent"|"amount">("percent");
+  const [bulkValue,setBulkValue]=useState("");
+  const toggleSelect=(id:string)=>setSelectedIds(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
+  const applyBulkPrice=()=>{const value=Number(bulkValue);if(!bulkValue||Number.isNaN(value)||selectedIds.size===0)return;const factor=bulkMode==="percent"?1+value/100:value;const updated=items.map(item=>selectedIds.has(item.id)?{...item,price:bulkMode==="percent"?Math.round(item.price*factor):Math.max(0,Math.round(item.price+factor))}:item);commit(updated);setNotice(`قیمت ${fa(selectedIds.size)} محصول بهروزرسانی شد.`);setBulkValue("");setSelectedIds(new Set());};
 
   const saveProduct = (next: AdminProductRecord) => { const exists = items.some(item=>item.id===next.id); const updated = exists ? items.map(item=>item.id===next.id?next:item) : [next,...items]; try { saveAdminProducts(updated); setItems(updated); setEditing(next); return null; } catch { return "فضای ذخیره‌سازی مرورگر کافی نیست؛ تصاویر حجیم را حذف کنید."; } };
   const createProduct = () => setEditing(createAdminProduct());
@@ -434,10 +462,25 @@ function ProductsPanel() {
       </div>
       {notice&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}
 
+      {view==="active"&&(
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[3px] border border-neutral-200 bg-neutral-50 p-3">
+          <span className="text-[11px] text-neutral-600 num-fa">{fa(selectedIds.size)} محصول انتخابشده</span>
+          <select aria-label="روش ویرایش گروهی قیمت" value={bulkMode} onChange={e=>setBulkMode(e.target.value as "percent"|"amount")} className={input+" max-w-36"}>
+            <option value="percent">درصد (٪+/−)</option>
+            <option value="amount">مبلغ (تومان+/−)</option>
+          </select>
+          <input aria-label="مقدار" value={bulkValue} onChange={e=>setBulkValue(e.target.value)} placeholder="مثلاً 10 یا -5" className={input+" max-w-36"} dir="ltr" />
+          <button onClick={applyBulkPrice} disabled={selectedIds.size===0||!bulkValue} className="h-9 rounded-[3px] bg-[#011c3a] px-4 text-[11px] font-medium text-white disabled:opacity-40">اعمال روی انتخاب‌شده‌ها</button>
+          <button onClick={()=>setSelectedIds(new Set(items.map(i=>i.id)))} className="h-9 rounded-[3px] border border-neutral-300 px-3 text-[10.5px]">انتخاب همه</button>
+          <button onClick={()=>setSelectedIds(new Set())} className="h-9 rounded-[3px] border border-neutral-300 px-3 text-[10.5px]">پاک‌سازی</button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-[3px] border border-neutral-200 bg-white">
-        <table className="w-full min-w-[720px] text-[12px]">
+        <table className="w-full min-w-[760px] text-[12px]">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50 text-right text-neutral-500">
+              <th className="w-10 p-3"></th>
               <th className="p-3 font-medium">محصول</th>
               <th className="p-3 font-medium">کد</th>
               <th className="p-3 font-medium">دسته</th>
@@ -453,6 +496,9 @@ function ProductsPanel() {
               const inStock = p.sizes.filter((s) => s.inStock).length;
               return (
                 <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                  <td className="p-3">
+                    <input type="checkbox" aria-label={`انتخاب ${p.name}`} checked={selectedIds.has(p.id)} onChange={()=>toggleSelect(p.id)} disabled={view!=="active"} className="accent-[#011c3a]" />
+                  </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2.5">
                       <img src={p.images[0]??"/images/flat.jpg"} alt="" className="h-11 w-9 object-cover" loading="lazy" />
@@ -565,7 +611,14 @@ function CustomersPanel() {
     { name: "نیما صادقی", phone: "۰۹۱۳۱۱۲۲۳۳۴", orders: 3, total: 8_400_000, city: "اصفهان" },
     { name: "بابک کریمی", phone: "۰۹۱۴۵۵۶۶۷۷۸", orders: 2, total: 9_100_000, city: "تبریز" },
   ];
-  const [customers, setCustomers] = useState(() => { try { const raw=localStorage.getItem("kv_admin_customers"); return raw ? JSON.parse(raw) as typeof initialCustomers : initialCustomers; } catch { return initialCustomers; } });
+  const [customers, setCustomers] = useState(() => { try { const raw=localStorage.getItem("kv_admin_customers"); return raw ? JSON.parse(raw) as Array<BlockableCustomer> : initialCustomers.map((c) => ({ ...c, block: null })); } catch { return initialCustomers.map((c) => ({ ...c, block: null })); } });
+  type BlockableCustomer = (typeof initialCustomers)[number] & { block?: { type: "temp" | "permanent"; reason: string; at: string } | null };
+  const persistCustomers = (next: BlockableCustomer[]) => { setCustomers(next); try { localStorage.setItem("kv_admin_customers", JSON.stringify(next)); } catch { /* ignore */ } };
+  const [blocking, setBlocking] = useState<BlockableCustomer | null>(null);
+  const [blockForm, setBlockForm] = useState<{ type: "temp" | "permanent"; reason: string }>({ type: "temp", reason: "" });
+  const applyBlock = () => { if (!blocking) return; if (!blockForm.reason.trim()) return; persistCustomers(customers.map((c) => c.phone === blocking.phone ? { ...c, block: { ...blockForm, at: new Date().toISOString() } } : c)); setBlocking(null); setNotice("مشتری مسدود شد و دلیل آن ثبت شد."); };
+  const unblock = (phone: string) => { persistCustomers(customers.map((c) => c.phone === phone ? { ...c, block: null } : c)); setNotice("مسدودسازی برداشته شد."); };
+  const [notice, setNotice] = useState("");
   const [selected,setSelected]=useState<(typeof initialCustomers)[number]|null>(null);
   const [wallet,setWallet]=useState(0);
   const saveWallet=()=>{if(!selected)return;const key=`kv_wallet_${selected.phone}`;localStorage.setItem(key,String(wallet));};
@@ -582,6 +635,7 @@ function CustomersPanel() {
               <th className="p-3 font-medium">شهر</th>
               <th className="p-3 font-medium">تعداد سفارش</th>
               <th className="p-3 font-medium">مجموع خرید</th>
+              <th className="p-3 font-medium">وضعیت</th>
               <th className="p-3 font-medium"></th>
             </tr>
           </thead>
@@ -594,13 +648,46 @@ function CustomersPanel() {
                 <td className="p-3 num-fa">{fa(c.orders)}</td>
                 <td className="p-3 num-fa">{toman(c.total)}</td>
                 <td className="p-3">
+                  {c.block ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="rounded-full bg-[#fbeaea] px-2 py-0.5 text-[9.5px] text-[#9e4b3c]">{c.block.type === "temp" ? "مسدود موقت" : "مسدود دائم"}</span>
+                      <button onClick={() => unblock(c.phone)} className="text-[10px] underline">رفع</button>
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-[#edf3ee] px-2 py-0.5 text-[9.5px] text-[#3d5c3a]">فعال</span>
+                  )}
+                </td>
+                <td className="p-3">
                   <button onClick={()=>{setSelected(c);setWallet(Number(localStorage.getItem(`kv_wallet_${c.phone}`)||0));}} className="text-[11.5px] underline">پروفایل</button>
+                  <button onClick={()=>{setBlocking(c);setBlockForm({type:"temp",reason:""});}} className="mr-2 text-[11.5px] text-[#9e4b3c] underline">مسدودسازی</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {notice&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}
+      {blocking&&(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4" role="dialog" aria-label="مسدودسازی مشتری">
+          <div className="w-full max-w-sm rounded-[4px] bg-white p-5">
+            <h3 className="text-[14px] font-medium">مسدودسازی {blocking.name}</h3>
+            <div className="mt-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {([["temp","موقت"],["permanent","دائم"]] as const).map(([id,name])=>(
+                  <button key={id} onClick={()=>setBlockForm(f=>({...f,type:id}))} className={(blockForm.type===id?"bg-[#011c3a] text-white":"border border-neutral-300")+" h-9 rounded-[3px] text-[11px] transition"}>{name}</button>
+                ))}
+              </div>
+              <label className="block text-[10.5px] text-neutral-500">دلیل مسدودسازی (الزامی)
+                <textarea value={blockForm.reason} onChange={e=>setBlockForm(f=>({...f,reason:e.target.value}))} className="mt-1.5 min-h-20 w-full rounded-[3px] border border-neutral-300 p-2.5 text-[11.5px]" placeholder="مثلاً:不当 استفاده از کد تخفیف" />
+              </label>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button onClick={applyBlock} disabled={!blockForm.reason.trim()} className="h-10 flex-1 rounded-[3px] bg-[#9e4b3c] text-[11.5px] font-medium text-white disabled:opacity-40">ثبت مسدودسازی</button>
+              <button onClick={()=>setBlocking(null)} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px]">انصراف</button>
+            </div>
+          </div>
+        </div>
+      )}
       {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">CUSTOMER 360</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول مشتری</p><label className="mt-3 block text-[9.5px] text-white/70">موجودی (تومان)<input type="number" min="0" value={wallet} onChange={e=>setWallet(Number(e.target.value))} className="mt-1.5 h-10 w-full bg-white px-3 text-[11px] text-[#011c3a]"/></label><button onClick={saveWallet} className="mt-3 h-9 w-full border border-white/30 text-[10px] hover:border-white">ذخیره موجودی کیف پول</button></aside></section>}
     </div>
   );
