@@ -3,14 +3,15 @@ import {
   Activity, Archive, Bell, Boxes, BriefcaseBusiness, CalendarDays, Check, ChevronDown, CircleHelp,
   ClipboardCheck, Command, CreditCard, FileCheck2, FileText, FolderKanban, LayoutDashboard, Menu,
   MessageSquareText, MoreHorizontal, Package, PanelRight, Plus, Search, Settings, ShieldCheck, SlidersHorizontal,
-  Sparkles, Store, TrendingUp, Truck, Upload, UsersRound, X, Zap, ArrowLeft, Eye, EyeOff, Factory,
+  Sparkles, Store, TrendingUp, TrendingDown, Truck, Upload, UsersRound, X, Zap, ArrowLeft, Eye, EyeOff, Factory,
 } from 'lucide-react'
 import { products, orderRows, rfqs, milestones } from './data'
 import { EmptyState, PageCrumbs, RowMenu, SectionHeading, Status, TextButton } from './components'
 import { ChangeRequests, CommandPalette, FulfillmentOrders, Messages, ProductEditor, ProductReview, QuoteBuilder, ReturnsIssues, SamplesWorkspace } from './workflows'
 import { backendHealth, loadSupplierOrders, loadSupplierProducts, loadSupplierRfqs, restoreSupplierSession, signInSupplier, submitSupplierApplication, updateSupplierPurchaseOrder, type SupplierContext } from './api'
+import { ApprovalWorkflow, CampaignBuilder, CSVInventoryImport, DiscrepancyManager, DisputeCenter, ImageQualityChecker, NotificationPreferences, OrderSLA, PriceHistoryTable, QualityDocuments, RoleManager, SettlementSettings, ShippingLabel, TaxIntegration } from './features'
 
-type Page = 'dashboard' | 'products' | 'product-editor' | 'review' | 'inventory' | 'series' | 'orders' | 'returns' | 'rfqs' | 'quote' | 'production' | 'samples' | 'changes' | 'quality' | 'finance' | 'analytics' | 'messages' | 'profile' | 'settings'
+type Page = 'dashboard' | 'products' | 'product-editor' | 'review' | 'inventory' | 'series' | 'orders' | 'returns' | 'rfqs' | 'quote' | 'production' | 'samples' | 'changes' | 'quality' | 'finance' | 'analytics' | 'messages' | 'profile' | 'settings' | 'campaigns' | 'disputes' | 'quality-docs'
 type AccessView = 'login' | 'register' | 'portal'
 type NavGroup = { label?: string; links: { page: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] }
 
@@ -20,7 +21,7 @@ const navGroups: NavGroup[] = [
   { label: 'موجودی', links: [{ page: 'inventory', label: 'موجودی آماده', icon: Boxes }, { page: 'inventory', label: 'کم‌موجود', icon: Activity, count: 4 }, { page: 'series', label: 'سری و پک‌ها', icon: Archive }] },
   { label: 'عملیات آماده', links: [{ page: 'orders', label: 'سفارشات آماده', icon: Truck, count: 5 }, { page: 'returns', label: 'مرجوعی و مسائل', icon: CircleHelp, count: 1 }] },
   { label: 'تولید سفارشی', links: [{ page: 'rfqs', label: 'صندوق RFQ', icon: MessageSquareText, count: 3 }, { page: 'quote', label: 'پیشنهادها', icon: FileCheck2 }, { page: 'production', label: 'تولید فعال', icon: FolderKanban, count: 6 }, { page: 'samples', label: 'نمونه‌ها', icon: Upload, count: 1 }, { page: 'changes', label: 'درخواست تغییر', icon: Activity, count: 2 }] },
-  { links: [{ page: 'quality', label: 'کنترل کیفیت', icon: ClipboardCheck, count: 2 }, { page: 'finance', label: 'مالی و تسویه', icon: CreditCard }, { page: 'analytics', label: 'عملکرد', icon: TrendingUp }, { page: 'messages', label: 'پیام‌ها', icon: MessageSquareText, count: 4 }, { page: 'profile', label: 'پروفایل کارخانه', icon: Store }] },
+  { links: [{ page: 'quality', label: 'کنترل کیفیت', icon: ClipboardCheck, count: 2 }, { page: 'quality-docs', label: 'اسناد کیفیت و فراخوان', icon: ShieldCheck }, { page: 'finance', label: 'مالی و تسویه', icon: CreditCard }, { page: 'disputes', label: 'اعتراض مالی', icon: CircleHelp, count: 1 }, { page: 'campaigns', label: 'کمپین‌ها', icon: TrendingDown }, { page: 'analytics', label: 'عملکرد', icon: TrendingUp }, { page: 'messages', label: 'پیام‌ها', icon: MessageSquareText, count: 4 }, { page: 'profile', label: 'پروفایل کارخانه', icon: Store }] },
 ]
 
 const normalizedDigits = (value: string) => value.replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))).replace(/\D/g, '')
@@ -100,6 +101,9 @@ function App() {
         {page === 'messages' ? <Messages /> : null}
         {page === 'profile' ? <Profile /> : null}
         {page === 'settings' ? <SettingsPage /> : null}
+        {page === 'campaigns' ? <><div className="page-head"><div><PageCrumbs parent="بازاریابی" current="کمپین‌ها"/><h1>کمپین‌های پیشنهادی</h1><p>کمپین تخفیف پیشنهاد دهید — با تأیید کلبه فعال می‌شود.</p></div></div><CampaignBuilder /></> : null}
+        {page === 'disputes' ? <><div className="page-head"><div><PageCrumbs parent="مالی" current="اعتراض"/><h1>مرکز اعتراض مالی</h1><p>اعتراض به کسورات، جریمه و تسویه — با گردش کامل بررسی.</p></div></div><DisputeCenter /></> : null}
+        {page === 'quality-docs' ? <><div className="page-head"><div><PageCrumbs parent="کیفیت" current="اسناد"/><h1>اسناد کیفیت و فراخوان</h1><p>گواهی‌ها، سری ساخت و فراخوان محصول.</p></div></div><QualityDocuments /></> : null}
       </main>
     </div>
     {commandOpen ? <CommandPalette onClose={() => setCommandOpen(false)} onNavigate={go} /> : null}
@@ -175,16 +179,27 @@ function StockBar({ name, value }: { name: string; value: number }) { return <di
 function FactoryIcon() { return <BriefcaseBusiness size={17}/> }
 
 function Products({ onNavigate, query, setQuery }: { onNavigate: (page: Page) => void; query: string; setQuery: (value: string) => void }) {
+
   const [tab, setTab] = useState('همه محصولات')
   const filtered = products.filter(item => item.name.includes(query) || item.sku.toLowerCase().includes(query.toLowerCase()))
   return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="محصولات"/><h1>محصولات</h1><p>کاتالوگ، تأیید کولبه و قابلیت فروش سری‌های خود را مدیریت کنید.</p></div><button className="button primary" onClick={() => onNavigate('product-editor')}><Plus size={17}/>محصول جدید</button></div><section className="surface table-surface"><div className="tabs">{['همه محصولات', 'فعال', 'در بررسی', 'نیازمند اصلاح', 'پیش‌نویس'].map(item => <button onClick={() => setTab(item)} className={tab === item ? 'active' : ''} key={item}>{item}{item === 'نیازمند اصلاح' ? <em>۲</em> : null}</button>)}</div><div className="table-toolbar"><label className="search-field"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="جست‌وجو با نام یا SKU"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلترها</button><button className="button secondary hide-mobile"><CalendarDays size={16}/>به‌روزرسانی اخیر</button><button className="icon-button"><MoreHorizontal/></button></div></div><div className="desktop-table"><div className="table-row table-header"><span>محصول</span><span>وضعیت</span><span>سری قابل فروش</span><span>موجودی فیزیکی</span><span>قیمت عمده</span><span>آخرین تغییر</span><span></span></div>{filtered.map(product => <div className="table-row product-row" key={product.id}><div className="product-cell"><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.category}</span></div></div><Status>{product.status}</Status><span className={product.series === 0 ? 'zero-number' : 'number'}>{product.series} سری</span><span className={product.stock < 10 ? 'low-number' : 'number'}>{product.stock} تکه</span><b>{product.price}</b><span className="muted">{product.updated}</span><RowMenu/></div>)}</div><div className="mobile-product-list">{filtered.map(product => <article key={product.id}><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.series} سری قابل فروش</span><Status>{product.status}</Status></div><RowMenu/></article>)}</div><footer className="table-footer"><span>نمایش {filtered.length} از ۴۳ محصول</span><div><button className="icon-button">‹</button><b>۱</b><button className="icon-button">›</button></div></footer></section></>
 }
 
-function Inventory() { return <><div className="page-head"><div><PageCrumbs parent="موجودی" current="موجودی آماده"/><h1>موجودی آماده</h1><p>موجودی فیزیکی و تعداد سری قابل فروش به‌صورت زنده محاسبه می‌شود.</p></div><button className="button primary"><Upload size={17}/>ورودی CSV</button></div><section className="inventory-summary"><article><p>موجودی فیزیکی</p><strong>۴٬۸۹۲</strong><span>تکه در ۴۲ محصول</span></article><article><p>سری قابل فروش</p><strong>۳۲۸</strong><span>مبنای پیشنهادهای فعال</span></article><article className="warn"><p>ریسک اتمام موجودی</p><strong>۴</strong><span>محصول زیر حد تعیین‌شده</span></article></section><section className="surface inventory-table"><SectionHeading title="موجودی بر اساس SKU"><button className="button secondary">ویرایش گروهی</button></SectionHeading><div className="inventory-grid"><div className="table-row table-header"><span>محصول / واریانت</span><span>فیزیکی</span><span>رزرو شده</span><span>قابل فروش</span><span>سری پشتیبان</span><span>به‌روزرسانی</span></div>{['مشکی / M', 'مشکی / L', 'مشکی / XL', 'مشکی / 2XL', 'سفید / M'].map((variant, i) => <div className="table-row" key={variant}><div><b>پیراهن آکسفورد</b><span>{variant} · KH-OXF-241-{i + 1}</span></div><b>{[46, 38, 35, 15, 12][i]}</b><span>{[10, 5, 0, 0, 0][i]}</span><b className={i === 3 || i === 4 ? 'low-number' : ''}>{[36, 33, 35, 15, 12][i]}</b><span>{i < 4 ? 'پرفروش، فول‌سری' : 'نیم‌سری'}</span><span className="muted">امروز، ۱۰:۲۲</span></div>)}</div></section></> }
+function Inventory() { return <><div className="page-head"><div><PageCrumbs parent="موجودی" current="موجودی آماده"/><h1>موجودی آماده</h1><p>موجودی فیزیکی و تعداد سری قابل فروش به‌صورت زنده محاسبه می‌شود.</p></div><button className="button primary"><Upload size={17}/>ورودی CSV</button></div><div style={{marginBottom:16}}><CSVInventoryImport onImport={() => undefined} /></div>
+<DiscrepancyManager />
+<section className="inventory-summary"><article><p>موجودی فیزیکی</p><strong>۴٬۸۹۲</strong><span>تکه در ۴۲ محصول</span></article><article><p>سری قابل فروش</p><strong>۳۲۸</strong><span>مبنای پیشنهادهای فعال</span></article><article className="warn"><p>ریسک اتمام موجودی</p><strong>۴</strong><span>محصول زیر حد تعیین‌شده</span></article></section><section className="surface inventory-table"><SectionHeading title="موجودی بر اساس SKU"><button className="button secondary">ویرایش گروهی</button></SectionHeading><div className="inventory-grid"><div className="table-row table-header"><span>محصول / واریانت</span><span>فیزیکی</span><span>رزرو شده</span><span>قابل فروش</span><span>سری پشتیبان</span><span>به‌روزرسانی</span></div>{['مشکی / M', 'مشکی / L', 'مشکی / XL', 'مشکی / 2XL', 'سفید / M'].map((variant, i) => <div className="table-row" key={variant}><div><b>پیراهن آکسفورد</b><span>{variant} · KH-OXF-241-{i + 1}</span></div><b>{[46, 38, 35, 15, 12][i]}</b><span>{[10, 5, 0, 0, 0][i]}</span><b className={i === 3 || i === 4 ? 'low-number' : ''}>{[36, 33, 35, 15, 12][i]}</b><span>{i < 4 ? 'پرفروش، فول‌سری' : 'نیم‌سری'}</span><span className="muted">امروز، ۱۰:۲۲</span></div>)}</div></section>
+<PriceHistoryTable productId="oxf-241" />
+<section className="surface" style={{padding:20,marginTop:16}}>
+  <SectionHeading title="کنترل کیفیت تصاویر" eyebrow="IMAGE QUALITY CHECK (11-d)">تصویر محصول را قبل از ارسال برای تأیید کلبه بررسی کنید.</SectionHeading>
+  <ImageQualityChecker onResult={() => undefined} />
+</section>
+</> }
 
 function SeriesBuilder() { const [sizes, setSizes] = useState([1, 2, 2, 1]); const total = sizes.reduce((a,b) => a + b, 0); return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ / پیراهن آکسفورد" current="سری‌ها و پک‌ها"/><h1>سری محصول</h1><p>ترکیب و قیمت‌گذاری بسته‌های عمده برای رنگ مشکی.</p></div><button className="button secondary">مشاهده موجودی SKU</button></div><section className="builder-layout"><div className="surface series-form"><SectionHeading eyebrow="SERIES BUILDER" title="سری پرفروش" action={<Status>فعال</Status>}>ترکیب بر مبنای واریانت‌های فعال محصول</SectionHeading><div className="series-options"><button className="selected">پرفروش</button><button>نیم‌سری</button><button>فول‌سری</button><button>سفارشی</button></div><div className="composition"><div className="composition-head"><b>سایز</b><b>تعداد در هر سری</b><b>موجودی فیزیکی</b></div>{['M', 'L', 'XL', '2XL'].map((size, index) => <div className="composition-row" key={size}><b>{size}</b><div className="stepper"><button onClick={() => setSizes(current => current.map((n, i) => i === index ? Math.max(0, n - 1) : n))}>−</button><strong>{sizes[index]}</strong><button onClick={() => setSizes(current => current.map((n, i) => i === index ? n + 1 : n))}>+</button></div><span>{[46, 38, 35, 15][index]} تکه</span></div>)}</div><div className="price-row"><label>قیمت عمده هر سری<input defaultValue="۱٬۸۹۰٬۰۰۰"/></label><label>زمان آماده‌سازی<select defaultValue="۲ روز"><option>۲ روز کاری</option><option>۳ روز کاری</option></select></label></div><div className="form-actions"><button className="button ghost">انصراف</button><button className="button primary">ذخیره سری</button></div></div><aside className="series-preview"><div className="series-hero"><p>پیش‌نمایش عرضه</p><strong>{total}<span>تکه</span></strong><small>در هر سری پرفروش</small></div><div className="series-stats"><div><span>سری قابل فروش</span><b>۷ سری</b><small>محدودشده توسط سایز 2XL</small></div><div><span>قابل رزرو</span><b>۷ سری</b><small>بدون سفارش فعال</small></div></div><div className="formula"><p>فرمول سری</p>{['M × ۱', 'L × ۲', 'XL × ۲', '2XL × ۱'].map(x => <span key={x}>{x}</span>)}</div><div className="notice"><Sparkles size={17}/><p>با ثبت این سری، پیشنهاد به‌طور خودکار براساس موجودی واریانت‌ها فعال یا غیرفعال می‌شود.</p></div></aside></section></> }
 
-function Orders() { const [selected, setSelected] = useState('KV-82941'); return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌ها را به‌موقع تأیید و برای ارسال آماده کنید.</p></div><button className="button secondary"><FileText size={16}/>خروجی سفارشات</button></div><section className="surface orders-surface"><div className="table-toolbar"><label className="search-field"><Search size={17}/><input placeholder="شناسه سفارش، مشتری یا محصول"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلتر</button><button className="button secondary">نمای ذخیره‌شده <ChevronDown size={15}/></button></div></div><div className="orders-layout"><div className="orders-list"><div className="order-head-row"><span>سفارش</span><span>محصول و سری</span><span>مبلغ</span><span>مهلت ارسال</span><span>وضعیت</span></div>{orderRows.map(order => <button onClick={() => setSelected(order.id)} className={`order-list-row ${selected === order.id ? 'selected' : ''}`} key={order.id}><div><b>{order.id}</b><span>{order.customer}</span></div><div><b>{order.product}</b><span>{order.pack} · {order.quantity}</span></div><b>{order.value}</b><span>{order.due}</span><Status>{order.status}</Status></button>)}</div><OrderInspector id={selected}/></div></section></> }
+function Orders() { const [selected, setSelected] = useState('KV-82941'); return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌ها را به‌موقع تأیید و برای ارسال آماده کنید.</p></div><button className="button secondary"><FileText size={16}/>خروجی سفارشات</button></div><section className="surface orders-surface"><div className="table-toolbar"><label className="search-field"><Search size={17}/><input placeholder="شناسه سفارش، مشتری یا محصول"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلتر</button><button className="button secondary">نمای ذخیره‌شده <ChevronDown size={15}/></button></div></div><div style={{marginBottom:16}}><OrderSLA orderId={selected} slaHours={24} /></div>
+<div style={{marginBottom:16}}><ShippingLabel orderId={selected} items={[{ name: 'پیراهن آکسفورد', qty: 30 }]} /></div>
+<div className="orders-layout"><div className="orders-list"><div className="order-head-row"><span>سفارش</span><span>محصول و سری</span><span>مبلغ</span><span>مهلت ارسال</span><span>وضعیت</span></div>{orderRows.map(order => <button onClick={() => setSelected(order.id)} className={`order-list-row ${selected === order.id ? 'selected' : ''}`} key={order.id}><div><b>{order.id}</b><span>{order.customer}</span></div><div><b>{order.product}</b><span>{order.pack} · {order.quantity}</span></div><b>{order.value}</b><span>{order.due}</span><Status>{order.status}</Status></button>)}</div><OrderInspector id={selected}/></div></section></> }
 
 function OrderInspector({ id }: { id: string }) { return <aside className="order-inspector"><div className="inspector-head"><div><p className="eyebrow">جزئیات سفارش</p><h2>{id}</h2></div><RowMenu/></div><Status>نیازمند تأیید</Status><div className="inspector-product"><img src={products[0].image} alt=""/><div><b>پیراهن آکسفورد یقه‌دار</b><span>پرفروش · مشکی · ۵ سری</span></div></div><dl><div><dt>تعداد کل</dt><dd>۳۰ تکه</dd></div><div><dt>ارزش سفارش</dt><dd>۹٬۴۵۰٬۰۰۰ تومان</dd></div><div><dt>تاریخ ارسال</dt><dd className="low-number">فردا، ۲۲ مرداد</dd></div></dl><div className="reservation"><div><b>رزرو موجودی</b><span>با تأیید شما اعمال خواهد شد.</span></div><strong>۵ سری</strong></div><div className="inspector-actions"><button className="button primary"><Check size={16}/>تأیید سفارش</button><button className="button secondary">گزارش مغایرت</button><button className="link-danger">رد با ذکر دلیل</button></div></aside> }
 
@@ -268,7 +283,9 @@ function Analytics() {
     </div>
   </div>
 
-  <section className="inventory-summary">
+  <div style={{marginBottom:16}}><CSVInventoryImport onImport={() => undefined} /></div>
+<DiscrepancyManager />
+<section className="inventory-summary">
     <article><p>سفارش‌ها</p><strong>{data.orders}</strong><span>در {rangeLabel}</span></article>
     <article><p>درآمد</p><strong>{data.revenue}</strong><span>تومان</span></article>
     <article className="warn"><p>لغو شده</p><strong>{data.cancelled}</strong><span>سفارش</span></article>
@@ -350,6 +367,16 @@ function SettingsPage() {
     ))}</div> : <p style={{fontSize:10,color:'#999'}}>تعطیلی ثبت نشده است.</p>}
   </section>
 
+  {/* 31-d/32-d/36-d: تنظیمات تسویه */}
+  <SettlementSettings />
+  {/* 20-d: ترجیحات اعلان */}
+  <NotificationPreferences />
+  {/* 34-d: اتصال مالیاتی */}
+  <TaxIntegration />
+  {/* 6-d: نقش سفارشی */}
+  <RoleManager />
+  {/* 4-d: گردش تأیید */}
+  <ApprovalWorkflow type="manufacturer" />
   <section className="settings-list surface"><button><Bell size={18}/><div><b>اعلان‌ها</b><span>قوانین دریافت هشدارهای عملیاتی و مالی</span></div><ChevronDown size={17}/></button><button><UsersRound size={18}/><div><b>کاربران و دسترسی‌ها</b><span>۵ عضو فعال (نامحدود — نیازسنجی 5-c)</span></div><ChevronDown size={17}/></button><button><ShieldCheck size={18}/><div><b>امنیت و ورود</b><span>تأیید دو مرحله‌ای و نشست‌های فعال</span></div><ChevronDown size={17}/></button></section></>;
 }
 
