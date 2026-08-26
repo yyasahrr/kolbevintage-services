@@ -7,7 +7,8 @@ import {
 } from 'lucide-react'
 import { products, orderRows, rfqs, milestones } from './data'
 import { EmptyState, PageCrumbs, RowMenu, SectionHeading, Status, TextButton } from './components'
-import { ChangeRequests, CommandPalette, FulfillmentOrders, Messages, ProductEditor, ProductReview, QuoteBuilder, ReturnsIssues, SamplesWorkspace } from './workflows'
+import { CommandPalette } from './command-palette'
+import { ChangeRequests, FulfillmentOrders, Messages, ProductEditor, ProductReview, QuoteBuilder, ReturnsIssues, SamplesWorkspace } from './workflows'
 class PortalErrorBoundary extends React.Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
   static getDerivedStateFromError(error: Error) { return { error } }

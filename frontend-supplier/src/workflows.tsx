@@ -7,135 +7,331 @@ import {
 import { PageCrumbs, SectionHeading, Status } from './components'
 import { createSupplierProduct, loadSupplierOrders, updateSupplierPurchaseOrder } from './api'
 
-type ProductStep = 'basic' | 'media' | 'specs' | 'variants' | 'series' | 'review'
+/* ================================================================
+   تعریف انواع سری — قیمت بر اساس نوع سری × قیمت هر تیکه
+   ================================================================ */
 
-const editorSteps: { id: ProductStep; label: string; note: string }[] = [
-  { id: 'basic', label: 'اطلاعات پایه', note: 'هویت محصول' },
-  { id: 'media', label: 'رسانه', note: 'تصاویر و ویدئو' },
-  { id: 'specs', label: 'مشخصات', note: 'ویژگی‌های دسته' },
-  { id: 'variants', label: 'واریانت‌ها', note: 'رنگ، سایز و SKU' },
-  { id: 'series', label: 'سری فروش', note: 'پک‌های عمده' },
-  { id: 'review', label: 'بازبینی و ارسال', note: 'کنترل نهایی' },
+export type SeriesType = {
+  id: string
+  label: string
+  description: string
+  composition: Record<string, number>  // سایز → تعداد تیکه
+  pieceCount: number                   // مجموع تیکهها
+}
+
+export const SERIES_TYPES: SeriesType[] = [
+  {
+    id: 'full', label: 'سری کامل', description: 'تمام سایزها با نسبت استاندارد',
+    composition: { 'S': 1, 'M': 2, 'L': 2, 'XL': 2, '2XL': 1 }, pieceCount: 8,
+  },
+  {
+    id: 'half', label: 'نیم‌سری', description: 'M تا 2XL — ۵ تیکه',
+    composition: { 'M': 1, 'L': 1, 'XL': 1, '2XL': 1, 'M/L': 1 }, pieceCount: 5,
+  },
+  {
+    id: 'bestseller', label: 'سری پرفروش', description: 'تمرکز روی سایزهای پرتقاضا',
+    composition: { 'M': 2, 'L': 2, 'XL': 1 }, pieceCount: 5,
+  },
+  {
+    id: 'single_size', label: 'تک‌سایز', description: 'همه تیکهها یک سایز',
+    composition: { '—': 6 }, pieceCount: 6,
+  },
+  {
+    id: 'custom', label: 'سری سفارشی', description: 'ترکیب دلخواه سایزها',
+    composition: {}, pieceCount: 0,
+  },
 ]
 
-export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: string; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ name: '', sku: '', category: 'پوشاک', description: '', wholesalePrice: '', imageUrl: '', color: 'مشکی', size: 'فری', stock: '' })
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const update = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }))
-  const parseNumber = (value: string) => Number(value
+const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n)
+const toman = (n: number) => `${fa(n)} تومان`
+
+function parseNumber(value: string): number {
+  return Number(value
     .replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
     .replace(/[٠-٩]/g, digit => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
     .replace(/[٬,\s]/g, ''))
+}
+
+/* ================================================================
+   ویرایشگر محصول جدید — بر اساس سری (نه سایز تکی)
+   ================================================================ */
+
+export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: string; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({
+    name: '', sku: '', category: 'پوشاک', description: '',
+    unitPrice: '',       // قیمت هر تیکه
+    seriesTypeId: 'full', // نوع سری
+    seriesCount: '',      // تعداد سری موجود
+    color: 'مشکی',
+    colorHex: '#1a1a1a',
+    imageUrl: '',         // data URL از آپلود
+  })
+  const [customComposition, setCustomComposition] = useState<Record<string, number>>({ S: 1, M: 1, L: 1, XL: 1 })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  const update = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }))
   const showError = (message: string) => {
     setError(message)
     requestAnimationFrame(() => document.getElementById('product-form-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
+
+  const seriesType = SERIES_TYPES.find(t => t.id === form.seriesTypeId) ?? SERIES_TYPES[0]
+  const isCustom = seriesType.id === 'custom'
+  const composition = isCustom ? customComposition : seriesType.composition
+  const pieceCount = isCustom
+    ? Object.values(customComposition).reduce((a, b) => a + b, 0)
+    : seriesType.pieceCount
+
+  const unitPrice = parseNumber(form.unitPrice)
+  const seriesCount = parseNumber(form.seriesCount)
+  const seriesPrice = unitPrice * pieceCount          // قیمت هر سری
+  const totalPieces = pieceCount * (seriesCount || 0)  // مجموع تیکهها
+  const totalValue = seriesPrice * (seriesCount || 0)  // ارزش کل
+
+  /* آپلود تصویر به data URL */
+  const handleImageUpload = (file: File) => {
+    if (!file.type.startsWith('image/')) return showError('فایل انتخاب‌شده تصویر نیست.')
+    if (file.size > 2_500_000) return showError('حجم تصویر حداکثر ۲.۵ مگابایت.')
+    const reader = new FileReader()
+    reader.onload = () => update('imageUrl', String(reader.result))
+    reader.readAsDataURL(file)
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError('')
-    const price = parseNumber(form.wholesalePrice)
-    const stock = parseNumber(form.stock)
     if (!form.name.trim() || !form.sku.trim() || !form.description.trim()) return showError('نام، SKU و توضیحات محصول الزامی است.')
-    if (!form.wholesalePrice.trim() || !Number.isInteger(price) || price <= 0) return showError('قیمت عمده را به‌صورت عدد صحیح و بیشتر از صفر وارد کنید؛ عدد فارسی و جداکننده هزارگان نیز پذیرفته می‌شود.')
-    if (!form.stock.trim() || !Number.isInteger(stock) || stock < 0) return showError('موجودی باید عدد صحیح و صفر یا بیشتر باشد.')
+    if (!form.unitPrice.trim() || !Number.isInteger(unitPrice) || unitPrice <= 0) return showError('قیمت هر تیکه را به‌صورت عدد صحیح وارد کنید.')
+    if (!form.seriesCount.trim() || !Number.isInteger(seriesCount) || seriesCount <= 0) return showError('تعداد سری موجود را وارد کنید.')
+    if (pieceCount <= 0) return showError('ترکیب سری باید حداقل یک تیکه داشته باشد.')
+    if (!form.color.trim()) return showError('رنگ محصول را وارد کنید.')
+
     setSubmitting(true)
     try {
-      await createSupplierProduct({ supplierId, name: form.name, sku: form.sku, category: form.category, description: form.description, wholesalePrice: price, imageUrl: form.imageUrl, color: form.color, size: form.size, stock })
+      const seriesLabel = `${seriesType.label} (${fa(pieceCount)} تیکه)`
+      await createSupplierProduct({
+        supplierId,
+        name: form.name,
+        sku: form.sku,
+        category: form.category,
+        description: `${form.description}\n\nسری: ${seriesLabel}\nرنگ: ${form.color}\nترکیب: ${Object.entries(composition).map(([s, q]) => `${s}×${fa(q)}`).join(' · ')}`,
+        wholesalePrice: unitPrice,
+        imageUrl: form.imageUrl,
+        color: form.color,
+        
+        size: seriesLabel,
+        stock: totalPieces,
+      })
       onCreated()
     } catch (reason) {
       showError(reason instanceof Error ? reason.message : 'ثبت محصول انجام نشد.')
     } finally { setSubmitting(false) }
   }
+
   return <div className="workflow-page">
-    <div className="workflow-topbar"><button type="button" className="icon-button" aria-label="بستن ویرایشگر" onClick={onClose}><X size={18}/></button><div><b>محصول جدید</b><span className="unsaved-state"><Clock3 size={12}/>در انتظار ثبت</span></div><div className="workflow-top-actions"><button type="button" className="button secondary" onClick={onClose}>انصراف</button><button type="submit" form="supplier-product-form" className="button primary" disabled={submitting}><Send size={15}/>{submitting ? 'در حال ثبت…' : 'ثبت و ارسال برای بررسی'}</button></div></div>
-    <main className="editor-main"><form id="supplier-product-form" className="editor-content" onSubmit={submit} noValidate>
-      <div className="editor-title"><PageCrumbs parent="کاتالوگ" current="محصول جدید"/><h1>ثبت محصول در کاتالوگ عمده</h1><p>محصول بعد از ثبت با وضعیت «در بررسی» برای تیم کاتالوگ کلبه ارسال می‌شود.</p></div>
-      {error ? <div id="product-form-error" role="alert" aria-live="assertive" className="review-policy"><CircleAlert size={18}/><div><b>ثبت محصول کامل نشد</b><p>{error}</p></div></div> : null}
-      <EditorSection title="هویت محصول" description="اطلاعات اصلی که در کاتالوگ و پنل بررسی نمایش داده می‌شود."><div className="form-grid"><Field label="نام محصول"><input required value={form.name} onChange={event => update('name', event.target.value)} placeholder="مثلاً پیراهن لینن تابستانی"/></Field><Field label="SKU تأمین‌کننده"><input required dir="ltr" value={form.sku} onChange={event => update('sku', event.target.value)} placeholder="NG-LIN-301"/></Field><Field label="دسته‌بندی"><select value={form.category} onChange={event => update('category', event.target.value)}><option>پوشاک</option><option>کفش</option><option>اکسسوری</option><option>پارچه</option></select></Field><Field label="آدرس تصویر" optional helper="فعلاً لینک مستقیم تصویر را وارد کنید؛ بارگذاری فایل در مرحله بعد اضافه می‌شود."><input dir="ltr" value={form.imageUrl} onChange={event => update('imageUrl', event.target.value)} placeholder="https://..."/></Field></div></EditorSection>
-      <EditorSection title="عرضه و موجودی" description="اولین واریانت محصول همراه با موجودی اولیه ساخته می‌شود."><div className="form-grid"><Field label="قیمت عمده هر تکه (تومان)" helper="اعداد فارسی یا انگلیسی، با یا بدون جداکننده پذیرفته می‌شوند."><input required type="text" inputMode="numeric" value={form.wholesalePrice} onChange={event => update('wholesalePrice', event.target.value)} placeholder="۱٬۲۵۰٬۰۰۰"/></Field><Field label="موجودی فیزیکی"><input required type="text" inputMode="numeric" value={form.stock} onChange={event => update('stock', event.target.value)} placeholder="۲۴"/></Field><Field label="رنگ"><input value={form.color} onChange={event => update('color', event.target.value)}/></Field><Field label="سایز"><input value={form.size} onChange={event => update('size', event.target.value)}/></Field></div></EditorSection>
-      <EditorSection title="توضیحات کاتالوگ" description="توضیحی دقیق درباره جنس، فرم، کاربرد و شرایط تولید بنویسید."><Field label="توضیحات محصول"><textarea required rows={6} maxLength={1200} value={form.description} onChange={event => update('description', event.target.value)} placeholder="جنس پارچه، نوع دوخت، فرم محصول و ویژگی‌های قابل ارائه…"/><small>{form.description.length.toLocaleString('fa-IR')} از ۱٬۲۰۰ نویسه</small></Field></EditorSection>
-      <div className="review-policy"><ShieldCheck size={18}/><div><b>انتشار بعد از تأیید کلبه</b><p>ثبت این فرم محصول را مستقیم عمومی نمی‌کند؛ ابتدا تیم کاتالوگ آن را بررسی و تأیید می‌کند.</p></div></div>
-      <div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>انصراف</button><button type="submit" className="button primary" disabled={submitting}>{submitting ? 'در حال ثبت…' : 'ثبت و ارسال برای بررسی'}</button>{error ? <span role="status" className="low-number">فرم را بررسی کنید؛ توضیح خطا نمایش داده شد.</span> : null}</div>
-    </form></main>
+    <div className="workflow-topbar">
+      <button type="button" className="icon-button" aria-label="بستن" onClick={onClose}><X size={18}/></button>
+      <div><b>محصول جدید</b><span className="unsaved-state"><Clock3 size={12}/>در انتظار ثبت</span></div>
+      <div className="workflow-top-actions">
+        <button type="button" className="button secondary" onClick={onClose}>انصراف</button>
+        <button type="submit" form="supplier-product-form" className="button primary" disabled={submitting}>
+          <Send size={15}/>{submitting ? 'در حال ثبت…' : 'ثبت و ارسال برای بررسی'}
+        </button>
+      </div>
+    </div>
+
+    <main className="editor-main">
+      <form id="supplier-product-form" className="editor-content" onSubmit={submit} noValidate>
+        <div className="editor-title">
+          <PageCrumbs parent="کاتالوگ" current="محصول جدید (بر اساس سری)"/>
+          <h1>ثبت محصول در کاتالوگ عمده</h1>
+          <p>محصول بر اساس نوع سری عرضه می‌شود. قیمت هر سری = قیمت هر تیکه × تعداد تیکه در سری.</p>
+        </div>
+
+        {error ? <div id="product-form-error" role="alert" className="review-policy"><CircleAlert size={18}/><div><b>خطا</b><p>{error}</p></div></div> : null}
+
+        {/* === ۱. اطلاعات پایه === */}
+        <EditorSection title="۱. اطلاعات پایه" description="نام و دسته محصول">
+          <div className="form-grid">
+            <Field label="نام محصول"><input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="مثلاً پیراهن لینن تابستانی"/></Field>
+            <Field label="SKU"><input required dir="ltr" value={form.sku} onChange={e => update('sku', e.target.value)} placeholder="NG-LIN-301"/></Field>
+            <Field label="دسته‌بندی">
+              <select value={form.category} onChange={e => update('category', e.target.value)}>
+                <option>پوشاک</option><option>کفش</option><option>اکسسوری</option><option>پارچه</option>
+              </select>
+            </Field>
+          </div>
+        </EditorSection>
+
+        {/* === ۲. تصویر (آپلود) === */}
+        <EditorSection title="۲. تصویر محصول" description="تصویر را از سیستم خود انتخاب کنید">
+          <div className="form-grid">
+            <Field label="آپلود تصویر">
+              <div style={{ border: '2px dashed #deddd6', borderRadius: 6, padding: 20, textAlign: 'center', cursor: 'pointer' }}
+                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#011c3a' }}
+                   onDragLeave={e => e.currentTarget.style.borderColor = '#deddd6'}
+                   onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#deddd6'; const f = e.dataTransfer.files[0]; if (f) handleImageUpload(f) }}>
+                <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f) }} style={{ display: 'none' }} id="img-upload" />
+                <label htmlFor="img-upload" style={{ cursor: 'pointer', display: 'block' }}>
+                  {form.imageUrl ? (
+                    <div>
+                      <img src={form.imageUrl} alt="" style={{ maxHeight: 180, margin: '0 auto 8px', borderRadius: 4, objectFit: 'contain' }} />
+                      <small style={{ color: '#3d5c3a' }}>✓ تصویر بارگذاری شد — برای تغییر کلیک کنید</small>
+                    </div>
+                  ) : (
+                    <div>
+                      <ImagePlus size={28} style={{ color: '#999', margin: '0 auto 8px' }} />
+                      <b style={{ fontSize: 11 }}>تصویر را بکشید و اینجا رها کنید</b>
+                      <p style={{ fontSize: 9, color: '#999', marginTop: 4 }}>یا کلیک کنید — JPG/PNG، حداکثر ۲.۵MB</p>
+                    </div>
+                  )}
+                </label>
+              </div>
+            </Field>
+          </div>
+        </EditorSection>
+
+        {/* === ۳. قیمت و سری === */}
+        <EditorSection title="۳. قیمت و نوع سری" description="قیمت هر تیکه × تعداد تیکه در سری = قیمت هر سری">
+          <div className="form-grid">
+            <Field label="قیمت هر تیکه (تومان)" helper="مبنای محاسبه قیمت سری">
+              <input required type="text" inputMode="numeric" value={form.unitPrice} onChange={e => update('unitPrice', e.target.value)} placeholder="۱٬۲۵۰٬۰۰۰"/>
+            </Field>
+            <Field label="نوع سری">
+              <select value={form.seriesTypeId} onChange={e => update('seriesTypeId', e.target.value)}>
+                {SERIES_TYPES.map(t => <option key={t.id} value={t.id}>{t.label} — {t.pieceCount > 0 ? `${fa(t.pieceCount)} تیکه` : 'سفارشی'}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          {/* ترکیب سری */}
+          <div style={{ marginTop: 16, padding: 14, border: '1px solid #e5e5e0', borderRadius: 6 }}>
+            <b style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>ترکیب {seriesType.label}:</b>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {Object.entries(composition).map(([size, qty]) => (
+                <span key={size} style={{ fontSize: 10, background: '#f6f6f2', padding: '4px 10px', borderRadius: 4, border: '1px solid #e5e5e0' }}>
+                  <b>{size}</b> × <span className="num-fa">{fa(qty)}</span>
+                </span>
+              ))}
+              <span style={{ fontSize: 10, padding: '4px 10px', background: '#011c3a', color: '#fff', borderRadius: 4 }}>
+                = <span className="num-fa">{fa(pieceCount)}</span> تیکه
+              </span>
+            </div>
+
+            {/* سری سفارشی: تنظیم تعداد هر سایز */}
+            {isCustom && (
+              <div style={{ marginTop: 12, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+                {['S', 'M', 'L', 'XL', '2XL'].map(size => (
+                  <label key={size} style={{ fontSize: 10 }}>
+                    سایز {size}
+                    <input type="number" min={0} max={10} value={customComposition[size] ?? 0}
+                      onChange={e => setCustomComposition({ ...customComposition, [size]: Number(e.target.value) })}
+                      style={{ width: '100%', height: 32, border: '1px solid #deddd6', textAlign: 'center', fontSize: 12, marginTop: 4 }} dir="ltr" />
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* خلاصه محاسبه */}
+          <div style={{ marginTop: 16, padding: 16, background: '#fffaf2', border: '1px solid #d9b98f', borderRadius: 6 }}>
+            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', fontSize: 11 }}>
+              <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{toman(unitPrice || 0)}</b></div>
+              <div><span style={{ color: '#888' }}>تعداد تیکه در {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{fa(pieceCount)} تیکه</b></div>
+              <div><span style={{ color: '#888' }}>قیمت هر {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14, color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
+            </div>
+            <p style={{ fontSize: 9.5, color: '#8a5a20', marginTop: 8 }}>فرمول: {fa(unitPrice || 0)} × {fa(pieceCount)} = <b className="num-fa">{fa(seriesPrice)}</b> تومان</p>
+          </div>
+        </EditorSection>
+
+        {/* === ۴. رنگ و موجودی === */}
+        <EditorSection title="۴. رنگ و موجودی" description="رنگ سری و تعداد سری موجود">
+          <div className="form-grid">
+            <Field label="رنگ"><input required value={form.color} onChange={e => update('color', e.target.value)} placeholder="مثلاً مشکی"/></Field>
+            <Field label="کد رنگ">
+              <input type="color" value={form.colorHex} onChange={e => update('colorHex', e.target.value)} style={{ height: 40, width: '100%', border: '1px solid #deddd6', cursor: 'pointer' }} />
+            </Field>
+            <Field label={`تعداد ${seriesType.label} موجود`} helper={`مثلاً ۴ سری = ${fa(4 * pieceCount)} تیکه`}>
+              <input required type="text" inputMode="numeric" value={form.seriesCount} onChange={e => update('seriesCount', e.target.value)} placeholder="۴"/>
+            </Field>
+          </div>
+
+          {/* پیشنمایش موجودی */}
+          {seriesCount > 0 && (
+            <div style={{ marginTop: 12, padding: 14, border: '1px solid #b9cfbc', background: '#edf3ee', borderRadius: 6, fontSize: 11 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 20, height: 20, borderRadius: '50%', background: form.colorHex, border: '2px solid #fff', boxShadow: '0 0 0 1px #ccc' }} />
+                <b>{form.color || 'بدون رنگ'}</b>
+                <span style={{ color: '#36563a' }} className="num-fa">
+                  {fa(seriesCount)} × {seriesType.label} = {fa(totalPieces)} تیکه
+                </span>
+              </div>
+              <p style={{ fontSize: 10, color: '#36563a', marginTop: 6 }}>ارزش کل موجودی: <b className="num-fa">{toman(totalValue)}</b></p>
+            </div>
+          )}
+        </EditorSection>
+
+        {/* === ۵. توضیحات === */}
+        <EditorSection title="۵. توضیحات" description="جنس، فرم و شرایط تولید">
+          <Field label="توضیحات محصول">
+            <textarea required rows={5} maxLength={1200} value={form.description} onChange={e => update('description', e.target.value)} placeholder="جنس پارچه، نوع دوخت، فرم محصول و ویژگی‌های قابل ارائه…"/>
+            <small>{form.description.length.toLocaleString('fa-IR')} از ۱٬۲۰۰ نویسه</small>
+          </Field>
+        </EditorSection>
+
+        {/* === بازبینی === */}
+        <div className="review-policy"><ShieldCheck size={18}/><div><b>انتشار بعد از تأیید کلبه</b><p>محصول با وضعیت «در بررسی» برای تیم کاتالوگ کلبه ارسال می‌شود.</p></div></div>
+
+        {/* خلاصه نهایی */}
+        <div style={{ padding: 16, border: '1px solid #e5e5e0', borderRadius: 6, background: '#fff' }}>
+          <b style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>خلاصه محصول</b>
+          <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', fontSize: 11 }}>
+            <div><span style={{ color: '#888' }}>نام:</span> {form.name || '—'}</div>
+            <div><span style={{ color: '#888' }}>رنگ:</span> <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: form.colorHex, marginRight: 4, verticalAlign: 'middle' }} /> {form.color || '—'}</div>
+            <div><span style={{ color: '#888' }}>نوع سری:</span> {seriesType.label} ({fa(pieceCount)} تیکه)</div>
+            <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span> <b className="num-fa">{toman(unitPrice || 0)}</b></div>
+            <div><span style={{ color: '#888' }}>قیمت هر سری:</span> <b className="num-fa" style={{ color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
+            <div><span style={{ color: '#888' }}>تعداد سری:</span> <b className="num-fa">{fa(seriesCount || 0)}</b></div>
+            <div><span style={{ color: '#888' }}>مجموع تیکه:</span> <b className="num-fa">{fa(totalPieces)}</b></div>
+            <div><span style={{ color: '#888' }}>ارزش کل:</span> <b className="num-fa">{toman(totalValue)}</b></div>
+          </div>
+        </div>
+
+        <div className="form-actions">
+          <button type="button" className="button secondary" onClick={onClose}>انصراف</button>
+          <button type="submit" className="button primary" disabled={submitting}>{submitting ? 'در حال ثبت…' : 'ثبت و ارسال برای بررسی'}</button>
+        </div>
+      </form>
+    </main>
   </div>
 }
 
+/* ================================================================
+   کامپوننتهای کمکی
+   ================================================================ */
+
 function EditorSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <section className="editor-section"><header><h2>{title}</h2><p>{description}</p></header>{children}</section>
+  return <section style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: 12 }}>
+      <h2 style={{ fontSize: 13, fontWeight: 'bold' }}>{title}</h2>
+      <p style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{description}</p>
+    </div>
+    {children}
+  </section>
 }
 
-function Field({ label, optional, children, helper }: { label: string; optional?: boolean; children: ReactNode; helper?: string }) {
-  return <label className="form-field"><span>{label}{optional ? <em>اختیاری</em> : null}</span>{children}{helper ? <small>{helper}</small> : null}</label>
+function Field({ label, children, optional, helper }: { label: string; children: ReactNode; optional?: boolean; helper?: string }) {
+  return <label style={{ display: 'block', fontSize: 10, color: '#45453f', fontWeight: 600, marginBottom: 12 }}>
+    {label}{optional ? <span style={{ color: '#929188', fontWeight: 400, marginRight: 4 }}>(اختیاری)</span> : <span style={{ color: '#a4463d' }}>*</span>}
+    <div style={{ marginTop: 6 }}>{children}</div>
+    {helper && <small style={{ display: 'block', color: '#929188', fontWeight: 400, fontSize: 9, marginTop: 4 }}>{helper}</small>}
+  </label>
 }
 
-function BasicInformation() {
-  return <div className="editor-content"><div className="editor-title"><PageCrumbs parent="کاتالوگ" current="محصول جدید"/><h1>اطلاعات پایه</h1><p>اطلاعاتی که محصول را برای تیم بررسی کولبه و خریداران عمده معرفی می‌کند.</p></div><EditorSection title="هویت محصول" description="نام قابل نمایش و شناسه‌های داخلی کارخانه"><div className="form-grid"><Field label="نام محصول"><input defaultValue="پیراهن آکسفورد کلاسیک"/></Field><Field label="نام داخلی کارخانه"><input defaultValue="Oxford Shirt — Classic 25"/></Field><Field label="SKU تأمین‌کننده"><input defaultValue="KH-OXF-259" dir="ltr"/></Field><Field label="برند" optional><input placeholder="بدون برند / تولید اختصاصی"/></Field></div></EditorSection><EditorSection title="دسته‌بندی" description="مشخصات پویا براساس دستهٔ انتخاب‌شده نمایش داده می‌شوند."><div className="form-grid three"><Field label="دسته"><select defaultValue="clothing"><option value="clothing">پوشاک</option><option>کفش</option><option>اکسسوری</option></select></Field><Field label="زیردسته"><select defaultValue="shirt"><option value="shirt">پیراهن مردانه</option><option>پیراهن زنانه</option></select></Field><Field label="جنسیت"><select defaultValue="male"><option value="male">مردانه</option><option>زنانه</option><option>یونیسکس</option></select></Field><Field label="فصل"><select defaultValue="all"><option value="all">چهارفصل</option><option>بهار / تابستان</option><option>پاییز / زمستان</option></select></Field><Field label="کالکشن" optional><input defaultValue="Essential 1404"/></Field><Field label="کشور تولید"><select defaultValue="ir"><option value="ir">ایران</option><option>ترکیه</option></select></Field></div></EditorSection><EditorSection title="توضیحات محصول" description="متن دقیق و قابل اتکا برای کاتالوگ عمده‌فروشی بنویسید."><Field label="توضیحات"><textarea rows={5} defaultValue="پیراهن آکسفورد مردانه با فرم Regular، پارچه پنبه‌ای ۱۵۰ گرم و دوخت تقویت‌شده در سرشانه. مناسب فروش چهارفصل و سفارش‌های سازمانی."/><small>۱۶۷ از ۱٬۲۰۰ نویسه</small></Field><Field label="یادداشت داخلی" optional helper="فقط برای تیم کارخانه و کارشناسان کولبه قابل مشاهده است."><textarea rows={3} defaultValue="پارچه از تامین‌کننده ثابت تهیه می‌شود؛ امکان تولید لیبل اختصاصی وجود دارد."/></Field></EditorSection></div>
-}
-
-const mediaItems = [
-  { type: 'تصویر اصلی', src: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=600&q=85' },
-  { type: 'نمای پشت', src: 'https://images.unsplash.com/photo-1598033129183-c4f50c736f10?auto=format&fit=crop&w=600&q=85' },
-  { type: 'جزئیات پارچه', src: 'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=600&q=85' },
-]
-
-function MediaWorkspace() {
-  const [items, setItems] = useState(mediaItems)
-  const remove = (index: number) => setItems(current => current.filter((_, i) => i !== index))
-  return <div className="editor-content"><div className="editor-title"><PageCrumbs parent="محصول جدید" current="رسانه"/><h1>تصاویر و رسانه</h1><p>تصاویر دقیق، زمینهٔ خنثی و نمای نزدیک پارچه، سرعت بررسی محصول را بیشتر می‌کند.</p></div><EditorSection title="گالری محصول" description="تصویر اول به‌عنوان تصویر اصلی در کاتالوگ استفاده می‌شود."><div className="media-grid">{items.map((item, index) => <article className="media-tile" key={item.src}><img src={item.src} alt={item.type}/><button className="drag-handle" aria-label="تغییر ترتیب"><GripVertical size={16}/></button><button className="remove-media" onClick={() => remove(index)} aria-label={`حذف ${item.type}`}><X size={14}/></button><div><b>{item.type}</b><span>{index === 0 ? 'تصویر اصلی کاتالوگ' : 'قابل جابه‌جایی'}</span></div></article>)}<button className="media-upload"><ImagePlus size={25}/><b>افزودن تصویر</b><span>JPG یا PNG تا ۱۲MB</span></button></div></EditorSection><div className="two-editor-sections"><EditorSection title="فایل‌های تکمیلی" description="ویدئو، جدول سایز و تصاویر فنی"><button className="file-drop"><Upload size={19}/><span><b>فایل را اینجا رها کنید</b><small>MP4، PDF یا تصویر تا 50MB</small></span></button><div className="attached-file"><Video size={18}/><div><b>oxford-fit-preview.mp4</b><span>۱۸٫۲ MB · ویدئوی تن‌خور</span></div><Status>بارگذاری شد</Status></div></EditorSection><EditorSection title="چک‌لیست رسانه" description="موارد ضروری برای ارسال بررسی"><ul className="media-checklist"><li className="done"><Check size={14}/>تصویر اصلی با پس‌زمینه خنثی</li><li className="done"><Check size={14}/>حداقل سه زاویهٔ محصول</li><li><CircleAlert size={14}/>تصویر جدول سایز اضافه نشده</li><li className="done"><Check size={14}/>نمای نزدیک پارچه</li></ul></EditorSection></div></div>
-}
-
-function DynamicSpecifications() {
-  const [category, setCategory] = useState('clothing')
-  return <div className="editor-content"><div className="editor-title"><PageCrumbs parent="محصول جدید" current="مشخصات"/><h1>مشخصات محصول</h1><p>فیلدها براساس دستهٔ محصول تغییر می‌کنند و در کاتالوگ نهایی ساختاریافته می‌مانند.</p></div><div className="category-switch"><button className={category === 'clothing' ? 'active' : ''} onClick={() => setCategory('clothing')}><Shirt size={17}/>پوشاک</button><button className={category === 'shoes' ? 'active' : ''} onClick={() => setCategory('shoes')}><PackageCheck size={17}/>کفش</button></div>{category === 'clothing' ? <EditorSection title="ویژگی‌های پوشاک" description="مشخصات تخصصی برای پیراهن مردانه"><div className="form-grid three"><Field label="ترکیب مواد"><input defaultValue="۱۰۰٪ پنبه"/></Field><Field label="نوع پارچه"><select defaultValue="oxford"><option value="oxford">آکسفورد</option><option>پوپلین</option><option>لینن</option></select></Field><Field label="فرم"><select defaultValue="regular"><option value="regular">Regular Fit</option><option>Slim Fit</option><option>Relaxed</option></select></Field><Field label="یقه"><select defaultValue="button"><option value="button">Button-down</option><option>کلاسیک</option><option>ماندارین</option></select></Field><Field label="آستین"><select defaultValue="long"><option value="long">بلند</option><option>کوتاه</option></select></Field><Field label="طرح"><select defaultValue="solid"><option value="solid">ساده</option><option>راه‌راه</option><option>چهارخانه</option></select></Field><Field label="ضخامت"><select defaultValue="medium"><option value="medium">متوسط · ۱۵۰ گرم</option><option>سبک</option><option>سنگین</option></select></Field><Field label="کِشسانی"><select defaultValue="none"><option value="none">بدون کشسانی</option><option>کم</option><option>زیاد</option></select></Field><Field label="روش شست‌وشو"><input defaultValue="ماشینی، ۳۰ درجه"/></Field></div></EditorSection> : <EditorSection title="ویژگی‌های کفش" description="مشخصات تخصصی برای کفش و لوفر"><div className="form-grid three"><Field label="جنس رویه"><select><option>چرم طبیعی</option><option>چرم مصنوعی</option><option>جیر</option></select></Field><Field label="جنس زیره"><select><option>ترمو</option><option>لاستیک</option><option>چرم</option></select></Field><Field label="نوع بسته‌شدن"><select><option>بدون بند</option><option>بنددار</option><option>سگک</option></select></Field><Field label="محدوده سایز"><input defaultValue="۴۰ تا ۴۴"/></Field><Field label="استایل"><select><option>لوفر</option><option>کلاسیک</option><option>اسنیکر</option></select></Field><Field label="ارتفاع پاشنه"><input defaultValue="۲٫۵ سانتی‌متر"/></Field></div></EditorSection>}<div className="spec-advice"><Info size={18}/><div><b>این ساختار برای موتور تطبیق آینده آماده است</b><p>تأمین‌کننده فقط مشخصات محصول خود را ثبت می‌کند؛ اتصال به Master Product همچنان تصمیم دستی تیم کولبه است.</p></div></div></div>
-}
-
-const initialStock = [[20,12,18],[32,18,25],[35,20,30],[15,8,12]]
-function VariantMatrix() {
-  const [stock, setStock] = useState(initialStock)
-  const [mode, setMode] = useState<'stock' | 'cost'>('stock')
-  const update = (row: number, col: number, event: ChangeEvent<HTMLInputElement>) => setStock(current => current.map((values, r) => r === row ? values.map((value, c) => c === col ? Number(event.target.value) : value) : values))
-  const total = useMemo(() => stock.flat().reduce((sum, value) => sum + value, 0), [stock])
-  return <div className="editor-content wide"><div className="editor-title"><PageCrumbs parent="محصول جدید" current="واریانت‌ها"/><h1>ماتریس واریانت</h1><p>موجودی، بهای تمام‌شده و وضعیت هر ترکیب رنگ و سایز را بدون باز کردن ردیف‌های جدا ویرایش کنید.</p></div><div className="matrix-toolbar"><div className="segmented"><button className={mode === 'stock' ? 'active' : ''} onClick={() => setMode('stock')}>موجودی</button><button className={mode === 'cost' ? 'active' : ''} onClick={() => setMode('cost')}>بهای تمام‌شده</button></div><div><button className="button secondary">اعمال به ستون</button><button className="button secondary"><Upload size={15}/>ورودی CSV</button></div></div><section className="surface matrix-surface"><div className="variant-matrix"><div className="matrix-row header"><b>سایز / رنگ</b>{['مشکی','سفید','سرمه‌ای'].map(color => <div key={color}><i className={`color-dot ${color === 'مشکی' ? 'black' : color === 'سفید' ? 'white' : 'navy'}`}/><b>{color}</b><span>{color === 'مشکی' ? 'BLK' : color === 'سفید' ? 'WHT' : 'NVY'}</span></div>)}</div>{['M','L','XL','2XL'].map((size, row) => <div className="matrix-row" key={size}><div><b>{size}</b><span>فعال</span></div>{stock[row].map((value, col) => <label key={col}><input type="number" min="0" value={mode === 'stock' ? value : 780000 + row * 25000 + col * 10000} onChange={event => update(row,col,event)}/><small>{mode === 'stock' ? `SKU · ${size}-${['BLK','WHT','NVY'][col]}` : 'تومان / تکه'}</small></label>)}</div>)}<footer><span>۱۲ واریانت فعال</span><strong>{total} تکه موجودی کل</strong><button>تنظیم SKUها</button></footer></div></section><div className="matrix-notes"><Info size={17}/><p><b>محاسبه سری‌ها زنده است.</b> کاهش موجودی سایز 2XL مشکی، ظرفیت «سری پرفروش مشکی» را به ۷ سری محدود کرده است.</p></div></div>
-}
-
-function SeriesConfiguration() {
-  const series = [{name:'نیم‌سری',composition:'M×1 · L×1 · XL×1 · 2XL×1',pieces:'۴ تکه',available:'۱۵ سری',status:'فعال'},{name:'فول‌سری',composition:'M×2 · L×2 · XL×2 · 2XL×2',pieces:'۸ تکه',available:'۷ سری',status:'فعال'},{name:'پرفروش',composition:'M×1 · L×2 · XL×2 · 2XL×1',pieces:'۶ تکه',available:'۷ سری',status:'فعال'}]
-  return <div className="editor-content"><div className="editor-title"><PageCrumbs parent="محصول جدید" current="سری فروش"/><h1>سری‌های قابل فروش</h1><p>پک‌های عمده براساس موجودی واقعی واریانت‌ها، خودکار فعال و غیرفعال می‌شوند.</p></div><EditorSection title="رنگ مشکی" description="۳ سری فروش برای این رنگ تعریف شده است."><div className="series-list-editor">{series.map(item => <article key={item.name}><div className="series-symbol">{item.name.slice(0,1)}</div><div><b>{item.name}</b><span>{item.composition}</span></div><div><span>تعداد</span><b>{item.pieces}</b></div><div><span>قابل فروش</span><b>{item.available}</b></div><Status>{item.status}</Status><button className="icon-button">•••</button></article>)}<button className="add-series-row"><Plus size={17}/>تعریف سری جدید برای رنگ مشکی</button></div></EditorSection><div className="derived-inventory"><div><p>موجودی فیزیکی</p><strong>۱۴۴ <span>تکه</span></strong></div><span className="derived-arrow">←</span><div><p>ظرفیت بهترین سری</p><strong>۱۵ <span>نیم‌سری</span></strong></div><span className="derived-arrow">←</span><div><p>وضعیت پیشنهاد</p><strong className="green-text">قابل فروش</strong></div></div></div>
-}
-
-function ReviewSubmission({ submitted, onSubmit }: { submitted: boolean; onSubmit: () => void }) {
-  if (submitted) return <div className="submission-complete"><span><Check size={27}/></span><p className="eyebrow">ارسال موفق</p><h1>محصول برای بررسی کولبه ارسال شد.</h1><p>شناسه بررسی <b>RV-3108</b> ایجاد شد. تا زمان اعلام نتیجه می‌توانید تاریخچه را ببینید، اما ویرایش محصول قفل است.</p><div className="submission-meta"><div><span>زمان ارسال</span><b>امروز، ۱۴:۳۲</b></div><div><span>SLA بررسی</span><b>حداکثر ۲ روز کاری</b></div></div><button className="button secondary">مشاهده وضعیت بررسی</button></div>
-  const checks = [['اطلاعات پایه','کامل','green'],['رسانه','جدول سایز پیشنهاد می‌شود','amber'],['مشخصات پویا','کامل','green'],['واریانت‌ها','۱۲ واریانت فعال','green'],['سری فروش','۳ سری قابل فروش','green']]
-  return <div className="editor-content"><div className="editor-title"><PageCrumbs parent="محصول جدید" current="بازبینی"/><h1>آمادهٔ ارسال برای بررسی</h1><p>پس از ارسال، محصول مستقیم منتشر نمی‌شود؛ ابتدا تیم کاتالوگ کولبه آن را بخش‌به‌بخش بررسی می‌کند.</p></div><section className="review-readiness"><div className="readiness-score"><strong>۹۲٪</strong><span>آمادگی ارسال</span></div><div>{checks.map(([name,note,tone]) => <div className="readiness-row" key={name}><i className={tone}>{tone === 'green' ? <Check size={13}/> : <CircleAlert size={13}/>}</i><b>{name}</b><span>{note}</span></div>)}</div></section><div className="review-policy"><FileText size={18}/><div><b>کنترل انتشار در اختیار کولبه است</b><p>تأیید محصول می‌تواند به ایجاد محصول جدید یا اتصال دستی به یک Master Product موجود منجر شود. این تصمیم توسط تأمین‌کننده قابل تغییر نیست.</p></div></div><label className="submit-confirm"><input type="checkbox" defaultChecked/><span><b>اطلاعات محصول و موجودی صحیح است.</b><small>مسئولیت به‌روزرسانی موجودی فیزیکی و قیمت عمده بر عهدهٔ کارخانه است.</small></span></label><button className="button primary submit-product" onClick={onSubmit}><Send size={16}/>ارسال محصول برای بررسی کولبه</button></div>
-}
-
-export function ProductReview() {
-  const sections = [{name:'تصاویر و رسانه',state:'تأیید شد',tone:'green',note:'کیفیت تصاویر مناسب کاتالوگ است.'},{name:'توضیحات محصول',state:'نیازمند اصلاح',tone:'amber',note:'وزن پارچه و روش شست‌وشو در متن توضیحات اضافه شود.'},{name:'اطلاعات پارچه',state:'اطلاعات ناقص',tone:'amber',note:'نام تجاری پارچه و درصد آبرفت ثبت نشده است.'},{name:'سری و قیمت‌گذاری',state:'تأیید شد',tone:'green',note:'ترکیب سری‌ها با موجودی واریانت‌ها سازگار است.'}]
-  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="بررسی محصول"/><h1>وضعیت بررسی محصول</h1><p>پیراهن آکسفورد کلاسیک · KH-OXF-259 · دور دوم بررسی</p></div><button className="button primary">رفع موارد و ارسال مجدد</button></div><section className="review-workspace"><div className="surface review-sections"><SectionHeading title="نتیجهٔ بررسی بخش‌ها" action={<Status>نیازمند اصلاح</Status>}/>{sections.map(section => <article key={section.name}><i className={section.tone}>{section.tone === 'green' ? <Check size={14}/> : <CircleAlert size={14}/>}</i><div><b>{section.name}</b><p>{section.note}</p></div><Status>{section.state}</Status>{section.tone === 'amber' ? <button>اصلاح بخش<ChevronLeft size={14}/></button> : null}</article>)}</div><aside className="surface review-timeline"><SectionHeading title="خط زمانی بررسی"/><div className="review-event current"><i/><div><b>درخواست اصلاح از کولبه</b><span>امروز، ۱۰:۴۸ · سارا ابراهیمی</span><p>دو مورد محتوایی پیش از تأیید نهایی باقی مانده است.</p></div></div><div className="review-event"><i/><div><b>بررسی سری و موجودی</b><span>دیروز، ۱۶:۲۰</span><p>تأیید شد</p></div></div><div className="review-event"><i/><div><b>ارسال دور دوم</b><span>۲۰ مرداد، ۰۹:۱۲</span></div></div><div className="review-event"><i/><div><b>ایجاد پیش‌نویس</b><span>۱۸ مرداد، ۱۴:۳۲</span></div></div><div className="master-match"><PackageCheck size={18}/><div><b>وضعیت محصول در کولبه</b><span>ایجاد به‌عنوان محصول جدید</span></div><Info size={15}/></div></aside></section></>
-}
-
-export function QuoteBuilder() {
-  const [quantity, setQuantity] = useState('۶۰۰')
-  const [days, setDays] = useState('۲۸')
-  const [sent, setSent] = useState(false)
-  if (sent) return <div className="quote-sent surface"><span><Send size={24}/></span><h1>پیشنهاد قیمت ارسال شد.</h1><p>پیشنهاد Q-1084 برای RFQ-2048 ثبت شد. مشتری تا ۲۶ مرداد فرصت پذیرش یا درخواست تغییر دارد.</p><button className="button secondary" onClick={() => setSent(false)}>مشاهده پیشنهاد</button></div>
-  return <><div className="page-head"><div><PageCrumbs parent="RFQ-2048" current="پیشنهاد قیمت"/><h1>ساخت پیشنهاد و Counter Offer</h1><p>درخواست تولید ۵۰۰ پیراهن آکسفورد برای گروه هتل‌های هلیا</p></div><span className="save-indicator"><Check size={13}/>ذخیره خودکار</span></div><section className="quote-builder-layout"><div className="surface quote-form"><SectionHeading title="شرایط پیشنهادی کارخانه">فیلدهای تغییرکرده نسبت به درخواست مشتری مشخص شده‌اند.</SectionHeading><div className="quote-form-grid"><Field label="تعداد پیشنهادی"><div className="changed-field"><input value={quantity} onChange={event => setQuantity(event.target.value)}/><span>تغییر از ۵۰۰</span></div></Field><Field label="قیمت هر تکه"><div className="money-input"><input defaultValue="۶۴۵٬۰۰۰"/><span>تومان</span></div></Field><Field label="حداقل سفارش (MOQ)"><input defaultValue="۶۰۰"/></Field><Field label="زمان تولید"><div className="changed-field"><input value={days} onChange={event => setDays(event.target.value)}/><span>تغییر از ۲۰ روز</span></div></Field><Field label="تاریخ تحویل"><input type="text" defaultValue="۲۸ شهریور ۱۴۰۴"/></Field><Field label="شرایط پرداخت"><select defaultValue="30"><option value="30">۳۰٪ پیش‌پرداخت، ۷۰٪ قبل ارسال</option><option>۵۰٪ / ۵۰٪</option></select></Field></div><Field label="پارچه پیشنهادی"><select defaultValue="oxford"><option value="oxford">Oxford Cotton 150gr — تأیید درخواست</option><option>Oxford Cotton 165gr — جایگزین</option></select></Field><Field label="یادداشت پیشنهاد" optional><textarea rows={4} defaultValue="برای حفظ نسبت سایزبندی و راندمان خط تولید، حداقل تعداد ۶۰۰ تکه پیشنهاد می‌شود. نمونه پارچه طی ۳ روز کاری ارسال خواهد شد."/></Field><div className="quote-attachments"><Paperclip size={17}/><span><b>پیوست فایل برآورد یا نمونه پارچه</b><small>PDF، XLSX یا تصویر تا ۲۰MB</small></span><button className="button secondary">انتخاب فایل</button></div></div><aside className="quote-sidebar"><section className="surface comparison-panel"><SectionHeading title="مقایسه شرایط"/><div className="comparison-head"><span>درخواست مشتری</span><span>پیشنهاد شما</span></div><CompareRow label="تعداد" requested="۵۰۰ تکه" offered={`${quantity} تکه`} changed/><CompareRow label="زمان تولید" requested="۲۰ روز" offered={`${days} روز`} changed/><CompareRow label="پارچه" requested="Oxford 150gr" offered="Oxford 150gr"/><CompareRow label="تحویل" requested="۲۲ شهریور" offered="۲۸ شهریور" changed/><CompareRow label="قیمت" requested="—" offered="۶۴۵٬۰۰۰ تومان"/><div className="quote-total"><span>ارزش کل پیشنهاد</span><strong>۳۸۷٬۰۰۰٬۰۰۰ <small>تومان</small></strong></div></section><section className="surface quote-guard"><Info size={18}/><div><b>پس از پذیرش مشتری</b><p>یک Production Order مستقل ایجاد می‌شود. RFQ و Quote برای سابقهٔ مذاکره بدون تغییر باقی می‌مانند.</p></div></section><button className="button primary quote-send" onClick={() => setSent(true)}><Send size={16}/>ارسال پیشنهاد به مشتری</button><button className="button secondary quote-send">ذخیره پیش‌نویس</button></aside></section></>
-}
-
-function CompareRow({ label, requested, offered, changed = false }: { label: string; requested: string; offered: string; changed?: boolean }) { return <div className={`compare-row ${changed ? 'changed' : ''}`}><b>{label}</b><span>{requested}</span><span>{offered}{changed ? <em>تغییر</em> : null}</span></div> }
-
-export function SamplesWorkspace() {
-  const [uploaded, setUploaded] = useState(false)
-  return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="نمونه‌ها"/><h1>نمونه‌ها و تأیید مشتری</h1><p>نمونه‌های الزامی را پیش از آزادسازی تولید انبوه ثبت و پیگیری کنید.</p></div><button className="button secondary"><Upload size={16}/>بارگذاری نمونه جدید</button></div><section className="sample-layout"><div className="surface sample-focus"><div className="sample-head"><div><p className="eyebrow">SMP-0092 · PO-4827</p><h2>نمونه پیراهن آکسفورد سازمانی</h2><span>گروه هتل‌های هلیا · تأیید نمونه الزامی</span></div><Status>{uploaded ? 'منتظر بررسی مشتری' : 'نیازمند بارگذاری'}</Status></div>{uploaded ? <div className="uploaded-sample"><img src="https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=600&q=85" alt="نمونه پیراهن آکسفورد"/><div><b>نمونه نسخه ۲ بارگذاری شد</b><p>جلو، پشت و جزئیات گلدوزی · ۴ تصویر · امروز، ۱۴:۱۰</p><button className="button secondary">مشاهده فایل‌ها</button></div></div> : <button className="sample-drop" onClick={() => setUploaded(true)}><FileImage size={28}/><b>تصاویر و جزئیات نمونه را بارگذاری کنید</b><span>حداقل نمای جلو، پشت، دوخت و پارچه · کلیک برای شبیه‌سازی بارگذاری</span></button>}<div className="sample-gate"><div className={uploaded ? 'complete' : 'current'}><i>{uploaded ? <Check size={13}/> : '۱'}</i><b>تولید نمونه</b><span>{uploaded ? 'تکمیل شد' : 'در حال انجام'}</span></div><div className={uploaded ? 'current' : ''}><i>۲</i><b>بررسی مشتری</b><span>{uploaded ? 'منتظر پاسخ' : 'قفل'}</span></div><div><i>۳</i><b>تولید انبوه</b><span>تا تأیید نمونه قفل است</span></div></div></div><aside className="surface customer-feedback"><SectionHeading title="آخرین بازخورد مشتری"/><div className="feedback-author"><span className="rfq-avatar">ه</span><div><b>هماهنگ‌کننده برند هلیا</b><span>نسخه ۱ · ۲۰ مرداد</span></div><Status>درخواست اصلاح</Status></div><blockquote>«ارتفاع گلدوزی لوگو ۴ میلی‌متر کمتر شود و فاصله آن از لبه جیب به ۱۸ میلی‌متر برسد.»</blockquote><div className="feedback-spec"><span>مقدار قبلی</span><b>ارتفاع ۳۲ mm</b><span>مقدار درخواستی</span><b>ارتفاع ۲۸ mm</b></div><button className="button secondary">مشاهده تاریخچه نسخه‌ها</button></aside></section></>
-}
-
-export function ChangeRequests() {
-  const [decision, setDecision] = useState<'open' | 'accepted' | 'counter'>('open')
-  return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="درخواست تغییر"/><h1>درخواست‌های تغییر</h1><p>تغییرات قراردادی و تأثیر آن‌ها بر هزینه و زمان، مستقل از گفت‌وگو ثبت می‌شوند.</p></div><button className="button secondary">تاریخچه پذیرفته‌شده‌ها</button></div><section className="change-layout"><div className="surface change-list"><SectionHeading title="درخواست‌های باز" action={<Status>۲ مورد</Status>}/><button className="active"><span>CR-0018</span><div><b>اصلاح طول آستین</b><small>PO-4827 · امروز، ۰۹:۴۵</small></div><Status>نیازمند تصمیم</Status></button><button><span>CR-0017</span><div><b>تغییر نوع بسته‌بندی</b><small>PO-4827 · دیروز</small></div><Status>در حال مذاکره</Status></button></div><div className="surface change-detail"><div className="change-detail-head"><div><p className="eyebrow">CR-0018 · تغییر مشخصات فنی</p><h2>اصلاح طول آستین</h2><p>درخواست‌شده توسط گروه هتل‌های هلیا</p></div><Status>{decision === 'accepted' ? 'پذیرفته شد' : decision === 'counter' ? 'Counter ارسال شد' : 'نیازمند تصمیم'}</Status></div><div className="before-after"><div><span>مقدار قبلی</span><strong>۶۲ <small>سانتی‌متر</small></strong></div><div className="change-arrow">←</div><div><span>مقدار درخواستی</span><strong>۶۴ <small>سانتی‌متر</small></strong></div></div><div className="impact-block"><h3>اثر عملیاتی برآوردشده</h3><div><span>هزینه واحد</span><b className="low-number">+۵٪</b></div><div><span>زمان تولید</span><b className="low-number">+۳ روز</b></div><div><span>مصرف پارچه</span><b>+۰٫۰۶ متر / تکه</b></div><div><span>تاریخ تحویل جدید</span><b>۱ مهر ۱۴۰۴</b></div></div><div className="change-note"><MessageSquareText size={17}/><p>این تغییر روی برش تولید انبوه اثر دارد و باید پیش از پایان آماده‌سازی الگو نهایی شود.</p></div>{decision === 'open' ? <div className="change-actions"><button className="button secondary">رد با دلیل</button><button className="button secondary" onClick={() => setDecision('counter')}>ارسال Counter</button><button className="button primary" onClick={() => setDecision('accepted')}><Check size={15}/>پذیرش تغییر و اثر</button></div> : <div className="decision-record"><Check size={18}/><div><b>تصمیم در Audit Trail ثبت شد.</b><span>امروز، ۱۴:۴۴ · نرگس آذر</span></div></div>}</div></section></>
-}
-
-/* ============ کامپوننتهای عملیاتی گمشده ============ */
+/* ================================================================
+   FulfillmentOrders — سفارشات آماده با API
+   ================================================================ */
 
 export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
   const [orders, setOrders] = useState<Array<any>>([])
@@ -143,7 +339,6 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
   const [loading, setLoading] = useState(true)
   const [actionResult, setActionResult] = useState('')
   const statusLabel: Record<string, string> = { pending: 'نیازمند تأیید', confirmed: 'جدید', preparing: 'در حال آماده‌سازی', shipped: 'آماده ارسال', delivered: 'تحویل شده', cancelled: 'لغو شده' }
-  const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n)
 
   useEffect(() => { loadSupplierOrders('').then(data => { setOrders(data as any[]); setLoading(false) }).catch(() => { setError('دریافت سفارش‌ها انجام نشد.'); setLoading(false) }) }, [])
   void onUpdated
@@ -172,9 +367,9 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
           <Status>{statusLabel[order.status] ?? order.status}</Status>
           <div style={{display:'flex',gap:4}}>
             {order.status === 'pending' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تأیید</button>}
-            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>شروع آماده‌سازی</button>}
-            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ثبت ارسال</button>}
-            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ثبت تحویل</button>}
+            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>شروع</button>}
+            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ارسال</button>}
+            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تحویل</button>}
           </div>
         </div>
       ))}
@@ -214,22 +409,51 @@ export function Messages() {
   </section></>
 }
 
-export function CommandPalette({ onClose, onNavigate }: { onClose: () => void; onNavigate: (page: any) => void }) {
-  const [query, setQuery] = useState('')
-  const commands = [
-    { label: 'داشبورد', page: 'dashboard' }, { label: 'محصولات', page: 'products' }, { label: 'سفارشات', page: 'orders' },
-    { label: 'RFQ', page: 'rfqs' }, { label: 'موجودی', page: 'inventory' }, { label: 'مالی', page: 'finance' },
-    { label: 'عملکرد', page: 'analytics' }, { label: 'تنظیمات', page: 'settings' }, { label: 'کنترل کیفیت', page: 'quality' },
-  ]
-  const filtered = commands.filter(c => c.label.includes(query.trim()))
-  return <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,.35)',display:'flex',justifyContent:'center',paddingTop:'8vh'}} onClick={onClose}>
-    <div style={{width:'min(480px,92vw)',background:'#fff',borderRadius:8,overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,.2)'}} onClick={e => e.stopPropagation()}>
-      <input value={query} onChange={e => setQuery(e.target.value)} placeholder="جستجوی سریع… (Esc برای بستن)" autoFocus style={{width:'100%',height:48,border:0,borderBottom:'1px solid #ecebe6',padding:'0 16px',fontSize:12,outline:0}} />
-      <div style={{maxHeight:320,overflowY:'auto'}}>
-        {filtered.map(cmd => <button key={cmd.page} onClick={() => { onNavigate(cmd.page); onClose() }} style={{display:'block',width:'100%',padding:'12px 16px',textAlign:'right',fontSize:11.5,background:'none',border:0,cursor:'pointer',borderBottom:'1px solid #f5f5f0'}} onMouseEnter={e => (e.target as HTMLElement).style.background = '#f6f6f2'} onMouseLeave={e => (e.target as HTMLElement).style.background = 'none'}>{cmd.label}</button>)}
-        {!filtered.length && <div style={{padding:20,textAlign:'center',fontSize:11,color:'#999'}}>نتیجه‌ای یافت نشد.</div>}
-      </div>
-      <div style={{padding:'8px 16px',borderTop:'1px solid #ecebe6',fontSize:8.5,color:'#999'}}>کلید میانبر: Ctrl+K</div>
+
+export function ProductReview() {
+  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="در حال بررسی"/><h1>در حال بررسی کلبه</h1><p>محصولات ارسالی شما که منتظر تأیید تیم کاتالوگ کلبه هستند.</p></div></div>
+  <section className="surface" style={{padding:16}}>
+    <div className="ledger-table"><div className="ledger-row header"><span>محصول</span><span>SKU</span><span>سری</span><span>وضعیت</span></div>
+    <div className="ledger-row"><b>پیراهن لینن</b><span>NG-LIN-301</span><span>سری کامل (۸ تیکه)</span><Status>در بررسی</Status></div>
+    <div className="ledger-row"><b>وست پشمی</b><span>NG-VST-041</span><span>نیم‌سری (۵ تیکه)</span><Status>نیازمند اصلاح</Status></div>
     </div>
-  </div>
+  </section></>
+}
+
+export function QuoteBuilder() {
+  return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="پیشنهاد قیمت"/><h1>ساخت پیشنهاد قیمت</h1><p>برای RFQ-2048 پیشنهاد خود را تنظیم و ارسال کنید.</p></div></div>
+  <section className="surface" style={{padding:20}}>
+    <SectionHeading title="پیشنهاد قیمت برای RFQ-2048" eyebrow="QUOTE BUILDER">پیراهن آکسفورد اختصاصی — گروه هتل‌های هلیا</SectionHeading>
+    <div style={{display:'grid',gap:12,gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))'}}>
+      <label style={{fontSize:10}}>قیمت هر تیکه<input type="text" placeholder="۱٬۴۵۰٬۰۰۰" style={{width:'100%',height:36,border:'1px solid #deddd6',padding:'0 10px',fontSize:11,marginTop:4}}/></label>
+      <label style={{fontSize:10}}>زمان تولید (روز)<input type="number" defaultValue={28} style={{width:'100%',height:36,border:'1px solid #deddd6',padding:'0 10px',fontSize:11,marginTop:4}} dir="ltr"/></label>
+      <label style={{fontSize:10}}>تعداد قابل تأمین<input type="number" defaultValue={600} style={{width:'100%',height:36,border:'1px solid #deddd6',padding:'0 10px',fontSize:11,marginTop:4}} dir="ltr"/></label>
+    </div>
+    <button className="button primary" style={{marginTop:16,minHeight:38}}>ارسال پیشنهاد</button>
+  </section></>
+}
+
+export function SamplesWorkspace() {
+  return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="نمونه‌ها"/><h1>فضای نمونه‌ها</h1><p>نمونه‌های فیزیکی و دیجیتال را بارگذاری و پیگیری کنید.</p></div><button className="button primary"><Upload size={17}/>بارگذاری نمونه</button></div>
+  <section className="surface" style={{padding:16}}>
+    <p style={{fontSize:11,color:'#666'}}>PO-4827 — نمونه فیزیکی تا ۲۳ مرداد باید بارگذاری شود.</p>
+    <div style={{marginTop:12,border:'2px dashed #deddd6',borderRadius:6,padding:24,textAlign:'center'}}>
+      <Upload size={28} style={{color:'#999',margin:'0 auto 8px'}} />
+      <b style={{fontSize:11}}>عکس‌های نمونه را اینجا رها کنید</b>
+      <p style={{fontSize:9,color:'#999',marginTop:4}}>جلو، پشت و جزئیات پارچه</p>
+    </div>
+  </section></>
+}
+
+export function ChangeRequests() {
+  const requests = [
+    { id: 'CR-0091', title: 'تغییر لیبل گردن', product: 'پیراهن آکسفورد', status: 'در بررسی', date: '۲۰ مرداد' },
+    { id: 'CR-0087', title: 'افزایش گرماژ پارچه', product: 'بارانی کوتاه', status: 'تأیید شد', date: '۱۵ مرداد' },
+  ]
+  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="درخواست تغییر"/><h1>درخواست‌های تغییر</h1><p>تغییرات پیشنهادی روی محصولات تأییدشده.</p></div><button className="button primary"><Plus size={17}/>درخواست جدید</button></div>
+  <section className="surface" style={{padding:16}}>
+    <div className="ledger-table"><div className="ledger-row header"><span>شناسه</span><span>عنوان</span><span>محصول</span><span>وضعیت</span><span>تاریخ</span></div>
+    {requests.map(r => <div className="ledger-row" key={r.id}><b>{r.id}</b><span>{r.title}</span><span>{r.product}</span><Status>{r.status}</Status><span>{r.date}</span></div>)}
+    </div>
+  </section></>
 }
