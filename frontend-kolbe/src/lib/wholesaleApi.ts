@@ -173,6 +173,45 @@ export async function cancelWholesaleOrder(id: string) {
   await api(`/admin/kolbe/orders/${id}/cancel`, { method: "POST", token });
 }
 
+export type AdminWholesaleAccount = {
+  id: string;
+  userId: string;
+  memberName: string;
+  storeName: string;
+  phone: string;
+  city: string;
+  planName: string;
+  status: "pending" | "approved" | "suspended" | "financial_blocked" | "rejected";
+  activatedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+};
+
+export async function listWholesaleAccounts(): Promise<AdminWholesaleAccount[]> {
+  const token = adminToken();
+  if (!token) return [];
+  const data = await api<{ accounts: Array<any> }>("/store/kolbe/admin/accounts", { token });
+  return (data.accounts ?? []).map((a) => ({
+    id: a.id, userId: a.user_id, memberName: a.member_name, storeName: a.store_name,
+    phone: a.phone, city: a.city, planName: a.plan_name,
+    status: a.status === "financial_blocked" ? "financial_blocked" : a.status,
+    activatedAt: a.activated_at, expiresAt: a.expires_at, createdAt: a.created_at,
+  }));
+}
+
+export async function updateWholesaleAccountStatus(id: string, status: AdminWholesaleAccount["status"], expiresAt?: string) {
+  const token = adminToken();
+  if (!token) return;
+  await api(`/store/kolbe/admin/accounts/${id}/status`, { method: "POST", token, body: { status, expiresAt } });
+}
+
+/** ویرایش گروهی قیمت عمده (درصدی/مبلغی) — نیازسنجی 9-d */
+export async function bulkUpdateWholesalePrice(ids: string[], mode: "percent" | "amount", value: number) {
+  const token = adminToken();
+  if (!token) throw new Error("ورود ادمین انجام نشده است.");
+  return api<{ updated: number }>("/store/kolbe/admin/catalog/bulk-price", { method: "POST", token, body: { ids, mode, value } });
+}
+
 export async function listSupplierTickets() {
   const token = adminToken();
   if (!token) return [];

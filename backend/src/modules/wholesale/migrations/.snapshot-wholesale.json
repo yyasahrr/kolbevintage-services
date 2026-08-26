@@ -777,6 +777,8 @@
           "enumItems": [
             "pending",
             "approved",
+            "suspended",
+            "financial_blocked",
             "rejected",
             "changes_requested"
           ],

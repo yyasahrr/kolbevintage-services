@@ -9,7 +9,7 @@ export const WholesaleAccount = model.define("wholesale_account", {
   phone: model.text(),
   city: model.text(),
   planName: model.text().default("وی‌آی‌پی"),
-  status: model.enum(["pending", "approved", "rejected", "changes_requested"]).default("pending"),
+  status: model.enum(["pending", "approved", "suspended", "financial_blocked", "rejected", "changes_requested"]).default("pending"),
   activatedAt: model.dateTime().nullable(),
   expiresAt: model.dateTime().nullable(),
 });

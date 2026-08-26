@@ -19,6 +19,7 @@ export const POST = handler(async (req: MedusaRequest, res: MedusaResponse) => {
       ? { activatedAt: new Date(), expiresAt: body.expiresAt ? new Date(body.expiresAt) : null }
       : {}),
   });
+  // تعلیق/مسدود مالی: نقش vip حفظ میشود اما ثبت سفارش در فلو چک میشود
   if (body.status === "approved") {
     await service.account.updateAccountUsers({ id: account.userId, role: "vip" });
   }
