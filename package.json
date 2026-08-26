@@ -7,7 +7,8 @@
     "frontend-supplier"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace kolbe-storefront",
+    "dev": "node scripts/dev-all.mjs",
+    "dev:kolbe": "npm run dev --workspace kolbe-storefront",
     "dev:supplier": "npm run dev --workspace kolbe-supplier-portal",
     "dev:api": "npm --prefix backend run dev",
     "dev:all": "node scripts/dev-all.mjs",

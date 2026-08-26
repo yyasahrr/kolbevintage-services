@@ -1,11 +1,11 @@
-import { useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import {
   ArrowRight, Check, ChevronLeft, CircleAlert, Clock3, FileImage, FileText, GripVertical,
   ImagePlus, Info, MessageSquareText, PackageCheck, Paperclip, Plus, Save, Send, Shirt,
   Sparkles, Upload, Video, X, ShieldCheck,
 } from 'lucide-react'
 import { PageCrumbs, SectionHeading, Status } from './components'
-import { createSupplierProduct } from './api'
+import { createSupplierProduct, loadSupplierOrders, updateSupplierPurchaseOrder } from './api'
 
 type ProductStep = 'basic' | 'media' | 'specs' | 'variants' | 'series' | 'review'
 
@@ -133,4 +133,103 @@ export function SamplesWorkspace() {
 export function ChangeRequests() {
   const [decision, setDecision] = useState<'open' | 'accepted' | 'counter'>('open')
   return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="درخواست تغییر"/><h1>درخواست‌های تغییر</h1><p>تغییرات قراردادی و تأثیر آن‌ها بر هزینه و زمان، مستقل از گفت‌وگو ثبت می‌شوند.</p></div><button className="button secondary">تاریخچه پذیرفته‌شده‌ها</button></div><section className="change-layout"><div className="surface change-list"><SectionHeading title="درخواست‌های باز" action={<Status>۲ مورد</Status>}/><button className="active"><span>CR-0018</span><div><b>اصلاح طول آستین</b><small>PO-4827 · امروز، ۰۹:۴۵</small></div><Status>نیازمند تصمیم</Status></button><button><span>CR-0017</span><div><b>تغییر نوع بسته‌بندی</b><small>PO-4827 · دیروز</small></div><Status>در حال مذاکره</Status></button></div><div className="surface change-detail"><div className="change-detail-head"><div><p className="eyebrow">CR-0018 · تغییر مشخصات فنی</p><h2>اصلاح طول آستین</h2><p>درخواست‌شده توسط گروه هتل‌های هلیا</p></div><Status>{decision === 'accepted' ? 'پذیرفته شد' : decision === 'counter' ? 'Counter ارسال شد' : 'نیازمند تصمیم'}</Status></div><div className="before-after"><div><span>مقدار قبلی</span><strong>۶۲ <small>سانتی‌متر</small></strong></div><div className="change-arrow">←</div><div><span>مقدار درخواستی</span><strong>۶۴ <small>سانتی‌متر</small></strong></div></div><div className="impact-block"><h3>اثر عملیاتی برآوردشده</h3><div><span>هزینه واحد</span><b className="low-number">+۵٪</b></div><div><span>زمان تولید</span><b className="low-number">+۳ روز</b></div><div><span>مصرف پارچه</span><b>+۰٫۰۶ متر / تکه</b></div><div><span>تاریخ تحویل جدید</span><b>۱ مهر ۱۴۰۴</b></div></div><div className="change-note"><MessageSquareText size={17}/><p>این تغییر روی برش تولید انبوه اثر دارد و باید پیش از پایان آماده‌سازی الگو نهایی شود.</p></div>{decision === 'open' ? <div className="change-actions"><button className="button secondary">رد با دلیل</button><button className="button secondary" onClick={() => setDecision('counter')}>ارسال Counter</button><button className="button primary" onClick={() => setDecision('accepted')}><Check size={15}/>پذیرش تغییر و اثر</button></div> : <div className="decision-record"><Check size={18}/><div><b>تصمیم در Audit Trail ثبت شد.</b><span>امروز، ۱۴:۴۴ · نرگس آذر</span></div></div>}</div></section></>
+}
+
+/* ============ کامپوننتهای عملیاتی گمشده ============ */
+
+export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
+  const [orders, setOrders] = useState<Array<any>>([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [actionResult, setActionResult] = useState('')
+  const statusLabel: Record<string, string> = { pending: 'نیازمند تأیید', confirmed: 'جدید', preparing: 'در حال آماده‌سازی', shipped: 'آماده ارسال', delivered: 'تحویل شده', cancelled: 'لغو شده' }
+  const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n)
+
+  useEffect(() => { loadSupplierOrders('').then(data => { setOrders(data as any[]); setLoading(false) }).catch(() => { setError('دریافت سفارش‌ها انجام نشد.'); setLoading(false) }) }, [])
+  void onUpdated
+
+  const updateStatus = async (id: string, status: 'preparing' | 'shipped' | 'delivered') => {
+    setActionResult('در حال ثبت…')
+    try { await updateSupplierPurchaseOrder(id, status, status === 'shipped' ? `TAX-${Date.now().toString().slice(-6)}` : undefined); setActionResult('وضعیت سفارش به‌روزرسانی شد.'); setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o)) }
+    catch (e) { setActionResult(e instanceof Error ? e.message : 'خطا در به‌روزرسانی.') }
+  }
+
+  if (loading) return <div className="page-head"><h1>سفارشات آماده</h1><p style={{fontSize:11,color:'#999'}}>در حال دریافت…</p></div>
+  if (error) return <div className="page-head"><h1>سفارشات آماده</h1><p style={{fontSize:11,color:'#a4463d'}}>{error}</p></div>
+
+  return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌های خرید را تأیید، آماده و ارسال کنید.</p></div></div>
+  {actionResult && <div role="status" style={{marginBottom:12,border:'1px solid #b9cfbc',background:'#edf3ee',padding:'8px 12px',fontSize:10,color:'#36563a'}}>{actionResult}</div>}
+  <section className="surface orders-surface" style={{padding:16}}>
+    <div className="ledger-table">
+      <div className="ledger-row header"><span>کد سفارش</span><span>محصول</span><span>تعداد</span><span>مبلغ</span><span>وضعیت</span><span>اقدام</span></div>
+      {orders.length === 0 && <div style={{padding:20,textAlign:'center',fontSize:11,color:'#999'}}>سفارشی در انتظار اقدام نیست.</div>}
+      {(orders as any[]).map(order => (
+        <div className="ledger-row" key={order.id}>
+          <b>{order.order_code}</b>
+          <span>{(order.purchase_order_items ?? []).map((item: any) => item.product_name).join('، ') || 'چند محصولی'}</span>
+          <b className="num-fa">{fa((order.purchase_order_items ?? []).reduce((s: number, i: any) => s + i.quantity, 0))} تکه</b>
+          <b className="num-fa">{fa(order.total_amount)} ت</b>
+          <Status>{statusLabel[order.status] ?? order.status}</Status>
+          <div style={{display:'flex',gap:4}}>
+            {order.status === 'pending' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تأیید</button>}
+            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>شروع آماده‌سازی</button>}
+            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ثبت ارسال</button>}
+            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ثبت تحویل</button>}
+          </div>
+        </div>
+      ))}
+    </div>
+  </section></>
+}
+
+export function ReturnsIssues() {
+  const issues = [
+    { id: 'RI-0891', order: 'PO-4813', type: 'کسری کالا', qty: '۲ تکه', status: 'در بررسی', date: '۲۱ مرداد' },
+    { id: 'RI-0887', order: 'PO-4805', type: 'کالای اشتباه', qty: '۱ بسته', status: 'برطرف شد', date: '۱۸ مرداد' },
+  ]
+  return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="مرجوعی و مسائل"/><h1>مرجوعی و مسائل</h1><p>کسری، کالای اشتباه و آسیب‌دیدگی سفارش‌ها را مدیریت کنید.</p></div><button className="button primary"><Plus size={17}/>ثبت مورد جدید</button></div>
+  <section className="surface" style={{padding:16}}>
+    <div className="ledger-table">
+      <div className="ledger-row header"><span>شناسه</span><span>سفارش</span><span>نوع</span><span>تعداد</span><span>وضعیت</span><span>تاریخ</span></div>
+      {issues.map(i => <div className="ledger-row" key={i.id}><b>{i.id}</b><span>{i.order}</span><span>{i.type}</span><b>{i.qty}</b><Status>{i.status}</Status><span>{i.date}</span></div>)}
+    </div>
+  </section></>
+}
+
+export function Messages() {
+  const threads = [
+    { id: 't1', from: 'تیم خرید کلبه', preview: 'PO-4813 — تأخیر در ارسال؟', time: '۱۰:۳۲', unread: true },
+    { id: 't2', from: 'کنترل کیفیت', preview: 'نمونه جدید تأیید شد', time: 'دیروز', unread: false },
+    { id: 't3', from: 'مالی کلبه', preview: 'صورت‌حساب مرداد ارسال شد', time: '۲ روز پیش', unread: false },
+  ]
+  return <><div className="page-head"><div><PageCrumbs parent="ارتباطات" current="پیام‌ها"/><h1>پیام‌ها</h1><p>گفتگو با تیم‌های کلبه — خرید، کیفیت و مالی.</p></div></div>
+  <section className="surface" style={{padding:16}}>
+    {threads.map(t => (
+      <div key={t.id} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 0',borderBottom:'1px solid #ecebe6'}}>
+        <span style={{width:36,height:36,borderRadius:'50%',background:'#e7e7e1',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:'#555'}}>{t.from.slice(0,1)}</span>
+        <div style={{flex:1,minWidth:0}}><b style={{fontSize:11.5,display:'block'}}>{t.from}{t.unread && <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#ca9130',marginRight:6}} />}</b><span style={{fontSize:10,color:'#888'}}>{t.preview}</span></div>
+        <small style={{fontSize:9,color:'#999'}}>{t.time}</small>
+      </div>
+    ))}
+  </section></>
+}
+
+export function CommandPalette({ onClose, onNavigate }: { onClose: () => void; onNavigate: (page: any) => void }) {
+  const [query, setQuery] = useState('')
+  const commands = [
+    { label: 'داشبورد', page: 'dashboard' }, { label: 'محصولات', page: 'products' }, { label: 'سفارشات', page: 'orders' },
+    { label: 'RFQ', page: 'rfqs' }, { label: 'موجودی', page: 'inventory' }, { label: 'مالی', page: 'finance' },
+    { label: 'عملکرد', page: 'analytics' }, { label: 'تنظیمات', page: 'settings' }, { label: 'کنترل کیفیت', page: 'quality' },
+  ]
+  const filtered = commands.filter(c => c.label.includes(query.trim()))
+  return <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,.35)',display:'flex',justifyContent:'center',paddingTop:'8vh'}} onClick={onClose}>
+    <div style={{width:'min(480px,92vw)',background:'#fff',borderRadius:8,overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,.2)'}} onClick={e => e.stopPropagation()}>
+      <input value={query} onChange={e => setQuery(e.target.value)} placeholder="جستجوی سریع… (Esc برای بستن)" autoFocus style={{width:'100%',height:48,border:0,borderBottom:'1px solid #ecebe6',padding:'0 16px',fontSize:12,outline:0}} />
+      <div style={{maxHeight:320,overflowY:'auto'}}>
+        {filtered.map(cmd => <button key={cmd.page} onClick={() => { onNavigate(cmd.page); onClose() }} style={{display:'block',width:'100%',padding:'12px 16px',textAlign:'right',fontSize:11.5,background:'none',border:0,cursor:'pointer',borderBottom:'1px solid #f5f5f0'}} onMouseEnter={e => (e.target as HTMLElement).style.background = '#f6f6f2'} onMouseLeave={e => (e.target as HTMLElement).style.background = 'none'}>{cmd.label}</button>)}
+        {!filtered.length && <div style={{padding:20,textAlign:'center',fontSize:11,color:'#999'}}>نتیجه‌ای یافت نشد.</div>}
+      </div>
+      <div style={{padding:'8px 16px',borderTop:'1px solid #ecebe6',fontSize:8.5,color:'#999'}}>کلید میانبر: Ctrl+K</div>
+    </div>
+  </div>
 }

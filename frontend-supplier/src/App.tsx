@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { products, orderRows, rfqs, milestones } from './data'
 import { EmptyState, PageCrumbs, RowMenu, SectionHeading, Status, TextButton } from './components'
-import { ChangeRequests, ProductEditor, ProductReview, QuoteBuilder, SamplesWorkspace } from './workflows'
+import { ChangeRequests, CommandPalette, FulfillmentOrders, Messages, ProductEditor, ProductReview, QuoteBuilder, ReturnsIssues, SamplesWorkspace } from './workflows'
 import { backendHealth, loadSupplierOrders, loadSupplierProducts, loadSupplierRfqs, restoreSupplierSession, signInSupplier, submitSupplierApplication, updateSupplierPurchaseOrder, type SupplierContext } from './api'
 
 type Page = 'dashboard' | 'products' | 'product-editor' | 'review' | 'inventory' | 'series' | 'orders' | 'returns' | 'rfqs' | 'quote' | 'production' | 'samples' | 'changes' | 'quality' | 'finance' | 'analytics' | 'messages' | 'profile' | 'settings'
@@ -198,38 +198,160 @@ function Production() { return <><div className="page-head"><div><PageCrumbs par
 
 function Quality() { return <><div className="page-head"><div><PageCrumbs parent="کیفیت" current="وظایف QC"/><h1>کنترل کیفیت</h1><p>آزمون‌ها و مستندات کیفی سفارش‌های آماده‌ی بازرسی را ثبت کنید.</p></div><button className="button primary"><Plus size={17}/>گزارش QC جدید</button></div><section className="quality-board"><article className="surface qc-card urgent"><div><Status>نیازمند اقدام</Status><span>مهلت: امروز</span></div><h3>PO-4813 · تی‌شرت گلدوزی</h3><p>بررسی چاپ، دوخت و درصد عیب پیش از بسته‌بندی</p><div className="qc-meta"><span>۱٬۲۰۰ تکه</span><span>۲۴ مرداد</span></div><button className="button primary">شروع بازرسی</button></article><article className="surface qc-card"><div><Status>در حال بررسی</Status><span>مهلت: ۲۶ مرداد</span></div><h3>PO-4818 · بارانی کوتاه</h3><p>اندازه‌گیری نمونه، رنگ و آب‌گریزی پارچه</p><div className="qc-meta"><span>۳۵۰ تکه</span><span>۲۶ مرداد</span></div><button className="button secondary">ادامه گزارش</button></article><section className="surface qc-history"><SectionHeading title="گزارش‌های اخیر"/><div><span><i className="green-dot"/>QC-1128</span><b>پیراهن آکسفورد · قبول شد</b><small>دیروز</small></div><div><span><i className="amber-dot"/>QC-1121</span><b>شلوار راسته · قبول با شرط</b><small>۱۹ مرداد</small></div><TextButton>همه گزارش‌ها</TextButton></section></section></> }
 
-function Finance() { const ledger = [['۲۱ مرداد','ST-1103','تسویه سفارشات ۱۲ تا ۱۸ مرداد','+ ۳۲٬۴۰۰٬۰۰۰','واریز شد'],['۲۰ مرداد','ADJ-083','تعدیل هزینه بسته‌بندی','− ۴۸۰٬۰۰۰','ثبت شد'],['۱۹ مرداد','KV-82839','فروش سفارش آماده','+ ۷٬۲۰۰٬۰۰۰','در انتظار']]; return <><div className="page-head"><div><PageCrumbs parent="مالی" current="مالی و تسویه"/><h1>مالی و تسویه</h1><p>شفافیت کامل گردش مالی، کسرها و پرداخت‌های شما در کولبه.</p></div><button className="button secondary"><FileText size={16}/>دریافت صورت‌حساب</button></div><section className="balance-grid"><article className="balance-main"><p>موجودی قابل تسویه</p><strong>۳۲٬۴۰۰٬۰۰۰ <span>تومان</span></strong><div><span>پرداخت برنامه‌ریزی‌شده</span><b>۲۴ مرداد ۱۴۰۴</b></div></article><article><p>در انتظار تسویه</p><strong>۴۸٬۶۰۰٬۰۰۰</strong><span>شامل ۱۴ سفارش تحویل‌شده</span></article><article><p>درآمد این ماه</p><strong>۱۵۸٬۹۰۰٬۰۰۰</strong><span className="green-text">↑ ۱۲٪ نسبت به ماه گذشته</span></article></section><section className="surface ledger"><SectionHeading title="گردش حساب" action={<button className="button secondary"><SlidersHorizontal size={15}/>فیلتر تاریخ</button>}/><div className="ledger-table"><div className="ledger-row header"><span>تاریخ</span><span>شناسه</span><span>شرح</span><span>مبلغ</span><span>وضعیت</span></div>{ledger.map(row => <div className="ledger-row" key={row[1]}><span>{row[0]}</span><b>{row[1]}</b><span>{row[2]}</span><b className={row[3].startsWith('+') ? 'green-text' : 'low-number'}>{row[3]} تومان</b><Status>{row[4]}</Status></div>)}</div></section></> }
+function Finance() {
+  /* نیازسنجی 33-d: ریز کامل کسورات */
+  const ledger = [
+    ['۲۱ مرداد','ST-1103','تسویه سفارشات ۱۲ تا ۱۸ مرداد','+ ۳۲٬۴۰۰٬۰۰۰','واریز شد','کمیسیون ۵٪ · مالیات ۹٪ · ارسال ۲٪'],
+    ['۲۰ مرداد','ADJ-083','تعدیل هزینه بسته‌بندی','− ۴۸۰٬۰۰۰','ثبت شد','هزینه بسته‌بندی PO-4813'],
+    ['۱۹ مرداد','KV-82839','فروش سفارش آماده','+ ۷٬۲۰۰٬۰۰۰','در انتظار','کمیسیون ۵٪ = ۳۶۰٬۰۰۰'],
+  ];
+  return <><div className="page-head"><div><PageCrumbs parent="مالی" current="مالی و تسویه"/><h1>مالی و تسویه</h1><p>شفافیت کامل گردش مالی با ریز کسورات، کمیسیون، مالیات و هزینه‌ها.</p></div><button className="button secondary"><FileText size={16}/>دریافت صورت‌حساب</button></div>
 
-function Analytics() { const stats = [['نرخ تأیید سفارش','۹۸٪','هدف: ۹۵٪'],['ارسال به‌موقع','۹۶٪','هدف: ۹۵٪'],['دقت موجودی','۹۷٫۸٪','هدف: ۹۸٪'],['میانگین پاسخ RFQ','۳٫۴ ساعت','هدف: کمتر از ۸ ساعت'],['نرخ تبدیل RFQ','۴۲٪','هدف: ۳۵٪'],['نرخ نقص QC','۱٫۱٪','هدف: کمتر از ۲٪']]; return <><div className="page-head"><div><PageCrumbs parent="تحلیل" current="عملکرد تأمین‌کننده"/><h1>عملکرد تأمین‌کننده</h1><p>شاخص‌هایی که کیفیت همکاری و فرصت‌های بهبود را مشخص می‌کنند.</p></div><button className="button secondary">۳۰ روز گذشته <ChevronDown size={15}/></button></div><section className="performance-grid">{stats.map(([label, value, target], i) => <article className="surface" key={label}><span className="metric-index">۰{i + 1}</span><p>{label}</p><strong>{value}</strong><small>{target}</small><div className="metric-track"><i style={{width: `${[98, 96, 97.8, 72, 84, 89][i]}%`}}/></div></article>)}</section><section className="surface insight"><Sparkles size={20}/><div><b>بینش عملیاتی</b><p>نرخ پاسخ‌دهی RFQ شما ۲.۱ ساعت سریع‌تر از میانگین دسته «پیراهن مردانه» است؛ حفظ این روند می‌تواند ظرفیت دریافت درخواست‌های VIP را افزایش دهد.</p></div></section></> }
+  <section className="balance-grid"><article className="balance-main"><p>موجودی قابل تسویه</p><strong>۳۲٬۴۰۰٬۰۰۰ <span>تومان</span></strong><div><span>پرداخت برنامه‌ریزی‌شده</span><b>۲۴ مرداد ۱۴۰۴</b></div></article><article><p>در انتظار تسویه</p><strong>۴۸٬۶۰۰٬۰۰۰</strong><span>شامل ۱۴ سفارش تحویل‌شده</span></article><article><p>درآمد این ماه</p><strong>۱۵۸٬۹۰۰٬۰۰۰</strong><span className="green-text">↑ ۱۲٪ نسبت به ماه گذشته</span></article></section>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="ریز کسورات این ماه" eyebrow="DETAILED DEDUCTIONS">تفکیک کامل هزینه‌ها و کسورات از درآمد ناخالص</SectionHeading>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
+      {[['درآمد ناخالص','۱۶۷٬۲۰۰٬۰۰۰','green-text'],['کمیسیون کلبه (۵٪)','− ۸٬۳۶۰٬۰۰۰','low-number'],['مالیات (۹٪)','− ۱۵٬۰۴۸٬۰۰۰','low-number'],['هزینه ارسال (۲٪)','− ۳٬۳۴۴٬۰۰۰','low-number'],['سود خالص','۱۴۰٬۴۴۸٬۰۰۰','green-text']].map(([label, value, tone]) => (
+        <div key={label} style={{border:'1px solid #e5e5e0',padding:12}}>
+          <p style={{fontSize:9,color:'#999'}}>{label}</p>
+          <b style={{display:'block',marginTop:4,fontSize:13}} className={`num-fa ${tone}`}>{value}</b>
+          <small style={{fontSize:8,color:'#999'}}>تومان</small>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section className="surface ledger"><SectionHeading title="گردش حساب" action={<button className="button secondary"><SlidersHorizontal size={15}/>فیلتر تاریخ</button>}/><div className="ledger-table"><div className="ledger-row header"><span>تاریخ</span><span>شناسه</span><span>شرح</span><span>مبلغ</span><span>وضعیت</span><span>ریز کسورات</span></div>{ledger.map(row => <div className="ledger-row" key={row[1]}><span>{row[0]}</span><b>{row[1]}</b><span>{row[2]}</span><b className={row[3].startsWith('+') ? 'green-text' : 'low-number'}>{row[3]} تومان</b><Status>{row[4]}</Status><small style={{fontSize:8.5,color:'#999'}}>{row[5]}</small></div>)}</div></section></>;
+}
+
+function Analytics() {
+  /* نیازسنجی: 37-d بازه دلخواه + 38-d همه موارد + 39-d قیف فروش + 40/41-d امتیاز با جزئیات */
+  const [range, setRange] = useState('month');
+  const rangeLabel = range === 'today' ? 'امروز' : range === 'week' ? 'این هفته' : range === 'month' ? 'این ماه' : 'کل دوره';
+  const rangeData: Record<string, { orders: string; revenue: string; cancelled: string; returned: string }> = {
+    today: { orders: '۴', revenue: '۱۲٬۴۰۰٬۰۰۰', cancelled: '۰', returned: '۰' },
+    week: { orders: '۳۱', revenue: '۸۹٬۲۰۰٬۰۰۰', cancelled: '۲', returned: '۱' },
+    month: { orders: '۱۲۸', revenue: '۳۴۱٬۵۰۰٬۰۰۰', cancelled: '۷', returned: '۳' },
+    custom: { orders: '۴۱۲', revenue: '۱٬۱۲۰٬۰۰۰٬۰۰۰', cancelled: '۲۱', returned: '۹' },
+  };
+  const data = rangeData[range];
+  const stats = [
+    ['نرخ تأیید سفارش', '۹۸٪', 'هدف: ۹۵٪', 98],
+    ['ارسال به‌موقع', '۹۶٪', 'هدف: ۹۵٪', 96],
+    ['دقت موجودی', '۹۷٫۸٪', 'هدف: ۹۸٪', 97.8],
+    ['میانگین پاسخ RFQ', '۳٫۴ ساعت', 'هدف: کمتر از ۸ ساعت', 72],
+    ['نرخ تبدیل RFQ', '۴۲٪', 'هدف: ۳۵٪', 84],
+    ['نرخ نقص QC', '۱٫۱٪', 'هدف: کمتر از ۲٪', 89],
+  ];
+  const funnel = [
+    { label: 'بازدید محصول', value: 12400, pct: 100 },
+    { label: 'افزودن به پیش‌فاکتور', value: 1840, pct: 15 },
+    { label: 'ثبت RFQ', value: 420, pct: 23 },
+    { label: 'پیشنهاد ارسال‌شده', value: 384, pct: 91 },
+    { label: 'سفارش نهایی', value: 128, pct: 33 },
+  ];
+  const score = { total: 'A−', numeric: 92, metrics: [
+    { label: 'سرعت ارسال', value: 96, target: '≥ ۹۵٪', tip: 'عالی — حفظ روند' },
+    { label: 'نرخ لغو', value: 94, target: '≤ ۵٪', tip: '۲ لغو در ۳۰ روز' },
+    { label: 'کیفیت QC', value: 98, target: '≥ ۹۷٪', tip: 'نقص ۱٫۱٪' },
+    { label: 'پاسخ‌گویی RFQ', value: 88, target: '≤ ۸ ساعت', tip: 'میانگین ۳٫۴ ساعت' },
+    { label: 'دقت موجودی', value: 97, target: '≥ ۹۸٪', tip: 'نزدیک هدف' },
+  ]};
+  const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
+
+  return <><div className="page-head"><div><PageCrumbs parent="تحلیل" current="عملکرد تأمین‌کننده"/><h1>عملکرد تأمین‌کننده</h1><p>شاخص‌ها، قیف فروش و امتیاز کل با جزئیات و راهکار بهبود — {rangeLabel}.</p></div>
+    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+      {[['today','روزانه'],['week','هفتگی'],['month','ماهانه'],['custom','بازه دلخواه']].map(([id, name]) => (
+        <button key={id} onClick={() => setRange(id)} className={range === id ? 'button primary' : 'button secondary'}>{name}</button>
+      ))}
+    </div>
+  </div>
+
+  <section className="inventory-summary">
+    <article><p>سفارش‌ها</p><strong>{data.orders}</strong><span>در {rangeLabel}</span></article>
+    <article><p>درآمد</p><strong>{data.revenue}</strong><span>تومان</span></article>
+    <article className="warn"><p>لغو شده</p><strong>{data.cancelled}</strong><span>سفارش</span></article>
+    <article className="warn"><p>مرجوعی</p><strong>{data.returned}</strong><span>سفارش</span></article>
+  </section>
+
+  <section className="performance-grid">{stats.map(([label, value, target, pct], i) => <article className="surface" key={label}><span className="metric-index">۰{i + 1}</span><p>{label}</p><strong>{value}</strong><small>{target}</small><div className="metric-track"><i style={{width: `${pct}%`}}/></div></article>)}</section>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="قیف فروش" eyebrow="SALES FUNNEL">از بازدید محصول تا سفارش نهایی</SectionHeading>
+    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+      {funnel.map((stage, i) => (
+        <div key={stage.label} style={{display:'flex',alignItems:'center',gap:12}}>
+          <span style={{width:120,flexShrink:0,textAlign:'left',fontSize:10,color:'#888'}}>{stage.label}</span>
+          <div style={{flex:1,height:30,background:'#f0f0ee',borderRadius:4,overflow:'hidden'}}>
+            <div style={{height:'100%',borderRadius:4,transition:'width .5s',width:`${stage.pct}%`,background:`hsl(${200 - i * 30}, 45%, ${35 + i * 8}%)`}} />
+          </div>
+          <b style={{width:64,textAlign:'right',fontSize:11}} className="num-fa">{fa(stage.value)}</b>
+          <span style={{width:40,fontSize:9,color:'#999'}} className="num-fa">{fa(stage.pct)}٪</span>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="امتیاز عملکرد کل" eyebrow="PERFORMANCE SCORE">ترکیب همه شاخص‌ها با جزئیات و راهکار بهبود</SectionHeading>
+    <div style={{display:'flex',alignItems:'center',gap:24,marginBottom:20,flexWrap:'wrap'}}>
+      <div style={{width:96,height:96,flexShrink:0,borderRadius:'50%',border:'4px solid #3d5c3a',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{textAlign:'center'}}><strong style={{display:'block',fontSize:24}}>{score.total}</strong><small style={{fontSize:9,color:'#999'}} className="num-fa">{fa(score.numeric)}/۱۰۰</small></div>
+      </div>
+      <div style={{flex:1,minWidth:280,display:'flex',flexDirection:'column',gap:8}}>
+        {score.metrics.map(metric => (
+          <div key={metric.label} style={{display:'flex',alignItems:'center',gap:10,fontSize:10}}>
+            <span style={{width:90,flexShrink:0,color:'#666'}}>{metric.label}</span>
+            <div style={{flex:1,height:7,background:'#f0f0ee',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:4,width:`${metric.value}%`,background:metric.value >= 95 ? '#3d5c3a' : metric.value >= 85 ? '#ca9130' : '#a65d41'}} /></div>
+            <b style={{width:28}} className="num-fa">{fa(metric.value)}</b>
+            <small style={{width:70,color:'#999'}}>{metric.target}</small>
+            <small style={{flex:1,color:'#aaa'}}>{metric.tip}</small>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div style={{borderTop:'1px solid #e5e5e0',paddingTop:12,display:'flex',alignItems:'flex-start',gap:12}}>
+      <Sparkles size={18} style={{flexShrink:0,marginTop:2}}/>
+      <div><b style={{fontSize:11}}>راهکار بهبود</b><p style={{marginTop:4,fontSize:10,lineHeight:1.8,color:'#666'}}>دقت موجودی شما ۹۷٪ است (هدف ۹۸٪). با به‌روزرسانی موجودی پس از هر بسته‌بندی به‌جای پایان روز، این شاخص به هدف می‌رسد و امتیاز کل به A ارتقا می‌یابد.</p></div>
+    </div>
+  </section>
+
+  <section className="surface insight"><Sparkles size={20}/><div><b>بینش عملیاتی</b><p>نرخ پاسخ‌دهی RFQ شما ۲.۱ ساعت سریع‌تر از میانگین دسته «پیراهن مردانه» است؛ حفظ این روند می‌تواند ظرفیت دریافت درخواست‌های VIP را افزایش دهد.</p></div></section></>;
+}
 
 function Profile() { const capabilities = ['پیراهن مردانه و زنانه', 'شلوار و لباس کار', 'پارچه‌های لینن و پنبه', 'گلدوزی', 'لیبل‌گذاری اختصاصی', 'بسته‌بندی سفارشی']; return <><div className="page-head"><div><PageCrumbs parent="تأمین‌کننده" current="پروفایل کارخانه"/><h1>پروفایل و ظرفیت</h1><p>اطلاعاتی که کولبه برای مسیر‌دهی درخواست‌های تولید از آن استفاده می‌کند.</p></div><button className="button primary">ویرایش پروفایل</button></div><section className="profile-grid"><section className="surface factory-profile"><div className="factory-logo">N</div><div><h2>نساجی و پوشاک نیلگون</h2><p>تهران، شهرک صنعتی پرند · از ۱۳۹۴</p><Status>تأییدشده توسط کولبه</Status></div><div className="capacity"><span>ظرفیت ماهانه</span><b>۱۲٬۰۰۰ <small>تکه</small></b></div></section><section className="surface profile-section"><SectionHeading title="توانمندی‌های تولید" action={<TextButton>ویرایش</TextButton>}/><div className="chip-list">{capabilities.map(x => <span key={x}>{x}</span>)}</div></section><section className="surface profile-section"><SectionHeading title="عملیات و MOQ"/><div className="profile-details"><Spec label="حداقل سفارش استاندارد" value="۳۰۰ تکه"/><Spec label="زمان نمونه‌سازی" value="۷ تا ۱۰ روز کاری"/><Spec label="زمان تولید انبوه" value="۲۱ تا ۳۰ روز کاری"/><Spec label="سایزهای پشتیبانی‌شده" value="XS تا 4XL"/></div></section></section></> }
 
-function SettingsPage() { return <><div className="page-head"><div><PageCrumbs parent="حساب کاربری" current="تنظیمات"/><h1>تنظیمات</h1><p>ترجیحات اعلان، کاربران تیم و یکپارچه‌سازی‌های کارخانه را مدیریت کنید.</p></div></div><section className="settings-list surface"><button><Bell size={18}/><div><b>اعلان‌ها</b><span>قوانین دریافت هشدارهای عملیاتی و مالی</span></div><ChevronDown size={17}/></button><button><UsersRound size={18}/><div><b>کاربران و دسترسی‌ها</b><span>۵ عضو فعال در تیم کارخانه</span></div><ChevronDown size={17}/></button><button><ShieldCheck size={18}/><div><b>امنیت و ورود</b><span>تأیید دو مرحله‌ای و نشست‌های فعال</span></div><ChevronDown size={17}/></button></section></> }
+function SettingsPage() {
+  /* نیازسنجی 30-b: ثبت روزهای تعطیل */
+  const [holidays, setHolidays] = useState<Array<{ id: string; date: string; label: string }>>(() => {
+    try { const raw = localStorage.getItem('kv_supplier_holidays'); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  });
+  const [newDate, setNewDate] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const save = (next: typeof holidays) => { setHolidays(next); try { localStorage.setItem('kv_supplier_holidays', JSON.stringify(next)); } catch { /* ignore */ } };
+  const add = () => { if (!newDate || !newLabel.trim()) return; save([...holidays, { id: `hd-${Date.now()}`, date: newDate, label: newLabel.trim() }]); setNewDate(''); setNewLabel(''); };
+  const remove = (id: string) => save(holidays.filter(h => h.id !== id));
 
-function ReturnsIssues() { return <><div className="page-head"><div><PageCrumbs parent="سفارشات آماده" current="مرجوعی و مسائل"/><h1>مرجوعی و مسائل سفارش</h1><p>مغایرت‌ها را با شواهد، مسئول و وضعیت حل‌وفصل پیگیری کنید.</p></div><button className="button primary"><Plus size={16}/>ثبت مسئله عملیاتی</button></div><section className="issue-grid"><article className="surface issue-card urgent"><div><span className="issue-id">ISS-0087</span><Status>نیازمند پاسخ</Status></div><h3>کسری ۲ تکه در سری تحویلی</h3><p>KV-82741 · بوتیک آرشیو — تهران</p><dl><div><dt>گزارش مشتری</dt><dd>امروز، ۰۹:۲۰</dd></div><div><dt>مبلغ درگیر</dt><dd>۱٬۲۶۰٬۰۰۰ تومان</dd></div></dl><button className="button primary">بررسی و پاسخ</button></article><article className="surface issue-card"><div><span className="issue-id">RET-0031</span><Status>در حال بررسی</Status></div><h3>بازگشت ۱ سری به‌دلیل اختلاف رنگ</h3><p>KV-82698 · VINTAGE ROOM</p><dl><div><dt>دریافت در انبار</dt><dd>۲۳ مرداد</dd></div><div><dt>مسئول</dt><dd>کامران شفیعی</dd></div></dl><button className="button secondary">مشاهده پرونده</button></article><section className="surface issue-summary"><SectionHeading title="SLA رسیدگی"/><strong>۹۲٪</strong><span>حل مسئله در کمتر از ۲۴ ساعت</span><div><i style={{width:'92%'}}/></div><p>یک پرونده تا پایان مهلت پاسخ، ۳ ساعت فاصله دارد.</p></section></section></> }
+  return <><div className="page-head"><div><PageCrumbs parent="حساب کاربری" current="تنظیمات"/><h1>تنظیمات</h1><p>تعطیلات کارخانه، کاربران تیم و یکپارچه‌سازی‌ها را مدیریت کنید.</p></div></div>
 
-function Messages() { const [selected, setSelected] = useState(0); const threads = [{name:'تیم بررسی کاتالوگ',subject:'اصلاح اطلاعات پارچه · KH-OXF-259',time:'۱۰:۴۸',unread:2},{name:'عملیات سفارش کولبه',subject:'هماهنگی ارسال KV-82941',time:'۰۹:۲۰',unread:1},{name:'گروه هتل‌های هلیا',subject:'بازخورد نمونه PO-4827',time:'دیروز',unread:1}]; return <><div className="page-head"><div><PageCrumbs parent="ارتباطات" current="پیام‌ها"/><h1>پیام‌های عملیاتی</h1><p>گفت‌وگوها به محصول، سفارش یا تولید مرتبط می‌مانند؛ تغییرات رسمی در Change Request ثبت می‌شوند.</p></div><button className="button primary"><Plus size={16}/>پیام جدید</button></div><section className="surface message-layout"><div className="thread-list"><label className="search-field"><Search size={16}/><input placeholder="جست‌وجوی پیام"/></label>{threads.map((thread,index)=><button className={selected===index?'active':''} onClick={()=>setSelected(index)} key={thread.subject}><span className="avatar">{thread.name.slice(0,1)}</span><div><b>{thread.name}</b><p>{thread.subject}</p></div><small>{thread.time}</small>{thread.unread?<em>{thread.unread}</em>:null}</button>)}</div><div className="conversation"><header><div><b>{threads[selected].name}</b><span>{threads[selected].subject}</span></div><Status>مرتبط با PO-4827</Status></header><div className="message-stream"><article><div className="message-author"><span className="avatar">ه</span><b>{threads[selected].name}</b><small>امروز، ۱۰:۴۸</small></div><p>لطفاً تصویر نزدیک از دوخت یقه و نمونهٔ نهایی لیبل گردن را پیش از ارسال نمونه اضافه کنید.</p><div className="message-attachment"><FileText size={16}/><span>sample-feedback-v2.pdf</span><small>۴۸۰ KB</small></div></article><article className="mine"><div className="message-author"><span className="avatar dark">ن</span><b>نرگس آذر</b><small>امروز، ۱۱:۱۲</small></div><p>تصاویر در فضای نمونه بارگذاری شد. اصلاح لیبل نیز در نسخهٔ دوم اعمال شده است.</p></article></div><footer><button className="icon-button"><Upload size={17}/></button><input placeholder="پاسخ عملیاتی بنویسید…"/><button className="button primary">ارسال</button></footer></div></section></> }
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="تعطیلات و روزهای عدم تأمین" eyebrow="FACTORY CLOSURES">روزهایی که کارخانه تولید یا ارسال ندارد؛ کلبه مهلت‌ها را به‌طور خودکار تنظیم می‌کند.</SectionHeading>
+    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
+      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{height:36,border:'1px solid #deddd6',background:'#fff',padding:'0 8px',fontSize:10.5}} dir="ltr" aria-label="تاریخ تعطیلی" />
+      <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="علت (مثلاً تعطیل رسمی)" style={{height:36,flex:1,minWidth:160,border:'1px solid #deddd6',background:'#fff',padding:'0 8px',fontSize:10.5}} />
+      <button onClick={add} disabled={!newDate || !newLabel.trim()} className="button primary disabled:opacity-40">+ ثبت تعطیلی</button>
+    </div>
+    {holidays.length > 0 ? <div style={{display:'flex',flexDirection:'column',gap:6}}>{holidays.map(h => (
+      <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,border:'1px solid #e5e5e0',padding:10}}>
+        <div><b style={{fontSize:10.5}} className="num-fa">{h.date}</b><span style={{marginRight:8,fontSize:9.5,color:'#666'}}>{h.label}</span></div>
+        <button onClick={() => remove(h.id)} style={{fontSize:9,color:'#a4463d',textDecoration:'underline',background:'none',border:0,cursor:'pointer'}}>حذف</button>
+      </div>
+    ))}</div> : <p style={{fontSize:10,color:'#999'}}>تعطیلی ثبت نشده است.</p>}
+  </section>
 
-function CommandPalette({ onClose, onNavigate }: { onClose: () => void; onNavigate: (page: Page) => void }) { const [search, setSearch] = useState(''); const commands: { label: string; page: Page; group: string }[] = [{label:'محصولات',page:'products',group:'برو به'},{label:'سفارشات آماده',page:'orders',group:'برو به'},{label:'صندوق RFQ',page:'rfqs',group:'برو به'},{label:'تولید فعال',page:'production',group:'برو به'},{label:'افزودن محصول جدید',page:'product-editor',group:'اقدام سریع'},{label:'نمونه‌های تولید',page:'samples',group:'برو به'},{label:'درخواست‌های تغییر',page:'changes',group:'برو به'}]; const result = commands.filter(c => c.label.includes(search)); return <div className="command-backdrop" onMouseDown={onClose}><div className="command-menu" onMouseDown={e => e.stopPropagation()}><div className="command-input"><Search size={19}/><input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="جست‌وجوی سریع یا اجرای دستور..."/><kbd>ESC</kbd></div><div className="command-results">{result.map((command, i) => <button key={command.label} onClick={() => { onNavigate(command.page); onClose() }}><span className="command-icon">{i < 4 ? <Command size={16}/> : <Plus size={16}/>}</span><div><small>{command.group}</small><b>{command.label}</b></div><span>↵</span></button>)}</div><div className="command-footer"><span>↑↓ برای حرکت</span><span>↵ برای انتخاب</span></div></div></div> }
-
-function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
-  const [selected, setSelected] = useState(0)
-  const [tracking, setTracking] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
-  const current = orderRows[selected]
-  const databaseId = current ? (current as typeof current & { databaseId?: string }).databaseId : undefined
-  const next = current?.status === 'جدید' ? 'preparing' : current?.status === 'در حال آماده‌سازی' ? 'shipped' : current?.status === 'آماده ارسال' ? 'delivered' : null
-  const actionLabel = next === 'preparing' ? 'شروع آماده‌سازی' : next === 'shipped' ? 'ثبت ارسال' : next === 'delivered' ? 'ثبت تحویل' : ''
-  const submit = async () => {
-    if (!databaseId || !next) return
-    setSubmitting(true); setError(''); setMessage('')
-    try { await updateSupplierPurchaseOrder(databaseId, next, tracking); setMessage('وضعیت سفارش در زنجیره تأمین ثبت شد.'); onUpdated() }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'ثبت وضعیت انجام نشد.') }
-    finally { setSubmitting(false) }
-  }
-  return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>وضعیت آماده‌سازی، ارسال و تحویل مستقیماً با سفارش VIP همگام می‌شود.</p></div></div>{message ? <p className="notice" role="status">{message}</p> : null}{error ? <p className="auth-error" role="alert">{error}</p> : null}<section className="surface orders-surface"><div className="orders-layout"><div className="orders-list"><div className="order-head-row"><span>سفارش</span><span>محصول و سری</span><span>مبلغ</span><span>مهلت ارسال</span><span>وضعیت</span></div>{orderRows.map((order, index) => <button onClick={() => { setSelected(index); setTracking('') }} className={`order-list-row ${selected === index ? 'selected' : ''}`} key={order.id}><div><b>{order.id}</b><span>{order.customer}</span></div><div><b>{order.product}</b><span>{order.pack} · {order.quantity}</span></div><b>{order.value}</b><span>{order.due}</span><Status>{order.status}</Status></button>)}</div><aside className="order-inspector">{current ? <><div className="inspector-head"><div><p className="eyebrow">جزئیات سفارش</p><h2>{current.id}</h2></div></div><Status>{current.status}</Status><dl><div><dt>محصول</dt><dd>{current.product}</dd></div><div><dt>تعداد</dt><dd>{current.pieces}</dd></div><div><dt>مبلغ</dt><dd>{current.value}</dd></div></dl>{next === 'shipped' ? <label className="auth-label">کد رهگیری<input value={tracking} onChange={event => setTracking(event.target.value)} placeholder="مثال: ۷۸۲۱۵۴۹۶"/></label> : null}{next && databaseId ? <button className="button primary" disabled={submitting || (next === 'shipped' && !tracking.trim())} onClick={submit}>{submitting ? 'در حال ثبت…' : actionLabel}</button> : <p className="muted">برای این سفارش اقدام بعدی وجود ندارد.</p>}</> : <EmptyState title="سفارشی موجود نیست" description="پس از تأیید ادمین، سفارش اینجا نمایش داده می‌شود."/>}</aside></div></section></>
+  <section className="settings-list surface"><button><Bell size={18}/><div><b>اعلان‌ها</b><span>قوانین دریافت هشدارهای عملیاتی و مالی</span></div><ChevronDown size={17}/></button><button><UsersRound size={18}/><div><b>کاربران و دسترسی‌ها</b><span>۵ عضو فعال (نامحدود — نیازسنجی 5-c)</span></div><ChevronDown size={17}/></button><button><ShieldCheck size={18}/><div><b>امنیت و ورود</b><span>تأیید دو مرحله‌ای و نشست‌های فعال</span></div><ChevronDown size={17}/></button></section></>;
 }
+
 
 export default App

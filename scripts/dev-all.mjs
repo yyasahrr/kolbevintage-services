@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 const isWindows = process.platform === "win32";
 const npmCommand = isWindows ? (process.env.ComSpec ?? "cmd.exe") : "npm";
-const commands = ["dev", "dev:supplier"];
+const commands = ["dev:kolbe", "dev:supplier"];
 const children = commands.map((script) =>
   spawn(npmCommand, isWindows ? ["/d", "/s", "/c", `npm run ${script}`] : ["run", script], {
     cwd: process.cwd(),
