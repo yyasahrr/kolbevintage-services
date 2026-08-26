@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import React, { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Activity, Archive, Bell, Boxes, BriefcaseBusiness, CalendarDays, Check, ChevronDown, CircleHelp,
   ClipboardCheck, Command, CreditCard, FileCheck2, FileText, FolderKanban, LayoutDashboard, Menu,
@@ -8,6 +8,19 @@ import {
 import { products, orderRows, rfqs, milestones } from './data'
 import { EmptyState, PageCrumbs, RowMenu, SectionHeading, Status, TextButton } from './components'
 import { ChangeRequests, CommandPalette, FulfillmentOrders, Messages, ProductEditor, ProductReview, QuoteBuilder, ReturnsIssues, SamplesWorkspace } from './workflows'
+class PortalErrorBoundary extends React.Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) return <div style={{padding:40,textAlign:'center',fontSize:12}}>
+      <p style={{fontSize:16,fontWeight:'bold',color:'#a4463d',marginBottom:8}}>خطا در بارگذاری پنل</p>
+      <p style={{fontSize:11,color:'#666',marginBottom:16}}>{this.state.error.message}</p>
+      <button onClick={() => { this.setState({ error: null }); window.location.reload() }} style={{padding:'10px 20px',background:'#011c3a',color:'#fff',border:0,borderRadius:4,fontSize:11,cursor:'pointer'}}>بارگذاری مجدد</button>
+    </div>
+    return this.props.children
+  }
+}
+
 import { backendHealth, loadSupplierOrders, loadSupplierProducts, loadSupplierRfqs, restoreSupplierSession, signInSupplier, submitSupplierApplication, updateSupplierPurchaseOrder, type SupplierContext } from './api'
 import { ApprovalWorkflow, CampaignBuilder, CSVInventoryImport, DiscrepancyManager, DisputeCenter, ImageQualityChecker, NotificationPreferences, OrderSLA, PriceHistoryTable, QualityDocuments, RoleManager, SettlementSettings, ShippingLabel, TaxIntegration } from './features'
 
@@ -44,6 +57,7 @@ function App() {
   useEffect(() => { setSessionNotice(''); restoreSupplierSession().then(context => { if (context) { setSupplier(context); setAccessView('portal') } }).catch(() => setSessionNotice('بازیابی نشست قبلی انجام نشد؛ لطفاً دوباره وارد شوید.')) }, [])
   useEffect(() => {
     if (!supplier) return
+    if (supplier.supplierId === 'demo') return // حالت نمایشی: بدون API
     Promise.all([loadSupplierProducts(supplier.supplierId), loadSupplierOrders(supplier.supplierId), loadSupplierRfqs(supplier.supplierId)]).then(([remoteProducts, remoteOrders, remoteRfqs]) => {
       const number = new Intl.NumberFormat('fa-IR')
       products.splice(0, products.length, ...remoteProducts.map(product => {
@@ -72,11 +86,11 @@ function App() {
   if (accessView !== 'portal') return <AuthShell view={accessView} notice={sessionNotice} backendOnline={backendOnline} onChange={setAccessView} onAuthenticated={context => { setSupplier(context); setAccessView('portal') }} />
   if (page === 'product-editor' && supplier) return <ProductEditor supplierId={supplier.supplierId} onClose={() => setPage('products')} onCreated={() => { setDataRefresh(version => version + 1); setPage('products') }} />
 
-  return <div className="app-shell">
+  return <PortalErrorBoundary><div className="app-shell">
     <Sidebar page={page} onNavigate={go} open={sidebarOpen} onClose={() => setSidebarOpen(false)} supplierName={supplier?.displayName} />
     <div className="content-shell">
       <Topbar onMenu={() => setSidebarOpen(true)} onCommand={() => setCommandOpen(true)} onNotices={() => setNoticeOpen(!noticeOpen)} noticeOpen={noticeOpen} />
-      {dataSyncFailed ? (
+      {dataSyncFailed && supplier?.supplierId !== 'demo' ? (
         <div className="sync-banner" role="alert">
           <span>بارگذاری داده‌ها ناتمام ماند؛ اطلاعات نمایش‌داده‌شده ممکن است به‌روز نباشد.</span>
           <button type="button" onClick={() => { setDataSyncFailed(false); setDataRefresh(version => version + 1) }}>تلاش دوباره</button>
@@ -107,7 +121,7 @@ function App() {
       </main>
     </div>
     {commandOpen ? <CommandPalette onClose={() => setCommandOpen(false)} onNavigate={go} /> : null}
-  </div>
+  </div></PortalErrorBoundary>
 }
 
 function AuthShell({ view, notice, backendOnline, onChange, onAuthenticated }: { view: Exclude<AccessView, 'portal'>; notice?: string; backendOnline: boolean; onChange: (view: AccessView) => void; onAuthenticated: (context: SupplierContext) => void }) {
