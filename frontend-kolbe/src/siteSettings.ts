@@ -6,11 +6,14 @@ export type HeroTemplate = "cover" | "split" | "mosaic" | "duo" | "minimal";
 /** پیکربندی استودیوی هیرو - تمپلیت + پسزمینه دلخواه + شمارنده جشنواره */
 export type HeroStudioConfig = {
   published: boolean;
-  template: 1 | 2 | 3 | 4;
+  template: 1 | 2 | 3 | 4 | 5;
   bgImage: string;
   overlay: number;
   imageShape: "rect" | "rounded" | "circle";
   dark: boolean;
+  video1: string;
+  video2: string;
+  video3: string;
   titleColor: string;
   subtitleColor: string;
   buttonHoverBg: string;
@@ -33,11 +36,14 @@ export type HeroStudioConfig = {
 
 export const defaultHeroStudio: HeroStudioConfig = {
   published: false,
-  template: 1,
+  template: 5,
   bgImage: "/images/model-front.jpg",
   overlay: 0.45,
   imageShape: "rect",
   dark: false,
+  video1: "/videos/hero-1.mp4",
+  video2: "/videos/hero-2.mp4",
+  video3: "/videos/hero-3.mp4",
   titleColor: "",
   subtitleColor: "",
   buttonHoverBg: "#0a2c55",
@@ -230,12 +236,10 @@ export const defaultSiteSettings: SiteSettings = {
     latinBrand: "KOLBE VINTAGE",
     shopLabel: "فروشگاه",
     nav: [
-      { label: "فروشگاه", to: "/shop" },
-      { label: "استایل‌ها", to: "/styles" },
-      { label: "درباره ما", to: "/about" },
-      { label: "تماس با ما", to: "/contact" },
+      { label: "صفحه اصلی", to: "/" },
       { label: "مجله", to: "/blog" },
-      { label: "پیگیری سفارش", to: "/account" },
+      { label: "خرید عمده", to: "/wholesale" },
+      { label: "پشتیبانی", to: "/contact" },
     ],
   },
   heroStudio: defaultHeroStudio,

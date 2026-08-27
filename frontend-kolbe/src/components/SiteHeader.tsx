@@ -114,41 +114,6 @@ export default function SiteHeader() {
                 </Link>
               );
             })}
-            <div className="catalog-picker relative">
-              <button
-                type="button"
-                onClick={() => setCatalogOpen((isOpen) => !isOpen)}
-                aria-haspopup="menu"
-                aria-expanded={catalogOpen}
-                className="site-nav-underline flex items-center gap-1.5 whitespace-nowrap border-b border-transparent py-2 transition hover:border-current"
-              >
-                دسته‌بندی‌ها
-                <Icon name="chevronDown" className={`h-3 w-3 transition-transform ${catalogOpen ? "rotate-180" : ""}`} />
-              </button>
-
-              {catalogOpen && (
-                <div
-                  role="menu"
-                  aria-label="دسته‌بندی محصولات"
-                  className="catalog-menu liquid-surface absolute right-0 top-11 z-[90] w-[340px] rounded-[1.35rem] border border-neutral-200 p-3"
-                >
-                  <div className="grid grid-cols-2 gap-1">
-                    {categoryNav.map((item) => (
-                      <Link key={item.label} to={item.to} role="menuitem" className="catalog-menu-item rounded-lg px-3 py-2.5">
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                  <Link to="/try-on" role="menuitem" className="tryon-menu-link mt-2 flex items-center gap-2 rounded-xl px-3 py-3">
-                    <Icon name="star" className="h-4 w-4" />
-                    <span>
-                      <span className="block text-[11.5px] font-medium">Try On Me</span>
-                      <span className="mt-0.5 block text-[9.5px] opacity-70">امتحان محصول روی تصویر خودت</span>
-                    </span>
-                  </Link>
-                </div>
-              )}
-            </div>
           </div>
         </nav>
       </div>

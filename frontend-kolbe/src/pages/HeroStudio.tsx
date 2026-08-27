@@ -194,6 +194,22 @@ export default function HeroStudio() {
         </section>
       </div>
 
+      {/* ویدیوها برای تمپلیت سه ویدیو */}
+      {config.template === 5 && (
+        <section className="rounded-[6px] border border-neutral-200 p-4">
+          <h3 className="text-[12.5px] font-medium">ویدیوهای هیرو (۳ عدد)</h3>
+          <p className="mt-1 text-[10.5px] text-neutral-500">آدرس مستقیم فایل ویدیو (mp4/webm) — فایلها را در پوشه public/videos قرار دهید.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {([["video1", "ویدیو ۱ (راست)"], ["video2", "ویدیو ۲ (وسط)"], ["video3", "ویدیو ۳ (چپ)"]] as const).map(([field, label]) => (
+              <label key={field} className="block">
+                <span className={label}>{label}</span>
+                <input className={input} dir="ltr" value={(config as any)[field] ?? ""} onChange={(e) => patch({ [field]: e.target.value } as any)} placeholder="/videos/hero-1.mp4" />
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* رنگها و حالت */}
       <section className="rounded-[6px] border border-neutral-200 p-4">
         <h3 className="text-[12.5px] font-medium">۵. رنگ‌ها، شکل تصویر و حالت تیره</h3>

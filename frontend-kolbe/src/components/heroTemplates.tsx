@@ -118,11 +118,65 @@ export function HeroTemplate4({ config }: TemplateProps) {
   );
 }
 
-export const HERO_TEMPLATES: Array<{ id: 1 | 2 | 3 | 4; name: string; description: string; Component: (props: TemplateProps) => React.ReactElement }> = [
+
+/** ۵) سه ویدیو — گرید موزاییکی با متن وسط */
+export function HeroTemplate5({ config }: TemplateProps) {
+  return (
+    <section className="relative min-h-[80svh] w-full overflow-hidden">
+      {/* گرید ۳تایی ویدیو */}
+      <div className="absolute inset-0 grid grid-cols-3 gap-[3px]">
+        {[config.video1, config.video2, config.video3].map((src, i) => (
+          <div key={i} className="relative overflow-hidden bg-neutral-900">
+            {src ? (
+              <video
+                src={src}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="absolute inset-0 h-full w-full object-cover"
+                style={{ filter: `brightness(${1 - config.overlay})` }}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center bg-neutral-800">
+                <span className="text-[10px] text-white/30">Video {i + 1}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* پوشش تیره */}
+      <div className="absolute inset-0" style={{ background: `rgba(7,20,34,${Math.min(config.overlay + 0.15, 0.85)})` }} />
+
+      {/* محتوا وسط */}
+      <div className="relative z-10 flex min-h-[80svh] flex-col items-center justify-center px-6 text-center text-white">
+        {config.eyebrow ? (
+          <p className="border-y border-white/20 py-2.5 text-[11px] tracking-[0.35em] text-white/75">{config.eyebrow}</p>
+        ) : null}
+        <h1 className="fade-up mt-6 text-[32px] font-medium leading-[1.3] sm:text-[44px] lg:text-[56px]" style={config.titleColor ? { color: config.titleColor } : undefined}>
+          {config.title}
+        </h1>
+        {config.subtitle ? (
+          <p className="mt-4 max-w-xl text-[13px] leading-[2] text-white/80" style={config.subtitleColor ? { color: config.subtitleColor } : undefined}>
+            {config.subtitle}
+          </p>
+        ) : null}
+        <div className="mt-8 flex flex-col items-center gap-6">
+          <Countdown config={config} size="lg" />
+          <Cta config={config} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export const HERO_TEMPLATES: Array<{ id: 1 | 2 | 3 | 4 | 5; name: string; description: string; Component: (props: TemplateProps) => React.ReactElement }> = [
   { id: 1, name: "تمام‌صفحه کلاسیک", description: "تصویر تمام‌قد، محتوای وسط‌چین و شمارنده بزرگ زیر دکمه", Component: HeroTemplate1 },
   { id: 2, name: "اسپلیت ادیتوریال", description: "متن روی سطح گرم راست، تصویر تمام‌قد چپ", Component: HeroTemplate2 },
   { id: 3, name: "بنر عریض کم‌ارتفاع", description: "بنر افقی با متن پایین و شمارنده کنار", Component: HeroTemplate3 },
   { id: 4, name: "پوستر تایپوگرافیک", description: "تیتر غول‌پیکر روی تصویر تیره و شمارنده وسط", Component: HeroTemplate4 },
+  { id: 5, name: "سه ویدیو", description: "گرید موزاییکی ۳ ویدیو همزمان + متن و شمارنده وسط", Component: HeroTemplate5 },
 ];
 
 export function HeroStudioRenderer({ config }: { config: HeroStudioConfig }) {
