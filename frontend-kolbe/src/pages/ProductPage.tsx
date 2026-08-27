@@ -150,9 +150,9 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
         </div>
       </div>
 
-      {/* دسکتاپ/تبلت: بنتو گرید رسانه — ریسپانسیو */}
-      <div className="product-gallery-grid hidden gap-2.5 p-3 sm:grid sm:grid-cols-3 sm:auto-rows-[160px] lg:mx-auto lg:max-w-[1060px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[180px]">
-        {/* ویدیو یا اولین تصویر: بزرگ (۲×۲) */}
+      {/* دسکتاپ/تبلت: تصویر اصلی بزرگ سمت راست + گرید تصاویر کنارش */}
+      <div className="product-gallery-grid hidden gap-2.5 p-3 sm:grid sm:grid-cols-3 sm:auto-rows-[150px] lg:mx-auto lg:max-w-[1060px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[180px]">
+        {/* تصویر اصلی یا ویدیو: بزرگ (سمت راست، تمامارتفاع) */}
         {product.video ? (
           <button
             onClick={() => window.open(product.video!.url, "_blank")}
@@ -164,11 +164,11 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
               loading="lazy"
               className="h-full w-full object-cover opacity-70 transition group-hover:opacity-60"
             />
-            <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white sm:gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/70 sm:h-14 sm:w-14">
-                <Icon name="play" className="mr-1 h-4 w-4 sm:h-5 sm:w-5" fill="currentColor" strokeWidth={0} />
+            <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
+                <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
               </span>
-              <span className="text-[10px] sm:text-[11.5px]">{product.video.title}</span>
+              <span className="text-[11.5px]">{product.video.title}</span>
             </span>
           </button>
         ) : media[0] ? (
@@ -181,17 +181,16 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
           />
         ) : null}
 
-        {/* تصاویر بعدی: پر کردن بنتو */}
+        {/* تصاویر دیگر: گرید ۲×۲ کنار تصویر اصلی */}
         {media.slice(product.video ? 0 : 1, product.video ? 4 : 5).map((src, idx) => {
           const imageIndex = product.video ? idx : idx + 1;
-          const isWide = idx === 1 && media.length > 3;
           return (
             <ZoomImage
               key={src + idx}
               src={src}
               alt={`${product.name} — تصویر ${fa(imageIndex + 1)}`}
               onOpen={() => onOpen(imageIndex)}
-              figureClassName={isWide ? "sm:col-span-2 lg:col-span-2" : ""}
+              figureClassName=""
               imgClassName="h-full"
             />
           );
