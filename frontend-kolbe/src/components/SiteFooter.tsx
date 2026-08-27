@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link } from "../router";
 import { fa } from "../utils/format";
 import Icon from "./Icon";
@@ -7,37 +6,9 @@ import { useSiteSettings } from "../siteSettings";
 export default function SiteFooter() {
   const { footer, builder } = useSiteSettings();
   const socials = builder.footer.socials;
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
 
   return (
     <footer className="mx-2 mb-2 overflow-hidden rounded-[1.5rem] bg-[#011c3a] text-white sm:mx-3 sm:mb-3">
-      {/* خبرنامه — تمیز و ساده */}
-      {builder.footer.newsletterEnabled && (
-        <div className="mx-auto max-w-[900px] px-5 py-10 text-center lg:px-8">
-          <h3 className="text-[17px] font-medium">{footer.title}</h3>
-          <p className="mx-auto mt-2 max-w-sm text-[11.5px] leading-relaxed text-white/60">{footer.description}</p>
-          <form
-            onSubmit={(e) => { e.preventDefault(); if (email.trim()) setSent(true); }}
-            className="mx-auto mt-5 flex max-w-sm items-center gap-2"
-          >
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={footer.emailPlaceholder}
-              className="h-11 flex-1 rounded-full border border-white/20 bg-white/5 px-5 text-[12px] outline-none placeholder:text-white/35 focus:border-white/40"
-            />
-            <button
-              type="submit"
-              className="flex h-11 shrink-0 items-center rounded-full bg-white px-5 text-[11.5px] font-medium text-[#011c3a] transition hover:bg-neutral-100"
-            >
-              عضویت
-            </button>
-          </form>
-          {sent && <p className="mt-3 text-[11px] text-white/50">ممنون — خوش آمدید!</p>}
-        </div>
-      )}
-
       {/* لینکها — فقط دو ستون، خلوت */}
       <div className="mx-auto max-w-[900px] px-5 pb-8 lg:px-8">
         <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 border-t border-white/10 pt-6">
