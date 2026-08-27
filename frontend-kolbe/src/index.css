@@ -1079,7 +1079,7 @@ textarea {
 
 [data-theme="dark"] .storefront-shell option {
   color: var(--dark-ink);
-  background: #0b1e2e;
+  background: #1e2d3d;
 }
 
 [data-theme="dark"] .product-card,
@@ -1958,7 +1958,7 @@ textarea {
 /* دارک مود: select — رنگ متن حتما روشن */
 [data-theme="dark"] .storefront-shell select,
 [data-theme="dark"] .storefront-shell select * {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
   border-color: rgba(194, 216, 227, 0.2) !important;
   -webkit-text-fill-color: #f5f1e9 !important;
@@ -1966,7 +1966,7 @@ textarea {
 
 [data-theme="dark"] .storefront-shell select option,
 [data-theme="dark"] .storefront-shell select optgroup {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
   -webkit-text-fill-color: #f5f1e9 !important;
 }
@@ -1974,27 +1974,27 @@ textarea {
 [data-theme="dark"] .storefront-shell select option:hover,
 [data-theme="dark"] .storefront-shell select option:focus,
 [data-theme="dark"] .storefront-shell select option:checked {
-  background-color: #16324a !important;
+  background-color: #3a4e66 !important;
   color: #ffffff !important;
 }
 
 /* دارک مود: sidebar select در صفحه عمده */
 [data-theme="dark"] .storefront-shell aside select,
 [data-theme="dark"] .storefront-shell aside select option {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
 }
 
 /* دارک مود: مودال select */
 [data-theme="dark"] .storefront-shell .fixed select,
 [data-theme="dark"] .storefront-shell .fixed select option {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
 }
 
 [data-theme="dark"] .storefront-shell select option:hover,
 [data-theme="dark"] .storefront-shell select option:focus {
-  background-color: #16324a !important;
+  background-color: #3a4e66 !important;
 }
 
 /* دارک مود: input placeholder */
@@ -2008,13 +2008,13 @@ textarea {
 [data-theme="dark"] .storefront-shell input:-webkit-autofill:hover,
 [data-theme="dark"] .storefront-shell input:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--dark-ink);
-  -webkit-box-shadow: 0 0 0 1000px #0b1e2e inset;
+  -webkit-box-shadow: 0 0 0 1000px #1e2d3d inset;
   transition: background-color 5000s ease-in-out 0s;
 }
 
 /* دارک مود: بنتو گرید */
 [data-theme="dark"] .storefront-shell .bg-neutral-100 {
-  background-color: #0d2235 !important;
+  background-color: #253346 !important;
 }
 
 /* دارک مود: بنرها */
@@ -2029,7 +2029,7 @@ textarea {
 
 /* دارک مود: سایدبار فیلتر عمده */
 [data-theme="dark"] .storefront-shell aside .bg-white {
-  background: #0b1e2e !important;
+  background: #1e2d3d !important;
 }
 
 /* دارک مود: borderها */
@@ -2046,7 +2046,7 @@ textarea {
 
 /* دارک مود: مودال */
 [data-theme="dark"] .storefront-shell .fixed.inset-0 > div[class*="bg-white"] {
-  background: #0b1e2e !important;
+  background: #1e2d3d !important;
   color: var(--dark-ink) !important;
 }
 
@@ -2059,7 +2059,7 @@ textarea {
 
 /* دارک مود: مودال select */
 [data-theme="dark"] .storefront-shell .fixed.inset-0 select {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: var(--dark-ink) !important;
 }
 
@@ -2071,7 +2071,7 @@ textarea {
 
 /* دارک مود: skeleton loader */
 [data-theme="dark"] .storefront-shell .animate-pulse .bg-neutral-200 {
-  background: #16324a !important;
+  background: #3a4e66 !important;
 }
 
 /* دارک مود: tooltip */
@@ -2087,7 +2087,7 @@ textarea {
 
 /* همه select ها */
 [data-theme="dark"] select {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
   -webkit-text-fill-color: #f5f1e9 !important;
   border-color: rgba(194, 216, 227, 0.25) !important;
@@ -2095,7 +2095,7 @@ textarea {
 
 [data-theme="dark"] select option,
 [data-theme="dark"] select optgroup {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
   -webkit-text-fill-color: #f5f1e9 !important;
 }
@@ -2103,7 +2103,7 @@ textarea {
 [data-theme="dark"] select option:checked,
 [data-theme="dark"] select option:hover,
 [data-theme="dark"] select option:focus {
-  background-color: #1a3a52 !important;
+  background-color: #c9654d !important;
   color: #ffffff !important;
 }
 
@@ -2130,13 +2130,13 @@ textarea {
 
 /* input نوع date و file */
 [data-theme="dark"] input[type="date"] {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   color: #f5f1e9 !important;
   color-scheme: dark;
 }
 
 [data-theme="dark"] input[type="color"] {
-  background-color: #0b1e2e !important;
+  background-color: #1e2d3d !important;
   border-color: rgba(194, 216, 227, 0.2) !important;
 }
 
@@ -2148,7 +2148,7 @@ textarea {
 
 /* bg-white override — همه عناصر */
 [data-theme="dark"] .bg-white {
-  background-color: #0b1e2e !important;
+  background-color: #253346 !important;
 }
 
 [data-theme="dark"] .bg-white\/95 {
@@ -2165,11 +2165,11 @@ textarea {
 
 /* bg-neutral خنثی */
 [data-theme="dark"] .bg-neutral-50 {
-  background-color: #0d2235 !important;
+  background-color: #253346 !important;
 }
 
 [data-theme="dark"] .bg-neutral-100 {
-  background-color: #10273b !important;
+  background-color: #2a3a4e !important;
 }
 
 /* borderهای خنثی */
@@ -2200,26 +2200,26 @@ textarea {
 
 /* پسزمینه f7f5f0 */
 [data-theme="dark"] .bg-\[\#f7f5f0\] {
-  background-color: #081725 !important;
+  background-color: #162030 !important;
 }
 
 [data-theme="dark"] .bg-\[\#f6f6f4\] {
-  background-color: #0a1c2e !important;
+  background-color: #1c2a3a !important;
 }
 
 [data-theme="dark"] .bg-\[\#f2f0eb\] {
-  background-color: #081725 !important;
+  background-color: #162030 !important;
 }
 
 /* مودالها */
 [data-theme="dark"] .fixed.inset-0 > div:not([class*="black"]):not([class*="overlay"]) {
-  background-color: #0d2235 !important;
+  background-color: #253346 !important;
   color: #f5f1e9 !important;
 }
 
 /* dropdown و popover */
 [data-theme="dark"] .liquid-surface {
-  background: #0d2235 !important;
+  background: #253346 !important;
   color: #f5f1e9 !important;
   border-color: rgba(194, 216, 227, 0.15) !important;
 }
