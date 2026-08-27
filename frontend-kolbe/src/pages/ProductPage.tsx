@@ -150,39 +150,48 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
         </div>
       </div>
 
-      {/* دسکتاپ: گرید ناهماهنگ - بزرگترین خانه متعلق به ویدئو محصول است */}
-      <div className="product-gallery-grid hidden gap-3 p-3 lg:mx-auto lg:max-w-[1060px] lg:grid lg:grid-cols-4 lg:grid-flow-row-dense lg:auto-rows-[185px]">
+      {/* دسکتاپ/تبلت: بنتو گرید رسانه — ریسپانسیو */}
+      <div className="product-gallery-grid hidden gap-2.5 p-3 sm:grid sm:grid-cols-3 sm:auto-rows-[160px] lg:mx-auto lg:max-w-[1060px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[180px]">
+        {/* ویدیو یا اولین تصویر: بزرگ (۲×۲) */}
         {product.video ? (
           <button
             onClick={() => window.open(product.video!.url, "_blank")}
-            className="group relative col-span-2 row-span-2 overflow-hidden bg-neutral-900"
+            className="group relative col-span-2 row-span-2 overflow-hidden rounded-[0.8rem] bg-neutral-900"
           >
             <img
               src={product.video.poster}
               alt={product.video.title}
               loading="lazy"
-              className="h-full w-full object-contain opacity-70 transition group-hover:opacity-60"
+              className="h-full w-full object-cover opacity-70 transition group-hover:opacity-60"
             />
-            <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
-                <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
+            <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white sm:gap-3">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white/70 sm:h-14 sm:w-14">
+                <Icon name="play" className="mr-1 h-4 w-4 sm:h-5 sm:w-5" fill="currentColor" strokeWidth={0} />
               </span>
-              <span className="text-[11.5px]">{product.video.title}</span>
+              <span className="text-[10px] sm:text-[11.5px]">{product.video.title}</span>
             </span>
           </button>
+        ) : media[0] ? (
+          <ZoomImage
+            src={media[0]}
+            alt={`${product.name} — تصویر ۱`}
+            onOpen={() => onOpen(0)}
+            figureClassName="col-span-2 row-span-2"
+            imgClassName="h-full"
+          />
         ) : null}
-        {media.map((src, i) => {
-          /* چینش ناهماهنگ: خانه بزرگ = ویدئو (یا تصویر اول در نبود ویدئو)، بعد یک خانه کشیده و یک خانه عریض */
-          const figureClassName = product.video
-            ? i === 0 ? "lg:row-span-2" : i === 3 ? "lg:col-span-2" : ""
-            : i === 0 ? "lg:col-span-2 lg:row-span-2" : i === 3 ? "lg:col-span-2" : "";
+
+        {/* تصاویر بعدی: پر کردن بنتو */}
+        {media.slice(product.video ? 0 : 1, product.video ? 4 : 5).map((src, idx) => {
+          const imageIndex = product.video ? idx : idx + 1;
+          const isWide = idx === 1 && media.length > 3;
           return (
             <ZoomImage
-              key={i}
+              key={src + idx}
               src={src}
-              alt={`${product.name} — تصویر ${fa(i + 1)}`}
-              onOpen={() => onOpen(i)}
-              figureClassName={figureClassName}
+              alt={`${product.name} — تصویر ${fa(imageIndex + 1)}`}
+              onOpen={() => onOpen(imageIndex)}
+              figureClassName={isWide ? "sm:col-span-2 lg:col-span-2" : ""}
               imgClassName="h-full"
             />
           );

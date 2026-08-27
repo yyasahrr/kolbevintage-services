@@ -611,31 +611,44 @@ function FeatureStrip() {
 /* --------------------- بنتو گرید دستهبندیها (بعد از هیرو) --------------------- */
 
 function CategoryBento() {
+  /* بنتو گرید ریسپانسیو:
+     موبایل (< 640px): ۲ ستونه ساده
+     تبلت (640-1024px): ۳ ستونه با خانه بزرگ
+     دسکتاپ (≥ 1024px): ۴ ستونه نامتقارن */
   const categories = [
-    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt", cls: "sm:col-span-2 sm:row-span-2" },
-    { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer", cls: "sm:col-span-2 sm:row-span-1" },
-    { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit", cls: "sm:col-span-1" },
-    { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser", cls: "sm:col-span-1" },
-    { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes", cls: "sm:col-span-2" },
-    { label: "اکسسوری", img: "/images/banner.jpg", to: "/shop?cat=accessory", cls: "sm:col-span-2" },
+    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt",
+      cls: "col-span-2 sm:col-span-2 sm:row-span-2 lg:col-span-2 lg:row-span-2" },
+    { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer",
+      cls: "sm:col-span-1 lg:col-span-2" },
+    { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit",
+      cls: "sm:col-span-1 lg:col-span-1" },
+    { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser",
+      cls: "sm:col-span-1 lg:col-span-1" },
+    { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes",
+      cls: "col-span-2 sm:col-span-1 lg:col-span-2" },
+    { label: "اکسسوری", img: "/images/banner.jpg", to: "/shop?cat=accessory",
+      cls: "col-span-2 sm:col-span-2 lg:col-span-2" },
   ];
+
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-4 py-10 lg:px-8 lg:py-14">
-      <div className="mb-6 flex items-end justify-between">
+    <section className="mx-auto w-full max-w-[1240px] px-4 py-8 sm:py-10 lg:px-8 lg:py-14">
+      <div className="mb-5 flex items-end justify-between sm:mb-6">
         <div>
-          <p className="text-[10px] tracking-[0.3em] text-neutral-400">CATEGORIES</p>
-          <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">دسته‌بندی محصولات</h2>
+          <p className="text-[9px] tracking-[0.28em] text-neutral-400 sm:text-[10px]">CATEGORIES</p>
+          <h2 className="mt-1.5 text-[19px] font-medium sm:mt-2 sm:text-[22px] lg:text-[26px]">دسته‌بندی محصولات</h2>
         </div>
-        <Link to="/shop" className="text-[12px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a]">همه محصولات</Link>
+        <Link to="/shop" className="text-[11px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a] sm:text-[12px]">
+          همه محصولات
+        </Link>
       </div>
 
-      {/* بنتو گرید: موبایل ۲ ستونه ساده، دسکتاپ ۴ ستونه نامتقارن */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:auto-rows-[180px]">
-        {categories.map((cat, i) => (
+      {/* بنتو گرید ریسپانسیو */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 sm:auto-rows-[150px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[175px]">
+        {categories.map((cat) => (
           <Link
             key={cat.label}
             to={cat.to}
-            className={`group relative overflow-hidden rounded-[0.9rem] bg-neutral-100 ${cat.cls} aspect-[4/3] sm:aspect-auto`}
+            className={`group relative overflow-hidden rounded-[0.8rem] bg-neutral-100 sm:rounded-[0.9rem] ${cat.cls} aspect-[4/3] sm:aspect-auto`}
           >
             <img
               src={cat.img}
@@ -644,11 +657,11 @@ function CategoryBento() {
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/5 to-transparent transition-opacity duration-300 group-hover:from-black/70" />
-            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-4 text-white">
-              <h3 className={`font-medium ${cat.cls.includes("row-span-2") ? "text-[18px] lg:text-[22px]" : "text-[13.5px] lg:text-[15px]"}`}>
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-3 text-white sm:p-4">
+              <h3 className={`font-medium ${cat.cls.includes("row-span-2") ? "text-[15px] sm:text-[18px] lg:text-[22px]" : "text-[12px] sm:text-[13.5px] lg:text-[15px]"}`}>
                 {cat.label}
               </h3>
-              <span className={`flex items-center justify-center rounded-full border border-white/30 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:border-white group-hover:bg-white group-hover:text-[#011c3a] ${cat.cls.includes("row-span-2") ? "h-9 w-9" : "h-7 w-7"}`}>
+              <span className={`hidden items-center justify-center rounded-full border border-white/30 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:border-white group-hover:bg-white group-hover:text-[#011c3a] sm:flex ${cat.cls.includes("row-span-2") ? "h-8 w-8 lg:h-9 lg:w-9" : "h-7 w-7"}`}>
                 <Icon name="arrowLeft" className={cat.cls.includes("row-span-2") ? "h-4 w-4" : "h-3 w-3"} />
               </span>
             </div>
