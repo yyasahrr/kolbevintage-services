@@ -150,19 +150,18 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
         </div>
       </div>
 
-      {/* دسکتاپ/تبلت: تصویر اصلی بزرگ سمت راست + گرید تصاویر کنارش */}
-      <div className="product-gallery-grid hidden gap-2.5 p-3 sm:grid sm:grid-cols-3 sm:auto-rows-[150px] lg:mx-auto lg:max-w-[1060px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[180px]">
-        {/* تصویر اصلی یا ویدیو: بزرگ (سمت راست، تمامارتفاع) */}
-        {product.video ? (
+      {/* دسکتاپ/تبلت: گالری عمودی — هر تصویر تمامعرض، اسکرول عمودی */}
+      <div className="product-gallery-grid hidden flex-col gap-3 p-3 sm:flex lg:mx-auto lg:max-w-[900px]">
+        {/* ویدیو محصول (اگر موجود) — اول */}
+        {product.video && (
           <button
             onClick={() => window.open(product.video!.url, "_blank")}
-            className="group relative col-span-2 row-span-2 overflow-hidden rounded-[0.8rem] bg-neutral-900"
+            className="group relative overflow-hidden rounded-[0.8rem] bg-neutral-900"
           >
             <img
               src={product.video.poster}
               alt={product.video.title}
-              loading="lazy"
-              className="h-full w-full object-cover opacity-70 transition group-hover:opacity-60"
+              className="aspect-[3/4] w-full object-cover opacity-75 transition group-hover:opacity-65"
             />
             <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
               <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
@@ -171,30 +170,19 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
               <span className="text-[11.5px]">{product.video.title}</span>
             </span>
           </button>
-        ) : media[0] ? (
-          <ZoomImage
-            src={media[0]}
-            alt={`${product.name} — تصویر ۱`}
-            onOpen={() => onOpen(0)}
-            figureClassName="col-span-2 row-span-2"
-            imgClassName="h-full"
-          />
-        ) : null}
+        )}
 
-        {/* تصاویر دیگر: گرید ۲×۲ کنار تصویر اصلی */}
-        {media.slice(product.video ? 0 : 1, product.video ? 4 : 5).map((src, idx) => {
-          const imageIndex = product.video ? idx : idx + 1;
-          return (
-            <ZoomImage
-              key={src + idx}
-              src={src}
-              alt={`${product.name} — تصویر ${fa(imageIndex + 1)}`}
-              onOpen={() => onOpen(imageIndex)}
-              figureClassName=""
-              imgClassName="h-full"
-            />
-          );
-        })}
+        {/* همه تصاویر: تمامعرض و پشت سر هم */}
+        {media.map((src, i) => (
+          <ZoomImage
+            key={src + i}
+            src={src}
+            alt={`${product.name} — تصویر ${fa(i + 1)}`}
+            onOpen={() => onOpen(i)}
+            figureClassName=""
+            imgClassName="aspect-[3/4]"
+          />
+        ))}
       </div>
     </>
   );
