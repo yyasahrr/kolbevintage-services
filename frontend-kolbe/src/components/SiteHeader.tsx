@@ -71,7 +71,7 @@ export default function SiteHeader() {
               <Icon name="search" />
             </button>
             <Link to="/account" aria-label="حساب کاربری" className="hidden items-center gap-1.5 text-[11.5px] font-medium text-neutral-700 transition hover:text-[#011c3a] sm:flex">
-              ورود
+              {path === "/wholesale" ? "ورود / ثبت‌نام" : "ورود"}
             </Link>
             <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
               <Icon name="heart" />
