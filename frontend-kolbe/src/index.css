@@ -1065,10 +1065,11 @@ textarea {
 }
 
 [data-theme="dark"] .storefront-shell main :where(input, select, textarea) {
-  color: var(--dark-ink);
+  color: #f5f1e9 !important;
+  -webkit-text-fill-color: #f5f1e9 !important;
   border-color: rgba(194, 216, 227, 0.2);
   border-radius: 1rem;
-  background: rgba(4, 17, 29, 0.58);
+  background: rgba(4, 17, 29, 0.58) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -1954,16 +1955,41 @@ textarea {
   color: var(--banner-hover-text, #ffffff) !important;
 }
 
-/* دارک مود: select و option */
-[data-theme="dark"] .storefront-shell select {
+/* دارک مود: select — رنگ متن حتما روشن */
+[data-theme="dark"] .storefront-shell select,
+[data-theme="dark"] .storefront-shell select * {
   background-color: #0b1e2e !important;
-  color: var(--dark-ink) !important;
-  border-color: rgba(194, 216, 227, 0.2);
+  color: #f5f1e9 !important;
+  border-color: rgba(194, 216, 227, 0.2) !important;
+  -webkit-text-fill-color: #f5f1e9 !important;
 }
 
-[data-theme="dark"] .storefront-shell select option {
+[data-theme="dark"] .storefront-shell select option,
+[data-theme="dark"] .storefront-shell select optgroup {
   background-color: #0b1e2e !important;
-  color: var(--dark-ink) !important;
+  color: #f5f1e9 !important;
+  -webkit-text-fill-color: #f5f1e9 !important;
+}
+
+[data-theme="dark"] .storefront-shell select option:hover,
+[data-theme="dark"] .storefront-shell select option:focus,
+[data-theme="dark"] .storefront-shell select option:checked {
+  background-color: #16324a !important;
+  color: #ffffff !important;
+}
+
+/* دارک مود: sidebar select در صفحه عمده */
+[data-theme="dark"] .storefront-shell aside select,
+[data-theme="dark"] .storefront-shell aside select option {
+  background-color: #0b1e2e !important;
+  color: #f5f1e9 !important;
+}
+
+/* دارک مود: مودال select */
+[data-theme="dark"] .storefront-shell .fixed select,
+[data-theme="dark"] .storefront-shell .fixed select option {
+  background-color: #0b1e2e !important;
+  color: #f5f1e9 !important;
 }
 
 [data-theme="dark"] .storefront-shell select option:hover,
