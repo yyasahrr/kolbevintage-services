@@ -17,10 +17,36 @@ export function applyStorefrontTheme(theme: StorefrontTheme) {
 }
 
 export function saveStorefrontTheme(theme: StorefrontTheme) {
-  applyStorefrontTheme(theme);
+  setStorefrontTheme(theme);
   try {
     window.localStorage.setItem(STOREFRONT_THEME_KEY, theme);
   } catch {
     // The selected theme still applies for this session when storage is unavailable.
   }
+}
+
+import { useSyncExternalStore } from "react";
+
+const THEME_EVENT = "kolbe-theme-change";
+let cachedTheme: StorefrontTheme = readStorefrontTheme();
+
+function subscribe(callback: () => void) {
+  window.addEventListener(THEME_EVENT, callback);
+  return () => window.removeEventListener(THEME_EVENT, callback);
+}
+
+function getSnapshot(): StorefrontTheme {
+  return cachedTheme;
+}
+
+/** هوک React برای خواندن تم فعلی */
+export function useStorefrontTheme(): StorefrontTheme {
+  return useSyncExternalStore(subscribe, getSnapshot, () => "liquid" as StorefrontTheme);
+}
+
+const _originalApply = applyStorefrontTheme;
+export function setStorefrontTheme(theme: StorefrontTheme) {
+  _originalApply(theme);
+  cachedTheme = theme;
+  window.dispatchEvent(new Event(THEME_EVENT));
 }
