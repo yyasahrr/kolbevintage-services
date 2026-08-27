@@ -113,6 +113,68 @@ export default function SiteHeader() {
                 </Link>
               );
             })}
+            {/* مگا منو دسته‌بندی */}
+            <div className="catalog-picker relative">
+              <button
+                type="button"
+                onClick={() => setCatalogOpen((isOpen) => !isOpen)}
+                aria-haspopup="menu"
+                aria-expanded={catalogOpen}
+                className="site-nav-underline flex items-center gap-1.5 whitespace-nowrap border-b border-transparent py-2 transition hover:border-current"
+              >
+                دسته‌بندی‌ها
+                <Icon name="chevronDown" className={`h-3 w-3 transition-transform ${catalogOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {catalogOpen && (
+                <div
+                  role="menu"
+                  aria-label="دسته‌بندی محصولات و استایل‌ها"
+                  className="catalog-menu liquid-surface absolute right-1/2 top-11 z-[90] w-[560px] translate-x-1/2 rounded-[1rem] border border-neutral-200 p-4 shadow-xl"
+                >
+                  <div className="grid grid-cols-2 gap-0" dir="rtl">
+                    {/* ستون راست: دسته‌بندی محصولات */}
+                    <div className="border-l border-neutral-200 pl-4">
+                      <p className="mb-3 text-[9px] font-semibold tracking-[0.2em] text-neutral-400">دسته‌بندی محصولات</p>
+                      <div className="grid gap-0.5">
+                        {[
+                          { label: "پیراهن", to: "/shop?cat=shirt" },
+                          { label: "شلوار", to: "/shop?cat=trouser" },
+                          { label: "کت و بلیزر", to: "/shop?cat=blazer" },
+                          { label: "بافت و پلیور", to: "/shop?cat=knit" },
+                          { label: "کفش", to: "/shop?cat=shoes" },
+                          { label: "اکسسوری", to: "/shop?cat=accessory" },
+                          { label: "شال و گردن", to: "/shop?cat=scarf" },
+                        ].map(item => (
+                          <Link key={item.label} to={item.to} role="menuitem" className="rounded-lg px-3 py-2 text-[11.5px] text-neutral-700 transition hover:bg-neutral-100 hover:text-[#011c3a]">
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ستون چپ: استایل‌ها */}
+                    <div className="pr-4">
+                      <p className="mb-3 text-[9px] font-semibold tracking-[0.2em] text-neutral-400">استایل‌ها</p>
+                      <div className="grid gap-0.5">
+                        {[
+                          { label: "دارک آکادمیا", to: "/styles?s=dark-academia" },
+                          { label: "اولد مانی", to: "/styles?s=old-money" },
+                          { label: "مینیمال", to: "/styles?s=minimal" },
+                          { label: "وینتیج", to: "/styles?s=vintage" },
+                          { label: "کلاسیک", to: "/styles?s=classic" },
+                          { label: "نئو کلاسیک", to: "/styles?s=neo-classic" },
+                        ].map(item => (
+                          <Link key={item.label} to={item.to} role="menuitem" className="rounded-lg px-3 py-2 text-[11.5px] text-neutral-700 transition hover:bg-neutral-100 hover:text-[#011c3a]">
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </nav>
       </div>

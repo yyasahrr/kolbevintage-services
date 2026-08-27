@@ -571,14 +571,35 @@ export default function Home() {
     <>
       {heroStudio.published ? <HeroStudioRenderer config={heroStudio} /> : <HomepageHero />}
       <NewArrivals />
-      <CollectionBanner />
-      <ShopByStyle />
       <BestSellers />
-      <BrandVideo />
-      <ShopTheLook />
-      <Journal />
-      <InstagramGrid />
-      <TrustRow />
+      <FeatureStrip />
     </>
+  );
+}
+
+
+/* ------------------------- نوار ویژگیها (قبل فوتر) ------------------------- */
+
+function FeatureStrip() {
+  const features = [
+    { icon: "truck", title: "ارسال سریع", text: "به سراسر کشور" },
+    { icon: "return", title: "۳۰ روز مرجوعی", text: "بدون قید و شرط" },
+    { icon: "shield", title: "پرداخت امن", text: "درگاه معتبر بانکی" },
+    { icon: "needle", title: "دوخت دست", text: "کیفیت کارگاهی" },
+  ];
+  return (
+    <section className="border-y border-neutral-200/60 bg-white py-8">
+      <div className="mx-auto grid max-w-[1200px] grid-cols-2 gap-6 px-4 sm:grid-cols-4 lg:px-8">
+        {features.map(f => (
+          <div key={f.title} className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-[#f7f5f0]">
+              <Icon name={f.icon} className="h-5 w-5 text-[#011c3a]" strokeWidth={1.3} />
+            </div>
+            <p className="mt-3 text-[12.5px] font-medium">{f.title}</p>
+            <p className="mt-1 text-[10.5px] text-neutral-500">{f.text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
