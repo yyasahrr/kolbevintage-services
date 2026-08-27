@@ -611,60 +611,79 @@ function FeatureStrip() {
 /* --------------------- بنتو گرید دستهبندیها (بعد از هیرو) --------------------- */
 
 function CategoryBento() {
-  /* بنتو گرید ریسپانسیو:
-     موبایل (< 640px): ۲ ستونه ساده
-     تبلت (640-1024px): ۳ ستونه با خانه بزرگ
-     دسکتاپ (≥ 1024px): ۴ ستونه نامتقارن */
-  const categories = [
-    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt",
-      cls: "col-span-2 sm:col-span-2 sm:row-span-2 lg:col-span-2 lg:row-span-2" },
+  /* بنتو گرید — الهام از دیزاینهای مدرن:
+     دسکتاپ: خانه بزرگ وسط + عمودی کنار + عریض پایین
+     تبلت: ۳ ستونه با خانه بزرگ
+     موبایل: ۲ ستونه ساده */
+  const items = [
     { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer",
-      cls: "sm:col-span-1 lg:col-span-2" },
+      cls: "lg:col-span-1 lg:row-span-2 sm:col-span-1 sm:row-span-2",
+      text: "text-[12px] sm:text-[13px] lg:text-[14px]" },
+    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt",
+      cls: "lg:col-span-2 lg:row-span-2 sm:col-span-2 sm:row-span-2",
+      text: "text-[15px] sm:text-[18px] lg:text-[22px]" },
     { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit",
-      cls: "sm:col-span-1 lg:col-span-1" },
+      cls: "lg:col-span-1 sm:col-span-1",
+      text: "text-[12px] sm:text-[13px]" },
     { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser",
-      cls: "sm:col-span-1 lg:col-span-1" },
+      cls: "lg:col-span-1 sm:col-span-1",
+      text: "text-[12px] sm:text-[13px]" },
     { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes",
-      cls: "col-span-2 sm:col-span-1 lg:col-span-2" },
+      cls: "lg:col-span-2 sm:col-span-2",
+      text: "text-[13px] sm:text-[14px]" },
     { label: "اکسسوری", img: "/images/banner.jpg", to: "/shop?cat=accessory",
-      cls: "col-span-2 sm:col-span-2 lg:col-span-2" },
+      cls: "lg:col-span-2 sm:col-span-2",
+      text: "text-[13px] sm:text-[14px]" },
   ];
 
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-4 py-8 sm:py-10 lg:px-8 lg:py-14">
+    <section className="mx-auto w-full max-w-[1240px] px-3 py-8 sm:px-4 sm:py-10 lg:px-8 lg:py-14">
       <div className="mb-5 flex items-end justify-between sm:mb-6">
         <div>
-          <p className="text-[9px] tracking-[0.28em] text-neutral-400 sm:text-[10px]">CATEGORIES</p>
+          <p className="text-[9px] tracking-[0.25em] text-neutral-400 sm:text-[10px]">CATEGORIES</p>
           <h2 className="mt-1.5 text-[19px] font-medium sm:mt-2 sm:text-[22px] lg:text-[26px]">دسته‌بندی محصولات</h2>
         </div>
-        <Link to="/shop" className="text-[11px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a] sm:text-[12px]">
+        <Link to="/shop" className="shrink-0 text-[11px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a] sm:text-[12px]">
           همه محصولات
         </Link>
       </div>
 
       {/* بنتو گرید ریسپانسیو */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 sm:auto-rows-[150px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[175px]">
-        {categories.map((cat) => (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 sm:auto-rows-[145px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[170px]">
+        {items.map((item) => (
           <Link
-            key={cat.label}
-            to={cat.to}
-            className={`group relative overflow-hidden rounded-[0.8rem] bg-neutral-100 sm:rounded-[0.9rem] ${cat.cls} aspect-[4/3] sm:aspect-auto`}
+            key={item.label}
+            to={item.to}
+            className={`group relative overflow-hidden rounded-[0.8rem] bg-neutral-100 sm:rounded-[1rem] ${item.cls} aspect-[4/3] sm:aspect-auto`}
           >
             <img
-              src={cat.img}
-              alt={cat.label}
+              src={item.img}
+              alt={item.label}
               loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.05]"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/5 to-transparent transition-opacity duration-300 group-hover:from-black/70" />
-            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-3 text-white sm:p-4">
-              <h3 className={`font-medium ${cat.cls.includes("row-span-2") ? "text-[15px] sm:text-[18px] lg:text-[22px]" : "text-[12px] sm:text-[13.5px] lg:text-[15px]"}`}>
-                {cat.label}
+            {/* گرادیان پایین */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/8 to-transparent" />
+            {/* گرادیان hover */}
+            <div className="absolute inset-0 bg-[#011c3a]/0 transition-colors duration-300 group-hover:bg-[#011c3a]/15" />
+
+            {/* متن */}
+            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between p-3 text-white sm:p-4">
+              <h3 className={`font-medium leading-snug ${item.text}`}>
+                {item.label}
               </h3>
-              <span className={`hidden items-center justify-center rounded-full border border-white/30 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:border-white group-hover:bg-white group-hover:text-[#011c3a] sm:flex ${cat.cls.includes("row-span-2") ? "h-8 w-8 lg:h-9 lg:w-9" : "h-7 w-7"}`}>
-                <Icon name="arrowLeft" className={cat.cls.includes("row-span-2") ? "h-4 w-4" : "h-3 w-3"} />
+              {/* فلش */}
+              <span className={`flex shrink-0 items-center justify-center rounded-full border border-white/25 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:border-white group-hover:bg-white group-hover:text-[#011c3a] ${item.cls.includes("row-span-2") ? "h-8 w-8 lg:h-9 lg:w-9" : "h-6 w-6 sm:h-7 sm:w-7"}`}>
+                <Icon name="arrowLeft" className={`transition-transform duration-300 group-hover:-translate-x-0.5 ${item.cls.includes("row-span-2") ? "h-3.5 w-3.5 lg:h-4 lg:w-4" : "h-3 w-3"}`} />
               </span>
             </div>
+
+            {/* شمارنده (اختیاری) */}
+            {item.cls.includes("row-span-2") && (
+              <span className="absolute right-3 top-3 rounded-full bg-white/15 px-2.5 py-1 text-[8.5px] font-medium text-white backdrop-blur-sm sm:right-4 sm:top-4 sm:text-[9.5px]">
+                محبوب‌ترین
+              </span>
+            )}
           </Link>
         ))}
       </div>
