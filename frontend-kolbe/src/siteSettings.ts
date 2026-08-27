@@ -236,6 +236,7 @@ export const defaultSiteSettings: SiteSettings = {
     latinBrand: "KOLBE VINTAGE",
     shopLabel: "فروشگاه",
     nav: [
+      { label: "صفحه اصلی", to: "/" },
       { label: "فروشگاه", to: "/shop" },
       { label: "خرید عمده", to: "/wholesale" },
       { label: "مجله", to: "/blog" },

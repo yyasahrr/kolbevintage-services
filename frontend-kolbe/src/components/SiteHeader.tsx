@@ -70,8 +70,8 @@ export default function SiteHeader() {
             <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
               <Icon name="search" />
             </button>
-            <Link to="/account" aria-label="حساب کاربری" className="hidden hover:opacity-60 sm:block">
-              <Icon name="user" />
+            <Link to="/account" aria-label="حساب کاربری" className="hidden items-center gap-1.5 text-[11.5px] font-medium text-neutral-700 transition hover:text-[#011c3a] sm:flex">
+              ورود
             </Link>
             <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
               <Icon name="heart" />

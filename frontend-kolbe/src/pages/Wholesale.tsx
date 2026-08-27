@@ -430,7 +430,7 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
                   <div className="mt-3 flex flex-col gap-2">
                     {!isLoggedIn ? (
                       <button onClick={onLogin} className="h-10 w-full rounded-full bg-[#011c3a] text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55]">
-                        ورود برای مشاهده قیمت
+                        ورود / ثبت‌نام
                       </button>
                     ) : (
                       <button onClick={onVipPlans} className="h-10 w-full rounded-full bg-[#011c3a] text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55]">
