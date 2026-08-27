@@ -1953,3 +1953,103 @@ textarea {
   background: var(--banner-hover-bg, #011c3a) !important;
   color: var(--banner-hover-text, #ffffff) !important;
 }
+
+/* دارک مود: select و option */
+[data-theme="dark"] .storefront-shell select {
+  background-color: #0b1e2e !important;
+  color: var(--dark-ink) !important;
+  border-color: rgba(194, 216, 227, 0.2);
+}
+
+[data-theme="dark"] .storefront-shell select option {
+  background-color: #0b1e2e !important;
+  color: var(--dark-ink) !important;
+}
+
+[data-theme="dark"] .storefront-shell select option:hover,
+[data-theme="dark"] .storefront-shell select option:focus {
+  background-color: #16324a !important;
+}
+
+/* دارک مود: input placeholder */
+[data-theme="dark"] .storefront-shell input::placeholder,
+[data-theme="dark"] .storefront-shell textarea::placeholder {
+  color: #6b7d8a !important;
+}
+
+/* دارک مود: input autofill */
+[data-theme="dark"] .storefront-shell input:-webkit-autofill,
+[data-theme="dark"] .storefront-shell input:-webkit-autofill:hover,
+[data-theme="dark"] .storefront-shell input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--dark-ink);
+  -webkit-box-shadow: 0 0 0 1000px #0b1e2e inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* دارک مود: بنتو گرید */
+[data-theme="dark"] .storefront-shell .bg-neutral-100 {
+  background-color: #0d2235 !important;
+}
+
+/* دارک مود: بنرها */
+[data-theme="dark"] .storefront-shell main a[class*="rounded"] img {
+  filter: brightness(0.85);
+}
+
+/* دارک مود: نوار فیلتر عمده */
+[data-theme="dark"] .storefront-shell .bg-white\/95 {
+  background: rgba(11, 30, 46, 0.95) !important;
+}
+
+/* دارک مود: سایدبار فیلتر عمده */
+[data-theme="dark"] .storefront-shell aside .bg-white {
+  background: #0b1e2e !important;
+}
+
+/* دارک مود: borderها */
+[data-theme="dark"] .storefront-shell .border-neutral-200,
+[data-theme="dark"] .storefront-shell .border-neutral-300 {
+  border-color: rgba(194, 216, 227, 0.15) !important;
+}
+
+/* دارک مود: متن muted */
+[data-theme="dark"] .storefront-shell .text-neutral-400,
+[data-theme="dark"] .storefront-shell .text-neutral-500 {
+  color: #8b9daa !important;
+}
+
+/* دارک مود: مودال */
+[data-theme="dark"] .storefront-shell .fixed.inset-0 > div[class*="bg-white"] {
+  background: #0b1e2e !important;
+  color: var(--dark-ink) !important;
+}
+
+/* دارک مود: مودال input */
+[data-theme="dark"] .storefront-shell .fixed.inset-0 input {
+  background: rgba(4, 17, 29, 0.6) !important;
+  color: var(--dark-ink) !important;
+  border-color: rgba(194, 216, 227, 0.2) !important;
+}
+
+/* دارک مود: مودال select */
+[data-theme="dark"] .storefront-shell .fixed.inset-0 select {
+  background-color: #0b1e2e !important;
+  color: var(--dark-ink) !important;
+}
+
+/* دارک مود: دکمههای مودال پلن */
+[data-theme="dark"] .storefront-shell .fixed.inset-0 button[class*="bg-\[#011c3a\]"] {
+  background: #c9654d !important;
+  color: #fff !important;
+}
+
+/* دارک مود: skeleton loader */
+[data-theme="dark"] .storefront-shell .animate-pulse .bg-neutral-200 {
+  background: #16324a !important;
+}
+
+/* دارک مود: tooltip */
+[data-theme="dark"] .storefront-shell [class*="bg-white/"] {
+  background: rgba(11, 30, 46, 0.9) !important;
+  color: var(--dark-ink) !important;
+}
