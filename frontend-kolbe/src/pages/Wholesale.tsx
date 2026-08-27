@@ -119,65 +119,63 @@ export default function Wholesale() {
               </div>
               {/* وضعیت کاربر */}
               <div className="flex items-center gap-2">
-                {hasVip ? (
+                {hasVip && (
                   <span className="flex items-center gap-2 rounded-full border border-[#b9cfbc] bg-[#edf3ee] px-4 py-2 text-[11px] text-[#36563a]">
                     <Icon name="shield" className="h-3.5 w-3.5" /> VIP فعال
                   </span>
-                ) : isLoggedIn ? (
-                  <button onClick={() => setShowVipPlans(true)} className="rounded-full bg-[#011c3a] px-5 py-2.5 text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55]">
-                    تهیه اشتراک VIP برای قیمت‌ها
-                  </button>
-                ) : (
-                  <button onClick={() => setShowLoginModal(true)} className="rounded-full border border-neutral-300 px-5 py-2.5 text-[11.5px] text-neutral-700 transition hover:border-[#011c3a]">
-                    ورود به حساب
-                  </button>
                 )}
               </div>
             </div>
           </div>
         </section>
 
-        {/* نوار فیلتر — مثل فروشگاه اصلی */}
-        <section className="sticky top-[73px] z-40 border-b border-neutral-200 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2 px-4 py-2.5 lg:px-8">
-            <div className="flex h-9 flex-1 items-center gap-2 rounded-full border border-neutral-300 bg-white px-3.5 md:max-w-sm">
-              <Icon name="search" className="h-4 w-4 text-neutral-400" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="جستجو…"
-                className="h-full flex-1 bg-transparent text-[12px] outline-none placeholder:text-neutral-400"
-              />
-              {search && (
-                <button onClick={() => setSearch("")} aria-label="پاک کردن">
-                  <Icon name="close" className="h-3.5 w-3.5 text-neutral-400" />
-                </button>
-              )}
-            </div>
-            <div className="no-scrollbar flex gap-1 overflow-x-auto">
-              {categories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => { setCategory(cat); setShown(12); }}
-                  className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[11px] transition ${
-                    category === cat ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 bg-white text-neutral-600 hover:border-[#011c3a]"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-            <select value={sort} onChange={e => setSort(e.target.value)} className="h-9 rounded-full border border-neutral-300 bg-white px-3 text-[11px] outline-none" aria-label="مرتب‌سازی">
-              <option value="new">جدیدترین</option>
-              <option value="popular">محبوب‌ترین</option>
-              <option value="cheap">ارزان‌ترین</option>
-              <option value="expensive">گران‌ترین</option>
-            </select>
-          </div>
-        </section>
+        {/* بدنه: فیلتر عمودی (راست) + گرید (چپ) */}
+        <div className="mx-auto flex w-full max-w-[1400px] gap-5 px-4 py-5 lg:px-8">
 
-        {/* گرید محصولات */}
-        <main className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-8">
+        {/* سایدبار فیلتر */}
+        <aside className="hidden w-56 shrink-0 lg:block">
+          <div className="sticky top-[90px] space-y-5">
+            <div className="flex h-10 items-center gap-2 rounded-full border border-neutral-300 bg-white px-4">
+              <Icon name="search" className="h-4 w-4 text-neutral-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="جستجو…" className="h-full flex-1 bg-transparent text-[12px] outline-none placeholder:text-neutral-400" />
+            </div>
+            <div>
+              <p className="mb-2 text-[10.5px] font-medium text-neutral-500">مرتب‌سازی</p>
+              <select value={sort} onChange={e => setSort(e.target.value)} className="h-9 w-full rounded border border-neutral-300 bg-white px-3 text-[11px] outline-none">
+                <option value="new">جدیدترین</option>
+                <option value="popular">محبوب‌ترین</option>
+                <option value="cheap">ارزان‌ترین</option>
+                <option value="expensive">گران‌ترین</option>
+              </select>
+            </div>
+            <div>
+              <p className="mb-2 text-[10.5px] font-medium text-neutral-500">دسته‌بندی</p>
+              <div className="flex flex-col gap-1">
+                {categories.map(cat => (
+                  <button key={cat} onClick={() => { setCategory(cat); setShown(12); }} className={`rounded px-3 py-2 text-right text-[11px] transition ${category === cat ? "bg-[#011c3a] text-white" : "text-neutral-600 hover:bg-neutral-100"}`}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-[10.5px] font-medium text-neutral-500">چینش</p>
+              <div className="flex gap-1.5">
+                {([3, 4, 5] as const).map(n => (
+                  <button key={n} onClick={() => setGridCols(n)} className={`flex h-8 w-8 items-center justify-center rounded border text-[10px] transition ${gridCols === n ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-200 text-neutral-400 hover:border-neutral-400"}`} aria-label={`${n} ستونه`}>
+                    {fa(n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* محتوا */}
+        <main className="min-w-0 flex-1">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[11.5px] text-neutral-500">{fa(filtered.length)} محصول</p>
+          </div>
           <div className={`grid gap-3 grid-cols-2 ${gridCols === 3 ? "lg:grid-cols-3" : gridCols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
             {filtered.slice(0, shown).map(product => (
               <WholesaleCard key={product.id} product={product} hasVip={hasVip} onOpen={() => setSelectedProduct(product)} />
@@ -196,6 +194,7 @@ export default function Wholesale() {
             </div>
           )}
         </main>
+        </div>
       </div>
 
       {/* مودال جزئیات محصول */}

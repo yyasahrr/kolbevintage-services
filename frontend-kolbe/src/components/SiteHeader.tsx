@@ -64,7 +64,6 @@ export default function SiteHeader() {
           </Link>
 
           <div className="mr-auto flex shrink-0 items-center gap-4 lg:gap-4">
-            <Link to="/wholesale" className="hidden h-9 items-center rounded-full border border-neutral-300 px-4 text-[11px] font-medium transition hover:border-current lg:flex">خرید عمده</Link>
             <button type="button" onClick={toggleTheme} aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
               <Icon name={theme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
             </button>
