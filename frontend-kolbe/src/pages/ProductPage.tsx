@@ -719,14 +719,9 @@ export default function ProductPage({ id }: { id: string }) {
             <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
           </div>
         )}
-        {/* دسکتاپ: گالری سمت راست + باکس خرید و مشخصات سمت چپ */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start lg:gap-8">
-          {/* گالری: ستون راست (در RTL اولین ستون) */}
-          <div className="lg:sticky lg:top-[90px] lg:self-start">
-            <Gallery product={product} onOpen={(i) => setLightbox(i)} />
-          </div>
-
-          {/* اطلاعات محصول: ستون چپ */}
+        {/* دسکتاپ: مشخصات راست + گالری چپ */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)] lg:items-start lg:gap-8">
+          {/* اطلاعات محصول: ستون راست */}
           <div>
           <aside>
             <div className="product-info-panel px-4 pb-8 pt-6 lg:px-6 lg:pb-10 lg:pt-10">
@@ -895,6 +890,46 @@ export default function ProductPage({ id }: { id: string }) {
               </table>
             </div>
           </section>
+
+          {/* جزئیات محصول — داخل ستون مشخصات */}
+          <section className="mt-8 border-t border-neutral-200 pt-8">
+            <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
+            <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
+            <div className="mt-7 border-t border-neutral-200">
+              {accordions.map((a) => (
+                <div key={a.title} className="border-b border-neutral-200">
+                  <button onClick={() => setOpenAcc(openAcc === a.title ? null : a.title)} className="flex w-full items-center justify-between py-3.5 text-right text-[13px]">
+                    {a.title}
+                    <Icon name={openAcc === a.title ? "minus" : "plus"} className="h-3.5 w-3.5 text-neutral-400" />
+                  </button>
+                  {openAcc === a.title && (
+                    <p className="pb-4 pl-4 text-[12.5px] leading-[2] text-neutral-600">{a.body}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-7 grid gap-4 sm:grid-cols-2">
+              {[
+                { icon: "needle", title: "دوخت دست", text: "هر قطعه در کارگاه کلبه و با نظارت خیاط ارشد دوخته می‌شود." },
+                { icon: "shield", title: "ضمانت کیفیت", text: "تا یک سال پس از خرید، تعمیرات دوخت رایگان است." },
+              ].map((f) => (
+                <div key={f.title} className="flex gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-300">
+                    <Icon name={f.icon} className="h-4 w-4" strokeWidth={1.3} />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-medium">{f.title}</p>
+                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">{f.text}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+          </div>
+
+          {/* گالری: ستون چپ */}
+          <div className="lg:sticky lg:top-[90px] lg:self-start">
+            <Gallery product={product} onOpen={(i) => setLightbox(i)} />
           </div>
         </div>
 
@@ -967,52 +1002,6 @@ export default function ProductPage({ id }: { id: string }) {
           </div>
         </section>
 
-        {/* جزئیات و توضیحات محصول - تمامعرض، زیر دو ستون خرید و مشخصات */}
-        <section className="border-t border-neutral-200 bg-[#f6f6f4]">
-          <div className="mx-auto w-full px-4 py-14 lg:px-8">
-            <div className="max-w-5xl">
-              <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
-              <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
-
-              <div className="mt-7 border-t border-neutral-200">
-                {accordions.map((a) => (
-                  <div key={a.title} className="border-b border-neutral-200">
-                    <button
-                      onClick={() => setOpenAcc(openAcc === a.title ? null : a.title)}
-                      className="flex w-full items-center justify-between py-3.5 text-right text-[13px]"
-                    >
-                      {a.title}
-                      <Icon
-                        name={openAcc === a.title ? "minus" : "plus"}
-                        className="h-3.5 w-3.5 text-neutral-400"
-                      />
-                    </button>
-                    {openAcc === a.title && (
-                      <p className="pb-4 pl-4 text-[12.5px] leading-[2] text-neutral-600">{a.body}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-7 grid gap-4 sm:grid-cols-2">
-                {[
-                  { icon: "needle", title: "دوخت دست", text: "هر قطعه در کارگاه کلبه و با نظارت خیاط ارشد دوخته می‌شود." },
-                  { icon: "shield", title: "ضمانت کیفیت", text: "تا یک سال پس از خرید، تعمیرات دوخت رایگان است." },
-                ].map((f) => (
-                  <div key={f.title} className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-300">
-                      <Icon name={f.icon} className="h-4 w-4" strokeWidth={1.3} />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-medium">{f.title}</p>
-                      <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">{f.text}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
       </main>
 
       {/* نوار چسبان خرید */}
