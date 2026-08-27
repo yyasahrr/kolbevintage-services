@@ -45,6 +45,7 @@ export default function Wholesale() {
   const [category, setCategory] = useState("همه");
   const [sort, setSort] = useState("new");
   const [shown, setShown] = useState(12);
+  const [gridCols, setGridCols] = useState(4);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   /* وضعیت کاربر */
@@ -177,8 +178,7 @@ export default function Wholesale() {
 
         {/* گرید محصولات */}
         <main className="mx-auto w-full max-w-[1400px] px-4 py-5 lg:px-8">
-          <p className="mb-3 text-[11.5px] text-neutral-500">{fa(filtered.length)} محصول</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className={`grid gap-3 grid-cols-2 ${gridCols === 3 ? "lg:grid-cols-3" : gridCols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
             {filtered.slice(0, shown).map(product => (
               <WholesaleCard key={product.id} product={product} hasVip={hasVip} onOpen={() => setSelectedProduct(product)} />
             ))}
