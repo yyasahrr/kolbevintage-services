@@ -177,7 +177,7 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
               <img
                 src={product.video.poster}
                 alt={product.video.title}
-                className="aspect-[3/4] w-full object-cover opacity-75 transition group-hover:opacity-65"
+                className="aspect-[3/4] max-h-[420px] w-full object-cover opacity-75 transition group-hover:opacity-65"
               />
               <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
@@ -192,7 +192,7 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
               alt={`${product.name} — تصویر ${fa(activeImage + 1)}`}
               onOpen={() => onOpen(activeImage)}
               figureClassName=""
-              imgClassName="aspect-[3/4]"
+              imgClassName="aspect-[3/4] max-h-[420px]"
             />
           )}
 
@@ -224,7 +224,7 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
                 onClick={() => setActiveImage(i)}
                 aria-label={`نمایش تصویر ${fa(i + 1)}`}
                 aria-current={activeImage === i ? "true" : undefined}
-                className={`h-16 w-12 shrink-0 overflow-hidden rounded-md border-2 transition ${
+                className={`h-14 w-10 shrink-0 overflow-hidden rounded-md border-2 transition ${
                   activeImage === i
                     ? "border-[#011c3a] opacity-100"
                     : "border-transparent opacity-50 hover:opacity-80"
@@ -720,7 +720,7 @@ export default function ProductPage({ id }: { id: string }) {
           </div>
         )}
         {/* دسکتاپ: گالری سمت راست + باکس خرید و مشخصات سمت چپ */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,430px)] lg:items-start lg:gap-8">
+        <div className="lg:grid lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start lg:gap-8">
           {/* گالری: ستون راست (در RTL اولین ستون) */}
           <div className="lg:sticky lg:top-[90px] lg:self-start">
             <Gallery product={product} onOpen={(i) => setLightbox(i)} />
