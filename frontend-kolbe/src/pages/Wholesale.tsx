@@ -176,7 +176,7 @@ export default function Wholesale() {
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[11.5px] text-neutral-500">{fa(filtered.length)} محصول</p>
           </div>
-          <div className={`grid gap-3 grid-cols-2 ${gridCols === 3 ? "lg:grid-cols-3" : gridCols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
+          <div className={`grid grid-cols-2 gap-2.5 sm:gap-3 ${gridCols === 3 ? "lg:grid-cols-3" : gridCols === 4 ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
             {filtered.slice(0, shown).map(product => (
               <WholesaleCard key={product.id} product={product} hasVip={hasVip} onOpen={() => setSelectedProduct(product)} />
             ))}
@@ -329,7 +329,7 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
 
   return (
     <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 px-4 py-6" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white shadow-2xl max-sm:mx-2" onClick={e => e.stopPropagation()}>
         {/* بستن */}
         <button onClick={onClose} aria-label="بستن" className="absolute left-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow-sm backdrop-blur transition hover:bg-white">
           <Icon name="close" className="h-4 w-4" />

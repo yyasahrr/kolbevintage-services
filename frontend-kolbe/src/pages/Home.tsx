@@ -592,7 +592,7 @@ function FeatureStrip() {
   ];
   return (
     <section className="border-y border-neutral-200/60 bg-white py-8">
-      <div className="mx-auto grid max-w-[1200px] grid-cols-2 gap-6 px-4 sm:grid-cols-4 lg:px-8">
+      <div className="mx-auto grid max-w-[1200px] grid-cols-2 gap-4 px-4 py-6 sm:grid-cols-4 sm:gap-6 lg:px-8 lg:py-8">
         {features.map(f => (
           <div key={f.title} className="flex flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-[#f7f5f0]">
@@ -612,12 +612,12 @@ function FeatureStrip() {
 
 function CategoryBento() {
   const categories = [
-    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt", cls: "col-span-2 row-span-2" },
-    { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer", cls: "col-span-2 row-span-1" },
-    { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit", cls: "col-span-1 row-span-1" },
-    { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser", cls: "col-span-1 row-span-1" },
-    { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes", cls: "col-span-2 row-span-1" },
-    { label: "اکسسوری", img: "/images/banner.jpg", to: "/shop?cat=accessory", cls: "col-span-2 row-span-1" },
+    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt", cls: "sm:col-span-2 sm:row-span-2" },
+    { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer", cls: "sm:col-span-2 sm:row-span-1" },
+    { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit", cls: "sm:col-span-1" },
+    { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser", cls: "sm:col-span-1" },
+    { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes", cls: "sm:col-span-2" },
+    { label: "اکسسوری", img: "/images/banner.jpg", to: "/shop?cat=accessory", cls: "sm:col-span-2" },
   ];
   return (
     <section className="mx-auto w-full max-w-[1240px] px-4 py-10 lg:px-8 lg:py-14">
@@ -629,13 +629,13 @@ function CategoryBento() {
         <Link to="/shop" className="text-[12px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a]">همه محصولات</Link>
       </div>
 
-      {/* بنتو گرید: ۴ ستون × ۳ ردیف */}
+      {/* بنتو گرید: موبایل ۲ ستونه ساده، دسکتاپ ۴ ستونه نامتقارن */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 lg:auto-rows-[180px]">
         {categories.map((cat, i) => (
           <Link
             key={cat.label}
             to={cat.to}
-            className={`group relative overflow-hidden rounded-[0.9rem] bg-neutral-100 ${cat.cls} ${i === 0 ? "" : ""}`}
+            className={`group relative overflow-hidden rounded-[0.9rem] bg-neutral-100 ${cat.cls} aspect-[4/3] sm:aspect-auto`}
           >
             <img
               src={cat.img}
@@ -665,13 +665,13 @@ function MidBanner() {
   return (
     <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
       <Link to="/collection" className="group relative block overflow-hidden rounded-[1.2rem]">
-        <img src="/images/banner.jpg" alt="کالکشن پاییز" loading="lazy" className="h-[280px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.02] sm:h-[340px]" />
+        <img src="/images/banner.jpg" alt="کالکشن پاییز" loading="lazy" className="h-[200px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.02] sm:h-[340px]" />
         <div className="absolute inset-0 bg-gradient-to-l from-black/65 via-black/25 to-transparent" />
-        <div className="absolute inset-0 flex flex-col items-start justify-center px-8 text-white lg:px-14">
-          <p className="text-[10px] tracking-[0.35em] text-white/70">AUTUMN COLLECTION</p>
-          <h2 className="mt-3 text-[24px] font-medium leading-snug sm:text-[32px]">پاییز، فصل پارچه‌های سنگین</h2>
-          <p className="mt-2 max-w-md text-[12px] leading-relaxed text-white/80">پشم شورون، بافت کابلی و کشمیر برای سردترین روزهای سال.</p>
-          <span className="mt-5 rounded-full bg-white px-6 py-2.5 text-[12px] font-medium text-[#011c3a] transition group-hover:bg-neutral-100">مشاهده کالکشن</span>
+        <div className="absolute inset-0 flex flex-col items-start justify-center px-5 text-white sm:px-8 lg:px-14">
+          <p className="text-[8.5px] tracking-[0.3em] text-white/70 sm:text-[10px] sm:tracking-[0.35em]">AUTUMN COLLECTION</p>
+          <h2 className="mt-2 text-[18px] font-medium leading-snug sm:text-[32px]">پاییز، فصل پارچه‌های سنگین</h2>
+          <p className="mt-1.5 max-w-md text-[10.5px] leading-relaxed text-white/80 sm:text-[12px]">پشم شورون، بافت کابلی و کشمیر برای سردترین روزهای سال.</p>
+          <span className="mt-4 rounded-full bg-white px-5 py-2 text-[11px] font-medium text-[#011c3a] transition group-hover:bg-neutral-100 sm:mt-5 sm:px-6 sm:py-2.5 sm:text-[12px]">مشاهده کالکشن</span>
         </div>
       </Link>
     </section>
@@ -685,7 +685,7 @@ function BottomBanner() {
     <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
       <div className="grid gap-3 sm:grid-cols-2">
         <Link to="/wholesale" className="group relative overflow-hidden rounded-[1rem]">
-          <img src="/images/model-front.jpg" alt="خرید عمده" loading="lazy" className="h-[200px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+          <img src="/images/model-front.jpg" alt="خرید عمده" loading="lazy" className="h-[150px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03] sm:h-[200px]" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-5 text-white">
             <h3 className="text-[17px] font-medium">خرید عمده</h3>
@@ -693,7 +693,7 @@ function BottomBanner() {
           </div>
         </Link>
         <Link to="/styles" className="group relative overflow-hidden rounded-[1rem]">
-          <img src="/images/detail-hem.jpg" alt="استایل‌ها" loading="lazy" className="h-[200px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+          <img src="/images/detail-hem.jpg" alt="استایل‌ها" loading="lazy" className="h-[150px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03] sm:h-[200px]" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-5 text-white">
             <h3 className="text-[17px] font-medium">استایل‌های کلبه</h3>

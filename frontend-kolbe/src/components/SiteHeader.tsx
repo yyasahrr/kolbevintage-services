@@ -259,11 +259,12 @@ export default function SiteHeader() {
 
               <nav className="mobile-menu-links mt-4 divide-y divide-neutral-100 rounded-2xl border border-neutral-200 px-4">
                 {[
-                  { label: "جدیدترین محصولات", to: "/shop?sort=new" },
-                  { label: "کالکشن پاییز", to: "/collection" },
-                  { label: "همه محصولات", to: "/shop" },
+                  { label: "صفحه اصلی", to: "/" },
+                  { label: "فروشگاه", to: "/shop" },
+                  { label: "خرید عمده", to: "/wholesale" },
                   { label: "استایل‌ها", to: "/styles" },
                   { label: "مجله کلبه", to: "/blog" },
+                  { label: "پشتیبانی", to: "/contact" },
                 ].map((item) => (
                   <Link key={item.label} to={item.to} className="flex items-center justify-between py-3.5 text-[12.5px]">
                     {item.label}
@@ -271,6 +272,25 @@ export default function SiteHeader() {
                   </Link>
                 ))}
               </nav>
+
+              {/* دستهبندیها در موبایل */}
+              <div className="mt-3 rounded-2xl border border-neutral-200 px-4">
+                <p className="py-3 text-[10px] font-semibold tracking-[0.15em] text-neutral-400">دسته‌بندی محصولات</p>
+                <div className="grid grid-cols-2 gap-x-4 pb-3">
+                  {[
+                    { label: "پیراهن", to: "/shop?cat=shirt" },
+                    { label: "شلوار", to: "/shop?cat=trouser" },
+                    { label: "کت و بلیزر", to: "/shop?cat=blazer" },
+                    { label: "بافت و پلیور", to: "/shop?cat=knit" },
+                    { label: "کفش", to: "/shop?cat=shoes" },
+                    { label: "اکسسوری", to: "/shop?cat=accessory" },
+                  ].map(item => (
+                    <Link key={item.label} to={item.to} className="py-2 text-[11.5px] text-neutral-600">
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Link to="/account" className="mobile-menu-item flex items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-[11.5px]">
