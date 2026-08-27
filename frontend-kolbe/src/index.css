@@ -2079,3 +2079,147 @@ textarea {
   background: rgba(11, 30, 46, 0.9) !important;
   color: var(--dark-ink) !important;
 }
+
+
+/* ================================================================
+   دارک مود: فیکس نهایی فرمها — بدون محدودیت container
+   ================================================================ */
+
+/* همه select ها */
+[data-theme="dark"] select {
+  background-color: #0b1e2e !important;
+  color: #f5f1e9 !important;
+  -webkit-text-fill-color: #f5f1e9 !important;
+  border-color: rgba(194, 216, 227, 0.25) !important;
+}
+
+[data-theme="dark"] select option,
+[data-theme="dark"] select optgroup {
+  background-color: #0b1e2e !important;
+  color: #f5f1e9 !important;
+  -webkit-text-fill-color: #f5f1e9 !important;
+}
+
+[data-theme="dark"] select option:checked,
+[data-theme="dark"] select option:hover,
+[data-theme="dark"] select option:focus {
+  background-color: #1a3a52 !important;
+  color: #ffffff !important;
+}
+
+/* همه input ها */
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="email"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="tel"],
+[data-theme="dark"] input[type="search"],
+[data-theme="dark"] input[type="url"],
+[data-theme="dark"] textarea {
+  background-color: rgba(4, 17, 29, 0.6) !important;
+  color: #f5f1e9 !important;
+  -webkit-text-fill-color: #f5f1e9 !important;
+  border-color: rgba(194, 216, 227, 0.2) !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #7a8d9a !important;
+  -webkit-text-fill-color: #7a8d9a !important;
+}
+
+/* input نوع date و file */
+[data-theme="dark"] input[type="date"] {
+  background-color: #0b1e2e !important;
+  color: #f5f1e9 !important;
+  color-scheme: dark;
+}
+
+[data-theme="dark"] input[type="color"] {
+  background-color: #0b1e2e !important;
+  border-color: rgba(194, 216, 227, 0.2) !important;
+}
+
+/* checkbox و radio */
+[data-theme="dark"] input[type="checkbox"],
+[data-theme="dark"] input[type="radio"] {
+  accent-color: #c9654d;
+}
+
+/* bg-white override — همه عناصر */
+[data-theme="dark"] .bg-white {
+  background-color: #0b1e2e !important;
+}
+
+[data-theme="dark"] .bg-white\/95 {
+  background-color: rgba(11, 30, 46, 0.95) !important;
+}
+
+[data-theme="dark"] .bg-white\/90 {
+  background-color: rgba(11, 30, 46, 0.9) !important;
+}
+
+[data-theme="dark"] .bg-white\/97 {
+  background-color: rgba(11, 30, 46, 0.97) !important;
+}
+
+/* bg-neutral خنثی */
+[data-theme="dark"] .bg-neutral-50 {
+  background-color: #0d2235 !important;
+}
+
+[data-theme="dark"] .bg-neutral-100 {
+  background-color: #10273b !important;
+}
+
+/* borderهای خنثی */
+[data-theme="dark"] .border-neutral-200 {
+  border-color: rgba(194, 216, 227, 0.15) !important;
+}
+
+[data-theme="dark"] .border-neutral-300 {
+  border-color: rgba(194, 216, 227, 0.22) !important;
+}
+
+/* متن خنثی */
+[data-theme="dark"] .text-neutral-400 {
+  color: #7a8d9a !important;
+}
+
+[data-theme="dark"] .text-neutral-500 {
+  color: #8b9daa !important;
+}
+
+[data-theme="dark"] .text-neutral-600 {
+  color: #a3b4c0 !important;
+}
+
+[data-theme="dark"] .text-neutral-700 {
+  color: #c4d0da !important;
+}
+
+/* پسزمینه f7f5f0 */
+[data-theme="dark"] .bg-\[\#f7f5f0\] {
+  background-color: #081725 !important;
+}
+
+[data-theme="dark"] .bg-\[\#f6f6f4\] {
+  background-color: #0a1c2e !important;
+}
+
+[data-theme="dark"] .bg-\[\#f2f0eb\] {
+  background-color: #081725 !important;
+}
+
+/* مودالها */
+[data-theme="dark"] .fixed.inset-0 > div:not([class*="black"]):not([class*="overlay"]) {
+  background-color: #0d2235 !important;
+  color: #f5f1e9 !important;
+}
+
+/* dropdown و popover */
+[data-theme="dark"] .liquid-surface {
+  background: #0d2235 !important;
+  color: #f5f1e9 !important;
+  border-color: rgba(194, 216, 227, 0.15) !important;
+}
