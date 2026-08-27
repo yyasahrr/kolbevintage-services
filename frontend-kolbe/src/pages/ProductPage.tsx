@@ -78,6 +78,7 @@ function ZoomImage({
 
 function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) => void }) {
   const media = product.images;
+  const [activeImage, setActiveImage] = useState(0);
   const mobileMediaCount = media.length + (product.video ? 1 : 0);
   const mobileRailRef = useRef<HTMLDivElement>(null);
   const [activeMobileMedia, setActiveMobileMedia] = useState(0);
@@ -150,39 +151,90 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
         </div>
       </div>
 
-      {/* دسکتاپ/تبلت: گالری عمودی — هر تصویر تمامعرض، اسکرول عمودی */}
-      <div className="product-gallery-grid hidden flex-col gap-3 p-3 sm:flex lg:mx-auto lg:max-w-[900px]">
-        {/* ویدیو محصول (اگر موجود) — اول */}
-        {product.video && (
-          <button
-            onClick={() => window.open(product.video!.url, "_blank")}
-            className="group relative overflow-hidden rounded-[0.8rem] bg-neutral-900"
-          >
-            <img
-              src={product.video.poster}
-              alt={product.video.title}
-              className="aspect-[3/4] w-full object-cover opacity-75 transition group-hover:opacity-65"
-            />
-            <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
-                <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
-              </span>
-              <span className="text-[11.5px]">{product.video.title}</span>
-            </span>
-          </button>
-        )}
+      {/* دسکتاپ/تبلت: تصویر اصلی بزرگ + فلش چپ/راست + تامنیل */}
+      <div className="product-gallery-grid hidden flex-col p-3 sm:flex">
+        {/* تصویر اصلی */}
+        <div className="relative">
+          {/* فلش راست (قبلی در RTL) */}
+          {media.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setActiveImage((activeImage - 1 + media.length) % media.length)}
+              disabled={activeImage === 0}
+              aria-label="تصویر قبلی"
+              className="product-gallery-arrow absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/85 text-[#011c3a] shadow-sm backdrop-blur transition hover:bg-white disabled:opacity-25"
+            >
+              <Icon name="chevronRight" className="h-5 w-5" strokeWidth={1.6} />
+            </button>
+          )}
 
-        {/* همه تصاویر: تمامعرض و پشت سر هم */}
-        {media.map((src, i) => (
-          <ZoomImage
-            key={src + i}
-            src={src}
-            alt={`${product.name} — تصویر ${fa(i + 1)}`}
-            onOpen={() => onOpen(i)}
-            figureClassName=""
-            imgClassName="aspect-[3/4]"
-          />
-        ))}
+          {/* تصویر یا ویدیو */}
+          {product.video && activeImage === 0 ? (
+            <button
+              onClick={() => window.open(product.video!.url, "_blank")}
+              className="group relative w-full overflow-hidden rounded-[0.8rem] bg-neutral-900"
+            >
+              <img
+                src={product.video.poster}
+                alt={product.video.title}
+                className="aspect-[3/4] w-full object-cover opacity-75 transition group-hover:opacity-65"
+              />
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
+                  <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
+                </span>
+                <span className="text-[11.5px]">{product.video.title}</span>
+              </span>
+            </button>
+          ) : (
+            <ZoomImage
+              src={media[activeImage] ?? media[0]}
+              alt={`${product.name} — تصویر ${fa(activeImage + 1)}`}
+              onOpen={() => onOpen(activeImage)}
+              figureClassName=""
+              imgClassName="aspect-[3/4]"
+            />
+          )}
+
+          {/* فلش چپ (بعدی در RTL) */}
+          {media.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setActiveImage((activeImage + 1) % media.length)}
+              disabled={activeImage === media.length - 1}
+              aria-label="تصویر بعدی"
+              className="product-gallery-arrow absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/85 text-[#011c3a] shadow-sm backdrop-blur transition hover:bg-white disabled:opacity-25"
+            >
+              <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={1.6} />
+            </button>
+          )}
+
+          {/* شمارنده */}
+          <span className="absolute bottom-3 right-3 rounded-full bg-black/50 px-3 py-1 text-[10px] text-white backdrop-blur-sm">
+            {fa(activeImage + 1)} / {fa(media.length)}
+          </span>
+        </div>
+
+        {/* تامنیلها */}
+        {media.length > 1 && (
+          <div className="no-scrollbar mt-2.5 flex justify-center gap-2 overflow-x-auto">
+            {(product.video ? [product.video.poster, ...media] : media).map((src, i) => (
+              <button
+                key={src + i}
+                onClick={() => setActiveImage(i)}
+                aria-label={`نمایش تصویر ${fa(i + 1)}`}
+                aria-current={activeImage === i ? "true" : undefined}
+                className={`h-16 w-12 shrink-0 overflow-hidden rounded-md border-2 transition ${
+                  activeImage === i
+                    ? "border-[#011c3a] opacity-100"
+                    : "border-transparent opacity-50 hover:opacity-80"
+                }`}
+              >
+                <img src={src} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );
