@@ -570,8 +570,11 @@ export default function Home() {
   return (
     <>
       {heroStudio.published ? <HeroStudioRenderer config={heroStudio} /> : <HomepageHero />}
+      <CategoryBento />
       <NewArrivals />
+      <MidBanner />
       <BestSellers />
+      <BottomBanner />
       <FeatureStrip />
     </>
   );
@@ -599,6 +602,96 @@ function FeatureStrip() {
             <p className="mt-1 text-[10.5px] text-neutral-500">{f.text}</p>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+
+/* --------------------- بنتو گرید دستهبندیها (بعد از هیرو) --------------------- */
+
+function CategoryBento() {
+  const categories = [
+    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt", span: "lg:col-span-2 lg:row-span-2" },
+    { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer", span: "lg:col-span-1" },
+    { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit", span: "lg:col-span-1" },
+    { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser", span: "lg:col-span-1" },
+    { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes", span: "lg:col-span-1" },
+  ];
+  return (
+    <section className="mx-auto w-full max-w-[1240px] px-4 py-10 lg:px-8 lg:py-14">
+      <div className="mb-6 flex items-end justify-between">
+        <div>
+          <p className="text-[10px] tracking-[0.3em] text-neutral-400">CATEGORIES</p>
+          <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">دسته‌بندی محصولات</h2>
+        </div>
+        <Link to="/shop" className="text-[12px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a]">همه محصولات</Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:grid-rows-2 lg:auto-rows-[200px]">
+        {categories.map((cat, i) => (
+          <Link
+            key={cat.label}
+            to={cat.to}
+            className={`group relative overflow-hidden rounded-[1rem] bg-neutral-100 ${cat.span} ${i === 0 ? "col-span-2 row-span-2" : ""}`}
+          >
+            <img
+              src={cat.img}
+              alt={cat.label}
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+              <h3 className={`font-medium ${i === 0 ? "text-[18px] lg:text-[22px]" : "text-[14px]"}`}>{cat.label}</h3>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ----------------------- بنر وسط (بین جدیدترین و پرفروش) ----------------------- */
+
+function MidBanner() {
+  return (
+    <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
+      <Link to="/collection" className="group relative block overflow-hidden rounded-[1.2rem]">
+        <img src="/images/banner.jpg" alt="کالکشن پاییز" loading="lazy" className="h-[280px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.02] sm:h-[340px]" />
+        <div className="absolute inset-0 bg-gradient-to-l from-black/65 via-black/25 to-transparent" />
+        <div className="absolute inset-0 flex flex-col items-start justify-center px-8 text-white lg:px-14">
+          <p className="text-[10px] tracking-[0.35em] text-white/70">AUTUMN COLLECTION</p>
+          <h2 className="mt-3 text-[24px] font-medium leading-snug sm:text-[32px]">پاییز، فصل پارچه‌های سنگین</h2>
+          <p className="mt-2 max-w-md text-[12px] leading-relaxed text-white/80">پشم شورون، بافت کابلی و کشمیر برای سردترین روزهای سال.</p>
+          <span className="mt-5 rounded-full bg-white px-6 py-2.5 text-[12px] font-medium text-[#011c3a] transition group-hover:bg-neutral-100">مشاهده کالکشن</span>
+        </div>
+      </Link>
+    </section>
+  );
+}
+
+/* ----------------------- بنر پایین (بعد از پرفروشترین) ----------------------- */
+
+function BottomBanner() {
+  return (
+    <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link to="/wholesale" className="group relative overflow-hidden rounded-[1rem]">
+          <img src="/images/model-front.jpg" alt="خرید عمده" loading="lazy" className="h-[200px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+            <h3 className="text-[17px] font-medium">خرید عمده</h3>
+            <p className="mt-1 text-[11px] text-white/70">قیمت‌های ویژه برای کسب‌وکار شما</p>
+          </div>
+        </Link>
+        <Link to="/styles" className="group relative overflow-hidden rounded-[1rem]">
+          <img src="/images/detail-hem.jpg" alt="استایل‌ها" loading="lazy" className="h-[200px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+            <h3 className="text-[17px] font-medium">استایل‌های کلبه</h3>
+            <p className="mt-1 text-[11px] text-white/70">از دارک آکادمیا تا اولد مانی</p>
+          </div>
+        </Link>
       </div>
     </section>
   );
