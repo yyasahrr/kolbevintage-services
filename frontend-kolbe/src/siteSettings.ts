@@ -277,7 +277,7 @@ export const defaultSiteSettings: SiteSettings = {
   },
 };
 
-const STORAGE_KEY = "kolbe-site-content-v2";
+const STORAGE_KEY = "kolbe-site-content-v3";
 const EVENT_NAME = "kolbe-site-content-change";
 let cacheRaw = "";
 let cacheValue = defaultSiteSettings;
