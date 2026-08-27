@@ -667,11 +667,15 @@ export default function ProductPage({ id }: { id: string }) {
             <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
           </div>
         )}
-        {/* دسکتاپ: موزاییک رسانه کوچک در بالا؛ راست = باکس خرید، چپ = جزئیات و توضیحات */}
-        <div>
-          <Gallery product={product} onOpen={(i) => setLightbox(i)} />
+        {/* دسکتاپ: گالری سمت راست + باکس خرید و مشخصات سمت چپ */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,430px)] lg:items-start lg:gap-8">
+          {/* گالری: ستون راست (در RTL اولین ستون) */}
+          <div className="lg:sticky lg:top-[90px] lg:self-start">
+            <Gallery product={product} onOpen={(i) => setLightbox(i)} />
+          </div>
 
-          <div className="lg:grid lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)] lg:gap-12">
+          {/* اطلاعات محصول: ستون چپ */}
+          <div>
           <aside>
             <div className="product-info-panel px-4 pb-8 pt-6 lg:px-6 lg:pb-10 lg:pt-10">
               <div className="mx-auto max-w-[440px] lg:mx-0 lg:max-w-[430px]">
