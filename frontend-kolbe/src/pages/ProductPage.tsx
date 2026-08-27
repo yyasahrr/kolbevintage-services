@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useRouter } from "../router";
 import { productById, products, specLabels, specOrder, type Product } from "../data/catalog";
-import { looks } from "../siteData";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
@@ -11,11 +10,29 @@ import Lightbox from "../components/Lightbox";
 import SizeAdvisor from "../components/SizeAdvisor";
 import ProductCard from "../components/ProductCard";
 
+/*
+ * چیدمان صفحه جزیات محصول — بر اساس الگوی استاندارد PDP (آمازون / دیجی‌کالا / زالاندو)
+ *
+ *  ┌────────────────────────────────────────────────────────────┐
+ *  │ بردکرامب (جهت‌یابی)                                          │
+ *  ├──────────────────────────────┬─────────────────────────────┤
+ *  │  گالری (ستارهٔ توجه) — چسبان │  باکس خرید — هرم اطلاعات    │
+ *  │  تصویر ۴:۵ بزرگ + ریل عمودی  │  عنوان ← امتیاز ← قیمت ←    │
+ *  │  تامنیل (الگوی دیجی‌کالا)     │  رنگ ← سایز ← CTA ← اعتماد  │
+ *  ├──────────────────────────────┴─────────────────────────────┤
+ *  │ زیرمنوی چسبان بخش‌ها (جزئیات / ست / نظرات / مشابه)           │
+ *  ├────────────────────────────────────────────────────────────┤
+ *  │ جزئیات محصول: توضیحات + آکاردئون │ جدول مشخصات فنی          │
+ *  │ با این ست کنید (کراس‌سل) │ نظرات (اثبات اجتماعی) │ مشابه     │
+ *  └────────────────────────────────────────────────────────────┘
+ *  + نوار خرید چسبان پایین صفحه وقتی CTA از دید خارج شد
+ */
+
 /* --------------------------------- ستاره‌ها --------------------------------- */
 
 export function Stars({ value, size = 12 }: { value: number; size?: number }) {
   return (
-    <span className="product-stars inline-flex items-center gap-[1px]">
+    <span className="product-stars inline-flex items-center gap-[1px]" aria-label={`امتیاز ${fa(value)} از ۵`}>
       {[1, 2, 3, 4, 5].map((i) => (
         <svg
           key={i}
@@ -31,31 +48,15 @@ export function Stars({ value, size = 12 }: { value: number; size?: number }) {
   );
 }
 
-function Check() {
-  return <Icon name="check" className="mt-[3px] h-3 w-3 shrink-0" strokeWidth={2.6} />;
-}
-
 /* --------------------------------- گالری ----------------------------------- */
 
-function ZoomImage({
-  src,
-  alt,
-  onOpen,
-  figureClassName = "",
-  imgClassName = "aspect-[4/5] max-h-[720px]",
-}: {
-  src: string;
-  alt: string;
-  onOpen: () => void;
-  figureClassName?: string;
-  imgClassName?: string;
-}) {
+function ZoomImage({ src, alt, onOpen }: { src: string; alt: string; onOpen: () => void }) {
   const [zoom, setZoom] = useState(false);
   const [pos, setPos] = useState({ x: 50, y: 50 });
 
   return (
     <figure
-      className={"product-gallery-media relative cursor-zoom-in overflow-hidden bg-neutral-100 " + figureClassName}
+      className="product-gallery-media relative cursor-zoom-in overflow-hidden rounded-2xl"
       onMouseEnter={() => setZoom(true)}
       onMouseLeave={() => setZoom(false)}
       onMouseMove={(e) => {
@@ -69,16 +70,35 @@ function ZoomImage({
         alt={alt}
         loading="lazy"
         decoding="async"
-        className={"w-full object-contain transition-transform duration-300 " + imgClassName}
+        className="aspect-[4/5] max-h-[78vh] w-full object-contain transition-transform duration-300"
         style={{ transform: zoom ? "scale(1.7)" : "scale(1)", transformOrigin: `${pos.x}% ${pos.y}%` }}
       />
     </figure>
   );
 }
 
-function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) => void }) {
+type DesktopMedia = { kind: "video"; poster: string } | { kind: "image"; src: string };
+
+function Gallery({
+  product,
+  onOpen,
+  activeImage,
+  setActiveImage,
+}: {
+  product: Product;
+  onOpen: (i: number) => void;
+  activeImage: number;
+  setActiveImage: (i: number) => void;
+}) {
   const media = product.images;
-  const [activeImage, setActiveImage] = useState(0);
+  const videoOffset = product.video ? 1 : 0;
+  const desktopMedia: DesktopMedia[] = [
+    ...(product.video ? [{ kind: "video" as const, poster: product.video.poster }] : []),
+    ...media.map((src) => ({ kind: "image" as const, src })),
+  ];
+  const videoActive = Boolean(product.video) && activeImage === 0;
+
+  /* ---- موبایل: اسلایدر لمسی ---- */
   const mobileMediaCount = media.length + (product.video ? 1 : 0);
   const mobileRailRef = useRef<HTMLDivElement>(null);
   const [activeMobileMedia, setActiveMobileMedia] = useState(0);
@@ -109,132 +129,148 @@ function Gallery({ product, onOpen }: { product: Product; onOpen: (i: number) =>
 
   return (
     <>
-      {/* موبایل: اسلایدر لمسی همراه تامنیل و فلش */}
-      <div className="product-gallery-mobile relative lg:hidden">
+      {/* ================================ موبایل ================================ */}
+      <div className="product-gallery-mobile relative -mx-4 sm:-mx-6 lg:hidden">
         <div ref={mobileRailRef} onScroll={updateActiveMobileMedia} className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto">
           {media.map((src, i) => (
-            <button key={src} type="button" className="w-full shrink-0 snap-center" onClick={() => onOpen(i)} aria-label={`نمایش تصویر ${fa(i + 1)} از ${fa(media.length)}`}>
-              <img src={src} alt={`${product.name} — تصویر ${fa(i + 1)}`} loading={i === 0 ? "eager" : "lazy"} className="product-gallery-media h-[46svh] max-h-[440px] min-h-[300px] w-full bg-neutral-100 px-5 object-contain" />
+            <button
+              key={src + i}
+              type="button"
+              className="w-full shrink-0 snap-center"
+              onClick={() => onOpen(i)}
+              aria-label={`نمایش تصویر ${fa(i + 1)} از ${fa(media.length)}`}
+            >
+              <img
+                src={src}
+                alt={`${product.name} — تصویر ${fa(i + 1)}`}
+                loading={i === 0 ? "eager" : "lazy"}
+                className="product-gallery-media h-[54svh] max-h-[540px] min-h-[320px] w-full object-contain"
+              />
             </button>
           ))}
           {product.video && (
             <button type="button" onClick={() => window.open(product.video!.url, "_blank")} className="relative w-full shrink-0 snap-center" aria-label={product.video.title}>
-              <img src={product.video.poster} alt={product.video.title} loading="lazy" className="h-[40svh] max-h-[360px] min-h-[260px] w-full bg-neutral-100 px-5 object-contain brightness-75" />
-              <span className="absolute inset-0 flex items-center justify-center text-white"><span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70"><Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} /></span></span>
+              <img src={product.video.poster} alt={product.video.title} loading="lazy" className="product-gallery-media h-[54svh] max-h-[540px] min-h-[320px] w-full object-contain brightness-75" />
+              <span className="absolute inset-0 flex items-center justify-center text-white">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 backdrop-blur-sm">
+                  <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
+                </span>
+              </span>
             </button>
           )}
         </div>
 
+        {/* نشانگر + فلش‌ها */}
         {mobileMediaCount > 1 && (
           <>
-            <button type="button" onClick={() => goToMobileMedia(activeMobileMedia - 1)} disabled={activeMobileMedia === 0} aria-label="تصویر قبلی" className="product-gallery-arrow gallery-arrow-pulse absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/80 text-[#011c3a] backdrop-blur-sm disabled:opacity-25">
+            <span className="absolute bottom-3 right-1/2 translate-x-1/2 rounded-full bg-black/45 px-3 py-1 text-[10px] text-white backdrop-blur-sm num-fa">
+              {fa(activeMobileMedia + 1)} / {fa(mobileMediaCount)}
+            </span>
+            <button type="button" onClick={() => goToMobileMedia(activeMobileMedia - 1)} disabled={activeMobileMedia === 0} aria-label="تصویر قبلی" className="product-gallery-arrow absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full disabled:opacity-25">
               <Icon name="chevronRight" className="h-5 w-5" strokeWidth={1.6} />
             </button>
-            <button type="button" onClick={() => goToMobileMedia(activeMobileMedia + 1)} disabled={activeMobileMedia === mobileMediaCount - 1} aria-label="تصویر بعدی" className="product-gallery-arrow gallery-arrow-pulse absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/80 text-[#011c3a] backdrop-blur-sm disabled:opacity-25">
+            <button type="button" onClick={() => goToMobileMedia(activeMobileMedia + 1)} disabled={activeMobileMedia === mobileMediaCount - 1} aria-label="تصویر بعدی" className="product-gallery-arrow absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full disabled:opacity-25">
               <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={1.6} />
             </button>
           </>
         )}
 
-        <div className="product-gallery-thumbs no-scrollbar flex gap-2 overflow-x-auto border-b border-neutral-200 bg-white px-4 py-3" aria-label="تصاویر کوچک محصول">
-          {media.map((src, i) => (
-            <button key={src} type="button" onClick={() => goToMobileMedia(i)} aria-label={`رفتن به تصویر ${fa(i + 1)}`} aria-current={activeMobileMedia === i ? "true" : undefined} className={(activeMobileMedia === i ? "border-[#011c3a]" : "border-transparent opacity-55") + " h-14 w-11 shrink-0 overflow-hidden border-2 transition"}>
-              <img src={src} alt="" className="h-full w-full object-cover" />
-            </button>
-          ))}
-          {product.video && (
-            <button type="button" onClick={() => goToMobileMedia(media.length)} aria-label="رفتن به ویدئوی محصول" aria-current={activeMobileMedia === media.length ? "true" : undefined} className={(activeMobileMedia === media.length ? "border-[#011c3a]" : "border-transparent opacity-55") + " relative h-14 w-11 shrink-0 overflow-hidden border-2 transition"}>
-              <img src={product.video.poster} alt="" className="h-full w-full object-cover brightness-75" />
-              <Icon name="play" className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-white" fill="currentColor" strokeWidth={0} />
-            </button>
-          )}
-        </div>
+        {/* تامنیل‌ها */}
+        {mobileMediaCount > 1 && (
+          <div className="product-gallery-thumbs no-scrollbar flex gap-2 overflow-x-auto px-4 py-3" aria-label="تصاویر کوچک محصول">
+            {media.map((src, i) => (
+              <button key={src + i} type="button" onClick={() => goToMobileMedia(i)} aria-label={`رفتن به تصویر ${fa(i + 1)}`} aria-current={activeMobileMedia === i ? "true" : undefined} className={`pdp-thumb h-16 w-12 shrink-0 ${activeMobileMedia === i ? "is-active" : ""}`}>
+                <img src={src} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+            {product.video && (
+              <button type="button" onClick={() => goToMobileMedia(media.length)} aria-label="رفتن به ویدئوی محصول" aria-current={activeMobileMedia === media.length ? "true" : undefined} className={`pdp-thumb relative h-16 w-12 shrink-0 ${activeMobileMedia === media.length ? "is-active" : ""}`}>
+                <img src={product.video.poster} alt="" className="h-full w-full object-cover brightness-75" />
+                <Icon name="play" className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-white" fill="currentColor" strokeWidth={0} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* دسکتاپ/تبلت: تصویر اصلی بزرگ + فلش چپ/راست + تامنیل */}
-      <div className="product-gallery-grid hidden flex-col p-3 sm:flex">
-        {/* تصویر اصلی */}
-        <div className="relative">
-          {/* فلش راست (قبلی در RTL) */}
-          {media.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setActiveImage((activeImage - 1 + media.length) % media.length)}
-              disabled={activeImage === 0}
-              aria-label="تصویر قبلی"
-              className="product-gallery-arrow absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/85 text-[#011c3a] shadow-sm backdrop-blur transition hover:bg-white disabled:opacity-25"
-            >
-              <Icon name="chevronRight" className="h-5 w-5" strokeWidth={1.6} />
-            </button>
-          )}
-
-          {/* تصویر یا ویدیو */}
-          {product.video && activeImage === 0 ? (
-            <button
-              onClick={() => window.open(product.video!.url, "_blank")}
-              className="group relative w-full overflow-hidden rounded-[0.8rem] bg-neutral-900"
-            >
-              <img
-                src={product.video.poster}
-                alt={product.video.title}
-                className="aspect-[3/4] max-h-[420px] w-full object-cover opacity-75 transition group-hover:opacity-65"
-              />
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70">
-                  <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
-                </span>
-                <span className="text-[11.5px]">{product.video.title}</span>
-              </span>
-            </button>
-          ) : (
-            <ZoomImage
-              src={media[activeImage] ?? media[0]}
-              alt={`${product.name} — تصویر ${fa(activeImage + 1)}`}
-              onOpen={() => onOpen(activeImage)}
-              figureClassName=""
-              imgClassName="aspect-[3/4] max-h-[420px]"
-            />
-          )}
-
-          {/* فلش چپ (بعدی در RTL) */}
-          {media.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setActiveImage((activeImage + 1) % media.length)}
-              disabled={activeImage === media.length - 1}
-              aria-label="تصویر بعدی"
-              className="product-gallery-arrow absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border bg-white/85 text-[#011c3a] shadow-sm backdrop-blur transition hover:bg-white disabled:opacity-25"
-            >
-              <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={1.6} />
-            </button>
-          )}
-
-          {/* شمارنده */}
-          <span className="absolute bottom-3 right-3 rounded-full bg-black/50 px-3 py-1 text-[10px] text-white backdrop-blur-sm">
-            {fa(activeImage + 1)} / {fa(media.length)}
-          </span>
-        </div>
-
-        {/* تامنیلها */}
-        {media.length > 1 && (
-          <div className="no-scrollbar mt-2.5 flex justify-center gap-2 overflow-x-auto">
-            {(product.video ? [product.video.poster, ...media] : media).map((src, i) => (
+      {/* ========================== دسکتاپ / تبلت بزرگ ========================== */}
+      <div className="hidden gap-3 lg:flex">
+        {/* ریل عمودی تامنیل — لبهٔ راست (الگوی دیجی‌کالا) */}
+        {desktopMedia.length > 1 && (
+          <div className="no-scrollbar flex max-h-[78vh] w-[58px] shrink-0 flex-col gap-2 overflow-y-auto pl-0.5" aria-label="تصاویر کوچک محصول">
+            {desktopMedia.map((m, i) => (
               <button
-                key={src + i}
+                key={i}
+                type="button"
                 onClick={() => setActiveImage(i)}
-                aria-label={`نمایش تصویر ${fa(i + 1)}`}
+                aria-label={m.kind === "video" ? "نمایش ویدئوی محصول" : `نمایش تصویر ${fa(i + 1 - videoOffset)}`}
                 aria-current={activeImage === i ? "true" : undefined}
-                className={`h-14 w-10 shrink-0 overflow-hidden rounded-md border-2 transition ${
-                  activeImage === i
-                    ? "border-[#011c3a] opacity-100"
-                    : "border-transparent opacity-50 hover:opacity-80"
-                }`}
+                className={`pdp-thumb relative h-[74px] w-full shrink-0 ${activeImage === i ? "is-active" : ""}`}
               >
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                <img src={m.kind === "video" ? m.poster : m.src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                {m.kind === "video" && (
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white">
+                    <Icon name="play" className="mr-0.5 h-4 w-4" fill="currentColor" strokeWidth={0} />
+                  </span>
+                )}
               </button>
             ))}
           </div>
         )}
+
+        {/* تصویر اصلی */}
+        <div className="relative min-w-0 flex-1">
+          {/* برچسب‌ها */}
+          {product.badges.length > 0 && (
+            <div className="absolute right-3 top-3 z-10 flex gap-1.5">
+              {product.badges.map((b) => (
+                <span key={b} className="pdp-badge rounded-full bg-[#c9654d] px-3 py-1 text-[10px] font-medium text-white">{b}</span>
+              ))}
+            </div>
+          )}
+
+          {videoActive ? (
+            <button onClick={() => window.open(product.video!.url, "_blank")} className="group relative w-full overflow-hidden rounded-2xl bg-neutral-900">
+              <img src={product.video!.poster} alt={product.video!.title} className="aspect-[4/5] max-h-[78vh] w-full object-cover opacity-75 transition group-hover:opacity-65" />
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 backdrop-blur-sm">
+                  <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
+                </span>
+                <span className="text-[11.5px]">{product.video!.title}</span>
+              </span>
+            </button>
+          ) : (
+            <ZoomImage
+              src={media[activeImage - videoOffset] ?? media[0]}
+              alt={`${product.name} — تصویر ${fa(activeImage + 1 - videoOffset)}`}
+              onOpen={() => onOpen(Math.max(0, activeImage - videoOffset))}
+            />
+          )}
+
+          {/* فلش‌ها */}
+          {desktopMedia.length > 1 && (
+            <>
+              <button type="button" onClick={() => setActiveImage(Math.max(0, activeImage - 1))} disabled={activeImage === 0} aria-label="تصویر قبلی" className="product-gallery-arrow absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full disabled:opacity-0">
+                <Icon name="chevronRight" className="h-5 w-5" strokeWidth={1.6} />
+              </button>
+              <button type="button" onClick={() => setActiveImage(Math.min(desktopMedia.length - 1, activeImage + 1))} disabled={activeImage === desktopMedia.length - 1} aria-label="تصویر بعدی" className="product-gallery-arrow absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full disabled:opacity-0">
+                <Icon name="chevronLeft" className="h-5 w-5" strokeWidth={1.6} />
+              </button>
+            </>
+          )}
+
+          {/* شمارنده */}
+          {!videoActive && media.length > 1 && (
+            <span className="absolute bottom-3 left-3 z-10 rounded-full bg-black/45 px-3 py-1 text-[10px] text-white backdrop-blur-sm num-fa">
+              {fa(activeImage + 1 - videoOffset)} / {fa(media.length)}
+            </span>
+          )}
+
+          {/* راهنمای بزرگ‌نمایی */}
+          <span className="pointer-events-none absolute bottom-3 right-3 z-10 hidden rounded-full bg-black/35 px-2.5 py-1 text-[9.5px] text-white/90 backdrop-blur-sm xl:block">
+            برای بزرگ‌نمایی نشانگر را روی تصویر ببرید
+          </span>
+        </div>
       </div>
     </>
   );
@@ -257,19 +293,34 @@ function ColourWheel({
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[12px] font-medium">انتخاب رنگ</p>
-        <p className="text-[11px] text-neutral-500"><span className="text-[#011c3a]">{sel.name}</span> · {fa(n)} رنگ</p>
+        <p className="text-[12.5px] font-medium">
+          رنگ: <span className="text-[#011c3a]">{sel.name}</span>
+        </p>
+        <p className="text-[11px] text-neutral-500 num-fa">{fa(n)} رنگ</p>
       </div>
-      <div className="mt-3 flex flex-wrap gap-3" role="radiogroup" aria-label="انتخاب رنگ محصول">
+      <div className="mt-3 flex flex-wrap gap-2.5" role="radiogroup" aria-label="انتخاب رنگ محصول">
         {product.colours.map((c, i) => (
-          <button key={c.name} type="button" role="radio" aria-checked={i === selected} aria-label={c.name} title={c.name} onClick={() => onSelect(i)} className={(i === selected ? "border-[#011c3a]" : "border-neutral-300 hover:border-neutral-500") + " flex h-9 w-9 items-center justify-center rounded-full border bg-white transition"}>
-            <span className="h-6 w-6 rounded-full border border-black/10" style={{ backgroundColor: c.hex }} />
+          <button
+            key={c.name}
+            type="button"
+            role="radio"
+            aria-checked={i === selected}
+            aria-label={c.name}
+            title={c.name}
+            onClick={() => onSelect(i)}
+            className={`pdp-swatch flex h-10 w-10 items-center justify-center rounded-full border transition ${i === selected ? "is-selected" : ""}`}
+          >
+            <span className="relative flex h-7 w-7 items-center justify-center rounded-full border border-black/10" style={{ backgroundColor: c.hex }}>
+              {i === selected && <Icon name="check" className="h-3.5 w-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" strokeWidth={3} />}
+            </span>
           </button>
         ))}
       </div>
     </div>
   );
 }
+
+/* --------------------------- پنل سفارش عمده (B2B) --------------------------- */
 
 function WholesaleOrderPanel({
   product,
@@ -316,7 +367,6 @@ function WholesaleOrderPanel({
   const pack = collectionPacks.find((item) => item.id === packId)!;
   const qty = pack.qty;
   const total = lines.reduce((sum, line) => sum + line.qty, 0);
-  const minimum = 12;
   const baseWholesalePrice = Math.round(product.price * 0.68 / 10_000) * 10_000;
   const unitPrice = qty >= 48 ? Math.round(baseWholesalePrice * 0.88 / 10_000) * 10_000 : qty >= 24 ? Math.round(baseWholesalePrice * 0.94 / 10_000) * 10_000 : baseWholesalePrice;
 
@@ -362,33 +412,61 @@ function WholesaleOrderPanel({
           <p className="text-[10px] tracking-[0.22em] text-neutral-400">WHOLESALE ORDER</p>
           <h2 className="mt-1 text-[16px] font-medium">ترکیب سفارش عمده</h2>
         </div>
-        <span className="bg-[#f6f6f4] px-3 py-2 text-[10.5px] num-fa">{fa(lines.length)} ردیف سفارش</span>
+        <span className="rounded-full bg-[#f6f6f4] px-3 py-1.5 text-[10.5px] num-fa">{fa(lines.length)} ردیف سفارش</span>
       </div>
 
       <ColourWheel product={product} selected={colourIdx} onSelect={onColourChange} />
 
-      <div className="mt-5 border-y border-neutral-200 py-4">
-        <div className="flex items-end justify-between gap-4"><div><p className="text-[10px] text-neutral-500">قیمت عمده فعلی</p><p className="mt-1 text-[17px] font-medium num-fa">{toman(unitPrice)} <span className="text-[10px] font-normal text-neutral-400">/ عدد</span></p></div><p className="text-[10px] text-neutral-500">فروش فقط به‌صورت <strong className="font-medium">کالکشن آماده</strong></p></div>
-        <div className="mt-4 grid grid-cols-3 divide-x divide-x-reverse divide-neutral-200 bg-[#f6f6f4] p-3 text-center"><div><p className="text-[9px] text-neutral-400">۱۲–۲۳ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(baseWholesalePrice)}</p></div><div><p className="text-[9px] text-neutral-400">۲۴–۴۷ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(Math.round(baseWholesalePrice * 0.94 / 10_000) * 10_000)}</p></div><div><p className="text-[9px] text-neutral-400">۴۸+ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(Math.round(baseWholesalePrice * 0.88 / 10_000) * 10_000)}</p></div></div>
+      <div className="pdp-price-panel mt-5 rounded-2xl p-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-[10px] text-neutral-500">قیمت عمده فعلی</p>
+            <p className="mt-1 text-[17px] font-medium num-fa">{toman(unitPrice)} <span className="text-[10px] font-normal text-neutral-400">/ عدد</span></p>
+          </div>
+          <p className="text-[10px] text-neutral-500">فروش فقط به‌صورت <strong className="font-medium">کالکشن آماده</strong></p>
+        </div>
+        <div className="mt-4 grid grid-cols-3 divide-x divide-x-reverse divide-neutral-200 text-center">
+          <div className="py-1"><p className="text-[9px] text-neutral-400 num-fa">۱۲–۲۳ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(baseWholesalePrice)}</p></div>
+          <div className="py-1"><p className="text-[9px] text-neutral-400 num-fa">۲۴–۴۷ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(Math.round(baseWholesalePrice * 0.94 / 10_000) * 10_000)}</p></div>
+          <div className="py-1"><p className="text-[9px] text-neutral-400 num-fa">۴۸+ عدد</p><p className="mt-1 text-[10.5px] num-fa">{toman(Math.round(baseWholesalePrice * 0.88 / 10_000) * 10_000)}</p></div>
+        </div>
       </div>
 
-      <div className="mt-6 border-y border-neutral-200 py-5">
+      <div className="mt-6">
         <p className="mb-3 text-[11.5px] font-medium">انتخاب کالکشن آماده</p>
         <div className="grid gap-2 sm:grid-cols-3">
-          {collectionPacks.map((item) => <button key={item.id} type="button" onClick={() => setPackId(item.id)} className={(packId === item.id ? "border-[#011c3a] bg-[#f3f5f7]" : "border-neutral-200") + " border p-3 text-right transition hover:border-[#011c3a]"}><span className="block text-[11.5px] font-medium">{item.name}</span><span className="mt-1 block text-[10px] text-neutral-500 num-fa">{fa(item.qty)} عدد · {item.mix}</span></button>)}
+          {collectionPacks.map((item) => (
+            <button key={item.id} type="button" onClick={() => setPackId(item.id)} className={(packId === item.id ? "border-[#011c3a] bg-[#f3f5f7]" : "border-neutral-200 hover:border-[#011c3a]") + " rounded-xl border p-3 text-right transition"} >
+              <span className="block text-[11.5px] font-medium">{item.name}</span>
+              <span className="mt-1 block text-[10px] text-neutral-500 num-fa">{fa(item.qty)} عدد · {item.mix}</span>
+            </button>
+          ))}
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
           <label>
             <span className="mb-1.5 block text-[10px] text-neutral-500">سایز مرجع الگو</span>
-            <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="h-10 w-full border border-neutral-300 bg-white px-2 text-[12px] outline-none focus:border-[#011c3a]">
+            <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="h-10 w-full rounded-[10px] border border-neutral-300 bg-white px-2 text-[12px] outline-none focus:border-[#011c3a]">
               {product.sizes.map((size) => <option key={size.label} value={size.label} disabled={!size.inStock}>{size.label} {!size.inStock ? "— ناموجود" : ""}</option>)}
             </select>
           </label>
-          <button type="button" onClick={addLine} className="h-10 self-end bg-[#011c3a] px-5 text-[11.5px] font-medium text-white transition-colors hover:bg-[#0a2c55] active:scale-[0.98]">
+          <button type="button" onClick={addLine} className="storefront-primary-action h-10 self-end rounded-full px-5 text-[11.5px] font-medium">
             افزودن {pack.name}
           </button>
         </div>
-        <fieldset className="mt-5 border-t border-neutral-200 pt-4"><legend className="text-[11.5px] font-medium">خدمات اختصاصی این کالکشن</legend><div className="mt-3 grid gap-2 sm:grid-cols-2">{["لیبل اختصاصی برند", "دوخت لوگوی اختصاصی", "بسته‌بندی اختصاصی", "تگ قیمت و بارکد فروشگاه"].map(service=><label key={service} className="flex items-center gap-2 border border-neutral-200 p-3 text-[10.5px]"><input type="checkbox" checked={services.includes(service)} onChange={()=>setServices(current=>current.includes(service)?current.filter(x=>x!==service):[...current,service])} />{service}</label>)}</div><label className="mt-3 block text-[10px] text-neutral-500">توضیحات تولید، محل لوگو یا مشخصات فایل<textarea value={customizationNote} onChange={e=>setCustomizationNote(e.target.value)} rows={3} placeholder="مثلاً لوگو روی آستین چپ با نخ سرمه‌ای دوخته شود…" className="mt-1.5 w-full resize-y border border-neutral-300 p-3 text-[11px] outline-none focus:border-[#011c3a]" /></label></fieldset>
+        <fieldset className="mt-5 border-t border-neutral-200 pt-4">
+          <legend className="text-[11.5px] font-medium">خدمات اختصاصی این کالکشن</legend>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {["لیبل اختصاصی برند", "دوخت لوگوی اختصاصی", "بسته‌بندی اختصاصی", "تگ قیمت و بارکد فروشگاه"].map(service => (
+              <label key={service} className="flex items-center gap-2 rounded-[10px] border border-neutral-200 p-3 text-[10.5px]">
+                <input type="checkbox" checked={services.includes(service)} onChange={() => setServices(current => current.includes(service) ? current.filter(x => x !== service) : [...current, service])} />
+                {service}
+              </label>
+            ))}
+          </div>
+          <label className="mt-3 block text-[10px] text-neutral-500">توضیحات تولید، محل لوگو یا مشخصات فایل
+            <textarea value={customizationNote} onChange={e => setCustomizationNote(e.target.value)} rows={3} placeholder="مثلاً لوگو روی آستین چپ با نخ سرمه‌ای دوخته شود…" className="mt-1.5 w-full resize-y rounded-[10px] border border-neutral-300 p-3 text-[11px] outline-none focus:border-[#011c3a]" />
+          </label>
+        </fieldset>
         <p className="mt-3 text-[10px] text-neutral-500 num-fa">جمع این کالکشن: {fa(qty)} عدد · {toman(qty * unitPrice)}</p>
       </div>
 
@@ -416,7 +494,7 @@ function WholesaleOrderPanel({
               </div>
             ))}
           </div>
-          <div className="flex items-center justify-between bg-[#f6f6f4] p-4 text-[12px]">
+          <div className="mt-2 flex items-center justify-between rounded-xl bg-[#f6f6f4] p-4 text-[12px]">
             <span>جمع کل کالکشن</span>
             <strong className="text-[17px] font-medium num-fa">{fa(total)} عدد</strong>
           </div>
@@ -424,7 +502,7 @@ function WholesaleOrderPanel({
       )}
 
       {submitted ? (
-        <div className="mt-4 border border-[#011c3a] bg-white p-4 text-center">
+        <div className="mt-4 rounded-2xl border border-[#011c3a] bg-white p-4 text-center">
           <Icon name="check" className="mx-auto h-5 w-5" strokeWidth={2.3} />
           <p className="mt-2 text-[12.5px] font-medium">پیش‌سفارش برای بررسی ثبت شد</p>
           <p className="mt-1 text-[10.5px] text-neutral-500">کارشناس فروش برای اعلام قیمت و موجودی نهایی با شما تماس می‌گیرد.</p>
@@ -434,12 +512,12 @@ function WholesaleOrderPanel({
           type="button"
           disabled={lines.length === 0}
           onClick={() => setSubmitted(true)}
-          className="mt-4 h-12 w-full bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-neutral-300"
+          className="storefront-primary-action mt-4 h-12 w-full rounded-full text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40"
         >
           ثبت نهایی سفارش کالکشن و دریافت قیمت
         </button>
       )}
-      <div className="mt-3 flex items-center justify-between text-[10.5px] text-neutral-500">
+      <div className="mt-3 flex items-center justify-between gap-3 text-[10.5px] text-neutral-500">
         <span>قیمت عمده پس از تأیید حساب همکار نمایش داده می‌شود.</span>
         <Link to="/wholesale?section=form" className="shrink-0 underline underline-offset-2">درخواست حساب همکاری</Link>
       </div>
@@ -451,7 +529,7 @@ function WholesaleOrderPanel({
 
 function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" }) {
   return (
-    <div className="mt-3 rounded-[3px] border border-neutral-200 bg-white p-4">
+    <div className="fade-up mt-3 rounded-2xl border border-neutral-200 bg-white p-4">
       <h3 className="mb-4 text-[13px] font-medium">{mode === "chart" ? "جدول سایز محصول" : "راهنمای اندازه‌گیری"}</h3>
       {mode === "chart" ? (
         <>
@@ -468,7 +546,7 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
               </thead>
               <tbody>
                 {product.sizeChart.map((r, i) => (
-                  <tr key={r.size} className={i % 2 ? "bg-[#f7f6f3]" : ""}>
+                  <tr key={r.size} className={i % 2 ? "bg-[#f6f6f4]" : ""}>
                     <td className="py-2 font-medium">{r.size}</td>
                     <td className="py-2 num-fa">{fa(r.chest)}</td>
                     <td className="py-2 num-fa">{fa(r.shoulder)}</td>
@@ -485,10 +563,7 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
         </>
       ) : (
         <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
-          <button
-            onClick={() => window.open("https://www.aparat.com/", "_blank")}
-            className="group relative overflow-hidden bg-neutral-900"
-          >
+          <button onClick={() => window.open("https://www.aparat.com/", "_blank")} className="group relative overflow-hidden rounded-xl bg-neutral-900">
             <img src="/images/flat.jpg" alt="ویدئوی اندازه‌گیری" loading="lazy" className="aspect-[4/3] w-full object-cover opacity-70" />
             <span className="absolute inset-0 flex items-center justify-center text-white">
               <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70">
@@ -517,7 +592,7 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
   );
 }
 
-/* ---------------------------------- نظرات ---------------------------------- */
+/* --------------------------------- نظرات ---------------------------------- */
 
 function Reviews({ product }: { product: Product }) {
   const dist = [5, 4, 3, 2, 1].map((s) => ({
@@ -534,9 +609,15 @@ function Reviews({ product }: { product: Product }) {
   ];
 
   return (
-    <section className="product-reviews bg-[#f6f6f4]">
-      <div className="mx-auto w-full px-4 py-14 lg:px-8">
-        <h2 className="mb-8 text-[20px] font-medium">نظرات مشتریان</h2>
+    <section id="reviews" className="product-reviews scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[170px]">
+      <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] tracking-[0.3em] text-neutral-400">CUSTOMER REVIEWS</p>
+            <h2 className="mt-2 text-[20px] font-medium">نظرات مشتریان</h2>
+          </div>
+          <p className="text-[11.5px] text-neutral-500 num-fa">بر اساس {fa(product.reviewCount)} خرید ثبت‌شده</p>
+        </div>
 
         <div className="grid gap-5 lg:grid-cols-[320px_1fr] lg:gap-6">
           <div className="review-summary liquid-panel">
@@ -544,9 +625,7 @@ function Reviews({ product }: { product: Product }) {
               <span className="text-[44px] font-light leading-none num-fa">{fa(product.rating)}</span>
               <div className="pb-1">
                 <Stars value={product.rating} size={14} />
-                <p className="mt-1 text-[11px] text-neutral-500">
-                  بر اساس {fa(product.reviewCount)} نظر
-                </p>
+                <p className="mt-1 text-[11px] text-neutral-500">از {fa(product.reviewCount)} نظر</p>
               </div>
             </div>
 
@@ -570,10 +649,7 @@ function Reviews({ product }: { product: Product }) {
                     <span className="text-neutral-500">{b.value}</span>
                   </div>
                   <div className="relative mt-1.5 h-[3px] rounded-full bg-neutral-200">
-                    <div
-                      className="review-marker absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full"
-                      style={{ right: `calc(${b.pos}% - 5px)` }}
-                    />
+                    <div className="review-marker absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ right: `calc(${b.pos}% - 5px)` }} />
                   </div>
                 </div>
               ))}
@@ -610,33 +686,45 @@ export default function ProductPage({ id }: { id: string }) {
   const wholesale = query.get("wholesale") === "1";
   const product = productById(id);
   const { addToCart, toggleWish, isWished, toggleCompare, compare } = useStore();
+  const { builder } = useSiteSettings();
 
   const [colourIdx, setColourIdx] = useState(0);
   const [size, setSize] = useState<string | null>(null);
+  const [sizeError, setSizeError] = useState(false);
+  const [added, setAdded] = useState(false);
+  const [activeImage, setActiveImage] = useState(0);
   const [openAcc, setOpenAcc] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [sticky, setSticky] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sizeAdvisorOpen, setSizeAdvisorOpen] = useState(false);
   const [stickySizeOpen, setStickySizeOpen] = useState(false);
+  const [subnavVisible, setSubnavVisible] = useState(false);
+  const [activeSection, setActiveSection] = useState("details");
   const actionsRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
+
+  const lookSettings = builder.look;
 
   useEffect(() => {
     setColourIdx(0);
     setSize(null);
+    setSizeError(false);
+    setAdded(false);
+    setActiveImage(0);
     setOpenAcc(null);
     setSizeAdvisorOpen(false);
     setStickySizeOpen(false);
   }, [id]);
 
+  /* نوار خرید چسبان: فقط وقتی دکمهٔ اصلی از دید خارج شد */
   useEffect(() => {
     let frame = 0;
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const el = actionsRef.current;
-        if (!el) return;
-        setSticky(el.getBoundingClientRect().bottom < 90);
+        if (el) setSticky(el.getBoundingClientRect().bottom < 90);
       });
     };
     update();
@@ -649,11 +737,44 @@ export default function ProductPage({ id }: { id: string }) {
     };
   }, [id]);
 
+  /* زیرمنوی بخش‌ها + هایلایت بخش فعال */
+  const sections = [
+    { id: "details", label: "جزئیات و مشخصات" },
+    ...(lookSettings.enabled ? [{ id: "look", label: "با این ست کنید" }] : []),
+    { id: "reviews", label: "نظرات" },
+    { id: "related", label: "محصولات مشابه" },
+  ];
+
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const hero = heroRef.current;
+        if (hero) setSubnavVisible(hero.getBoundingClientRect().bottom < 170);
+        const y = window.scrollY + 260;
+        let current = sections[0]?.id ?? "details";
+        for (const s of sections) {
+          const el = document.getElementById(s.id);
+          if (el && el.offsetTop <= y) current = s.id;
+        }
+        setActiveSection(current);
+      });
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", update);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, lookSettings.enabled]);
+
   if (!product) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
         <p className="text-[14px]">محصول یافت نشد.</p>
-        <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-6 py-2.5 text-[12.5px] text-white">
+        <Link to="/shop" className="storefront-primary-action rounded-full px-6 py-2.5 text-[12.5px] font-medium">
           بازگشت به فروشگاه
         </Link>
       </div>
@@ -663,12 +784,26 @@ export default function ProductPage({ id }: { id: string }) {
   const colour = product.colours[colourIdx];
   const wished = isWished(product.id);
   const inCompare = compare.includes(product.id);
-  const { builder } = useSiteSettings();
-  const look = looks.find((l) => l.id === product.lookId);
-  const lookSettings = builder.look;
+  const inStockCount = product.sizes.filter((s) => s.inStock).length;
+
+  const handleColour = (i: number) => {
+    setColourIdx(i);
+    /* همگام‌سازی گالری با رنگ انتخاب‌شده */
+    const img = product.colours[i]?.img;
+    if (img) {
+      const idx = product.images.indexOf(img);
+      if (idx >= 0) setActiveImage(idx + (product.video ? 1 : 0));
+    }
+  };
+
+  const pickSize = (label: string) => {
+    setSize(label);
+    setSizeError(false);
+  };
 
   const handleAdd = () => {
     if (!size) {
+      setSizeError(true);
       document.getElementById("size-picker")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -680,6 +815,8 @@ export default function ProductPage({ id }: { id: string }) {
       price: product.price,
       img: colour.img,
     });
+    setAdded(true);
+    setTimeout(() => setAdded(false), 1800);
   };
 
   const share = async () => {
@@ -698,7 +835,6 @@ export default function ProductPage({ id }: { id: string }) {
   };
 
   const accordions = [
-    { title: "توضیحات محصول", body: product.description },
     { title: "جنس و مراقبت", body: `${product.specs.fibre}. ${product.specs.care}. وزن پارچه: ${product.specs.weight}.` },
     { title: "سایز و فیت", body: product.sizeAdvice },
     { title: "ارسال و مرجوعی", body: "سفارش‌های ثبت‌شده تا ساعت ۱۴ همان روز کاری ارسال می‌شوند. ارسال برای سفارش‌های بالای ۳ میلیون تومان رایگان است. تا ۳۰ روز فرصت دارید محصول را مرجوع یا تعویض کنید." },
@@ -719,228 +855,293 @@ export default function ProductPage({ id }: { id: string }) {
             <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
           </div>
         )}
-        {/* دسکتاپ: مشخصات راست + گالری چپ */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)] lg:items-start lg:gap-8">
-          {/* اطلاعات محصول: ستون راست */}
-          <div>
-          <aside>
-            <div className="product-info-panel px-4 pb-8 pt-6 lg:px-6 lg:pb-10 lg:pt-10">
-              <div className="mx-auto max-w-[440px] lg:mx-0 lg:max-w-[430px]">
-                <nav className="flex items-center gap-1.5 text-[11px] text-neutral-500">
-                  <Link to="/" className="hover:underline">خانه</Link>
-                  <span>›</span>
-                  {wholesale ? (
-                    <Link to="/wholesale?section=catalog" className="hover:underline">کاتالوگ عمده</Link>
-                  ) : (
-                    <Link to={`/shop?cat=${product.category}`} className="hover:underline">{product.categoryLabel}</Link>
-                  )}
-                  <span>›</span>
-                  <span className="text-[#011c3a]">{product.name}</span>
-                </nav>
 
-                <div className="mt-3 flex items-start justify-between gap-4">
-                  <div>
-                    <h1 className="text-[24px] font-medium leading-tight">{product.name}</h1>
-                    <p className="mt-1 text-[11px] tracking-[0.2em] text-neutral-400">
-                      {product.latin.toUpperCase()}
+        {/* ═══════════════ ناحیهٔ اصلی: گالری (راست) + باکس خرید (چپ) ═══════════════ */}
+        <div ref={heroRef} className="mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-8">
+          {/* بردکرامب — جهت‌یابی */}
+          <nav aria-label="مسیر صفحه" className="flex items-center gap-1.5 py-3 text-[11px] text-neutral-500">
+            <Link to="/" className="hover:underline">خانه</Link>
+            <span className="text-neutral-300">›</span>
+            {wholesale ? (
+              <Link to="/wholesale?section=catalog" className="hover:underline">کاتالوگ عمده</Link>
+            ) : (
+              <Link to={`/shop?cat=${product.category}`} className="hover:underline">{product.categoryLabel}</Link>
+            )}
+            <span className="text-neutral-300">›</span>
+            <span className="truncate text-[#011c3a]">{product.name}</span>
+          </nav>
+
+          <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-10 xl:gap-14">
+            {/* گالری — ستون راست (نقطهٔ شروع خواندن در RTL) و چسبان */}
+            <div className="lg:sticky lg:top-[122px] lg:self-start">
+              <Gallery product={product} onOpen={(i) => setLightbox(i)} activeImage={activeImage} setActiveImage={setActiveImage} />
+            </div>
+
+            {/* باکس خرید — ستون چپ */}
+            <div className="pb-8 pt-5 lg:pb-10 lg:pt-1">
+              {/* ۱ — شناسنامهٔ محصول */}
+              <header>
+                <div className="flex items-center justify-between gap-3 text-[11px]">
+                  <div className="flex min-w-0 items-center gap-1.5 text-neutral-500">
+                    <span className="truncate">{product.fabricGroup} · {product.season}</span>
+                  </div>
+                  <span className="shrink-0 text-[10px] tracking-wide text-neutral-400" dir="ltr">{product.specs.code}</span>
+                </div>
+                <h1 className="mt-2.5 text-[23px] font-semibold leading-snug lg:text-[26px]">{product.name}</h1>
+                <p className="mt-1 text-[10.5px] tracking-[0.22em] text-neutral-400" dir="ltr">{product.latin.toUpperCase()}</p>
+
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px]">
+                  <a href="#reviews" className="flex items-center gap-1.5 hover:underline">
+                    <Stars value={product.rating} size={13} />
+                    <span className="text-neutral-500 num-fa">{fa(product.rating)} ({fa(product.reviewCount)} نظر)</span>
+                  </a>
+                  <span className="hidden h-3 w-px bg-neutral-300 sm:block" />
+                  <span className="text-neutral-500 num-fa">{fa(product.sold)}+ فروش موفق</span>
+                </div>
+              </header>
+
+              {wholesale ? (
+                <WholesaleOrderPanel product={product} colourIdx={colourIdx} onColourChange={handleColour} />
+              ) : (
+                <>
+                  {/* ۲ — قیمت (نزدیک به اقدام) */}
+                  <div className="pdp-price-panel mt-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl p-4">
+                    <div>
+                      <p className="text-[10.5px] text-neutral-500">قیمت محصول</p>
+                      <p className="mt-1 text-[23px] font-semibold leading-none num-fa">{toman(product.price)}</p>
+                    </div>
+                    <p className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
+                      <Icon name="truck" className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                      ارسال رایگان بالای ۳ میلیون تومان
                     </p>
                   </div>
-                  <span className="shrink-0 pt-1 text-left text-[13px]">
-                    {wholesale ? (
-                      <><span className="block font-medium">قیمت همکاری</span><span className="mt-0.5 block text-[10px] text-neutral-400">پس از تأیید حساب</span></>
-                    ) : toman(product.price)}
-                  </span>
-                </div>
 
-                <div className="mt-2.5 flex items-center justify-between gap-3">
-                  <p className="text-[12px] text-neutral-500">{product.subtitle}</p>
-                  <a href="#reviews" className="flex shrink-0 items-center gap-1.5">
-                    <Stars value={product.rating} />
-                    <span className="text-[11px] text-neutral-500 num-fa">({fa(product.reviewCount)})</span>
-                  </a>
-                </div>
+                  {/* ۳ — انتخاب رنگ */}
+                  <div className="mt-6">
+                    <ColourWheel product={product} selected={colourIdx} onSelect={handleColour} />
+                  </div>
 
-                {wholesale ? (
-                  <WholesaleOrderPanel product={product} colourIdx={colourIdx} onColourChange={setColourIdx} />
-                ) : (
-                <>
-                {/* رنگ */}
-                <div className="mt-6">
-                  <ColourWheel product={product} selected={colourIdx} onSelect={setColourIdx} />
-                </div>
+                  {/* ۴ — انتخاب سایز */}
+                  <div id="size-picker" className="mt-6 scroll-mt-24">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[12.5px] font-medium">
+                        انتخاب سایز
+                        {size && <span className="mr-1.5 font-normal text-neutral-500">— {size}</span>}
+                      </span>
+                      <div className="flex items-center gap-3 text-[11.5px]">
+                        <button onClick={() => setOpenAcc(openAcc === "size-chart" ? null : "size-chart")} className="underline underline-offset-2 hover:text-[#011c3a]">جدول سایز</button>
+                        <span className="h-3 w-px bg-neutral-300" />
+                        <button onClick={() => setOpenAcc(openAcc === "size-guide" ? null : "size-guide")} className="underline underline-offset-2 hover:text-[#011c3a]">راهنمای اندازه‌گیری</button>
+                      </div>
+                    </div>
 
-                {/* سایز */}
-                <div id="size-picker" className="mt-6">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] font-medium">انتخاب سایز</span>
-                    <div className="flex items-center gap-3 text-[11.5px]">
-                      <button onClick={() => setOpenAcc(openAcc === "size-chart" ? null : "size-chart")} className="underline underline-offset-2">جدول سایز</button>
-                      <span className="h-3 w-px bg-neutral-300" />
-                      <button onClick={() => setOpenAcc(openAcc === "size-guide" ? null : "size-guide")} className="underline underline-offset-2">راهنمای سایز</button>
+                    <div className={`mt-3 flex flex-wrap gap-2 ${sizeError ? "pdp-error-box" : ""}`} role="group" aria-label="انتخاب سایز">
+                      {product.sizes.map((s) => (
+                        <button
+                          key={s.label}
+                          onClick={() => s.inStock && pickSize(s.label)}
+                          disabled={!s.inStock}
+                          aria-pressed={size === s.label}
+                          title={s.inStock ? s.label : "ناموجود"}
+                          className={
+                            "pdp-size-pill relative " +
+                            (!s.inStock
+                              ? "is-unavailable cursor-not-allowed"
+                              : size === s.label
+                                ? "is-selected"
+                                : "hover:border-[#011c3a]")
+                          }
+                        >
+                          {s.label}
+                          {!s.inStock && (
+                            <svg viewBox="0 0 48 48" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden="true">
+                              <line x1="4" y1="44" x2="44" y2="4" stroke="#c9c9c9" strokeWidth="1.5" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                  {/* هشدارها و راهنما */}
+                  {sizeError && (
+                    <p className="pdp-error-text mt-2 text-[11px]">برای افزودن به سبد، ابتدا یک سایز انتخاب کنید.</p>
+                  )}
+                  {!sizeError && inStockCount > 0 && inStockCount <= 2 && (
+                    <p className="pdp-hint-warn mt-2 flex items-center gap-1.5 text-[11px]">
+                      <Icon name="clock" className="h-3.5 w-3.5" strokeWidth={1.6} />
+                      موجودی محدود — تنها {fa(inStockCount)} سایز باقی مانده است
+                    </p>
+                  )}
+                    {openAcc === "size-chart" && <SizeGuide product={product} mode="chart" />}
+                    {openAcc === "size-guide" && <SizeGuide product={product} mode="how" />}
+                  </div>
+
+                  {/* ۵ — دکمهٔ اصلی خرید */}
+                  <div ref={actionsRef} className="mt-5">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleAdd}
+                        className="storefront-primary-action flex h-[52px] flex-1 items-center justify-center gap-2 rounded-full text-[13.5px] font-medium"
+                      >
+                        <Icon name={added ? "check" : "bag"} className="h-[18px] w-[18px]" strokeWidth={added ? 2.4 : 1.8} />
+                        {added ? "به سبد اضافه شد" : size ? "افزودن به سبد خرید" : "یک سایز انتخاب کنید"}
+                      </button>
+                      <button
+                        onClick={() => toggleWish(product.id)}
+                        aria-label={wished ? "حذف از علاقه‌مندی‌ها" : "افزودن به علاقه‌مندی‌ها"}
+                        aria-pressed={wished}
+                        className="storefront-icon-action flex h-[52px] w-[52px] items-center justify-center rounded-full"
+                      >
+                        <Icon name="heart" className="h-[18px] w-[18px]" fill={wished ? "#011c3a" : "none"} />
+                      </button>
+                    </div>
+
+                    {/* ۶ — اقدامات کمکی */}
+                    <div className="mt-2.5 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => toggleCompare(product.id)}
+                        aria-pressed={inCompare}
+                        className={"storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full text-[12px] " + (inCompare ? "is-active" : "")}
+                      >
+                        {inCompare ? "در لیست مقایسه" : "مقایسه"}
+                      </button>
+                      <button onClick={share} className="storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full text-[12px]">
+                        {copied ? "لینک کپی شد ✓" : "اشتراک‌گذاری"}
+                      </button>
+                    </div>
+
+                    {/* ۷ — خدمات هوشمند */}
+                    <div className="mt-2.5 grid grid-cols-2 gap-2">
+                      <button onClick={() => setSizeAdvisorOpen(true)} className="size-advisor-trigger storefront-secondary-action flex min-h-11 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
+                        <Icon name="user" className="h-4 w-4" /> پیشنهاد هوشمند سایز
+                      </button>
+                      <Link to={`/try-on?top=${product.id}`} className="ai-tryon-button flex min-h-11 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
+                        <Icon name="star" className="h-4 w-4" /> Try On Me
+                      </Link>
                     </div>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-4 gap-1.5 sm:grid-cols-7">
-                    {product.sizes.map((s) => (
-                      <button
-                        key={s.label}
-                        onClick={() => s.inStock && setSize(s.label)}
-                        disabled={!s.inStock}
-                        title={s.inStock ? s.label : "ناموجود"}
-                        className={
-                          "product-size-option relative h-10 overflow-hidden rounded-xl border text-[12px] transition " +
-                          (!s.inStock
-                            ? "is-unavailable cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-300"
-                            : size === s.label
-                              ? "is-selected"
-                              : "border-neutral-300 hover:border-[#011c3a]")
-                        }
-                      >
-                        {s.label}
-                        {!s.inStock && (
-                          <svg viewBox="0 0 40 40" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
-                            <line x1="2" y1="38" x2="38" y2="2" stroke="#d4d4d4" strokeWidth="1.5" />
-                          </svg>
-                        )}
-                      </button>
+                  {/* ۸ — نشان‌های اعتماد */}
+                  <ul className="pdp-trust-strip mt-5 rounded-2xl">
+                    {[
+                      { icon: "truck", title: "ارسال سریع و بیمه‌شده", text: "تهران ۱ تا ۲ روز کاری، سایر شهرها ۲ تا ۴ روز کاری" },
+                      { icon: "return", title: "۳۰ روز مهلت مرجوعی", text: "تعویض سایز یا مرجوعی کامل، بدون قید و شرط" },
+                      { icon: "needle", title: "دوخت دست کلبه", text: "تولید در کارگاه خودمان + ضمانت تعمیرات یک‌ساله" },
+                    ].map((t) => (
+                      <li key={t.title} className="flex items-center gap-3 px-4 py-3">
+                        <span className="pdp-icon-bubble flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
+                          <Icon name={t.icon} className="h-4 w-4" strokeWidth={1.4} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium">{t.title}</p>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-500">{t.text}</p>
+                        </div>
+                      </li>
                     ))}
-                  </div>
-
-                  {openAcc === "size-chart" && <SizeGuide product={product} mode="chart" />}
-                  {openAcc === "size-guide" && <SizeGuide product={product} mode="how" />}
-                </div>
-
-                {/* دکمه‌ها */}
-                <div ref={actionsRef} className="mt-5">
-                  <div className="product-main-actions flex gap-2">
-                    <button
-                      onClick={handleAdd}
-                      className="storefront-primary-action flex h-12 flex-1 items-center justify-center gap-2 rounded-full text-[13px] font-medium"
-                    >
-                      <Icon name="bag" className="h-4 w-4" />
-                      {size ? "افزودن به سبد خرید" : "یک سایز انتخاب کنید"}
-                    </button>
-                    <button
-                      onClick={() => toggleWish(product.id)}
-                      aria-label="علاقه‌مندی"
-                      className="storefront-icon-action flex h-12 w-12 items-center justify-center rounded-full border border-neutral-300 transition"
-                    >
-                      <Icon name="heart" className="h-4 w-4" fill={wished ? "#011c3a" : "none"} />
-                    </button>
-                  </div>
-
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => toggleCompare(product.id)}
-                      className={
-                        "storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full border text-[12px] transition " +
-                        (inCompare ? "is-active" : "")
-                      }
-                    >
-                      {inCompare ? "در لیست مقایسه" : "افزودن به مقایسه"}
-                    </button>
-                    <button
-                      onClick={share}
-                      className="storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full border text-[12px] transition"
-                    >
-                      {copied ? "لینک کپی شد" : "اشتراک‌گذاری"}
-                    </button>
-                  </div>
-                </div>
-
-                <ul className="mt-5 space-y-1.5 text-[11.5px]">
-                  {[
-                    "ارسال رایگان برای سفارش‌های بالای ۳ میلیون تومان",
-                    "۳۰ روز مهلت مرجوعی و تعویض",
-                    "دوخت دست در کارگاه کلبه",
-                  ].map((t) => (
-                    <li key={t} className="flex gap-2">
-                      <Check />
-                      <span>{t}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="mt-5 grid grid-cols-2 gap-2">
-                  <button onClick={() => setSizeAdvisorOpen(true)} className="size-advisor-trigger storefront-secondary-action flex min-h-12 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
-                    <Icon name="user" className="h-4 w-4" /> پیشنهاد هوشمند سایز
-                  </button>
-                  <Link to={`/try-on?top=${product.id}`} className="ai-tryon-button flex min-h-12 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
-                    <Icon name="star" className="h-4 w-4" /> Try On Me
-                  </Link>
-                </div>
+                  </ul>
                 </>
-                )}
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ═══════════════ زیرمنوی چسبان بخش‌ها (دسکتاپ) ═══════════════ */}
+        <nav
+          aria-label="بخش‌های صفحه محصول"
+          className={`pdp-subnav sticky top-[108px] z-40 hidden border-y transition-all duration-300 lg:block ${subnavVisible ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-2 opacity-0"}`}
+        >
+          <div className="mx-auto flex w-full max-w-[1360px] items-center gap-7 px-8">
+            {sections.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                className={`pdp-subnav-link border-b-2 py-3 text-[12px] transition ${activeSection === s.id ? "is-active" : ""}`}
+              >
+                {s.label}
+              </a>
+            ))}
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="mr-auto py-3 text-[11.5px] text-neutral-500 underline-offset-4 transition hover:text-[#011c3a] hover:underline"
+            >
+              ↑ بازگشت به خرید
+            </button>
+          </div>
+        </nav>
+
+        {/* ═══════════════ جزئیات محصول + مشخصات فنی ═══════════════ */}
+        <section id="details" className="scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[170px]">
+          <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
+            <header>
+              <p className="text-[10px] tracking-[0.3em] text-neutral-400">PRODUCT DETAILS</p>
+              <h2 className="mt-2 text-[20px] font-medium">جزئیات محصول</h2>
+            </header>
+
+            <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-12 xl:gap-16">
+              {/* راست: توضیحات + ویژگی‌ها + آکاردئون‌ها */}
+              <div>
+                <p className="text-[13px] leading-[2.1] text-neutral-600">{product.description}</p>
+
+                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                  {[
+                    { icon: "needle", title: "دوخت دست", text: "هر قطعه در کارگاه کلبه و با نظارت خیاط ارشد دوخته می‌شود." },
+                    { icon: "shield", title: "ضمانت کیفیت", text: "تا یک سال پس از خرید، تعمیرات دوخت رایگان است." },
+                  ].map((f) => (
+                    <div key={f.title} className="pdp-feature-card flex gap-3 rounded-2xl p-4">
+                      <div className="pdp-icon-bubble flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
+                        <Icon name={f.icon} className="h-4 w-4" strokeWidth={1.3} />
+                      </div>
+                      <div>
+                        <p className="text-[12px] font-medium">{f.title}</p>
+                        <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">{f.text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-7 border-t border-neutral-200">
+                  {accordions.map((a) => (
+                    <div key={a.title} className="border-b border-neutral-200">
+                      <button onClick={() => setOpenAcc(openAcc === a.title ? null : a.title)} aria-expanded={openAcc === a.title} className="flex w-full items-center justify-between py-3.5 text-right text-[13px]">
+                        {a.title}
+                        <Icon name={openAcc === a.title ? "minus" : "plus"} className="h-3.5 w-3.5 text-neutral-400" />
+                      </button>
+                      {openAcc === a.title && (
+                        <p className="pb-4 text-[12.5px] leading-[2] text-neutral-600">{a.body}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* چپ: جدول مشخصات فنی */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[15px] font-medium">مشخصات فنی</h3>
+                  <span className="text-[10.5px] text-neutral-400" dir="ltr">{product.specs.code}</span>
+                </div>
+                <div className="product-specs-table mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+                  <table className="w-full text-[12.5px]">
+                    <tbody>
+                      {specOrder.map((key, i) => (
+                        <tr key={key} className={"product-spec-row grid grid-cols-[38%_62%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
+                          <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
+                          <td className="text-right">{product.specs[key]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
-          </aside>
-
-          {/* مشخصات فنی: ستون چپ، همتراز با باکس خرید */}
-          <section className="border-t border-neutral-200 px-4 pt-10 lg:border-t-0 lg:px-0 lg:pt-2">
-            <div className="product-specs-table overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-              <table className="w-full text-[12.5px]">
-                <tbody>
-                  {specOrder.map((key, i) => (
-                    <tr key={key} className={"product-spec-row grid grid-cols-[42%_58%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
-                      <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
-                      <td className="text-right">{product.specs[key]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {/* جزئیات محصول — داخل ستون مشخصات */}
-          <section className="mt-8 border-t border-neutral-200 pt-8">
-            <h2 className="text-[18px] font-medium">جزئیات محصول</h2>
-            <p className="mt-4 text-[12.5px] leading-[2] text-neutral-600">{product.description}</p>
-            <div className="mt-7 border-t border-neutral-200">
-              {accordions.map((a) => (
-                <div key={a.title} className="border-b border-neutral-200">
-                  <button onClick={() => setOpenAcc(openAcc === a.title ? null : a.title)} className="flex w-full items-center justify-between py-3.5 text-right text-[13px]">
-                    {a.title}
-                    <Icon name={openAcc === a.title ? "minus" : "plus"} className="h-3.5 w-3.5 text-neutral-400" />
-                  </button>
-                  {openAcc === a.title && (
-                    <p className="pb-4 pl-4 text-[12.5px] leading-[2] text-neutral-600">{a.body}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="mt-7 grid gap-4 sm:grid-cols-2">
-              {[
-                { icon: "needle", title: "دوخت دست", text: "هر قطعه در کارگاه کلبه و با نظارت خیاط ارشد دوخته می‌شود." },
-                { icon: "shield", title: "ضمانت کیفیت", text: "تا یک سال پس از خرید، تعمیرات دوخت رایگان است." },
-              ].map((f) => (
-                <div key={f.title} className="flex gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-300">
-                    <Icon name={f.icon} className="h-4 w-4" strokeWidth={1.3} />
-                  </div>
-                  <div>
-                    <p className="text-[12px] font-medium">{f.title}</p>
-                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-neutral-500">{f.text}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
           </div>
+        </section>
 
-          {/* گالری: ستون چپ */}
-          <div className="lg:sticky lg:top-[90px] lg:self-start">
-            <Gallery product={product} onOpen={(i) => setLightbox(i)} />
-          </div>
-        </div>
-
-        <div id="reviews">
-          <Reviews product={product} />
-        </div>
-
-        {/* با این ست کنید — قابل کنترل کامل از سایتساز (هاستاسپاتها، متن، رنگ، نمایش) */}
+        {/* ═══════════════ با این ست کنید (کنترل‌شده از سایت‌ساز) ═══════════════ */}
         {lookSettings.enabled && (
-          <section className="border-t border-neutral-200 bg-[#f6f6f4]">
-            <div className="mx-auto w-full px-4 py-14 lg:px-8">
+          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[170px]">
+            <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
                 <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
                 <h2 className="mt-2 text-[20px] font-medium">با این ست کنید</h2>
@@ -948,7 +1149,7 @@ export default function ProductPage({ id }: { id: string }) {
               </div>
 
               <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
-                <div className="relative overflow-hidden bg-neutral-100">
+                <div className="relative overflow-hidden rounded-2xl bg-neutral-100">
                   <img src={lookSettings.image} alt={lookSettings.title} loading="lazy" className="aspect-[3/4] w-full object-cover" />
                   {lookSettings.hotspots.filter((h) => h.visible).map((h) => (
                     <span key={h.id} className="group/hot absolute z-10" style={{ right: `${h.x}%`, top: `${h.y}%` }}>
@@ -962,7 +1163,7 @@ export default function ProductPage({ id }: { id: string }) {
                   <h3 className="text-[16px] font-medium">{lookSettings.title}</h3>
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     {(lookSettings.products.length > 0 ? lookSettings.products : []).map((lp) => (
-                      <Link key={lp.id} to={lp.to || "/shop"} className="group block overflow-hidden bg-white">
+                      <Link key={lp.id} to={lp.to || "/shop"} className="group block overflow-hidden rounded-2xl bg-white">
                         <div className="overflow-hidden bg-neutral-100">
                           <img src={lp.img} alt={lp.name} loading="lazy" className="aspect-[3/4] w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
                         </div>
@@ -982,34 +1183,49 @@ export default function ProductPage({ id }: { id: string }) {
           </section>
         )}
 
-        {/* محصولات مشابه */}
-        <section className="mx-auto w-full px-4 py-14 lg:px-8">
-          <h2 className="mb-6 text-[18px] font-medium">محصولات مشابه</h2>
-          <div className="rtl-rail no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 lg:mx-0 lg:px-0">
-            {related.map((p) => (
-              <div key={p.id} className="w-[62%] shrink-0 sm:w-[38%] lg:w-[23.5%]">
-                <ProductCard product={p} />
+        {/* ═══════════════ نظرات مشتریان ═══════════════ */}
+        <Reviews product={product} />
+
+        {/* ═══════════════ محصولات مشابه ═══════════════ */}
+        <section id="related" className="scroll-mt-[84px] lg:scroll-mt-[170px]">
+          <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
+            <div className="mb-6 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] tracking-[0.3em] text-neutral-400">YOU MAY ALSO LIKE</p>
+                <h2 className="mt-2 text-[20px] font-medium">محصولات مشابه</h2>
               </div>
-            ))}
-            {products
-              .filter((p) => p.style === product.style && p.id !== product.id && !product.relatedIds.includes(p.id))
-              .slice(0, 2)
-              .map((p) => (
+              <Link to={`/shop?cat=${product.category}`} className="shrink-0 text-[11.5px] text-neutral-500 underline underline-offset-4 hover:text-[#011c3a]">
+                مشاهده همه
+              </Link>
+            </div>
+            <div className="rtl-rail no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 lg:mx-0 lg:px-0">
+              {related.map((p) => (
                 <div key={p.id} className="w-[62%] shrink-0 sm:w-[38%] lg:w-[23.5%]">
                   <ProductCard product={p} />
                 </div>
               ))}
+              {products
+                .filter((p) => p.style === product.style && p.id !== product.id && !product.relatedIds.includes(p.id))
+                .slice(0, 2)
+                .map((p) => (
+                  <div key={p.id} className="w-[62%] shrink-0 sm:w-[38%] lg:w-[23.5%]">
+                    <ProductCard product={p} />
+                  </div>
+                ))}
+            </div>
           </div>
         </section>
 
+        {/* فاصله برای نوار خرید چسبان */}
+        {sticky && !wholesale && <div className="h-24" aria-hidden="true" />}
       </main>
 
-      {/* نوار چسبان خرید */}
+      {/* ═══════════════ نوار خرید چسبان ═══════════════ */}
       {!wholesale && sticky &&
         createPortal(
           <div className="product-sticky-purchase liquid-surface sticky-purchase-in fixed inset-x-0 bottom-0 z-[90] border-t border-neutral-200 bg-white/97 px-3 py-2.5 shadow-[0_-8px_25px_rgba(1,28,58,0.09)] backdrop-blur sm:px-5">
             <div className="mx-auto flex w-full max-w-[1600px] items-center gap-2 sm:gap-4">
-              <img src={colour.img} alt="" className="hidden h-12 w-9 shrink-0 object-cover sm:block" />
+              <img src={colour.img} alt="" className="hidden h-12 w-9 shrink-0 rounded-lg object-cover sm:block" />
               <div className="hidden min-w-0 md:block">
                 <p className="truncate text-[12.5px] font-medium">{product.name}</p>
                 <p className="mt-0.5 text-[11px] text-neutral-500">
@@ -1035,7 +1251,7 @@ export default function ProductPage({ id }: { id: string }) {
                         key={item.label}
                         role="option"
                         aria-selected={size === item.label}
-                        onClick={() => { setSize(item.label); setStickySizeOpen(false); }}
+                        onClick={() => { pickSize(item.label); setStickySizeOpen(false); }}
                         className={`h-9 rounded-xl text-[11px] ${size === item.label ? "storefront-primary-action" : "storefront-secondary-action"}`}
                       >
                         {item.label}
@@ -1048,14 +1264,15 @@ export default function ProductPage({ id }: { id: string }) {
                 onClick={handleAdd}
                 className="storefront-primary-action flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-full px-4 text-[12px] font-medium sm:w-[220px] sm:flex-none sm:text-[13px]"
               >
-                <Icon name="bag" className="h-4 w-4 shrink-0" />
-                افزودن به سبد
+                <Icon name={added ? "check" : "bag"} className="h-4 w-4 shrink-0" />
+                {added ? "اضافه شد" : "افزودن به سبد"}
               </button>
             </div>
           </div>,
           document.body,
         )}
 
+      {/* ═══════════════ مودال پیشنهاد هوشمند سایز ═══════════════ */}
       {sizeAdvisorOpen &&
         createPortal(
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="size-advisor-title">
@@ -1070,7 +1287,7 @@ export default function ProductPage({ id }: { id: string }) {
                   <Icon name="close" className="h-4 w-4" />
                 </button>
               </div>
-              <SizeAdvisor product={product} onPick={(pickedSize) => { setSize(pickedSize); setSizeAdvisorOpen(false); }} />
+              <SizeAdvisor product={product} onPick={(pickedSize) => { pickSize(pickedSize); setSizeAdvisorOpen(false); }} />
             </div>
           </div>,
           document.body,

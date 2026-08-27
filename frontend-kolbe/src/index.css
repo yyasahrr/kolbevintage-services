@@ -2223,3 +2223,241 @@ textarea {
   color: #f5f1e9 !important;
   border-color: rgba(194, 216, 227, 0.15) !important;
 }
+
+/* ═══════════════════ صفحه جزییات محصول — بازطراحی PDP ═══════════════════ */
+
+/* تامنیل گالری (ریل عمودی دسکتاپ + ردیف موبایل) */
+.pdp-thumb {
+  display: block;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 0.8rem;
+  opacity: 0.55;
+  background: #e9ecea;
+  transition: opacity 200ms ease, border-color 200ms ease;
+}
+
+.pdp-thumb:hover {
+  opacity: 0.85;
+}
+
+.pdp-thumb.is-active {
+  opacity: 1;
+  border-color: #011c3a;
+}
+
+[data-theme="dark"] .pdp-thumb.is-active {
+  border-color: #c7dde1;
+}
+
+/* برچسب روی تصویر اصلی (مثل «جدید») */
+.pdp-badge {
+  box-shadow: 0 6px 18px rgba(160, 60, 40, 0.35);
+}
+
+/* انتخابگر سایز — قرص‌های بزرگ لمس‌پذیر */
+.pdp-size-pill {
+  display: inline-flex;
+  position: relative;
+  height: 2.75rem;
+  min-width: 3.4rem;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.5rem;
+  border: 1px solid rgba(28, 50, 64, 0.18);
+  border-radius: 0.75rem;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+}
+
+.pdp-size-pill:not(:disabled):not(.is-selected):hover {
+  border-color: rgba(1, 28, 58, 0.55);
+  background: rgba(255, 255, 255, 0.55);
+  transform: translateY(-1px);
+}
+
+.pdp-size-pill.is-selected {
+  color: #fff;
+  border-color: #011c3a;
+  background: #011c3a;
+  box-shadow: 0 10px 24px rgba(1, 28, 58, 0.24);
+}
+
+.pdp-size-pill.is-unavailable {
+  color: #a8a8a8;
+  background: rgba(28, 50, 64, 0.035);
+  cursor: not-allowed;
+}
+
+[data-theme="dark"] .pdp-size-pill {
+  color: #dbe8eb;
+  border-color: rgba(210, 230, 236, 0.2);
+}
+
+[data-theme="dark"] .pdp-size-pill:not(:disabled):not(.is-selected):hover {
+  border-color: rgba(210, 230, 236, 0.5);
+  background: rgba(210, 230, 236, 0.07);
+}
+
+[data-theme="dark"] .pdp-size-pill.is-selected {
+  color: #061722;
+  border-color: #b9d1d7;
+  background: #c7dde1;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .pdp-size-pill.is-unavailable {
+  color: #5d6b76;
+}
+
+/* لرزش و قاب خطا وقتی بدون سایز روی خرید کلیک شود */
+@keyframes pdp-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(4px); }
+  40% { transform: translateX(-4px); }
+  60% { transform: translateX(3px); }
+  80% { transform: translateX(-3px); }
+}
+
+.pdp-error-box {
+  animation: pdp-shake 0.4s ease;
+  outline: 2px solid rgba(164, 70, 61, 0.75);
+  outline-offset: 6px;
+  border-radius: 0.9rem;
+}
+
+/* سواچ رنگ */
+.pdp-swatch {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(28, 50, 64, 0.18);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.pdp-swatch:hover {
+  transform: translateY(-1px);
+}
+
+.pdp-swatch.is-selected {
+  border-color: #011c3a;
+  box-shadow: 0 0 0 2px #011c3a;
+}
+
+[data-theme="dark"] .pdp-swatch {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(210, 230, 236, 0.22);
+}
+
+[data-theme="dark"] .pdp-swatch.is-selected {
+  border-color: #c7dde1;
+  box-shadow: 0 0 0 2px #c7dde1;
+}
+
+/* پنل قیمت و نوار اعتماد */
+.pdp-price-panel,
+.pdp-trust-strip,
+.pdp-feature-card {
+  border: 1px solid rgba(28, 50, 64, 0.09);
+  background: rgba(246, 246, 244, 0.8);
+}
+
+.pdp-trust-strip li + li {
+  border-top: 1px solid rgba(28, 50, 64, 0.07);
+}
+
+[data-theme="dark"] .pdp-price-panel,
+[data-theme="dark"] .pdp-trust-strip,
+[data-theme="dark"] .pdp-feature-card {
+  border-color: rgba(194, 216, 227, 0.12);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+[data-theme="dark"] .pdp-trust-strip li + li {
+  border-top-color: rgba(194, 216, 227, 0.09);
+}
+
+/* متن هشدار و توضیح کم‌موجودی — خوانا در هر دو تم */
+.pdp-error-text {
+  color: #a4463d;
+}
+
+.pdp-hint-warn {
+  color: #c9654d;
+}
+
+[data-theme="dark"] .pdp-error-text {
+  color: #e59083;
+}
+
+[data-theme="dark"] .pdp-hint-warn {
+  color: #e0937e;
+}
+
+/* حباب آیکون (نوار اعتماد + کارت ویژگی) */
+.pdp-icon-bubble {
+  border: 1px solid rgba(28, 50, 64, 0.14);
+  background: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="dark"] .pdp-icon-bubble {
+  border-color: rgba(194, 216, 227, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* جداکننده‌های داخل پنل قیمت عمده */
+[data-theme="dark"] .pdp-price-panel :where(.divide-x > :not([hidden]) ~ :not([hidden])) {
+  border-color: rgba(194, 216, 227, 0.12) !important;
+}
+
+/* پس‌زمینه‌های کمکی که در دارک نیاز به جایگزین دارند */
+[data-theme="dark"] .bg-\[\#f3f5f7\] {
+  background-color: #22354a !important;
+}
+
+[data-theme="dark"] .bg-\[\#f7f6f3\] {
+  background-color: rgba(255, 255, 255, 0.035) !important;
+}
+
+/* زیرمنوی چسبان بخش‌ها */
+.pdp-subnav {
+  border-color: rgba(28, 50, 64, 0.1);
+  background: rgba(252, 251, 248, 0.88);
+  backdrop-filter: blur(16px) saturate(125%);
+  -webkit-backdrop-filter: blur(16px) saturate(125%);
+}
+
+.pdp-subnav-link {
+  color: var(--kv-muted);
+  border-color: transparent;
+}
+
+.pdp-subnav-link:hover {
+  color: #011c3a;
+  border-color: rgba(1, 28, 58, 0.3);
+}
+
+.pdp-subnav-link.is-active {
+  color: #011c3a;
+  border-color: #011c3a;
+  font-weight: 500;
+}
+
+[data-theme="dark"] .pdp-subnav {
+  border-color: rgba(194, 216, 227, 0.14);
+  background: rgba(8, 24, 38, 0.85);
+}
+
+[data-theme="dark"] .pdp-subnav-link {
+  color: #93a4ae;
+}
+
+[data-theme="dark"] .pdp-subnav-link:hover {
+  color: #f5f1e9;
+  border-color: rgba(199, 221, 225, 0.4);
+}
+
+[data-theme="dark"] .pdp-subnav-link.is-active {
+  color: #f5f1e9;
+  border-color: #c7dde1;
+}
