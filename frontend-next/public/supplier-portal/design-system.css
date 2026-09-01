@@ -1,0 +1,35 @@
+.app-shell { background: var(--kv-canvas); color: var(--kv-ink); font-variant-numeric: tabular-nums; }
+.sidebar { background: var(--kv-ink); color: #f8f4ec; border-color: rgba(255,255,255,.1); }
+.brand-seal { border-radius: 9px; background: #f8f4ec; color: var(--kv-ink); }
+.supplier-switch { border-color: rgba(255,255,255,.13); background: rgba(255,255,255,.06); }
+.nav-link { border-radius: 8px; color: rgba(255,255,255,.68); }
+.nav-link:hover { background: rgba(255,255,255,.08); color: white; }
+.nav-link.active { background: #f8f4ec; color: var(--kv-ink); }
+.nav-link.active em { background: var(--kv-accent); color: white; }
+.topbar { border-color: var(--kv-border); background: rgba(252,251,248,.9); backdrop-filter: blur(16px); }
+.page-content { max-width: 1480px; }
+.surface, .today-panel, .stock-watch, .inventory-summary article, .balance-grid article {
+  border-color: var(--kv-border);
+  border-radius: var(--kv-radius-surface);
+  background: var(--kv-surface);
+  box-shadow: none;
+}
+.button, .icon-button, .global-search, .search-field, .price-row input, .price-row select { border-radius: var(--kv-radius-control); }
+.button.primary { border-color: var(--kv-ink); background: var(--kv-ink); color: white; }
+.button.primary:hover { background: var(--kv-ink-soft); }
+.button.secondary { border-color: var(--kv-border); background: var(--kv-surface); color: var(--kv-ink); }
+.action-center, .series-hero, .request-banner { background: var(--kv-ink); }
+.page-head h1, .section-heading h2 { color: var(--kv-ink); text-wrap: balance; }
+.page-head p, .heading-copy { color: var(--kv-muted); text-wrap: pretty; }
+.status.green { color: var(--kv-success); }
+.status.amber { color: var(--kv-warning); }
+.notification-panel, .command-menu { border-color: var(--kv-border); box-shadow: var(--kv-shadow-overlay); }
+:where(.app-shell, .auth-shell) :where(button, a, input, select, textarea) {
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+:where(.app-shell, .auth-shell) :where(button, a):active { transform: translateY(1px); }
+
+@media (max-width: 560px) {
+  .surface { border-radius: 12px; }
+  .page-content { padding-inline: 14px; }
+}

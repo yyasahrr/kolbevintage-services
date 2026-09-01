@@ -10,3 +10,11 @@ supabase/.temp/
 .env
 .medusa/
 .freebuff/
+
+# لایه Next.js
+frontend-next/.next/
+frontend-next/next-env.d.ts
+frontend-next/out/
+
+# مارکر آماده بودن دیتابیس (بعد از هر بار init تازه ساخته میشود)
+backend/.kolbe-db-ready

@@ -1,0 +1,1031 @@
+/**
+ * کاتالوگ محصولات کلبه وینتیج
+ * مشخصات همه محصولات از یک ساختار استاندارد پیروی می‌کند تا امکان مقایسه وجود داشته باشد.
+ */
+
+export type SizeStock = { label: string; inStock: boolean };
+
+export type ProductColour = {
+  name: string;
+  hex: string;
+  img: string;
+  angle: number;
+};
+
+export type SpecKey =
+  | "productType"
+  | "fabric"
+  | "fibre"
+  | "weight"
+  | "stretch"
+  | "season"
+  | "cut"
+  | "collar"
+  | "sleeve"
+  | "closure"
+  | "fabricType"
+  | "country"
+  | "care"
+  | "styleFor"
+  | "code";
+
+export const specLabels: Record<SpecKey, string> = {
+  productType: "نوع محصول",
+  fabric: "جنس پارچه",
+  fibre: "ترکیب الیاف",
+  weight: "ضخامت پارچه",
+  stretch: "میزان کشسانی",
+  season: "مناسب فصل",
+  cut: "نوع برش",
+  collar: "نوع یقه",
+  sleeve: "نوع آستین",
+  closure: "نوع بسته شدن",
+  fabricType: "نوع پارچه",
+  country: "کشور تولید",
+  care: "دستور شستشو",
+  styleFor: "مناسب چه استایلی",
+  code: "کد محصول",
+};
+
+export const specOrder: SpecKey[] = [
+  "productType",
+  "fabric",
+  "fibre",
+  "weight",
+  "stretch",
+  "season",
+  "cut",
+  "collar",
+  "sleeve",
+  "closure",
+  "fabricType",
+  "country",
+  "care",
+  "styleFor",
+  "code",
+];
+
+export type SizeRow = {
+  size: string;
+  chest: string;
+  shoulder: string;
+  length: string;
+  sleeve: string;
+};
+
+export type Review = {
+  author: string;
+  date: string;
+  stars: number;
+  title: string;
+  text: string;
+  size: string;
+  fit: "کوچک" | "اندازه" | "بزرگ";
+};
+
+export type Product = {
+  id: string;
+  name: string;
+  latin: string;
+  subtitle: string;
+  price: number;
+  images: string[];
+  video?: { poster: string; url: string; title: string };
+  colours: ProductColour[];
+  sizes: SizeStock[];
+  style: string;
+  category: string;
+  categoryLabel: string;
+  season: string;
+  fabricGroup: string;
+  badges: string[];
+  rating: number;
+  reviewCount: number;
+  reviews: Review[];
+  description: string;
+  specs: Record<SpecKey, string>;
+  sizeChart: SizeRow[];
+  sizeAdvice: string;
+  relatedIds: string[];
+  complementaryIds: string[];
+  lookId?: string;
+  createdAt: number;
+  sold: number;
+};
+
+const baseSizes = (out: string[] = []): SizeStock[] =>
+  ["XS", "S", "M", "L", "XL", "XXL", "3XL"].map((label) => ({
+    label,
+    inStock: !out.includes(label),
+  }));
+
+const chart = (start: number): SizeRow[] =>
+  ["XS", "S", "M", "L", "XL", "XXL", "3XL"].map((size, i) => ({
+    size,
+    chest: String(start + i * 6),
+    shoulder: (40 + i * 1.6).toFixed(1),
+    length: (70 + i * 2).toFixed(1),
+    sleeve: (60 + i * 1.2).toFixed(1),
+  }));
+
+export const products: Product[] = [
+  {
+    id: "blazer-oxford",
+    name: "بلیزر آکسفورد",
+    latin: "The Oxford Blazer",
+    subtitle: "پشم بکر، آستر ابریشمی، دوخت دست",
+    price: 4_850_000,
+    images: [
+      "/images/model-front.jpg",
+      "/images/detail-collar.jpg",
+      "/images/model-full.jpg",
+      "/images/detail-hem.jpg",
+      "/images/flat.jpg",
+      "/images/model-teal.jpg",
+    ],
+    video: {
+      poster: "/images/model-full.jpg",
+      url: "https://www.aparat.com/",
+      title: "نمای نزدیک از دوخت بلیزر آکسفورد",
+    },
+    colours: [
+      { name: "سرمه‌ای شب", hex: "#22304a", img: "/images/model-front.jpg", angle: 0 },
+      { name: "قهوه‌ای تنباکو", hex: "#5a4030", img: "/images/detail-collar.jpg", angle: 90 },
+      { name: "خاکستری زغالی", hex: "#4a4f55", img: "/images/model-full.jpg", angle: 180 },
+      { name: "شتری روشن", hex: "#b2895c", img: "/images/flat.jpg", angle: 270 },
+    ],
+    sizes: baseSizes(["XS", "3XL"]),
+    style: "old-money",
+    category: "blazer",
+    categoryLabel: "کت و بلیزر",
+    season: "پاییز و زمستان",
+    fabricGroup: "پشم",
+    badges: ["جدید"],
+    rating: 4.8,
+    reviewCount: 64,
+    reviews: [
+      {
+        author: "امیرحسین ر.",
+        date: "۱۲ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "دوخت بی‌نظیر",
+        text: "کیفیت دوخت واقعاً در سطح خیاط‌های قدیمی است. شانه‌ها عالی نشسته و آستر ابریشمی حس خوبی دارد.",
+        size: "L",
+        fit: "اندازه",
+      },
+      {
+        author: "سهیل م.",
+        date: "۴ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "دقیقاً همان چیزی که می‌خواستم",
+        text: "رنگ سرمه‌ای عمیق و بدون براقی اضافه. با شلوار فاستونی خاکستری فوق‌العاده می‌شود.",
+        size: "M",
+        fit: "اندازه",
+      },
+      {
+        author: "بابک ک.",
+        date: "۲۸ تیر ۱۴۰۵",
+        stars: 4,
+        title: "کمی بلند",
+        text: "کیفیت عالی است اما قد آستین برای من کمی بلند بود و کوتاهش کردم.",
+        size: "L",
+        fit: "بزرگ",
+      },
+    ],
+    description:
+      "بلیزر آکسفورد، ستون فقرات کمد اولد مانی است. از پشم بکر ایتالیایی با بافت متوسط دوخته شده و آستر ابریشمی آن باعث می‌شود به‌راحتی روی پیراهن سُر بخورد. یقه با لایه‌گذاری دست فرم گرفته و بعد از سال‌ها استفاده هم فرم خود را نگه می‌دارد. دو دکمه جلو، سه دکمه روی آستین و چاک دوطرفه پشت.",
+    specs: {
+      productType: "کت تک / بلیزر",
+      fabric: "پشم بکر ایتالیایی",
+      fibre: "۱۰۰٪ پشم مرینوس",
+      weight: "۲۹۰ گرم بر متر مربع",
+      stretch: "کم",
+      season: "پاییز و زمستان",
+      cut: "رگولار، کمی فرم‌دار",
+      collar: "یقه انگلیسی برگردان",
+      sleeve: "آستین بلند با سه دکمه",
+      closure: "دو دکمه جلو",
+      fabricType: "فاستونی",
+      country: "ایران — کارگاه کلبه",
+      care: "خشک‌شویی، اتو با پارچه محافظ",
+      styleFor: "اولد مانی، نئو کلاسیک، رسمی",
+      code: "KV-BL-OX-001",
+    },
+    sizeChart: chart(96),
+    sizeAdvice:
+      "این بلیزر رگولار فیت است. اگر بین دو سایز هستید و لایه زیرین ضخیم می‌پوشید، سایز بزرگ‌تر را انتخاب کنید.",
+    relatedIds: ["coat-herringbone", "cardigan-shawl", "shirt-oxford"],
+    complementaryIds: ["trouser-pleated", "belt-leather", "shirt-linen"],
+    lookId: "look-2",
+    createdAt: 20250801,
+    sold: 212,
+  },
+  {
+    id: "shirt-linen",
+    name: "پیراهن کتان کلبه",
+    latin: "The Linen Shirt",
+    subtitle: "کتان شسته، یقه فرانسوی",
+    price: 2_390_000,
+    images: [
+      "/images/flat.jpg",
+      "/images/model-teal.jpg",
+      "/images/detail-collar.jpg",
+      "/images/model-front.jpg",
+      "/images/detail-hem.jpg",
+    ],
+    colours: [
+      { name: "سفید شکری", hex: "#f2f2ee", img: "/images/flat.jpg", angle: 0 },
+      { name: "آبی پودری", hex: "#c6d7e4", img: "/images/model-teal.jpg", angle: 72 },
+      { name: "شنی", hex: "#d9c7a7", img: "/images/detail-collar.jpg", angle: 144 },
+      { name: "زیتونی", hex: "#b7c98a", img: "/images/model-front.jpg", angle: 216 },
+      { name: "آجری", hex: "#9e4b3c", img: "/images/detail-hem.jpg", angle: 288 },
+    ],
+    sizes: baseSizes(["3XL"]),
+    style: "minimal",
+    category: "shirt",
+    categoryLabel: "پیراهن",
+    season: "بهار و تابستان",
+    fabricGroup: "کتان",
+    badges: ["پرفروش"],
+    rating: 4.7,
+    reviewCount: 128,
+    reviews: [
+      {
+        author: "نیما ص.",
+        date: "۱۹ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "بهترین کتانی که داشتم",
+        text: "کتان شسته است و از روز اول نرم بود. برای تابستان تهران واقعاً خنک است.",
+        size: "M",
+        fit: "اندازه",
+      },
+      {
+        author: "پویا ح.",
+        date: "۹ مرداد ۱۴۰۵",
+        stars: 4,
+        title: "چروک طبیعی",
+        text: "کتان است و طبیعتاً چروک می‌شود، ولی همان چروک قشنگی خودش را دارد.",
+        size: "L",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "پیراهن کتان کلبه از کتان شسته اروپایی دوخته شده؛ همان پارچه‌ای که از بار اول نرم است و نیازی به چند بار شستشو ندارد. یقه فرانسوی نیمه‌باز، جادکمه‌های دوخت دست و درز کناری دولاکن. برای روزهای گرم و ست‌های ساده.",
+    specs: {
+      productType: "پیراهن آستین بلند",
+      fabric: "کتان شسته",
+      fibre: "۱۰۰٪ کتان",
+      weight: "۱۷۰ گرم بر متر مربع",
+      stretch: "بدون کشسانی",
+      season: "بهار و تابستان",
+      cut: "رگولار",
+      collar: "یقه فرانسوی",
+      sleeve: "آستین بلند با سردست دکمه‌دار",
+      closure: "دکمه سراسری صدفی",
+      fabricType: "کتان تخت",
+      country: "ایران — کارگاه کلبه",
+      care: "ماشین‌شویی ۳۰ درجه، اتو با بخار",
+      styleFor: "مینیمال، اولد مانی، تعطیلات",
+      code: "KV-SH-LN-002",
+    },
+    sizeChart: chart(100),
+    sizeAdvice: "کتان با شستشو کمی جمع می‌شود؛ برش این پیراهن با احتساب همین موضوع طراحی شده است.",
+    relatedIds: ["shirt-oxford", "polo-pique", "trouser-chino"],
+    complementaryIds: ["blazer-oxford", "belt-leather", "trouser-pleated"],
+    lookId: "look-2",
+    createdAt: 20250715,
+    sold: 480,
+  },
+  {
+    id: "knit-cable",
+    name: "پلیور بافت کابلی",
+    latin: "The Cable Knit",
+    subtitle: "پشم مرینوس، بافت دست",
+    price: 3_180_000,
+    images: [
+      "/images/model-teal.jpg",
+      "/images/detail-hem.jpg",
+      "/images/model-full.jpg",
+      "/images/detail-collar.jpg",
+      "/images/flat.jpg",
+    ],
+    video: {
+      poster: "/images/detail-hem.jpg",
+      url: "https://www.aparat.com/",
+      title: "بافت کابلی از نمای نزدیک",
+    },
+    colours: [
+      { name: "سبز جنگلی", hex: "#3d5c3a", img: "/images/model-teal.jpg", angle: 0 },
+      { name: "قهوه‌ای سوخته", hex: "#5a4030", img: "/images/detail-hem.jpg", angle: 90 },
+      { name: "سرمه‌ای", hex: "#22304a", img: "/images/model-full.jpg", angle: 180 },
+      { name: "کرم استخوانی", hex: "#e8e2d5", img: "/images/flat.jpg", angle: 270 },
+    ],
+    sizes: baseSizes(["XS", "XXL", "3XL"]),
+    style: "dark-academia",
+    category: "knit",
+    categoryLabel: "بافت و پلیور",
+    season: "پاییز و زمستان",
+    fabricGroup: "پشم",
+    badges: ["محدود"],
+    rating: 4.9,
+    reviewCount: 91,
+    reviews: [
+      {
+        author: "آرش پ.",
+        date: "۲۱ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "گرم و سبک",
+        text: "انتظار داشتم سنگین باشد ولی خیلی سبک است. بافت کابلی‌اش خیلی تمیز کار شده.",
+        size: "L",
+        fit: "اندازه",
+      },
+      {
+        author: "مهدی ن.",
+        date: "۱۱ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "بدون خارش",
+        text: "مرینوس واقعی است، اصلاً روی پوست اذیت نمی‌کند.",
+        size: "M",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "پلیور بافت کابلی با نخ مرینوس نمره ۳ بافته شده و طرح کابلی آن با دست تکمیل می‌شود. یقه گرد کشباف، سرشانه رگلان و پایین‌تنه کشباف دولا. گرمای واقعی بدون حجم اضافه.",
+    specs: {
+      productType: "پلیور بافت",
+      fabric: "پشم مرینوس",
+      fibre: "۷۰٪ پشم مرینوس، ۳۰٪ آکریلیک نرم",
+      weight: "۴۲۰ گرم (سایز M)",
+      stretch: "متوسط",
+      season: "پاییز و زمستان",
+      cut: "رگولار",
+      collar: "یقه گرد کشباف",
+      sleeve: "آستین بلند رگلان",
+      closure: "بدون بسته شدن (سری)",
+      fabricType: "بافت کابلی",
+      country: "ایران — کارگاه کلبه",
+      care: "شستشوی دست، خشک‌کردن در حالت خوابیده",
+      styleFor: "دارک آکادمیا، وینتیج، روزمره",
+      code: "KV-KN-CB-003",
+    },
+    sizeChart: chart(102),
+    sizeAdvice: "بافت کابلی حجم بیشتری دارد؛ اگر فرم جمع‌تری می‌خواهید سایز معمول خود را بگیرید.",
+    relatedIds: ["vest-knit", "cardigan-shawl", "coat-herringbone"],
+    complementaryIds: ["trouser-pleated", "scarf-wool", "shirt-oxford"],
+    lookId: "look-1",
+    createdAt: 20250725,
+    sold: 305,
+  },
+  {
+    id: "trouser-pleated",
+    name: "شلوار پیلی‌دار کلاسیک",
+    latin: "The Pleated Trouser",
+    subtitle: "فاستونی پشمی، فرم‌دار",
+    price: 2_950_000,
+    images: [
+      "/images/model-full.jpg",
+      "/images/flat.jpg",
+      "/images/detail-hem.jpg",
+      "/images/model-front.jpg",
+    ],
+    colours: [
+      { name: "خاکستری سنگی", hex: "#7d8790", img: "/images/model-full.jpg", angle: 0 },
+      { name: "شنی", hex: "#d9c7a7", img: "/images/flat.jpg", angle: 120 },
+      { name: "مشکی مات", hex: "#1a1d21", img: "/images/detail-hem.jpg", angle: 240 },
+    ],
+    sizes: baseSizes(["XS"]),
+    style: "neo-classic",
+    category: "trouser",
+    categoryLabel: "شلوار",
+    season: "چهارفصل",
+    fabricGroup: "پشم",
+    badges: [],
+    rating: 4.6,
+    reviewCount: 73,
+    reviews: [
+      {
+        author: "رضا ط.",
+        date: "۶ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "فرم عالی",
+        text: "پیلی‌ها باز نمی‌شوند و خط اتو خیلی خوب می‌ماند.",
+        size: "M",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "شلوار پیلی‌دار با دو پیلی رو به داخل، کمر بلند و دم‌پای تا خورده. فاستونی پشمی با آویز عالی که هم برای دفتر مناسب است و هم برای مهمانی. جیب‌های کج ایتالیایی و کمربند داخلی تنظیم‌شونده.",
+    specs: {
+      productType: "شلوار پارچه‌ای",
+      fabric: "فاستونی پشمی",
+      fibre: "۹۶٪ پشم، ۴٪ الاستان",
+      weight: "۲۶۰ گرم بر متر مربع",
+      stretch: "کم",
+      season: "چهارفصل",
+      cut: "رگولار با پاچه مستقیم",
+      collar: "—",
+      sleeve: "—",
+      closure: "زیپ و قلاب فلزی",
+      fabricType: "فاستونی",
+      country: "ایران — کارگاه کلبه",
+      care: "خشک‌شویی",
+      styleFor: "نئو کلاسیک، اولد مانی، رسمی",
+      code: "KV-TR-PL-004",
+    },
+    sizeChart: chart(78),
+    sizeAdvice: "کمر این شلوار بلند است و روی ناف می‌نشیند؛ دور کمر واقعی خود را ملاک بگیرید.",
+    relatedIds: ["trouser-chino", "blazer-oxford", "shirt-oxford"],
+    complementaryIds: ["belt-leather", "knit-cable", "shirt-linen"],
+    lookId: "look-1",
+    createdAt: 20250620,
+    sold: 264,
+  },
+  {
+    id: "polo-pique",
+    name: "پولوشرت پیکه",
+    latin: "The Piqué Polo",
+    subtitle: "پنبه ارگانیک، یقه فرم‌دار",
+    price: 1_890_000,
+    images: [
+      "/images/detail-collar.jpg",
+      "/images/model-front.jpg",
+      "/images/model-teal.jpg",
+      "/images/flat.jpg",
+      "/images/model-full.jpg",
+      "/images/detail-hem.jpg",
+    ],
+    video: {
+      poster: "/images/model-front.jpg",
+      url: "https://www.aparat.com/",
+      title: "پولوشرت پیکه روی مدل",
+    },
+    colours: [
+      { name: "آبی بلوار", hex: "#6fa4d8", img: "/images/detail-collar.jpg", angle: 0 },
+      { name: "آجری", hex: "#9e4b3c", img: "/images/model-front.jpg", angle: 60 },
+      { name: "خردلی", hex: "#f0c04a", img: "/images/model-teal.jpg", angle: 120 },
+      { name: "سفید", hex: "#f2f2ee", img: "/images/flat.jpg", angle: 180 },
+      { name: "سبز مرداب", hex: "#3fa89b", img: "/images/model-full.jpg", angle: 240 },
+      { name: "زغالی", hex: "#4a4f55", img: "/images/detail-hem.jpg", angle: 300 },
+    ],
+    sizes: baseSizes([]),
+    style: "vintage",
+    category: "shirt",
+    categoryLabel: "پیراهن",
+    season: "بهار و تابستان",
+    fabricGroup: "پنبه",
+    badges: ["پرفروش", "جدید"],
+    rating: 4.7,
+    reviewCount: 68,
+    reviews: [
+      {
+        author: "کاوه ب.",
+        date: "۱۶ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "یقه‌اش نمی‌خوابد",
+        text: "بعد از ده بار شستشو هم یقه فرم خودش را حفظ کرده. رنگ‌ها هم اصلاً کم‌رنگ نشدند.",
+        size: "L",
+        fit: "اندازه",
+      },
+      {
+        author: "سعید و.",
+        date: "۳ مرداد ۱۴۰۵",
+        stars: 4,
+        title: "خوب ولی کمی کوتاه",
+        text: "قد لباس برای من که بلندقد هستم کمی کوتاه بود، سایز بالاتر بهتر است.",
+        size: "M",
+        fit: "کوچک",
+      },
+    ],
+    description:
+      "پولوشرت پیکه از پنبه ارگانیک با بافت پیکه ریز. یقه با لایه مخصوص فرم گرفته و بعد از شستشوهای مکرر هم نمی‌خوابد. جای دکمه دو تایی با دکمه‌های صدفی و چاک کناری برای راحتی بیشتر.",
+    specs: {
+      productType: "پولوشرت آستین کوتاه",
+      fabric: "پنبه ارگانیک پیکه",
+      fibre: "۹۵٪ پنبه ارگانیک، ۵٪ الاستان",
+      weight: "۲۲۰ گرم بر متر مربع",
+      stretch: "متوسط",
+      season: "بهار، تابستان و پاییز",
+      cut: "رگولار، کمی فرم‌دار",
+      collar: "یقه پولو با جای دکمه دوتایی",
+      sleeve: "آستین کوتاه",
+      closure: "دو دکمه صدفی",
+      fabricType: "بافت پیکه",
+      country: "ایران — کارگاه کلبه",
+      care: "ماشین‌شویی ۳۰ درجه، بدون خشک‌کن",
+      styleFor: "وینتیج، مینیمال، روزمره",
+      code: "KV-PO-PQ-005",
+    },
+    sizeChart: chart(98),
+    sizeAdvice: "برش پولوشرت کمی فرم‌دار است. اگر فیت آزادتر می‌خواهید یک سایز بالاتر بگیرید.",
+    relatedIds: ["shirt-linen", "shirt-oxford", "knit-cable"],
+    complementaryIds: ["trouser-chino", "belt-leather", "blazer-oxford"],
+    lookId: "look-3",
+    createdAt: 20250810,
+    sold: 512,
+  },
+  {
+    id: "coat-herringbone",
+    name: "پالتو شِوِرون",
+    latin: "The Herringbone Coat",
+    subtitle: "پشم و کشمیر، قد بلند",
+    price: 7_450_000,
+    images: [
+      "/images/detail-hem.jpg",
+      "/images/model-full.jpg",
+      "/images/detail-collar.jpg",
+      "/images/model-front.jpg",
+      "/images/flat.jpg",
+    ],
+    colours: [
+      { name: "خاکستری شورون", hex: "#4a4f55", img: "/images/detail-hem.jpg", angle: 0 },
+      { name: "قهوه‌ای تنباکو", hex: "#5a4030", img: "/images/model-full.jpg", angle: 180 },
+    ],
+    sizes: baseSizes(["XS", "S", "3XL"]),
+    style: "dark-academia",
+    category: "blazer",
+    categoryLabel: "کت و بلیزر",
+    season: "زمستان",
+    fabricGroup: "پشم",
+    badges: ["کالکشن پاییز"],
+    rating: 5,
+    reviewCount: 39,
+    reviews: [
+      {
+        author: "فرهاد ج.",
+        date: "۱۸ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "شاهکار",
+        text: "سنگین، گرم و با ابهت. دقیقاً همان پالتویی که سال‌ها دنبالش بودم.",
+        size: "L",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "پالتوی شورون با ترکیب پشم و کشمیر، قد زیر زانو و برش راسته. یقه پهن برگردان، جیب‌های دار و چاک بلند پشت. آستر ساتن ضدباد و دکمه‌های شاخی. قطعه‌ای که یک عمر با شماست.",
+    specs: {
+      productType: "پالتو بلند",
+      fabric: "پشم و کشمیر",
+      fibre: "۸۰٪ پشم، ۲۰٪ کشمیر",
+      weight: "۵۴۰ گرم بر متر مربع",
+      stretch: "بدون کشسانی",
+      season: "زمستان",
+      cut: "راسته، قد زیر زانو",
+      collar: "یقه پهن برگردان",
+      sleeve: "آستین بلند دو تکه",
+      closure: "چهار دکمه شاخی",
+      fabricType: "شورون (Herringbone)",
+      country: "ایران — کارگاه کلبه",
+      care: "خشک‌شویی، برس‌کشی بعد از هر استفاده",
+      styleFor: "دارک آکادمیا، اولد مانی، رسمی",
+      code: "KV-CO-HB-006",
+    },
+    sizeChart: chart(104),
+    sizeAdvice: "پالتو روی کت پوشیده می‌شود؛ اگر قصد دارید زیرش کت بپوشید یک سایز بالاتر بگیرید.",
+    relatedIds: ["blazer-oxford", "cardigan-shawl", "knit-cable"],
+    complementaryIds: ["scarf-wool", "trouser-pleated", "knit-cable"],
+    lookId: "look-1",
+    createdAt: 20250805,
+    sold: 118,
+  },
+  {
+    id: "vest-knit",
+    name: "جلیقه بافت آرگایل",
+    latin: "The Argyle Vest",
+    subtitle: "پشم سبک، طرح لوزی",
+    price: 1_650_000,
+    images: [
+      "/images/model-teal.jpg",
+      "/images/detail-collar.jpg",
+      "/images/flat.jpg",
+      "/images/model-front.jpg",
+    ],
+    colours: [
+      { name: "زیتونی روشن", hex: "#b7c98a", img: "/images/model-teal.jpg", angle: 0 },
+      { name: "آجری", hex: "#9e4b3c", img: "/images/detail-collar.jpg", angle: 120 },
+      { name: "سرمه‌ای", hex: "#22304a", img: "/images/flat.jpg", angle: 240 },
+    ],
+    sizes: baseSizes(["3XL"]),
+    style: "dark-academia",
+    category: "knit",
+    categoryLabel: "بافت و پلیور",
+    season: "پاییز",
+    fabricGroup: "پشم",
+    badges: ["تخفیف"],
+    rating: 4.5,
+    reviewCount: 54,
+    reviews: [
+      {
+        author: "حامد ی.",
+        date: "۲ مرداد ۱۴۰۵",
+        stars: 4,
+        title: "قشنگ و کاربردی",
+        text: "روی پیراهن آکسفورد فوق‌العاده است. طرح لوزی‌اش خیلی تمیز بافته شده.",
+        size: "M",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "جلیقه بافت با طرح آرگایل کلاسیک، یقه هفت و کشباف دور حلقه آستین. لایه میانی ایده‌آل برای روزهای معتدل پاییزی؛ روی پیراهن، زیر بلیزر.",
+    specs: {
+      productType: "جلیقه بافت",
+      fabric: "پشم سبک",
+      fibre: "۶۰٪ پشم، ۴۰٪ پنبه",
+      weight: "۲۸۰ گرم (سایز M)",
+      stretch: "متوسط",
+      season: "پاییز و بهار",
+      cut: "رگولار",
+      collar: "یقه هفت",
+      sleeve: "بدون آستین",
+      closure: "بدون بسته شدن (سری)",
+      fabricType: "بافت آرگایل",
+      country: "ایران — کارگاه کلبه",
+      care: "شستشوی دست، خشک‌کردن خوابیده",
+      styleFor: "دارک آکادمیا، نئو کلاسیک",
+      code: "KV-VS-AR-007",
+    },
+    sizeChart: chart(96),
+    sizeAdvice: "این جلیقه به‌عنوان لایه میانی طراحی شده و کمی جمع‌تر است؛ سایز معمول خود را بگیرید.",
+    relatedIds: ["knit-cable", "cardigan-shawl", "shirt-oxford"],
+    complementaryIds: ["shirt-oxford", "trouser-chino", "blazer-oxford"],
+    lookId: "look-3",
+    createdAt: 20250628,
+    sold: 287,
+  },
+  {
+    id: "belt-leather",
+    name: "کمربند چرم دست‌دوز",
+    latin: "The Handmade Belt",
+    subtitle: "چرم گاوی، سگک برنجی",
+    price: 980_000,
+    images: ["/images/flat.jpg", "/images/detail-hem.jpg", "/images/detail-collar.jpg"],
+    colours: [
+      { name: "قهوه‌ای عسلی", hex: "#5a4030", img: "/images/flat.jpg", angle: 0 },
+      { name: "مشکی", hex: "#1a1d21", img: "/images/detail-hem.jpg", angle: 180 },
+    ],
+    sizes: [
+      { label: "۸۵", inStock: true },
+      { label: "۹۰", inStock: true },
+      { label: "۹۵", inStock: true },
+      { label: "۱۰۰", inStock: true },
+      { label: "۱۰۵", inStock: false },
+      { label: "۱۱۰", inStock: true },
+    ],
+    style: "old-money",
+    category: "accessory",
+    categoryLabel: "اکسسوری",
+    season: "چهارفصل",
+    fabricGroup: "چرم",
+    badges: [],
+    rating: 4.8,
+    reviewCount: 112,
+    reviews: [
+      {
+        author: "میلاد ف.",
+        date: "۱۴ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "چرم واقعی",
+        text: "بوی چرم طبیعی می‌دهد و کیفیت سگک هم عالی است.",
+        size: "۹۵",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "کمربند از چرم گاوی دباغی گیاهی با ضخامت ۴ میلی‌متر بریده و لبه‌های آن با دست پرداخت شده است. سگک برنجی صیقلی و دوخت زین‌دوزی. با گذر زمان پتینه زیبایی می‌گیرد.",
+    specs: {
+      productType: "کمربند",
+      fabric: "چرم گاوی دباغی گیاهی",
+      fibre: "۱۰۰٪ چرم طبیعی",
+      weight: "ضخامت ۴ میلی‌متر",
+      stretch: "بدون کشسانی",
+      season: "چهارفصل",
+      cut: "عرض ۳٫۵ سانتی‌متر",
+      collar: "—",
+      sleeve: "—",
+      closure: "سگک برنجی",
+      fabricType: "چرم",
+      country: "ایران — کارگاه کلبه",
+      care: "واکس چرم هر سه ماه، دور از آب",
+      styleFor: "اولد مانی، نئو کلاسیک، رسمی",
+      code: "KV-AC-BT-008",
+    },
+    sizeChart: [
+      { size: "۸۵", chest: "۸۵", shoulder: "۷۰–۷۵", length: "۱۰۰", sleeve: "۳٫۵" },
+      { size: "۹۰", chest: "۹۰", shoulder: "۷۵–۸۰", length: "۱۰۵", sleeve: "۳٫۵" },
+      { size: "۹۵", chest: "۹۵", shoulder: "۸۰–۸۵", length: "۱۱۰", sleeve: "۳٫۵" },
+      { size: "۱۰۰", chest: "۱۰۰", shoulder: "۸۵–۹۰", length: "۱۱۵", sleeve: "۳٫۵" },
+      { size: "۱۰۵", chest: "۱۰۵", shoulder: "۹۰–۹۵", length: "۱۲۰", sleeve: "۳٫۵" },
+      { size: "۱۱۰", chest: "۱۱۰", shoulder: "۹۵–۱۰۰", length: "۱۲۵", sleeve: "۳٫۵" },
+    ],
+    sizeAdvice: "سایز کمربند را ۵ سانتی‌متر بزرگ‌تر از دور کمر شلوارتان انتخاب کنید.",
+    relatedIds: ["scarf-wool", "trouser-pleated", "trouser-chino"],
+    complementaryIds: ["trouser-pleated", "shirt-linen", "blazer-oxford"],
+    lookId: "look-2",
+    createdAt: 20250510,
+    sold: 396,
+  },
+  {
+    id: "shirt-oxford",
+    name: "پیراهن آکسفورد راه‌راه",
+    latin: "The Oxford Shirt",
+    subtitle: "پنبه ضخیم، یقه دکمه‌دار",
+    price: 2_150_000,
+    images: [
+      "/images/model-front.jpg",
+      "/images/flat.jpg",
+      "/images/detail-collar.jpg",
+      "/images/model-teal.jpg",
+      "/images/detail-hem.jpg",
+    ],
+    colours: [
+      { name: "آبی راه‌راه", hex: "#c6d7e4", img: "/images/model-front.jpg", angle: 0 },
+      { name: "سفید ساده", hex: "#f2f2ee", img: "/images/flat.jpg", angle: 120 },
+      { name: "صورتی کم‌رنگ", hex: "#e7b3bd", img: "/images/detail-collar.jpg", angle: 240 },
+    ],
+    sizes: baseSizes(["XXL", "3XL"]),
+    style: "neo-classic",
+    category: "shirt",
+    categoryLabel: "پیراهن",
+    season: "چهارفصل",
+    fabricGroup: "پنبه",
+    badges: ["جدید"],
+    rating: 4.6,
+    reviewCount: 47,
+    reviews: [
+      {
+        author: "شهاب ز.",
+        date: "۷ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "پارچه‌اش عالیه",
+        text: "آکسفورد واقعی با ضخامت درست. هم زیر بلیزر خوب است هم تنها.",
+        size: "L",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "پیراهن آکسفورد با پارچه پنبه ضخیم و بافت آکسفورد اصیل. یقه دکمه‌دار با فرم غلتان طبیعی، جیب سینه و پشت پیلی‌دار. همان پیراهنی که هم با کراوات کار می‌کند هم با پلیور.",
+    specs: {
+      productType: "پیراهن آستین بلند",
+      fabric: "پنبه آکسفورد",
+      fibre: "۱۰۰٪ پنبه",
+      weight: "۱۹۵ گرم بر متر مربع",
+      stretch: "کم",
+      season: "چهارفصل",
+      cut: "رگولار",
+      collar: "یقه دکمه‌دار (Button-down)",
+      sleeve: "آستین بلند با سردست دکمه‌دار",
+      closure: "دکمه سراسری",
+      fabricType: "بافت آکسفورد",
+      country: "ایران — کارگاه کلبه",
+      care: "ماشین‌شویی ۳۰ درجه، اتو گرم",
+      styleFor: "نئو کلاسیک، دارک آکادمیا، اداری",
+      code: "KV-SH-OX-009",
+    },
+    sizeChart: chart(100),
+    sizeAdvice: "آکسفورد پارچه ضخیم‌تری دارد و کمی جمع می‌شود؛ سایز معمول خود را بگیرید.",
+    relatedIds: ["shirt-linen", "polo-pique", "vest-knit"],
+    complementaryIds: ["vest-knit", "trouser-chino", "blazer-oxford"],
+    lookId: "look-3",
+    createdAt: 20250730,
+    sold: 173,
+  },
+  {
+    id: "scarf-wool",
+    name: "شال گردن پشمی",
+    latin: "The Wool Scarf",
+    subtitle: "پشم لمبزوول، ریشه دست‌دوز",
+    price: 890_000,
+    images: ["/images/detail-hem.jpg", "/images/model-teal.jpg", "/images/detail-collar.jpg"],
+    colours: [
+      { name: "آجری", hex: "#9e4b3c", img: "/images/detail-hem.jpg", angle: 0 },
+      { name: "سبز جنگلی", hex: "#3d5c3a", img: "/images/model-teal.jpg", angle: 120 },
+      { name: "شنی", hex: "#d9c7a7", img: "/images/detail-collar.jpg", angle: 240 },
+    ],
+    sizes: [{ label: "تک‌سایز", inStock: true }],
+    style: "vintage",
+    category: "accessory",
+    categoryLabel: "اکسسوری",
+    season: "پاییز و زمستان",
+    fabricGroup: "پشم",
+    badges: [],
+    rating: 4.9,
+    reviewCount: 88,
+    reviews: [
+      {
+        author: "یاسر ق.",
+        date: "۲۰ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "خیلی گرم",
+        text: "پشم خالص است و واقعاً گرم نگه می‌دارد. رنگ آجری‌اش هم خیلی خاص است.",
+        size: "تک‌سایز",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "شال گردن از پشم لمبزوول با بافت درشت و ریشه‌های دست‌دوز. ابعاد ۲۰۰ در ۳۵ سانتی‌متر که برای گره‌های مختلف کافی است.",
+    specs: {
+      productType: "شال گردن",
+      fabric: "پشم لمبزوول",
+      fibre: "۱۰۰٪ پشم",
+      weight: "۳۰۰ گرم",
+      stretch: "کم",
+      season: "پاییز و زمستان",
+      cut: "۲۰۰ × ۳۵ سانتی‌متر",
+      collar: "—",
+      sleeve: "—",
+      closure: "—",
+      fabricType: "بافت درشت",
+      country: "ایران — کارگاه کلبه",
+      care: "شستشوی دست با آب سرد",
+      styleFor: "وینتیج، دارک آکادمیا، زمستانی",
+      code: "KV-AC-SC-010",
+    },
+    sizeChart: [{ size: "تک‌سایز", chest: "—", shoulder: "—", length: "۲۰۰", sleeve: "۳۵" }],
+    sizeAdvice: "این محصول تک‌سایز است و برای همه اندام‌ها مناسب است.",
+    relatedIds: ["belt-leather", "knit-cable", "coat-herringbone"],
+    complementaryIds: ["coat-herringbone", "knit-cable", "blazer-oxford"],
+    lookId: "look-1",
+    createdAt: 20250605,
+    sold: 341,
+  },
+  {
+    id: "trouser-chino",
+    name: "شلوار چینو کلبه",
+    latin: "The Chino",
+    subtitle: "پنبه استرچ، فرم مستقیم",
+    price: 1_980_000,
+    images: [
+      "/images/model-full.jpg",
+      "/images/model-front.jpg",
+      "/images/flat.jpg",
+      "/images/detail-hem.jpg",
+    ],
+    colours: [
+      { name: "شنی", hex: "#d9c7a7", img: "/images/model-full.jpg", angle: 0 },
+      { name: "سرمه‌ای", hex: "#22304a", img: "/images/model-front.jpg", angle: 90 },
+      { name: "زیتونی", hex: "#5c8a4a", img: "/images/flat.jpg", angle: 180 },
+      { name: "زغالی", hex: "#4a4f55", img: "/images/detail-hem.jpg", angle: 270 },
+    ],
+    sizes: baseSizes([]),
+    style: "minimal",
+    category: "trouser",
+    categoryLabel: "شلوار",
+    season: "چهارفصل",
+    fabricGroup: "پنبه",
+    badges: ["پرفروش"],
+    rating: 4.7,
+    reviewCount: 205,
+    reviews: [
+      {
+        author: "علی ا.",
+        date: "۲۲ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "راحت‌ترین شلوارم",
+        text: "کشسانی پارچه باعث می‌شود تمام روز راحت باشی، ولی فرمش را از دست نمی‌دهد.",
+        size: "M",
+        fit: "اندازه",
+      },
+      {
+        author: "وحید خ.",
+        date: "۱۰ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "دومین جفتم",
+        text: "قبلاً رنگ سرمه‌ای گرفته بودم، این بار شنی. عالی است.",
+        size: "L",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "چینو کلاسیک با پنبه استرچ و فرم مستقیم. کمر معمولی، جیب‌های ساده و دوخت محکم. شلواری که هر روز می‌پوشید و هر بار خوب به نظر می‌رسد.",
+    specs: {
+      productType: "شلوار چینو",
+      fabric: "پنبه توییل استرچ",
+      fibre: "۹۸٪ پنبه، ۲٪ الاستان",
+      weight: "۲۴۰ گرم بر متر مربع",
+      stretch: "متوسط",
+      season: "چهارفصل",
+      cut: "مستقیم (Straight)",
+      collar: "—",
+      sleeve: "—",
+      closure: "زیپ و دکمه",
+      fabricType: "توییل",
+      country: "ایران — کارگاه کلبه",
+      care: "ماشین‌شویی ۳۰ درجه",
+      styleFor: "مینیمال، روزمره، اداری",
+      code: "KV-TR-CH-011",
+    },
+    sizeChart: chart(76),
+    sizeAdvice: "چینو کمر معمولی دارد و روی لگن می‌نشیند؛ سایز معمول شلوارتان را بگیرید.",
+    relatedIds: ["trouser-pleated", "polo-pique", "shirt-linen"],
+    complementaryIds: ["polo-pique", "belt-leather", "vest-knit"],
+    lookId: "look-3",
+    createdAt: 20250701,
+    sold: 604,
+  },
+  {
+    id: "cardigan-shawl",
+    name: "ژاکت یقه شال",
+    latin: "The Shawl Cardigan",
+    subtitle: "بافت درشت، دکمه صدفی",
+    price: 3_450_000,
+    images: [
+      "/images/detail-collar.jpg",
+      "/images/model-full.jpg",
+      "/images/model-teal.jpg",
+      "/images/flat.jpg",
+      "/images/detail-hem.jpg",
+    ],
+    colours: [
+      { name: "شنی", hex: "#d9c7a7", img: "/images/detail-collar.jpg", angle: 0 },
+      { name: "قهوه‌ای تنباکو", hex: "#5a4030", img: "/images/model-full.jpg", angle: 120 },
+      { name: "سرمه‌ای", hex: "#22304a", img: "/images/model-teal.jpg", angle: 240 },
+    ],
+    sizes: baseSizes(["XS"]),
+    style: "old-money",
+    category: "knit",
+    categoryLabel: "بافت و پلیور",
+    season: "پاییز و زمستان",
+    fabricGroup: "پشم",
+    badges: ["کالکشن پاییز"],
+    rating: 4.8,
+    reviewCount: 61,
+    reviews: [
+      {
+        author: "پدرام ل.",
+        date: "۱۷ مرداد ۱۴۰۵",
+        stars: 5,
+        title: "خیلی شیک",
+        text: "یقه شال فرم خیلی خوبی دارد و دکمه‌های صدفی واقعاً قشنگ‌اند.",
+        size: "L",
+        fit: "اندازه",
+      },
+    ],
+    description:
+      "ژاکت یقه شال با بافت درشت و دکمه‌های صدفی طبیعی. جیب‌های دوخته‌شده در پایین و کشباف ضخیم در سرآستین. جایگزین راحت بلیزر برای عصرهای خانه و کافه.",
+    specs: {
+      productType: "ژاکت بافت",
+      fabric: "پشم و آلپاکا",
+      fibre: "۶۵٪ پشم، ۲۵٪ آلپاکا، ۱۰٪ نایلون",
+      weight: "۵۸۰ گرم (سایز M)",
+      stretch: "متوسط",
+      season: "پاییز و زمستان",
+      cut: "رگولار با فرم آزاد",
+      collar: "یقه شال",
+      sleeve: "آستین بلند",
+      closure: "پنج دکمه صدفی",
+      fabricType: "بافت درشت",
+      country: "ایران — کارگاه کلبه",
+      care: "شستشوی دست، خشک‌کردن خوابیده",
+      styleFor: "اولد مانی، دارک آکادمیا، خانه",
+      code: "KV-KN-SH-012",
+    },
+    sizeChart: chart(104),
+    sizeAdvice: "این ژاکت فرم آزادی دارد؛ برای فیت جمع‌تر یک سایز پایین‌تر بگیرید.",
+    relatedIds: ["knit-cable", "vest-knit", "coat-herringbone"],
+    complementaryIds: ["shirt-oxford", "trouser-chino", "scarf-wool"],
+    createdAt: 20250808,
+    sold: 149,
+  },
+];
+
+export const productById = (id: string) => products.find((p) => p.id === id);
+
+export const categories = [
+  { slug: "blazer", label: "کت و بلیزر" },
+  { slug: "shirt", label: "پیراهن" },
+  { slug: "knit", label: "بافت و پلیور" },
+  { slug: "trouser", label: "شلوار" },
+  { slug: "accessory", label: "اکسسوری" },
+];
+
+export const seasons = ["بهار و تابستان", "پاییز و زمستان", "پاییز", "زمستان", "چهارفصل"];
+export const fabricGroups = ["پشم", "پنبه", "کتان", "چرم"];
+
+export const filterColours = [
+  { name: "سرمه‌ای", hex: "#22304a" },
+  { name: "قهوه‌ای", hex: "#5a4030" },
+  { name: "خاکستری", hex: "#7d8790" },
+  { name: "کرم و شنی", hex: "#d9c7a7" },
+  { name: "سفید", hex: "#f2f2ee" },
+  { name: "سبز", hex: "#3d5c3a" },
+  { name: "آبی", hex: "#6fa4d8" },
+  { name: "آجری", hex: "#9e4b3c" },
+  { name: "خردلی", hex: "#f0c04a" },
+  { name: "مشکی", hex: "#1a1d21" },
+];
+
+export const allSizes = ["XS", "S", "M", "L", "XL", "XXL", "3XL"];
+
+// The current prototype has no backend yet. Hydrate the public catalogue from
+// products published in the admin workspace so publish/unpublish is reflected
+// across the storefront after a reload as well as during the current session.
+if (typeof localStorage !== "undefined") {
+  try {
+    const raw = localStorage.getItem("kv_admin_products_v2");
+    if (raw) {
+      const saved = JSON.parse(raw) as Array<Product & { admin?: { status?: string } }>;
+      products.splice(0, products.length, ...saved.filter((item) => item.admin?.status === "published"));
+    }
+  } catch {
+    // Keep the bundled catalogue when browser storage is unavailable/corrupt.
+  }
+}

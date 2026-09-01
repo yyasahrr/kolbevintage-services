@@ -3,7 +3,24 @@
  * اجرا:  node scripts/seed.mjs http://127.0.0.1:9000
  * این اسکریپت همان مسیر واقعی کاربران را طی میکند (register -> apply -> approve -> order).
  */
-const BASE = process.argv[2] || "http://127.0.0.1:9000";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+/* بارگذاری backend/.env (مثل loadEnv مدوسا) تا رازها یکجا مدیریت شوند */
+try {
+  const envPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env");
+  for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (match && process.env[match[1]] === undefined) {
+      process.env[match[1]] = match[2];
+    }
+  }
+} catch {
+  /* بدون .env ادامه میدهیم (مقادیر پیشفرض) */
+}
+
+const BASE = process.argv[2] || process.env.MEDUSA_BACKEND_URL || "http://127.0.0.1:9000";
 const BOOTSTRAP = process.env.KOLBE_BOOTSTRAP_SECRET || "kolbe-bootstrap-2026";
 const PK = process.env.KOLBE_PUBLISHABLE_KEY || "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee";
 

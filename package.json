@@ -4,18 +4,25 @@
   "version": "1.0.0",
   "workspaces": [
     "frontend-kolbe",
-    "frontend-supplier"
+    "frontend-supplier",
+    "frontend-next"
   ],
   "scripts": {
     "dev": "node scripts/dev-all.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
+    "dev:next": "npm run dev --workspace kolbe-next",
+    "dev:api": "npm --prefix backend run dev",
     "dev:kolbe": "npm run dev --workspace kolbe-storefront",
     "dev:supplier": "npm run dev --workspace kolbe-supplier-portal",
-    "dev:api": "npm --prefix backend run dev",
-    "dev:all": "node scripts/dev-all.mjs",
-    "build": "npm run build --workspace kolbe-storefront",
+    "pg": "node scripts/pg.mjs",
+    "build": "npm run build --workspace kolbe-next",
+    "build:legacy": "npm run build --workspace kolbe-storefront",
     "build:supplier": "npm run build --workspace kolbe-supplier-portal",
     "build:api": "npm --prefix backend run build",
     "seed": "npm --prefix backend run seed",
     "preview": "npm run preview --workspace kolbe-storefront"
+  },
+  "devDependencies": {
+    "embedded-postgres": "17.5.0-beta.15"
   }
 }
