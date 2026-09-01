@@ -9,6 +9,7 @@ import Icon from "../components/Icon";
 import Lightbox from "../components/Lightbox";
 import SizeAdvisor from "../components/SizeAdvisor";
 import ProductCard from "../components/ProductCard";
+import type { AdminProductRecord } from "../adminProducts";
 
 /*
  * چیدمان صفحه جزیات محصول — بر اساس الگوی استاندارد PDP (آمازون / دیجی‌کالا / زالاندو)
@@ -699,12 +700,18 @@ export default function ProductPage({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const [sizeAdvisorOpen, setSizeAdvisorOpen] = useState(false);
   const [stickySizeOpen, setStickySizeOpen] = useState(false);
+  const [stickyColourOpen, setStickyColourOpen] = useState(false);
   const [subnavVisible, setSubnavVisible] = useState(false);
   const [activeSection, setActiveSection] = useState("details");
   const actionsRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
 
   const lookSettings = builder.look;
+
+  /* ست اختصاصی محصول از پنل ادمین: عکس محصول روی تن مدل + هات‌اسپات مکملها */
+  const adminLook = (product as AdminProductRecord).admin?.look;
+  const productLookHotspots = (adminLook?.hotspots ?? []).filter((h) => h.visible && h.productId);
+  const productLookImage = adminLook?.image || product.images[0] || "";
 
   useEffect(() => {
     setColourIdx(0);
@@ -715,6 +722,7 @@ export default function ProductPage({ id }: { id: string }) {
     setOpenAcc(null);
     setSizeAdvisorOpen(false);
     setStickySizeOpen(false);
+    setStickyColourOpen(false);
   }, [id]);
 
   /* نوار خرید چسبان: فقط وقتی دکمهٔ اصلی از دید خارج شد */
@@ -1138,8 +1146,60 @@ export default function ProductPage({ id }: { id: string }) {
           </div>
         </section>
 
-        {/* ═══════════════ با این ست کنید (کنترل‌شده از سایت‌ساز) ═══════════════ */}
-        {lookSettings.enabled && (
+        {/* ═══════════════ با این ست کنید — ست اختصاصی محصول (هات‌اسپات مکملها) ═══════════════ */}
+        {productLookHotspots.length > 0 && (
+          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[170px]">
+            <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
+              <div className="mb-8">
+                <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
+                <h2 className="mt-2 text-[20px] font-medium">با این ست کنید</h2>
+                <p className="mt-2 text-[12.5px] text-neutral-500">
+                  {product.name} روی تن مدل، همراه با قطعات مکمل پیشنهادی استایلیست‌های کلبه — روی نقاط رنگی بزنید.
+                </p>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
+                {/* عکس خودِ همین محصول روی تن مدل + هات‌اسپاتهای مکمل */}
+                <div className="relative overflow-hidden rounded-2xl bg-neutral-100">
+                  <img src={productLookImage} alt={`${product.name} — ست پیشنهادی`} loading="lazy" className="aspect-[3/4] w-full object-cover" />
+                  {productLookHotspots.map((h) => {
+                    const linked = productById(h.productId);
+                    if (!linked) return null;
+                    return (
+                      <Link key={h.id} to={`/product/${linked.id}`} className="group/hot absolute z-10" style={{ right: `${h.x}%`, top: `${h.y}%` }} aria-label={`مشاهده ${linked.name}`}>
+                        <span className="block h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2 rounded-full border-2 border-white shadow-md transition group-hover/hot:scale-125" style={{ background: h.color }} />
+                        <span className="pointer-events-none absolute right-1/2 top-3 translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-[9.5px] font-medium text-white opacity-0 shadow-md transition group-hover/hot:opacity-100" style={{ background: h.color }}>
+                          {linked.name} · {toman(linked.price)}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+
+                {/* کارتهای مکمل کنار عکس */}
+                <div>
+                  <h3 className="text-[16px] font-medium">قطعات مکمل این ست</h3>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    {complementary.map((p) => (
+                      <Link key={p.id} to={`/product/${p.id}`} className="group block overflow-hidden rounded-2xl bg-white">
+                        <div className="overflow-hidden bg-neutral-100">
+                          <img src={p.images[0]} alt={p.name} loading="lazy" className="aspect-[3/4] w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+                        </div>
+                        <div className="p-3">
+                          <p className="truncate text-[12px] font-medium">{p.name}</p>
+                          <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{toman(p.price)}</p>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ═══════════════ با این ست کنید (سراسری — کنترل‌شده از سایت‌ساز) ═══════════════ */}
+        {lookSettings.enabled && productLookHotspots.length === 0 && (
           <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[170px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
@@ -1233,10 +1293,47 @@ export default function ProductPage({ id }: { id: string }) {
                 </p>
               </div>
               <span className="mr-auto shrink-0 text-[13px] font-medium num-fa">{toman(product.price)}</span>
+
+              {/* انتخاب رنگ — کالر پیکر داخل نوار چسبان */}
+              <div className="sticky-colour-picker relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => { setStickyColourOpen((open) => !open); setStickySizeOpen(false); }}
+                  aria-haspopup="listbox"
+                  aria-expanded={stickyColourOpen}
+                  aria-label={`رنگ: ${colour.name} — تغییر رنگ`}
+                  title={colour.name}
+                  className="storefront-secondary-action flex h-10 items-center justify-center gap-2 rounded-full px-3"
+                >
+                  <span className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: colour.hex }} />
+                  <Icon name="chevronDown" className={`h-3.5 w-3.5 transition-transform ${stickyColourOpen ? "rotate-180" : ""}`} />
+                </button>
+                {stickyColourOpen && (
+                  <div role="listbox" aria-label="انتخاب رنگ خرید" className="sticky-colour-menu liquid-surface absolute left-0 border">
+                    {product.colours.map((c, i) => (
+                      <button
+                        key={c.name}
+                        type="button"
+                        role="option"
+                        aria-selected={i === colourIdx}
+                        aria-label={c.name}
+                        title={c.name}
+                        onClick={() => { handleColour(i); setStickyColourOpen(false); }}
+                        className={`pdp-swatch flex items-center justify-center rounded-full ${i === colourIdx ? "is-selected" : ""}`}
+                      >
+                        <span className="relative flex h-6 w-6 items-center justify-center rounded-full border border-black/10" style={{ backgroundColor: c.hex }}>
+                          {i === colourIdx && <Icon name="check" className="h-3 w-3 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" strokeWidth={3} />}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="sticky-size-picker relative shrink-0">
                 <button
                   type="button"
-                  onClick={() => setStickySizeOpen((open) => !open)}
+                  onClick={() => { setStickySizeOpen((open) => !open); setStickyColourOpen(false); }}
                   aria-haspopup="listbox"
                   aria-expanded={stickySizeOpen}
                   className="storefront-secondary-action flex h-10 min-w-[82px] items-center justify-between gap-2 rounded-full px-3 text-[12px]"

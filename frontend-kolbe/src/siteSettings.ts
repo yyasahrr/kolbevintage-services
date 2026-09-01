@@ -6,7 +6,7 @@ export type HeroTemplate = "cover" | "split" | "mosaic" | "duo" | "minimal";
 /** پیکربندی استودیوی هیرو - تمپلیت + پسزمینه دلخواه + شمارنده جشنواره */
 export type HeroStudioConfig = {
   published: boolean;
-  template: 1 | 2 | 3 | 4 | 5;
+  template: 1 | 2 | 3 | 4 | 5 | 6;
   bgImage: string;
   overlay: number;
   imageShape: "rect" | "rounded" | "circle";
@@ -14,6 +14,8 @@ export type HeroStudioConfig = {
   video1: string;
   video2: string;
   video3: string;
+  heroVideo: string;
+  videoPoster: string;
   titleColor: string;
   subtitleColor: string;
   buttonHoverBg: string;
@@ -44,6 +46,8 @@ export const defaultHeroStudio: HeroStudioConfig = {
   video1: "/videos/hero-1.mp4",
   video2: "/videos/hero-2.mp4",
   video3: "/videos/hero-3.mp4",
+  heroVideo: "/videos/hero-2.mp4",
+  videoPoster: "/images/model-full.jpg",
   titleColor: "",
   subtitleColor: "",
   buttonHoverBg: "#0a2c55",
@@ -75,6 +79,27 @@ export type BuilderPost = {
 export type BuilderInstaCard = { id: string; icon: string; title: string; text: string; img?: string };
 export type BuilderHotspot = { id: string; x: number; y: number; label: string; color: string; visible: boolean };
 export type BuilderLookProduct = { id: string; name: string; price: number; img: string; to: string };
+
+/** کامپوننت شمارنده جشنواره — قابل نصب روی هیرو و هر بنر سایت */
+export type CountdownComponent = {
+  enabled: boolean;
+  label: string;
+  target: string;
+  style: "glass" | "dark" | "light" | "solid";
+  accent: string;
+  bgColor: string;
+  bgImage: string;
+  size: "sm" | "md" | "lg";
+  placement: {
+    hero: boolean;
+    featureBanner: boolean;
+    midBanner: boolean;
+    bottomWholesale: boolean;
+    bottomStyles: boolean;
+  };
+  position: "top" | "center" | "bottom";
+  align: "right" | "center" | "left";
+};
 
 export type SiteBuilder = {
   productCard: { hoverBg: string; hoverText: string };
@@ -113,6 +138,9 @@ export type SiteBuilder = {
   footer: {
     newsletterEnabled: boolean;
     socials: Array<{ icon: string; label: string; url: string }>;
+  };
+  components: {
+    countdown: CountdownComponent;
   };
 };
 
@@ -190,6 +218,21 @@ export const defaultSiteBuilder: SiteBuilder = {
       { icon: "phone", label: "تلفن پشتیبانی", url: "tel:+982191002233" },
       { icon: "mail", label: "تلگرام", url: "https://t.me/kolbevintage" },
     ],
+  },
+  components: {
+    countdown: {
+      enabled: false,
+      label: "پایان جشنواره",
+      target: "",
+      style: "glass",
+      accent: "#c9654d",
+      bgColor: "",
+      bgImage: "",
+      size: "md",
+      placement: { hero: true, featureBanner: false, midBanner: false, bottomWholesale: false, bottomStyles: false },
+      position: "bottom",
+      align: "center",
+    },
   },
 };
 
@@ -295,7 +338,17 @@ export function loadSiteSettings(): SiteSettings {
       ...saved,
       header: { ...defaultSiteSettings.header, ...saved.header },
       heroStudio: { ...defaultHeroStudio, ...(saved.heroStudio ?? {}), countdown: { ...defaultHeroStudio.countdown, ...(saved.heroStudio?.countdown ?? {}) } },
-      builder: { ...defaultSiteBuilder, ...(saved.builder ?? {}) },
+      builder: {
+        ...defaultSiteBuilder,
+        ...(saved.builder ?? {}),
+        components: {
+          countdown: {
+            ...defaultSiteBuilder.components.countdown,
+            ...(saved.builder?.components?.countdown ?? {}),
+            placement: { ...defaultSiteBuilder.components.countdown.placement, ...(saved.builder?.components?.countdown?.placement ?? {}) },
+          },
+        },
+      },
       hero: { ...defaultSiteSettings.hero, ...saved.hero },
       collectionBanner: { ...defaultSiteSettings.collectionBanner, ...saved.collectionBanner },
       footer: { ...defaultSiteSettings.footer, ...saved.footer },

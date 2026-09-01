@@ -171,12 +171,56 @@ export function HeroTemplate5({ config }: TemplateProps) {
   );
 }
 
-export const HERO_TEMPLATES: Array<{ id: 1 | 2 | 3 | 4 | 5; name: string; description: string; Component: (props: TemplateProps) => React.ReactElement }> = [
+/** ۶) ویدیوی تمام‌صفحه — تمام نمایشگر، پخش خودکار بی‌صدا + محتوا و شمارنده وسط */
+export function HeroTemplate6({ config }: TemplateProps) {
+  return (
+    <section className="hero-video-fullscreen relative min-h-[100svh] w-full overflow-hidden bg-black">
+      {config.heroVideo ? (
+        <video
+          src={config.heroVideo}
+          poster={config.videoPoster || config.bgImage}
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <img src={config.videoPoster || config.bgImage} alt={config.title} fetchPriority="high" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {/* پوشش تیره برای خوانایی متن */}
+      <div className="absolute inset-0" style={{ background: `linear-gradient(to top, rgba(7,20,34,${Math.min(config.overlay + 0.3, 0.95)}), rgba(7,20,34,${config.overlay * 0.55}) 55%, rgba(7,20,34,${config.overlay * 0.35}))` }} />
+      {/* نشانگر پیمایش */}
+      <span className="absolute bottom-6 left-1/2 z-20 hidden -translate-x-1/2 flex-col items-center gap-2 text-white/70 lg:flex" aria-hidden="true">
+        <span className="text-[9px] tracking-[0.3em]">اسکرول کنید</span>
+        <span className="scroll-hint-line block h-8 w-px bg-white/60" />
+      </span>
+      <div className="relative z-10 flex min-h-[100svh] flex-col items-center justify-center px-6 py-24 text-center text-white">
+        {config.eyebrow ? <p className="border-y border-white/25 py-3 text-[11px] tracking-[0.42em] text-white/80">{config.eyebrow}</p> : null}
+        <h1 className="fade-up mt-8 text-[34px] font-medium leading-[1.25] sm:text-[48px] lg:text-[64px]" style={config.titleColor ? { color: config.titleColor } : undefined}>
+          {config.title}
+        </h1>
+        {config.subtitle ? (
+          <p className="mt-5 max-w-xl text-[13px] leading-[2] text-white/85" style={config.subtitleColor ? { color: config.subtitleColor } : undefined}>
+            {config.subtitle}
+          </p>
+        ) : null}
+        <div className="mt-10 flex flex-col items-center gap-7">
+          <Cta config={config} />
+          <Countdown config={config} size="lg" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export const HERO_TEMPLATES: Array<{ id: 1 | 2 | 3 | 4 | 5 | 6; name: string; description: string; Component: (props: TemplateProps) => React.ReactElement }> = [
   { id: 1, name: "تمام‌صفحه کلاسیک", description: "تصویر تمام‌قد، محتوای وسط‌چین و شمارنده بزرگ زیر دکمه", Component: HeroTemplate1 },
   { id: 2, name: "اسپلیت ادیتوریال", description: "متن روی سطح گرم راست، تصویر تمام‌قد چپ", Component: HeroTemplate2 },
   { id: 3, name: "بنر عریض کم‌ارتفاع", description: "بنر افقی با متن پایین و شمارنده کنار", Component: HeroTemplate3 },
   { id: 4, name: "پوستر تایپوگرافیک", description: "تیتر غول‌پیکر روی تصویر تیره و شمارنده وسط", Component: HeroTemplate4 },
   { id: 5, name: "سه ویدیو", description: "گرید موزاییکی ۳ ویدیو همزمان + متن و شمارنده وسط", Component: HeroTemplate5 },
+  { id: 6, name: "ویدیوی تمام‌صفحه", description: "ویدیوی فول‌اسکرین تمام نمایشگر + متن و شمارنده وسط — هیروی سینمایی", Component: HeroTemplate6 },
 ];
 
 export function HeroStudioRenderer({ config }: { config: HeroStudioConfig }) {

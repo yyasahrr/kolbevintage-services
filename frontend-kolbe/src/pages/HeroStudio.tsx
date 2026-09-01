@@ -35,6 +35,7 @@ export default function HeroStudio() {
   const [busy, setBusy] = useState(false);
   const bgFileRef = useRef<HTMLInputElement>(null);
   const timerFileRef = useRef<HTMLInputElement>(null);
+  const heroVideoFileRef = useRef<HTMLInputElement>(null);
 
   const patch = (partial: Partial<HeroStudioConfig>) => setConfig((current) => ({ ...current, ...partial }));
   const patchCountdown = (partial: Partial<HeroStudioConfig["countdown"]>) =>
@@ -206,6 +207,28 @@ export default function HeroStudio() {
                 <input className={input} dir="ltr" value={(config as any)[field] ?? ""} onChange={(e) => patch({ [field]: e.target.value } as any)} placeholder="/videos/hero-1.mp4" />
               </label>
             ))}
+          </div>
+        </section>
+      )}
+
+      {config.template === 6 && (
+        <section className="rounded-[6px] border border-neutral-200 p-4">
+          <h3 className="text-[12.5px] font-medium">ویدیوی تمام‌صفحه</h3>
+          <p className="mt-1 text-[10.5px] text-neutral-500">تمپلیت سینمایی — ویدیو کل نمایشگر را می‌پوشاند؛ هدر سایت هنگام اسکرول شفاف می‌شود.</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className={label}>آدرس فایل ویدیو (mp4/webm)</span>
+              <input className={input} dir="ltr" value={config.heroVideo.startsWith("data:") ? "(فایل آپلودشده)" : config.heroVideo} onChange={(e) => patch({ heroVideo: e.target.value })} placeholder="/videos/hero-2.mp4" />
+            </label>
+            <label className="block">
+              <span className={label}>تصویر پوستر (تا لحظهٔ لود ویدیو)</span>
+              <input className={input} dir="ltr" value={config.videoPoster.startsWith("data:") ? "(تصویر آپلودشده)" : config.videoPoster} onChange={(e) => patch({ videoPoster: e.target.value })} placeholder="/images/model-full.jpg" />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input ref={heroVideoFileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 8_000_000) { flash("فایل ویدیو باید کمتر از ۸ مگابایت باشد؛ از URL استفاده کنید."); return; } const reader = new FileReader(); reader.onload = () => patch({ heroVideo: String(reader.result) }); reader.readAsDataURL(file); }} />
+            <button type="button" onClick={() => heroVideoFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">آپلود ویدیو از سیستم</button>
+            <span className="text-[10px] text-neutral-400">حداکثر ۸ مگابایت (ذخیره محلی) — برای فایل‌های بزرگ‌تر URL بدهید</span>
           </div>
         </section>
       )}

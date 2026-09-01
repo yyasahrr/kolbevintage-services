@@ -19,6 +19,7 @@ export default function SiteHeader() {
   const [q, setQ] = useState("");
   const [theme, setTheme] = useState<StorefrontTheme>(readStorefrontTheme);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const { path } = useRouter();
   const { cartCount, setCartOpen, wishlist } = useStore();
 
@@ -27,6 +28,21 @@ export default function SiteHeader() {
     setSearchOpen(false);
     setCatalogOpen(false);
   }, [path]);
+
+  /* هدر هنگام اسکرول شفاف (شیشه‌ای) میشود */
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setScrolled(window.scrollY > 24));
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", update);
+    };
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
@@ -46,7 +62,7 @@ export default function SiteHeader() {
     : [];
 
   return (
-    <header className="site-header sticky top-0 z-50 bg-white">
+    <header className={"site-header sticky top-0 z-50 bg-white transition-[background,box-shadow,border-color,backdrop-filter] duration-300" + (scrolled ? " is-scrolled" : "")}>
       {/* هدر فشرده تک‌ردیفه */}
       <div className="site-primary border-b border-neutral-200">
         <div className="relative mx-auto flex min-h-[66px] max-w-[1600px] items-center gap-4 px-4 lg:gap-6 lg:px-6">

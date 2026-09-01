@@ -81,7 +81,14 @@ async function ensureDatabase() {
     console.log("• اسکیمای بک‌اند از قبل آماده است (db:setup رد شد).");
     return false;
   }
-  const setup = spawnSync(npmCommand, npmArgs(["exec", "medusa", "db:setup"]), {
+  // غیرتعاملی: --db و --no-interactive تا در محیط بدون TTY قفل نکند
+  const dbName = process.env.KOLBE_PG_DB ?? "kolbe_medusa";
+  const setup = spawnSync(npmCommand, npmArgs([
+    "exec", "medusa", "--", "db:setup",
+    "--db", dbName,
+    "--no-interactive",
+    "--execute-all-links",
+  ]), {
     cwd: BACKEND,
     stdio: "inherit",
   });

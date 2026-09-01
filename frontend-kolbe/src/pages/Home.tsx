@@ -9,6 +9,7 @@ import ProductCard from "../components/ProductCard";
 import Icon from "../components/Icon";
 import { loadHomepageArticles, subscribeToJournalSettings } from "../journalSettings";
 import HomepageHero from "../components/HomepageHero";
+import FestivalCountdownOverlay from "../components/FestivalCountdown";
 import { useSiteSettings } from "../siteSettings";
 
 /* ---------------------------------- ۱. هیرو ---------------------------------- */
@@ -44,6 +45,7 @@ function NewArrivals() {
 function CollectionBanner() {
   const { collectionBanner: legacy, builder } = useSiteSettings();
   const banner = builder.banner;
+  const countdown = <FestivalCountdownOverlay config={builder.components.countdown} where="featureBanner" />;
   const mediaEl =
     banner.mediaType === "video" ? (
       <video src={banner.media} autoPlay muted loop playsInline className="h-full w-full object-cover" />
@@ -78,7 +80,7 @@ function CollectionBanner() {
   if (banner.mode === "split") {
     return (
       <section className="grid overflow-hidden lg:grid-cols-2">
-        <div className="relative min-h-[320px] lg:min-h-[520px]">{mediaEl}{overlay}</div>
+        <div className="relative min-h-[320px] lg:min-h-[520px]">{mediaEl}{overlay}{countdown}</div>
         <div className="flex items-center justify-center bg-[#f7f5f0] px-8 py-16 text-center">{copy}</div>
       </section>
     );
@@ -88,7 +90,7 @@ function CollectionBanner() {
     return (
       <section className="mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8">
         <div className="grid gap-3 lg:grid-cols-3">
-          <div className="relative min-h-[320px] overflow-hidden lg:col-span-2 lg:min-h-[460px]">{mediaEl}{overlay}
+          <div className="relative min-h-[320px] overflow-hidden lg:col-span-2 lg:min-h-[460px]">{mediaEl}{overlay}{countdown}
             <div className="absolute inset-0 flex items-center justify-center px-6 text-center">{copy}</div>
           </div>
           <div className="grid gap-3">
@@ -105,6 +107,7 @@ function CollectionBanner() {
       {mediaEl}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" style={{ background: `linear-gradient(to top, rgba(7,20,34,${Math.min(banner.overlay + 0.25, 0.85)}), rgba(7,20,34,${banner.overlay * 0.3}))` }} />
       <div className="absolute inset-0 flex items-center justify-center px-6 text-center">{copy}</div>
+      {countdown}
     </section>
   );
 }
@@ -566,10 +569,14 @@ function TrustRow() {
 /* ---------------------------------- صفحه ----------------------------------- */
 
 export default function Home() {
-  const { heroStudio } = useSiteSettings();
+  const { heroStudio, builder } = useSiteSettings();
   return (
     <>
-      {heroStudio.published ? <HeroStudioRenderer config={heroStudio} /> : <HomepageHero />}
+      {/* هیرو + کامپوننت شمارنده جشنواره (اگر در سایت‌ساز فعال شده باشد) */}
+      <div className="relative">
+        {heroStudio.published ? <HeroStudioRenderer config={heroStudio} /> : <HomepageHero />}
+        <FestivalCountdownOverlay config={builder.components.countdown} where="hero" />
+      </div>
       <CategoryBento />
       <NewArrivals />
       <MidBanner />
@@ -694,6 +701,7 @@ function CategoryBento() {
 /* ----------------------- بنر وسط (بین جدیدترین و پرفروش) ----------------------- */
 
 function MidBanner() {
+  const { builder } = useSiteSettings();
   return (
     <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
       <Link to="/collection" className="group relative block overflow-hidden rounded-[1.2rem]">
@@ -705,6 +713,7 @@ function MidBanner() {
           <p className="mt-1.5 max-w-md text-[10.5px] leading-relaxed text-white/80 sm:text-[12px]">پشم شورون، بافت کابلی و کشمیر برای سردترین روزهای سال.</p>
           <span className="mt-4 rounded-full bg-white px-5 py-2 text-[11px] font-medium text-[#011c3a] transition group-hover:bg-neutral-100 sm:mt-5 sm:px-6 sm:py-2.5 sm:text-[12px]">مشاهده کالکشن</span>
         </div>
+        <FestivalCountdownOverlay config={builder.components.countdown} where="midBanner" />
       </Link>
     </section>
   );
@@ -713,6 +722,7 @@ function MidBanner() {
 /* ----------------------- بنر پایین (بعد از پرفروشترین) ----------------------- */
 
 function BottomBanner() {
+  const { builder } = useSiteSettings();
   return (
     <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -723,6 +733,7 @@ function BottomBanner() {
             <h3 className="text-[17px] font-medium">خرید عمده</h3>
             <p className="mt-1 text-[11px] text-white/70">قیمت‌های ویژه برای کسب‌وکار شما</p>
           </div>
+          <FestivalCountdownOverlay config={builder.components.countdown} where="bottomWholesale" />
         </Link>
         <Link to="/styles" className="group relative overflow-hidden rounded-[1rem]">
           <img src="/images/detail-hem.jpg" alt="استایل‌ها" loading="lazy" className="h-[150px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03] sm:h-[200px]" />
@@ -731,6 +742,7 @@ function BottomBanner() {
             <h3 className="text-[17px] font-medium">استایل‌های کلبه</h3>
             <p className="mt-1 text-[11px] text-white/70">از دارک آکادمیا تا اولد مانی</p>
           </div>
+          <FestivalCountdownOverlay config={builder.components.countdown} where="bottomStyles" />
         </Link>
       </div>
     </section>

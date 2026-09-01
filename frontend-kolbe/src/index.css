@@ -2461,3 +2461,52 @@ textarea {
   color: #f5f1e9;
   border-color: #c7dde1;
 }
+
+/* ═══════════ هدر شفاف هنگام اسکرول ═══════════ */
+.site-header.is-scrolled .site-primary {
+  transition: background 320ms ease, box-shadow 320ms ease;
+}
+
+[data-theme="liquid"] .site-header.is-scrolled .site-primary {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(238, 232, 222, 0.12)),
+    rgba(250, 248, 243, 0.3);
+  box-shadow:
+    0 12px 32px rgba(7, 28, 49, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+[data-theme="dark"] .site-header.is-scrolled .site-primary {
+  background:
+    linear-gradient(135deg, rgba(25, 53, 71, 0.42), rgba(7, 21, 34, 0.3)),
+    rgba(9, 26, 41, 0.38);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* خط راهنمای اسکرول تمپلیت ویدیوی تمامصفحه */
+@keyframes scroll-hint-pulse {
+  0%, 100% { transform: scaleY(0.4); opacity: 0.5; transform-origin: top; }
+  50% { transform: scaleY(1); opacity: 1; transform-origin: top; }
+}
+
+.scroll-hint-line {
+  animation: scroll-hint-pulse 2.2s ease-in-out infinite;
+}
+
+/* پنل انتخاب رنگ نوار خرید چسبان (PDP) */
+.sticky-colour-menu {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 11.5rem;
+  padding: 0.65rem;
+  border-radius: 1rem;
+}
+
+.sticky-colour-menu .pdp-swatch {
+  width: 2.4rem;
+  height: 2.4rem;
+}

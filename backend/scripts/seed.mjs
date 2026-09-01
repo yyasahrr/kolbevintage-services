@@ -24,6 +24,42 @@ const BASE = process.argv[2] || process.env.MEDUSA_BACKEND_URL || "http://127.0.
 const BOOTSTRAP = process.env.KOLBE_BOOTSTRAP_SECRET || "kolbe-bootstrap-2026";
 const PK = process.env.KOLBE_PUBLISHABLE_KEY || "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee";
 
+/**
+ * کلید publishable موردانتظار فرانتاندها را روی دیتابیس تضمین میکند.
+ * db:setup یک کلید پیشفرض با توکن تصادفی میسازد؛ توکن آن به PK موردنظر
+ * تغییر میکند تا فرانتاند و seed بدون تغییر به همان کلید وصل بمانند.
+ */
+async function ensurePublishableKey() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    console.log("  (DATABASE_URL نیست؛ کلید publishable بررسی نشد)");
+    return;
+  }
+  const { Client } = await import("pg");
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const exact = await client.query("SELECT id FROM api_key WHERE token = $1 AND type = 'publishable' AND deleted_at IS NULL LIMIT 1", [PK]);
+    if (exact.rowCount > 0) {
+      console.log("  ✓ کلید publishable از قبل درست است");
+      return;
+    }
+    const fallback = await client.query("SELECT id FROM api_key WHERE type = 'publishable' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1");
+    if (fallback.rowCount > 0) {
+      await client.query("UPDATE api_key SET token = $1, updated_at = now() WHERE id = $2", [PK, fallback.rows[0].id]);
+      console.log("  ✓ توکن کلید publishable پیشفرض به کلید موردنظر تغییر کرد");
+      return;
+    }
+    await client.query(
+      "INSERT INTO api_key (id, token, title, type, created_at, updated_at) VALUES ($1, $2, $3, 'publishable', now(), now())",
+      [`apk_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, PK, "Kolbe Storefront"],
+    );
+    console.log("  ✓ کلید publishable جدید ساخته شد");
+  } finally {
+    await client.end();
+  }
+}
+
 async function api(path, { method = "GET", body, token } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -40,6 +76,9 @@ async function api(path, { method = "GET", body, token } = {}) {
 }
 
 async function main() {
+  console.log("→ کلید publishable");
+  await ensurePublishableKey();
+
   console.log("→ bootstrap admin");
   await api("/store/kolbe/dev/bootstrap", {
     method: "POST",

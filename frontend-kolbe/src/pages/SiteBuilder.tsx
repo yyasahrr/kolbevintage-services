@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import {
   useSiteSettings, saveSiteSettings, defaultSiteBuilder,
-  type SiteBuilder, type BuilderStyleCard, type BuilderPost, type BuilderInstaCard, type BuilderHotspot,
+  type SiteBuilder, type BuilderStyleCard, type BuilderPost, type BuilderInstaCard, type BuilderHotspot, type CountdownComponent,
 } from "../siteSettings";
 import { fileToOptimizedDataUrl } from "../lib/imageUpload";
 import { VisualHotspotCanvas, ImageDropField, SortableList } from "../components/visualBuilder";
+import HeroCountdown from "../components/HeroCountdown";
 import { toman } from "../utils/format";
 
 const input = "h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
@@ -13,7 +14,7 @@ const card = "rounded-[6px] border border-neutral-200 p-4";
 const btn = "h-9 rounded-[3px] border border-neutral-300 px-3 text-[11px] transition hover:border-[#011c3a]";
 const btnPrimary = "h-9 rounded-[3px] bg-[#011c3a] px-4 text-[11px] font-medium text-white transition hover:bg-[#0a2c55]";
 
-type Tab = "card" | "banner" | "styles" | "popup" | "look" | "blog" | "instagram" | "footer";
+type Tab = "card" | "banner" | "styles" | "popup" | "look" | "components" | "blog" | "instagram" | "footer";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "card", label: "کارت محصول" },
@@ -21,6 +22,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "styles", label: "کارت استایل‌ها" },
   { id: "popup", label: "پاپ‌آپ ساز" },
   { id: "look", label: "پیشنهاد استایل" },
+  { id: "components", label: "کامپوننت‌ها" },
   { id: "blog", label: "مجله و بلاگ" },
   { id: "instagram", label: "اینستاگرام" },
   { id: "footer", label: "فوتر و خبرنامه" },
@@ -272,6 +274,9 @@ export default function SiteBuilder() {
       )}
 
       {/* ---------------- مجله و بلاگ ---------------- */}
+      {/* ---------------- کامپوننت‌ها: شمارنده جشنواره ---------------- */}
+      {tab === "components" && <ComponentsEditor countdown={builder.components.countdown} onPatch={(next) => patch({ components: { countdown: next } })} />}
+
       {tab === "blog" && (
         <section className={card}>
           <h3 className="text-[12.5px] font-medium">مجله صفحه اصلی و بلاگ‌ساز</h3>
@@ -470,5 +475,120 @@ function BannerPreview({ config }: { config: SiteBuilder["banner"] }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/* --------------------- کامپوننت‌ها: شمارنده جشنواره --------------------- */
+
+const COUNTDOWN_PLACEMENTS: Array<{ key: keyof CountdownComponent["placement"]; label: string; hint: string }> = [
+  { key: "hero", label: "هیرو صفحه اصلی", hint: "روی هیرو (هر تمپلیتی)" },
+  { key: "featureBanner", label: "بنر بزرگ (بنرساز)", hint: "بنر وسط صفحه اصلی" },
+  { key: "midBanner", label: "بنر کالکشن", hint: "بنر بعد از جدیدترین‌ها" },
+  { key: "bottomWholesale", label: "بنر خرید عمده", hint: "کاشی پایین — راست" },
+  { key: "bottomStyles", label: "بنر استایل‌ها", hint: "کاشی پایین — چپ" },
+];
+
+function ComponentsEditor({ countdown, onPatch }: { countdown: CountdownComponent; onPatch: (next: CountdownComponent) => void }) {
+  const set = (partial: Partial<CountdownComponent>) => onPatch({ ...countdown, ...partial });
+  const setPlacement = (key: keyof CountdownComponent["placement"], value: boolean) =>
+    onPatch({ ...countdown, placement: { ...countdown.placement, [key]: value } });
+
+  return (
+    <section className={card}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-[12.5px] font-medium">شمارنده جشنواره — کامپوننت قابل نصب</h3>
+          <p className="mt-1 text-[10.5px] leading-relaxed text-neutral-500">
+            یک بار تنظیمش کنید و روی هر بنر و حتی روی هیرو نصبش کنید؛ چند جا هم‌زمان هم نمایش داده می‌شود.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-[11px]">
+          <input type="checkbox" checked={countdown.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="accent-[#011c3a]" />
+          فعال‌سازی کامپوننت
+        </label>
+      </div>
+
+      {/* پیشنمایش زنده روی یک بنر شبیهسازی‌شده */}
+      <div className="mt-4 overflow-hidden rounded-[6px] border border-neutral-200">
+        <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-3 py-2">
+          <span className="text-[10px] font-medium text-neutral-500">پیش‌نمایش زنده</span>
+          <span className="text-[9px] text-neutral-400">همان چیزی که روی سایت دیده می‌شود</span>
+        </div>
+        <div className="relative min-h-[210px] overflow-hidden">
+          <img src="/images/banner.jpg" alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-black/40" />
+          <div className={"absolute inset-x-0 flex px-6 " + (countdown.align === "center" ? "justify-center" : countdown.align === "right" ? "justify-start" : "justify-end") + " " + (countdown.position === "top" ? "top-6" : countdown.position === "center" ? "top-1/2 -translate-y-1/2" : "bottom-6")}>
+            <HeroCountdown config={countdown} size={countdown.size} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="block"><span className={label}>برچسب شمارنده</span><input className={input} value={countdown.label} onChange={(e) => set({ label: e.target.value })} placeholder="پایان جشنواره" /></label>
+        <label className="block"><span className={label}>زمان پایان جشنواره</span><input type="datetime-local" dir="ltr" className={input} value={countdown.target} onChange={(e) => set({ target: e.target.value })} /></label>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <div>
+          <span className={label}>استایل</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            {([["glass", "شیشه‌ای"], ["dark", "سرمه‌ای"], ["light", "روشن"], ["solid", "تخت"]] as const).map(([id, name]) => (
+              <button key={id} onClick={() => set({ style: id })} className={(countdown.style === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300") + " h-9 rounded-[3px] border text-[10px]"}>{name}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <span className={label}>اندازه</span>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([["sm", "کوچک"], ["md", "متوسط"], ["lg", "بزرگ"]] as const).map(([id, name]) => (
+              <button key={id} onClick={() => set({ size: id })} className={(countdown.size === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300") + " h-9 rounded-[3px] border text-[10px]"}>{name}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <span className={label}>رنگ تأکید</span>
+          <input type="color" value={countdown.accent} onChange={(e) => set({ accent: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" />
+        </div>
+      </div>
+
+      {/* محل نصب */}
+      <div className="mt-4 rounded-[6px] border border-neutral-200 p-3">
+        <p className="text-[11.5px] font-medium">محل نصب — کجاها نمایش داده شود؟</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {COUNTDOWN_PLACEMENTS.map((place) => (
+            <label key={place.key} className={(countdown.placement[place.key] ? "border-[#011c3a] bg-[#f3f5f7]" : "border-neutral-200") + " flex cursor-pointer items-start gap-2.5 rounded-[6px] border p-3 transition hover:border-[#011c3a]"}>
+              <input type="checkbox" checked={countdown.placement[place.key]} onChange={(e) => setPlacement(place.key, e.target.checked)} className="mt-0.5 accent-[#011c3a]" />
+              <span>
+                <span className="block text-[11px] font-medium">{place.label}</span>
+                <span className="mt-0.5 block text-[9.5px] text-neutral-500">{place.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <span className={label}>جای عمودی روی بنر</span>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([["top", "بالای بنر"], ["center", "وسط بنر"], ["bottom", "پایین بنر"]] as const).map(([id, name]) => (
+              <button key={id} onClick={() => set({ position: id })} className={(countdown.position === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300") + " h-9 rounded-[3px] border text-[10px]"}>{name}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <span className={label}>تراز افقی</span>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([["right", "راست"], ["center", "وسط"], ["left", "چپ"]] as const).map(([id, name]) => (
+              <button key={id} onClick={() => set({ align: id })} className={(countdown.align === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300") + " h-9 rounded-[3px] border text-[10px]"}>{name}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-[10px] leading-relaxed text-neutral-400">
+        نکته: شمارنده جدا از «استودیوی هیرو» کار می‌کند؛ اگر شمارنده هیرو فعال باشد هر دو نمایش داده می‌شوند — برای یکی بودن، شمارنده استودیوی هیرو را خاموش کنید.
+      </p>
+    </section>
   );
 }

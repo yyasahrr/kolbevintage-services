@@ -3,6 +3,10 @@ import { products, type Product } from "./data/catalog";
 export type ProductStatus = "draft" | "review" | "published";
 export type AdminVariant = { id:string; colour:string; hex:string; size:string; sku:string; barcode:string; price:number; stock:number; warehouse:string };
 export type ProductVersion = { id:string; at:string; status:ProductStatus; summary:string; snapshot?:string };
+
+/** هاتاسپات مکمل — نقطه روی عکس «با این ست کنید» که به یک محصول مکمل لینک میشود */
+export type AdminLookHotspot = { id:string; x:number; y:number; label:string; color:string; visible:boolean; productId:string };
+export type AdminProductLook = { image:string; hotspots:AdminLookHotspot[] };
 export type AdminProductRecord = Product & {
   admin: {
     status: ProductStatus;
@@ -12,6 +16,8 @@ export type AdminProductRecord = Product & {
     customSpecs: Array<{ id:string; label:string; value:string }>;
     versions: ProductVersion[];
     mainImage: number;
+    /** ست پیشنهادی اختصاصی این محصول — عکس محصول روی تن مدل + هاتاسپات مکملها */
+    look?: AdminProductLook;
   };
 };
 
@@ -30,12 +36,12 @@ export function toAdminProduct(product: Product): AdminProductRecord {
     stock: size.inStock ? 8 : 0,
     warehouse: "انبار مرکزی",
   })));
-  return { ...product, admin: { status:"published", collections:[], tags:product.badges, variants, customSpecs:[], versions:[{id:`v-${product.createdAt}`,at:new Intl.DateTimeFormat("fa-IR").format(new Date(product.createdAt)),status:"published",summary:"نسخه اولیه کاتالوگ"}], mainImage:0 } };
+  return { ...product, admin: { status:"published", collections:[], tags:product.badges, variants, customSpecs:[], versions:[{id:`v-${product.createdAt}`,at:new Intl.DateTimeFormat("fa-IR").format(new Date(product.createdAt)),status:"published",summary:"نسخه اولیه کاتالوگ"}], mainImage:0, look:{ image:"", hotspots:[] } } };
 }
 
 export function createAdminProduct(): AdminProductRecord {
   const base = toAdminProduct(products[0]); const now=Date.now();
-  return { ...base, id:`admin-${now}`, name:"", latin:"", subtitle:"", price:0, images:[], video:undefined, colours:[], sizes:[], badges:[], rating:0, reviewCount:0, reviews:[], description:"", relatedIds:[], complementaryIds:[], createdAt:now, sold:0, specs:{...base.specs,code:`KV-${String(now).slice(-6)}`,productType:"",fabric:""}, sizeChart:[], admin:{status:"draft",collections:[],tags:[],variants:[],customSpecs:[],versions:[],mainImage:0} };
+  return { ...base, id:`admin-${now}`, name:"", latin:"", subtitle:"", price:0, images:[], video:undefined, colours:[], sizes:[], badges:[], rating:0, reviewCount:0, reviews:[], description:"", relatedIds:[], complementaryIds:[], createdAt:now, sold:0, specs:{...base.specs,code:`KV-${String(now).slice(-6)}`,productType:"",fabric:""}, sizeChart:[], admin:{status:"draft",collections:[],tags:[],variants:[],customSpecs:[],versions:[],mainImage:0,look:{image:"",hotspots:[]}} };
 }
 
 export function loadAdminProducts(): AdminProductRecord[] {
