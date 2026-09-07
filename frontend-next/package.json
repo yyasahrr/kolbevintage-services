@@ -1,0 +1,28 @@
+{
+  "name": "kolbe-next",
+  "private": true,
+  "version": "1.0.0",
+  "description": "کلبه وینتیج — اپ یکپارچه Next.js و PostgreSQL",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "^0.545.0",
+    "next": "15.5.25",
+    "pg": "8.23.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.17",
+    "@types/node": "^22.19.17",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "4.1.17",
+    "typescript": "^5.9.3"
+  }
+}

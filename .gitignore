@@ -1,9 +1,25 @@
 node_modules
 dist
+.npm-cache/
+.runtime-config/
+.postgres-data/
 .DS_Store
 *.local
 .playwright-cli/
 test-results/
 .claude/
 .freebuff/
+.rollback-backup-before-medusa-*/
 supabase/.temp/
+.env
+.freebuff/
+
+# لایه Next.js
+frontend-next/.next/
+frontend-next/.next-dev/
+frontend-next/next-env.d.ts
+frontend-next/out/
+frontend-next/*.tsbuildinfo
+
+# مارکر آماده بودن دیتابیس (بعد از هر بار init تازه ساخته میشود)
+backend/.kolbe-db-ready

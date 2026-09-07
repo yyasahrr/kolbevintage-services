@@ -1,56 +1,66 @@
 # Kolbe Vintage Platform
 
-این ریپازیتوری تمام بخش‌های پلتفرم کلبه را در یک monorepo نگه می‌دارد. فروشگاه، پنل ادمین و تجربه VIP در اپ اصلی هستند و پنل مستقل ساپلایر در workspace خودش اجرا می‌شود. هر دو اپ به یک پروژه Supabase و یک زنجیره سفارش عمده متصل‌اند.
-
-## ساختار
+پلتفرم یکپارچه کلبه وینتیج با **Next.js 15** و **PostgreSQL**.
 
 ```text
-.
-├── src/                  # فروشگاه، VIP و پنل مدیریت کلبه
-├── apps/
-│   └── supplier/         # پنل مستقل ساپلایر
-├── supabase/migrations/  # دیتابیس و workflow مشترک
-├── docs/                 # معماری و مستندات محصول
-├── public/               # assetهای اپ اصلی
-└── scripts/              # ابزارهای توسعه monorepo
+مرورگر
+  └── Next.js :3000
+      ├── /                    فروشگاه
+      ├── /supplier            پورتال تأمین‌کننده
+      ├── /#/admin             پنل مدیریت کلبه
+      ├── /#/vip               پورتال VIP
+      └── /store/kolbe/*       API یکپارچه
+          └── PostgreSQL :55432
 ```
 
-## راه‌اندازی
-
-پیش‌نیاز: Node.js 20 یا جدیدتر.
+## اجرا
 
 ```bash
 npm install
+npm run dev
 ```
 
-فایل `.env.local` را در ریشه برای اپ اصلی و در `apps/supplier/.env.local` برای پنل ساپلایر بسازید. هر دو فایل باید به یک Supabase متصل باشند:
+`npm run dev` دیتابیس محلی را آماده می‌کند و سپس Next.js را روی پورت `3000` اجرا
+می‌کند. جداول و داده‌های نمونه در اولین درخواست API به‌صورت idempotent ساخته می‌شوند.
+
+برای اجرای فرانت روی پورت دیگر:
+
+```bash
+npm exec --workspace kolbe-next -- next dev -H 0.0.0.0 -p 3001
+```
+
+## آدرس‌ها
+
+| بخش | آدرس |
+|---|---|
+| فروشگاه | http://localhost:3000 |
+| پنل مدیریت | http://localhost:3000/#/admin |
+| پنل VIP | http://localhost:3000/#/vip |
+| پنل تأمین‌کننده | http://localhost:3000/supplier |
+| سلامت سرویس | http://localhost:3000/api/health |
+
+## حساب‌های توسعه
+
+| نقش | ایمیل | رمز |
+|---|---|---|
+| مدیر | `admin@kolbe.ir` | `KolbeAdmin1404!` |
+| VIP | `vip@boutique.ir` | `VipPass1404!` |
+| تأمین‌کننده | `nilgoon@kolbe.ir` | `SupplierPass1404!` |
+
+## تنظیمات
+
+فایل `.env.example` را برای محیط واقعی به `.env` تبدیل کنید و حتماً
+`KOLBE_SESSION_SECRET` را با یک مقدار تصادفی طولانی جایگزین کنید.
+
+برای فعال‌کردن پرو مجازی لباس، کلید API ساخته‌شده در پنل Perfect Corp را فقط در
+فایل `frontend-next/.env.local` قرار دهید (این مقدار نباید با پیشوند
+`NEXT_PUBLIC_` تعریف شود):
 
 ```env
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
+PERFECT_CORP_API_KEY=your-api-key
 ```
 
-اجرای هم‌زمان هر دو اپ:
+پس از تغییر متغیر محیطی، برنامه Next.js را دوباره اجرا کنید.
 
-```bash
-npm run dev:all
-```
-
-- فروشگاه و پنل ادمین: `http://127.0.0.1:5173`
-- پنل ساپلایر: `http://127.0.0.1:5174`
-
-فرمان‌های مستقل نیز در دسترس‌اند: `npm run dev:storefront` و `npm run dev:supplier`.
-
-## build
-
-```bash
-npm run build:all
-```
-
-خروجی اپ اصلی در `dist/` و خروجی پنل ساپلایر در `apps/supplier/dist/` ساخته می‌شود.
-
-## مدل استقرار
-
-دو اپ از یک کدبیس و دیتابیس مشترک استفاده می‌کنند، اما مستقل deploy می‌شوند. برای نمونه، دامنه اصلی می‌تواند میزبان فروشگاه باشد و `supplier.example.com` پنل ساپلایر را ارائه کند. متغیرهای محیطی هر دو deployment باید به همان پروژه Supabase اشاره کنند.
-
-ریپازیتوری قدیمی ساپلایر فقط برای نگهداری تاریخچه باقی می‌ماند؛ مرجع توسعه از این پس پوشه `apps/supplier` در همین ریپازیتوری است.
+فرانت‌های Vite قدیمی در `frontend-kolbe` و `frontend-supplier` فقط برای نگهداری باقی
+مانده‌اند و در حالت توسعه، API را از برنامه Next.js روی پورت `3000` می‌گیرند.
