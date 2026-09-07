@@ -10,6 +10,8 @@ import SiteFooter from "../components/SiteFooter";
 import CartDrawer from "../components/CartDrawer";
 import CompareBar from "../components/CompareBar";
 import Toasts from "../components/Toasts";
+import { saveWholesaleMembership } from "../wholesaleMembership";
+import { loadKolbeWholesaleCatalog } from "./WholesaleCatalogManager";
 
 /* ================================================================
    بازار عمده کلبه — کاتالوگ عمومی با قیمت ویژه VIP
@@ -47,19 +49,23 @@ export default function Wholesale() {
   const [shown, setShown] = useState(12);
   const [gridCols, setGridCols] = useState(4);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [source, setSource] = useState<"kolbe"|"marketplace">("kolbe");
+  const [orderMode, setOrderMode] = useState<"quick"|"normal">("normal");
 
   /* وضعیت کاربر */
-  const [siteCustomer, setSiteCustomer] = useState<{ name: string; email?: string } | null>(null);
+  const [siteCustomer, setSiteCustomer] = useState<{ id:string; name: string; phone:string; email?: string } | null>(null);
   const [vipAccount, setVipAccount] = useState<{ storeName: string; planName: string } | null>(null);
   const [showVipPlans, setShowVipPlans] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
+  const [vipError, setVipError] = useState("");
+  const [vipBusy, setVipBusy] = useState(false);
 
   /* بازیابی نشستها */
   useEffect(() => {
     restoreSiteCustomer().then(customer => {
-      if (customer) setSiteCustomer({ name: customer.name, email: customer.email });
+      if (customer) setSiteCustomer({ id:customer.id, name: customer.name, phone:customer.phone, email: customer.email });
     });
     restoreWholesaleVip().then(account => {
       if (account) setVipAccount({ storeName: account.storeName, planName: account.planName });
@@ -68,25 +74,29 @@ export default function Wholesale() {
 
   const hasVip = Boolean(vipAccount);
   const isLoggedIn = Boolean(siteCustomer);
+  const kolbeManagedProducts = useMemo<Product[]>(() => loadKolbeWholesaleCatalog().filter(item=>item.status==="active").map(item=>({
+    ...products[0], id:item.id, name:item.name, latin:item.sku, subtitle:`حداقل سفارش ${item.minOrder.toLocaleString("fa-IR")} عدد · تامین ${item.leadTime?`${item.leadTime.toLocaleString("fa-IR")} روزه`:"آماده"}`, price:item.retailPrice||item.price,
+    images:[item.image||products[0].images[0]], category:item.category, categoryLabel:item.category, createdAt:Date.now(), sold:0, specs:{...products[0].specs,code:item.sku,productType:item.category}, relatedIds:[], complementaryIds:[],
+  })),[]);
 
   /* فیلترها */
   const categories = useMemo(() => ["همه", ...new Set(products.map(p => p.categoryLabel).filter(Boolean))], []);
   const filtered = useMemo(() => {
-    let list = [...products];
+    let list = source === "kolbe" ? [...kolbeManagedProducts,...products.filter((_,index)=>index%2===0)] : products.filter((_,index)=>index%2===1);
     if (category !== "همه") list = list.filter(p => p.categoryLabel === category);
     if (search.trim()) list = list.filter(p => (p.name + p.latin + p.subtitle).toLowerCase().includes(search.trim().toLowerCase()));
     if (sort === "cheap") list.sort((a, b) => a.price - b.price);
     if (sort === "expensive") list.sort((a, b) => b.price - a.price);
     if (sort === "popular") list.sort((a, b) => b.reviewCount - a.reviewCount);
     return list;
-  }, [category, search, sort]);
+  }, [category, search, sort, source, kolbeManagedProducts]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
     try {
       const customer = await signInSiteCustomer(loginForm.email, loginForm.password);
-      setSiteCustomer({ name: customer.name, email: customer.email });
+      setSiteCustomer({ id:customer.id, name: customer.name, phone:customer.phone, email: customer.email });
       setShowLoginModal(false);
       /* بعد از ورود، اگر VIP هم هست قیمتها نمایش داده میشود */
     } catch (error) {
@@ -94,10 +104,19 @@ export default function Wholesale() {
     }
   };
 
-  const handleApplyVip = async () => {
-    /* در نسخه دمو: فعالسازی VIP */
-    setVipAccount({ storeName: siteCustomer?.name ?? "فروشگاه شما", planName: "همکار حرفه‌ای" });
-    setShowVipPlans(false);
+  const handleApplyVip = async (plan:typeof VIP_PLANS[number]) => {
+    if(!siteCustomer){setShowVipPlans(false);setShowLoginModal(true);return}
+    setVipBusy(true);setVipError("");
+    try{
+      const paymentReference=`VIP-${Date.now()}`;
+      const account=await applyWholesaleVip({memberName:siteCustomer.name,storeName:`فروشگاه ${siteCustomer.name}`,phone:siteCustomer.phone||"ثبت نشده",city:"ثبت نشده",planName:plan.name,paymentReference});
+      const activatedAt=account.activatedAt??new Date().toISOString();
+      const expiresAt=account.expiresAt??new Date(Date.now()+365*86400000).toISOString();
+      saveWholesaleMembership({customerId:siteCustomer.id,planId:plan.id,planName:plan.name,memberName:siteCustomer.name,storeName:account.storeName,phone:siteCustomer.phone,city:account.city,activatedAt,expiresAt,status:"active",vip:true});
+      setVipAccount({storeName:account.storeName,planName:account.planName});
+      setShowVipPlans(false);
+    }catch(error){setVipError(error instanceof Error?error.message:"فعال‌سازی عضویت انجام نشد.")}
+    finally{setVipBusy(false)}
   };
 
   return (
@@ -128,6 +147,8 @@ export default function Wholesale() {
             </div>
           </div>
         </section>
+
+        <section className="border-b border-neutral-200 bg-[#f7f5f0]"><div className="mx-auto grid max-w-[1400px] gap-3 px-4 py-4 sm:grid-cols-2 lg:px-8"><button onClick={()=>setSource('kolbe')} className={`border p-4 text-right transition ${source==='kolbe'?'border-[#011c3a] bg-[#011c3a] text-white':'border-neutral-200 bg-white'}`}><span className="text-[9px] tracking-[.2em] opacity-50">KOLBE DIRECT</span><strong className="mt-1 block text-[14px]">خرید مستقیم از کلبه وینتیج</strong><span className="mt-1 block text-[9.5px] opacity-65">موجودی و ارسال مستقیم از انبار کلبه</span></button><button onClick={()=>setSource('marketplace')} className={`border p-4 text-right transition ${source==='marketplace'?'border-[#011c3a] bg-[#011c3a] text-white':'border-neutral-200 bg-white'}`}><span className="text-[9px] tracking-[.2em] opacity-50">CURATED SELLERS</span><strong className="mt-1 block text-[14px]">خرید از فروشندگان منتخب</strong><span className="mt-1 block text-[9.5px] opacity-65">سفارش واحد، تأمین چندفروشنده‌ای و ارسال تجمیعی</span></button></div><div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2 px-4 pb-4 lg:px-8"><span className="text-[10px] text-neutral-500">روش سفارش:</span><button onClick={()=>setOrderMode('normal')} className={`h-8 px-3 text-[9.5px] ${orderMode==='normal'?'bg-[#011c3a] text-white':'border border-neutral-300 bg-white'}`}>سفارش عادی · انتخاب دقیق تنوع</button><button onClick={()=>setOrderMode('quick')} className={`h-8 px-3 text-[9.5px] ${orderMode==='quick'?'bg-[#011c3a] text-white':'border border-neutral-300 bg-white'}`}>سفارش سریع · تکرار موجودی پیشنهادی</button><span className="mr-auto text-[9px] text-neutral-400">خروجی نهایی همیشه یک سفارش و یک مرسوله تجمیعی است.</span></div></section>
 
         {/* بدنه: فیلتر عمودی (راست) + گرید (چپ) */}
         <div className="mx-auto flex w-full max-w-[1400px] gap-5 px-4 py-5 lg:px-8">
@@ -249,12 +270,14 @@ export default function Wholesale() {
                       </li>
                     ))}
                   </ul>
-                  <button onClick={handleApplyVip} className={`mt-5 h-10 w-full rounded text-[11.5px] font-medium transition ${plan.highlight ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]" : "border border-[#011c3a] text-[#011c3a] hover:bg-[#011c3a] hover:text-white"}`}>
-                    انتخاب {plan.name}
+                  <button disabled={vipBusy} onClick={()=>void handleApplyVip(plan)} className={`mt-5 h-10 w-full rounded text-[11.5px] font-medium transition disabled:opacity-45 ${plan.highlight ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]" : "border border-[#011c3a] text-[#011c3a] hover:bg-[#011c3a] hover:text-white"}`}>
+                    {vipBusy?"در حال فعال‌سازی…":`پرداخت آزمایشی و فعال‌سازی ${plan.name}`}
                   </button>
                 </div>
               ))}
             </div>
+            <p className="mt-4 text-center text-[9.5px] leading-5 text-neutral-400">درگاه بانکی این محیط تنظیم نشده است؛ این دکمه چرخه پرداخت موفق و فعال‌سازی خودکار را برای تست شبیه‌سازی می‌کند.</p>
+            {vipError&&<p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-center text-[10px] text-red-700">{vipError}</p>}
             <button onClick={() => setShowVipPlans(false)} className="mt-4 block mx-auto text-[11px] text-neutral-400 underline">بستن</button>
           </div>
         </div>

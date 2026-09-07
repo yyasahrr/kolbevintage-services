@@ -1,4 +1,4 @@
-import { api, ApiError, clearToken, loadToken, saveToken } from "./medusa";
+import { api, ApiError, clearToken, loadToken, saveToken } from "./api";
 
 export type WholesaleVipAccount = {
   id: string;
@@ -70,10 +70,12 @@ export async function signOutWholesaleVip() {
 }
 
 /** درخواست عضویت عمده برای مشتری واردشده فروشگاه. */
-export async function applyWholesaleVip(input: { memberName: string; storeName: string; phone: string; city: string }) {
+export async function applyWholesaleVip(input: { memberName: string; storeName: string; phone: string; city: string; planName: string; paymentReference: string }) {
   const token = loadToken("customer");
   if (!token) throw new Error("ابتدا وارد حساب کاربری فروشگاه شوید.");
-  await api("/store/kolbe/wholesale/apply", { method: "POST", token, body: input });
+  const data = await api<{ account: ApiAccount }>("/store/kolbe/wholesale/apply", { method: "POST", token, body: input });
+  saveToken("vip", token);
+  return toAccount(data.account);
 }
 
 export async function loadWholesaleVipProducts(): Promise<WholesaleVipProduct[]> {

@@ -3,7 +3,7 @@ import Admin from "./Admin";
 import WholesaleAdmin from "./WholesaleAdmin";
 import Icon from "../components/Icon";
 import { Link } from "../router";
-import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
+import { isBackendConfigured as isSupabaseConfigured } from "../lib/api";
 import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
 import { PANELS_PREVIEW_MODE } from "../previewMode";
 
@@ -19,9 +19,7 @@ function BackendStatus() {
     const ping = async () => {
       const started = performance.now();
       try {
-        const res = await fetch("/store/kolbe/health", {
-          headers: { "x-publishable-api-key": import.meta.env.VITE_MEDUSA_PUBLISHABLE_KEY ?? "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee" },
-        });
+        const res = await fetch("/store/kolbe/health");
         if (!alive) return;
         setState(res.ok
           ? { ok: true, detail: `\u200e${Math.round(performance.now() - started)}ms` }

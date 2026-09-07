@@ -11,7 +11,3 @@ function readEnv(key: string): string | undefined {
 }
 
 export const KOLBE_API_BASE = readEnv("NEXT_PUBLIC_KOLBE_API") ?? "";
-
-export const MEDUSA_PUBLISHABLE_KEY =
-  readEnv("NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY") ??
-  "pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee";

@@ -1,35 +1,43 @@
-import SiteBuilder from "./SiteBuilder";
-import HeroStudio from "./HeroStudio";
-import { useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link } from "../router";
 import { products, categories, specLabels, specOrder, type Product } from "../data/catalog";
 import { styles, articles } from "../siteData";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
-import { AccessSecurity, CommerceOperations, IntegrationsAutomation, InventoryOperations, SystemCenter } from "./AdminOperations";
+import { AccessSecurity, CommerceOperations, IntegrationsAutomation, SystemCenter } from "./AdminOperations";
 import AdminProductEditor from "./AdminProductEditor";
 import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
 import { loadHomepageJournalPins, saveHomepageJournalPins, saveManagedArticles } from "../journalSettings";
 import AdminCRM from "./AdminCRM";
 import { loadSiteSettings, saveSiteSettings, type HeroTemplate } from "../siteSettings";
 import RetailPolicyCenter from "./RetailPolicyCenter";
+import { readCommerceEvents, type CommerceEvent } from "../lib/analytics";
+import CatalogTaxonomyManager from "./CatalogTaxonomyManager";
+
+const AdminLogs = lazy(() => import("./AdminLogs"));
+const SiteDesignCenter = lazy(() => import("./SiteDesignCenter"));
+const CampaignCenter = lazy(() => import("./CampaignCenter"));
+const AdminSupportCenter = lazy(() => import("./AdminSupportCenter"));
+const MessagingAutomationCenter = lazy(() => import("./MessagingAutomationCenter"));
 
 const input =
   "h-9 w-full rounded-[3px] border border-neutral-300 px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
 
 const nav = [
   { id: "retail-settings", label: "تنظیمات خرده", icon: "check" },
-  { id: "hero-studio", label: "استودیوی هیرو", icon: "star" },
-  { id: "site-builder", label: "سایت‌ساز", icon: "bag" },
+  { id: "design-center", label: "مرکز طراحی سایت", icon: "star" },
   { id: "dashboard", label: "داشبورد", icon: "shield" },
   { id: "products", label: "محصولات", icon: "bag" },
-  { id: "inventory", label: "موجودی و تأمین", icon: "pin" },
   { id: "orders", label: "سفارش‌ها", icon: "truck" },
   { id: "commerce", label: "مرجوعی و ارسال", icon: "return" },
   { id: "customers", label: "CRM مشتریان", icon: "user" },
+  { id: "vip-customers", label: "مشتریان VIP", icon: "star" },
+  { id: "support", label: "پشتیبانی زنده", icon: "mail" },
+  { id: "messaging", label: "پیامک و اتوماسیون", icon: "activity" },
+  { id: "campaigns", label: "جشنواره و تخفیف", icon: "star" },
   { id: "content", label: "محتوا و صفحات", icon: "mail" },
-  { id: "wholesale", label: "درخواست‌های عمده", icon: "pin" },
   { id: "reports", label: "گزارش‌ها", icon: "clock" },
+  { id: "logs", label: "لاگ‌ها و خطاها", icon: "activity" },
   { id: "access", label: "دسترسی و امنیت", icon: "shield" },
   { id: "integrations", label: "اتصال و اتوماسیون", icon: "plus" },
   { id: "system", label: "مرکز سیستم", icon: "star" },
@@ -429,6 +437,7 @@ function ProductsPanel() {
   const [selectedIds,setSelectedIds]=useState<Set<string>>(new Set());
   const [bulkMode,setBulkMode]=useState<"percent"|"amount">("percent");
   const [bulkValue,setBulkValue]=useState("");
+  const [taxonomyOpen,setTaxonomyOpen]=useState(false);
   const toggleSelect=(id:string)=>setSelectedIds(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
   const applyBulkPrice=()=>{const value=Number(bulkValue);if(!bulkValue||Number.isNaN(value)||selectedIds.size===0)return;const factor=bulkMode==="percent"?1+value/100:value;const updated=items.map(item=>selectedIds.has(item.id)?{...item,price:bulkMode==="percent"?Math.round(item.price*factor):Math.max(0,Math.round(item.price+factor))}:item);commit(updated);setNotice(`قیمت ${fa(selectedIds.size)} محصول بهروزرسانی شد.`);setBulkValue("");setSelectedIds(new Set());};
 
@@ -458,9 +467,10 @@ function ProductsPanel() {
           className={input + " max-w-[220px]"}
         />
         <select aria-label="فیلتر وضعیت محصول" value={status} onChange={e=>setStatus(e.target.value)} className={input+" max-w-40"}><option value="all">همه وضعیت‌ها</option><option value="draft">پیش‌نویس</option><option value="review">در انتظار بررسی</option><option value="published">منتشرشده</option></select>
-        <div className="mr-auto flex flex-wrap gap-2"><button onClick={()=>setView(view==="active"?"trash":"active")} className="border border-neutral-300 px-3 py-2 text-[10px]">{view==="active"?`سطل زباله (${fa(trash.length)})`:"بازگشت به محصولات"}</button><button onClick={exportCsv} className="border border-neutral-300 px-3 py-2 text-[10px]">خروجی CSV</button><label className="cursor-pointer border border-neutral-300 px-3 py-2 text-[10px]">ورود CSV<input aria-label="ورود CSV محصولات" type="file" accept=".csv,text/csv" className="sr-only" onChange={e=>importCsv(e.target.files?.[0]??null)}/></label>{view==="active"&&<button onClick={createProduct} className="rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white">+ ایجاد محصول</button>}</div>
+        <div className="mr-auto flex flex-wrap gap-2"><button onClick={()=>setTaxonomyOpen(value=>!value)} className="border border-neutral-300 px-3 py-2 text-[10px]">تعریف دسته / فصل / استایل</button><button onClick={()=>setView(view==="active"?"trash":"active")} className="border border-neutral-300 px-3 py-2 text-[10px]">{view==="active"?`سطل زباله (${fa(trash.length)})`:"بازگشت به محصولات"}</button><button onClick={exportCsv} className="border border-neutral-300 px-3 py-2 text-[10px]">خروجی CSV</button><label className="cursor-pointer border border-neutral-300 px-3 py-2 text-[10px]">ورود CSV<input aria-label="ورود CSV محصولات" type="file" accept=".csv,text/csv" className="sr-only" onChange={e=>importCsv(e.target.files?.[0]??null)}/></label>{view==="active"&&<button onClick={createProduct} className="rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white">+ ایجاد محصول</button>}</div>
       </div>
       {notice&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}
+      {taxonomyOpen&&<CatalogTaxonomyManager onClose={()=>setTaxonomyOpen(false)}/>}
 
       {view==="active"&&(
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[3px] border border-neutral-200 bg-neutral-50 p-3">
@@ -534,17 +544,25 @@ function ProductsPanel() {
 
 /* --------------------------------- سایر پنل‌ها ------------------------------- */
 
-function OrdersPanel() {
+function printInvoice(order:(typeof orders)[number]) {
+  const popup=window.open("","_blank","width=900,height=900"); if(!popup)return;
+  const safe=(value:string)=>value.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[char]||char));
+  popup.document.write(`<!doctype html><html dir="rtl" lang="fa"><head><meta charset="utf-8"><title>فاکتور ${safe(order.code)}</title><style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Tahoma,Arial,sans-serif;color:#071c31;margin:0;font-size:12px}.head{display:flex;justify-content:space-between;align-items:start;border-bottom:2px solid #071c31;padding-bottom:18px}.brand{font-size:22px;font-weight:700}.muted{color:#667085}.meta{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:22px 0}.cell{border:1px solid #ddd;padding:12px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #ddd;padding:11px;text-align:right}th{background:#f5f5f3}.total{margin-right:auto;width:310px;margin-top:18px;border:2px solid #071c31;padding:15px;font-size:15px}.foot{margin-top:40px;border-top:1px solid #ddd;padding-top:15px;color:#667085;font-size:10px}@media print{button{display:none}}</style></head><body><div class="head"><div><div class="brand">کلبه وینتیج</div><div class="muted">فاکتور رسمی فروش اینترنتی</div></div><div><b>${safe(order.code)}</b><div class="muted">تاریخ: ${safe(order.date)}</div></div></div><div class="meta"><div class="cell"><span class="muted">خریدار</span><br><b>${safe(order.customer)}</b></div><div class="cell"><span class="muted">وضعیت</span><br><b>${safe(order.status)}</b></div><div class="cell"><span class="muted">روش پرداخت</span><br>پرداخت آنلاین</div><div class="cell"><span class="muted">روش ارسال</span><br>پست پیشتاز ـ کد رهگیری پس از ارسال</div></div><table><thead><tr><th>شرح</th><th>تعداد</th><th>قیمت واحد</th><th>جمع</th></tr></thead><tbody><tr><td>محصولات سفارش ${safe(order.code)}</td><td>${order.items.toLocaleString("fa-IR")}</td><td>${Math.round(order.total/order.items).toLocaleString("fa-IR")} تومان</td><td>${order.total.toLocaleString("fa-IR")} تومان</td></tr><tr><td>ارسال</td><td>۱</td><td>رایگان</td><td>۰ تومان</td></tr></tbody></table><div class="total">مبلغ قابل پرداخت: <b>${order.total.toLocaleString("fa-IR")} تومان</b></div><div class="foot">این فاکتور به‌صورت سیستمی صادر شده است. کلبه وینتیج ـ پشتیبانی ۰۲۱-۹۱۰۰۲۲۳۳</div><script>window.onload=()=>window.print()<\/script></body></html>`);popup.document.close();
+}
+
+function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
   const [filter, setFilter] = useState("همه");
+  const [inbox,setInbox]=useState<"new"|"processing"|"all">("new");
   const [items, setItems] = useState(() => { try { const raw=localStorage.getItem("kv_admin_orders"); return raw ? JSON.parse(raw) as typeof orders : orders; } catch { return orders; } });
   const [selected, setSelected] = useState<(typeof orders)[number] | null>(null);
   const statuses = ["همه", "پرداخت شده", "در حال پردازش", "در حال ارسال", "تحویل شده", "مرجوع شده"];
-  const list = filter === "همه" ? items : items.filter((o) => o.status === filter);
+  const stageList=inbox==="new"?items.filter(order=>order.status==="پرداخت شده"):inbox==="processing"?items.filter(order=>["در حال پردازش","در حال ارسال"].includes(order.status)):items;
+  const list = filter === "همه" ? stageList : stageList.filter((o) => o.status === filter);
   const updateStatus = (code:string,status:string) => { const next=items.map(order=>order.code===code?{...order,status}:order); setItems(next); localStorage.setItem("kv_admin_orders",JSON.stringify(next)); };
 
   return (
     <div>
-      <h2 className="mb-5 text-[16px] font-medium">سفارش‌ها</h2>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[9px] tracking-[.22em] text-neutral-400">ORDER INBOX</p><h2 className="mt-2 text-[18px] font-medium">اینباکس سفارش‌ها</h2><p className="mt-1 text-[10px] text-neutral-500">دریافت، بررسی، آماده‌سازی، ارسال و خدمات پس از فروش در یک جریان.</p></div><div className="flex border border-neutral-300 bg-white">{([["new","جدید"],["processing","در جریان"],["all","همه"]] as const).map(([id,label])=><button key={id} onClick={()=>setInbox(id)} className={`h-10 px-4 text-[10.5px] ${inbox===id?'bg-[#011c3a] text-white':''}`}>{label}</button>)}</div></div>
       <div className="mb-4 flex flex-wrap gap-2">
         {statuses.map((s) => (
           <button
@@ -591,7 +609,7 @@ function OrdersPanel() {
                 <td className="p-3">
                   <div className="flex gap-2 text-[11px]">
                     <button onClick={()=>setSelected(o)} className="underline">جزئیات</button>
-                    <button onClick={()=>{setSelected(o);setTimeout(()=>window.print(),50)}} className="underline">فاکتور</button>
+                    <button onClick={()=>printInvoice(o)} className="underline">فاکتور PDF</button>
                   </div>
                 </td>
               </tr>
@@ -599,7 +617,7 @@ function OrdersPanel() {
           </tbody>
         </table>
       </div>
-      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">ORDER DETAIL</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین"],["روش ارسال","پست پیشتاز"],["کد پیگیری","در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[#f6f6f4] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl></section>}
+      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">ORDER DETAIL</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3><button onClick={()=>onOpenCustomer?.(selected.customer)} className="mt-2 text-[10px] text-[#011c3a] underline underline-offset-4">مشاهده پروفایل ۳۶۰ {selected.customer}</button></div><div className="flex gap-2"><button onClick={()=>printInvoice(selected)} className="h-9 border border-[#011c3a] px-3 text-[10px]">فاکتور PDF</button><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین · تأیید شده"],["روش ارسال","پست پیشتاز"],["کد پیگیری",selected.status==="در حال ارسال"?"۷۸۴۵۱۲۳۹۰۱":"در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[#f6f6f4] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl><div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]"><div><h4 className="text-[11px] font-medium">تایم‌لاین پردازش</h4><div className="mt-3 grid gap-2 sm:grid-cols-4">{["پرداخت تأیید شد","بررسی سفارش","آماده‌سازی انبار","تحویل به حمل"].map((step,index)=><div key={step} className={`border-t-2 pt-2 text-[9px] ${index<(["پرداخت شده","در حال پردازش","در حال ارسال","تحویل شده"].indexOf(selected.status)+1)?'border-[#36563a] text-[#36563a]':'border-neutral-200 text-neutral-400'}`}>{step}</div>)}</div></div><aside className="border border-neutral-200 p-3"><p className="text-[9px] text-neutral-400">نشانی و تحویل</p><p className="mt-2 text-[10px] leading-5">تهران، خیابان ولیعصر، کوچه سرو، پلاک ۲۴</p><p className="mt-2 text-[9px] text-neutral-500">بازه تحویل: ۱۴ تا ۱۸ · تماس قبل از تحویل</p></aside></div></section>}
     </div>
   );
 }
@@ -705,8 +723,6 @@ function ContentPanel() {
   const tabs = [
     { id: "articles", label: "مقالات" },
     { id: "pages", label: "صفحات" },
-    { id: "banners", label: "بنرها و صفحه اصلی" },
-    { id: "menus", label: "منوها و فوتر" },
   ];
 
   return (
@@ -792,6 +808,7 @@ function ContentPanel() {
               <p className="mb-3 text-[12px] font-medium">هدر و منوی اصلی</p>
               <label className="mb-3 block text-[10.5px] text-neutral-500">نام برند<input className={input+" mt-1.5"} value={siteSettings.header.brand} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,brand:e.target.value}})}/></label>
               <label className="mb-3 block text-[10.5px] text-neutral-500">عنوان دکمه برجسته فروشگاه<input className={input+" mt-1.5"} value={siteSettings.header.shopLabel} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,shopLabel:e.target.value}})}/></label>
+              <label className="mb-3 block text-[10.5px] text-neutral-500">رنگ محتوای هدر روی هیروی ویدیویی<input type="color" className="mt-1.5 h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300 bg-white p-1" value={siteSettings.header.videoHeroTextColor || "#ffffff"} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,videoHeroTextColor:e.target.value}})}/></label>
               {siteSettings.header.nav.map((item,index) => (
                 <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2 border-b border-neutral-100 py-2">
                   <input aria-label={`عنوان منو ${index+1}`} className={input} value={item.label} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.map((navItem,i)=>i===index?{...navItem,label:e.target.value}:navItem)}})}/>
@@ -864,20 +881,43 @@ function WholesalePanel() {
 }
 
 function ReportsPanel() {
+  const [events, setEvents] = useState<CommerceEvent[]>(readCommerceEvents);
+  useEffect(() => {
+    const refresh = () => setEvents(readCommerceEvents());
+    window.addEventListener("kolbe:analytics", refresh);
+    window.addEventListener("storage", refresh);
+    return () => { window.removeEventListener("kolbe:analytics", refresh); window.removeEventListener("storage", refresh); };
+  }, []);
+  const count = (name: CommerceEvent["name"]) => events.filter((event) => event.name === name).length;
+  const pageViews = count("page_view") + count("product_view");
+  const checkouts = count("begin_checkout");
+  const purchases = events.filter((event) => event.name === "purchase");
+  const revenue = purchases.reduce((sum, event) => sum + (event.value || 0), 0);
+  const conversion = pageViews ? (purchases.length / pageViews) * 100 : 0;
   const reports = [
-    { label: "فروش این ماه", value: "۳۴۲٬۸۰۰٬۰۰۰ تومان", sub: "+۱۸٪ نسبت به ماه قبل" },
-    { label: "میانگین سبد خرید", value: "۲٬۹۴۰٬۰۰۰ تومان", sub: "+۷٪" },
-    { label: "نرخ تبدیل", value: "۳٫۸٪", sub: "هدف: ۴٫۵٪" },
-    { label: "نرخ مرجوعی", value: "۴٫۲٪", sub: "-۰٫۸٪" },
-    { label: "بازدید ماهانه", value: "۵۴٬۲۱۰ نفر", sub: "+۲۲٪" },
-    { label: "ارزش موجودی انبار", value: "۱٬۲۴۰٬۰۰۰٬۰۰۰ تومان", sub: "۸۹۲ قطعه" },
+    { label: "درآمد ثبت‌شده", value: toman(revenue), sub: `${fa(purchases.length)} خرید تکمیل‌شده` },
+    { label: "میانگین سبد خرید", value: toman(purchases.length ? Math.round(revenue / purchases.length) : 0), sub: "بر پایه سفارش‌های تکمیل‌شده" },
+    { label: "نرخ تبدیل", value: `${conversion.toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪`, sub: `${fa(pageViews)} بازدید قابل ردیابی` },
+    { label: "رهاشدگی پرداخت", value: `${(checkouts ? ((Math.max(0, checkouts - purchases.length) / checkouts) * 100) : 0).toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪`, sub: `${fa(checkouts)} شروع پرداخت` },
+    { label: "افزودن به سبد", value: fa(count("add_to_cart")), sub: `${fa(count("remove_from_cart"))} حذف از سبد` },
+    { label: "ارزش موجودی نمایشی", value: toman(products.reduce((sum, product) => sum + product.price * product.sizes.filter((size) => size.inStock).length, 0)), sub: `${fa(products.length)} محصول` },
   ];
-
   const lowStock = products.filter((p) => p.sizes.filter((s) => s.inStock).length <= 4);
+  const productSignals = products.map((product) => {
+    const views = events.filter((event) => event.name === "product_view" && event.productId === product.id).length;
+    const carts = events.filter((event) => event.name === "add_to_cart" && event.productId === product.id).length;
+    return { product, views, carts, rate: views ? (carts / views) * 100 : 0 };
+  }).sort((a, b) => b.views - a.views);
+  const sourceCounts = events.filter((event) => event.name === "page_view" || event.name === "product_view").reduce<Record<string, number>>((result, event) => {
+    const source = !event.source || event.source === "direct" ? "مستقیم" : event.source.includes("instagram") ? "اینستاگرام" : event.source.includes("google") ? "گوگل" : "ارجاعی";
+    result[source] = (result[source] || 0) + 1;
+    return result;
+  }, {});
+  const sources = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="space-y-6">
-      <h2 className="text-[16px] font-medium">گزارش‌ها</h2>
+      <header><p className="text-[9px] tracking-[.22em] text-neutral-400">COMMERCE INTELLIGENCE</p><h2 className="mt-2 text-[18px] font-medium">تحلیل رفتار و فروش</h2><p className="mt-1 text-[10px] text-neutral-500">داده‌ها از بازدید، محصول، سبد و پرداخت واقعی همین ویترین جمع‌آوری می‌شوند.</p></header>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {reports.map((r) => (
@@ -888,6 +928,16 @@ function ReportsPanel() {
           </div>
         ))}
       </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]">
+        <section className="border border-neutral-200 bg-white">
+          <div className="border-b p-4"><h3 className="text-[12px] font-medium">محصولات پربازدید و کم‌خرید</h3><p className="mt-1 text-[9px] text-neutral-400">نرخ اقدام = افزودن به سبد ÷ بازدید محصول</p></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-right text-[10px]"><thead className="bg-neutral-50 text-neutral-500"><tr><th className="p-3 font-medium">محصول</th><th className="p-3 font-medium">بازدید</th><th className="p-3 font-medium">سبد</th><th className="p-3 font-medium">نرخ اقدام</th><th className="p-3 font-medium">تشخیص</th></tr></thead><tbody>{productSignals.slice(0, 6).map(({ product, views, carts, rate }) => <tr key={product.id} className="border-t"><td className="p-3 font-medium">{product.name}</td><td className="p-3 num-fa">{fa(views)}</td><td className="p-3 num-fa">{fa(carts)}</td><td className="p-3 num-fa">{rate.toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪</td><td className="p-3"><span className={views >= 3 && !carts ? "bg-red-50 px-2 py-1 text-red-700" : views === 0 ? "bg-neutral-100 px-2 py-1 text-neutral-500" : "bg-emerald-50 px-2 py-1 text-emerald-700"}>{views >= 3 && !carts ? "اصطکاک خرید" : views === 0 ? "محصول مرده" : "در جریان"}</span></td></tr>)}</tbody></table></div>
+        </section>
+        <section className="border border-neutral-200 bg-white p-4"><h3 className="text-[12px] font-medium">منبع بازدید</h3>{sources.length ? <div className="mt-4 space-y-3">{sources.map(([source, value]) => <div key={source}><div className="flex justify-between text-[9.5px]"><span>{source}</span><span className="num-fa">{fa(value)}</span></div><div className="mt-1 h-1.5 bg-neutral-100"><span className="block h-full bg-[#011c3a]" style={{ width: `${Math.max(4, value / Math.max(...sources.map((item) => item[1])) * 100)}%` }} /></div></div>)}</div> : <div className="py-12 text-center text-[10px] text-neutral-400">با ورود بازدیدهای جدید، منبع ترافیک اینجا نمایش داده می‌شود.</div>}</section>
+      </div>
+
+      <section className="border border-neutral-200 bg-white p-5"><h3 className="text-[13px] font-medium">قیف و دلایل احتمالی ریزش</h3><div className="mt-4 grid gap-2 sm:grid-cols-4">{[["بازدید", pageViews], ["افزودن به سبد", count("add_to_cart")], ["شروع پرداخت", checkouts], ["خرید", purchases.length]].map(([label, value], index) => <div key={String(label)} className="border-t-2 border-[#011c3a] bg-neutral-50 p-3"><p className="text-[9px] text-neutral-400">مرحله {fa(index + 1)}</p><p className="mt-2 text-[10.5px]">{label}</p><strong className="mt-1 block text-[18px] num-fa">{fa(Number(value))}</strong></div>)}</div><div className="mt-4 grid gap-3 sm:grid-cols-3">{[["محصول دیده شد اما وارد سبد نشد","قیمت، سایز یا اعتماد به اطلاعات محصول را بررسی کنید",productSignals.filter(item=>item.views>0&&!item.carts).length],["سبد حذف شد","هزینه ارسال یا مقایسه با محصول دیگر محتمل است",count("remove_from_cart")],["پرداخت شروع و کامل نشد","خطای درگاه، روش پرداخت یا فرم آدرس را بررسی کنید",Math.max(0,checkouts-purchases.length)]].map(([title,text,value])=><article key={String(title)} className="border border-neutral-200 p-3"><div className="flex items-start justify-between gap-3"><h4 className="text-[10.5px] font-medium">{title}</h4><span className="text-[15px] num-fa">{fa(Number(value))}</span></div><p className="mt-2 text-[9px] leading-5 text-neutral-500">{text}</p></article>)}</div></section>
 
       <div className="rounded-[3px] border border-neutral-200 bg-white p-5">
         <h3 className="mb-4 text-[13px] font-medium">هشدار موجودی انبار</h3>
@@ -962,16 +1012,26 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
         <main className="min-w-0 flex-1 p-4 lg:p-6">
           {page === "retail-settings" && <RetailPolicyCenter />}
           {page === "dashboard" && <Dashboard />}
-          {page === "hero-studio" && <HeroStudio />}
-          {page === "site-builder" && <SiteBuilder />}
+          {page === "design-center" && (
+            <Suspense fallback={<div className="h-64 animate-pulse rounded-[6px] bg-neutral-100" aria-label="در حال بارگذاری مرکز طراحی" />}>
+              <SiteDesignCenter />
+            </Suspense>
+          )}
           {page === "products" && <ProductsPanel />}
-          {page === "inventory" && <InventoryOperations />}
-          {page === "orders" && <OrdersPanel />}
+          {page === "orders" && <OrdersPanel onOpenCustomer={(name) => { localStorage.setItem("kv_crm_focus_customer", name); setPage("customers"); }} />}
           {page === "commerce" && <CommerceOperations />}
           {page === "customers" && <AdminCRM />}
+          {page === "vip-customers" && <AdminCRM initialView="vip" />}
+          {page === "support" && <Suspense fallback={<div className="h-64 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری پشتیبانی" />}><AdminSupportCenter /></Suspense>}
+          {page === "messaging" && <Suspense fallback={<div className="h-64 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری مرکز پیامک" />}><MessagingAutomationCenter /></Suspense>}
+          {page === "campaigns" && <Suspense fallback={<div className="h-56 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری جشنواره‌ها" />}><CampaignCenter /></Suspense>}
           {page === "content" && <ContentPanel />}
-          {page === "wholesale" && <WholesalePanel />}
           {page === "reports" && <ReportsPanel />}
+          {page === "logs" && (
+            <Suspense fallback={<div className="h-48 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری مرکز خطاها" />}>
+              <AdminLogs />
+            </Suspense>
+          )}
           {page === "access" && <AccessSecurity />}
           {page === "integrations" && <IntegrationsAutomation />}
           {page === "system" && <SystemCenter />}

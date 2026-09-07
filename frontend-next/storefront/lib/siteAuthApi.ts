@@ -1,4 +1,4 @@
-import { api, ApiError, clearToken, loadToken, saveToken, TOKEN_KEYS } from "./medusa";
+import { api, ApiError, clearToken, loadToken, saveToken, TOKEN_KEYS } from "./api";
 import type { CustomerIdentity } from "../customerIdentity";
 
 type LoginResponse = { token: string; user: { id: string; email: string; role: string; name: string | null; phone: string | null } };

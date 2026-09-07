@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * مدیریت PostgreSQL امبدد برای بک‌اند Medusa کلبه.
+ * مدیریت PostgreSQL امبدد برای اپ یکپارچه کلبه.
  *
  *   node scripts/pg.mjs ensure   → اگر پایین است راه میاندازد (initdb + start + ساخت دیتابیس)
  *   node scripts/pg.mjs start    → مثل ensure
@@ -8,9 +8,8 @@
  *   node scripts/pg.mjs status   → وضعیت پورت
  *
  * باینریهای postgres از پکیج npm  @embedded-postgres/linux-x64  میآیند و
- * دیتای دیتابیس بیرون از ریپو نگهداری میشود (پیشفرض /home/user/pg) تا وارد
- * git نشود. اگر پوشه دیتا تازه ساخته شود، مارکر «آماده» بک‌اند حذف میشود
- * تا dev-all مجدد مهاجرت و seed را اجرا کند.
+ * دیتای دیتابیس در ویندوز داخل .postgres-data (و در لینوکس /home/user/pg)
+ * نگهداری می‌شود و وارد git نمی‌شود. ساخت جداول و seed در اولین درخواست API انجام می‌شود.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -20,14 +19,39 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const BIN = path.join(ROOT, "node_modules/@embedded-postgres/linux-x64/native/bin");
-const DB_DIR = process.env.KOLBE_PG_DIR ?? "/home/user/pg";
-const PORT = Number(process.env.KOLBE_PG_PORT ?? 5432);
-const HOST = "127.0.0.1";
-const USER = "postgres";
-const PASSWORD = "postgres";
-const DB_NAME = process.env.KOLBE_PG_DB ?? "kolbe_medusa";
-const READY_MARKER = path.join(ROOT, "backend/.kolbe-db-ready");
+const platformPackage = {
+  "darwin-arm64": "darwin-arm64",
+  "darwin-x64": "darwin-x64",
+  "linux-arm64": "linux-arm64",
+  "linux-x64": "linux-x64",
+  "win32-x64": "windows-x64",
+}[`${process.platform}-${process.arch}`];
+
+if (!platformPackage) {
+  throw new Error(`PostgreSQL امبدد برای ${process.platform}-${process.arch} پشتیبانی نشده است`);
+}
+
+const BIN = path.join(ROOT, "node_modules", "@embedded-postgres", platformPackage, "native", "bin");
+const bin = (name) => path.join(BIN, process.platform === "win32" ? `${name}.exe` : name);
+
+function readDatabaseUrl() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const envPath = path.join(ROOT, ".env");
+  if (!fs.existsSync(envPath)) return undefined;
+  const line = fs.readFileSync(envPath, "utf8")
+    .split(/\r?\n/)
+    .find((entry) => /^\s*DATABASE_URL\s*=/.test(entry));
+  return line?.replace(/^\s*DATABASE_URL\s*=\s*/, "").replace(/^[\"']|[\"']$/g, "");
+}
+
+const parsedDatabaseUrl = new URL(readDatabaseUrl() ?? "postgres://postgres:postgres@127.0.0.1:55432/kolbe");
+const DB_DIR = process.env.KOLBE_PG_DIR
+  ?? (process.platform === "win32" ? path.join(ROOT, ".postgres-data") : "/home/user/pg");
+const PORT = Number(process.env.KOLBE_PG_PORT ?? parsedDatabaseUrl.port ?? 5432);
+const HOST = parsedDatabaseUrl.hostname === "localhost" ? "127.0.0.1" : parsedDatabaseUrl.hostname;
+const USER = decodeURIComponent(parsedDatabaseUrl.username || "postgres");
+const PASSWORD = decodeURIComponent(parsedDatabaseUrl.password || "postgres");
+const DB_NAME = process.env.KOLBE_PG_DB ?? decodeURIComponent(parsedDatabaseUrl.pathname.slice(1) || "kolbe");
 const PG_LOG = path.join(DB_DIR, "postgres.log");
 
 function isPortOpen(port, host = HOST) {
@@ -58,9 +82,9 @@ function configure() {
   const settings = [
     `listen_addresses = '${HOST}'`,
     `port = ${PORT}`,
-    "unix_socket_directories = '/tmp'",
     "max_connections = 120",
   ];
+  if (process.platform !== "win32") settings.push("unix_socket_directories = '/tmp'");
   fs.appendFileSync(
     conf,
     `\n# --- kolbe dev ---\n${settings.join("\n")}\n`,
@@ -68,7 +92,7 @@ function configure() {
 }
 
 async function createDatabase() {
-  const require = createRequire(path.join(ROOT, "backend/package.json"));
+  const require = createRequire(path.join(ROOT, "package.json"));
   const { Client } = require("pg");
   const client = new Client({
     connectionString: `postgres://${USER}:${PASSWORD}@${HOST}:${PORT}/postgres`,
@@ -97,7 +121,7 @@ async function main() {
       console.log("postgres: already stopped");
       return;
     }
-    sh(path.join(BIN, "pg_ctl"), ["-D", DB_DIR, "-m", "fast", "-w", "stop"]);
+    sh(bin("pg_ctl"), ["-D", DB_DIR, "-m", "fast", "-w", "stop"]);
     console.log("postgres: stopped");
     return;
   }
@@ -105,6 +129,7 @@ async function main() {
   // ensure / start
   if (await isPortOpen(PORT)) {
     console.log(`postgres: already running (port ${PORT})`);
+    await createDatabase();
     return;
   }
 
@@ -115,7 +140,7 @@ async function main() {
     fs.writeFileSync(pwfile, PASSWORD, { mode: 0o600 });
     try {
       console.log(`postgres: initdb at ${DB_DIR}`);
-      sh(path.join(BIN, "initdb"), [
+      sh(bin("initdb"), [
         "-D", DB_DIR,
         "-U", USER,
         "-A", "password",
@@ -126,12 +151,11 @@ async function main() {
     } finally {
       fs.rmSync(pwfile, { force: true });
     }
-    fs.rmSync(READY_MARKER, { force: true });
     configure();
   }
 
   console.log(`postgres: starting on ${HOST}:${PORT}`);
-  sh(path.join(BIN, "pg_ctl"), ["-D", DB_DIR, "-l", PG_LOG, "-w", "start"]);
+  sh(bin("pg_ctl"), ["-D", DB_DIR, "-l", PG_LOG, "-w", "start"]);
   await createDatabase();
   console.log(fresh ? "postgres: FRESH" : "postgres: READY");
 }

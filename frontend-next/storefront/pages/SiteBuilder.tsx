@@ -4,9 +4,12 @@ import {
   type SiteBuilder, type BuilderStyleCard, type BuilderPost, type BuilderInstaCard, type BuilderHotspot, type CountdownComponent,
 } from "../siteSettings";
 import { fileToOptimizedDataUrl } from "../lib/imageUpload";
-import { VisualHotspotCanvas, ImageDropField, SortableList } from "../components/visualBuilder";
+import { VisualHotspotCanvas, ImageDropField, MediaDropField, SortableList } from "../components/visualBuilder";
 import HeroCountdown from "../components/HeroCountdown";
 import { toman } from "../utils/format";
+import ProductCard from "../components/ProductCard";
+import { products } from "../data/catalog";
+import { recommendStyleProducts } from "../lib/styleIntelligence";
 
 const input = "h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
 const label = "mb-1.5 block text-[10.5px] font-medium text-neutral-500";
@@ -60,7 +63,7 @@ function Row({ children }: { children: React.ReactNode }) {
   return <div className="grid gap-3 sm:grid-cols-2">{children}</div>;
 }
 
-export default function SiteBuilder() {
+export default function SiteBuilder({ mode = "all" }: { mode?: "all" | "sections" }) {
   const settings = useSiteSettings();
   const builder = settings.builder;
   const [tab, setTab] = useState<Tab>("card");
@@ -81,7 +84,7 @@ export default function SiteBuilder() {
       {notice ? <p role="status" className="rounded-[3px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">{notice}</p> : null}
 
       <div className="no-scrollbar flex gap-1.5 overflow-x-auto border-b border-neutral-200 pb-2">
-        {TABS.map((t) => (
+        {TABS.filter((item) => mode === "all" || item.id !== "footer").map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={(tab === t.id ? "bg-[#011c3a] text-white" : "border-neutral-300 text-neutral-600 hover:border-[#011c3a]") + " shrink-0 rounded-full border px-4 py-1.5 text-[11px] transition"}>{t.label}</button>
         ))}
       </div>
@@ -89,10 +92,17 @@ export default function SiteBuilder() {
       {/* ---------------- کارت محصول ---------------- */}
       {tab === "card" && (
         <section className={card}>
-          <h3 className="text-[12.5px] font-medium">رنگ دکمه کارت محصول هنگام هاور</h3>
-          <div className="mt-3 max-w-sm grid gap-3">
-            <label className="block"><span className={label}>رنگ پس‌زمینه دکمه</span><ColorField value={builder.productCard.hoverBg} onChange={(v) => patch({ productCard: { ...builder.productCard, hoverBg: v } })} /></label>
-            <label className="block"><span className={label}>رنگ متن داخل دکمه</span><ColorField value={builder.productCard.hoverText} onChange={(v) => patch({ productCard: { ...builder.productCard, hoverText: v } })} /></label>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_260px]">
+            <div><h3 className="text-[12.5px] font-medium">کارت محصول</h3><p className="mt-1 text-[10px] text-neutral-500">ساختار، نسبت تصویر و اطلاعات قابل نمایش را تنظیم کنید.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block"><span className={label}>رنگ پس‌زمینه دکمه</span><ColorField value={builder.productCard.hoverBg} onChange={(v) => patch({ productCard: { ...builder.productCard, hoverBg: v } })} /></label>
+                <label className="block"><span className={label}>رنگ متن داخل دکمه</span><ColorField value={builder.productCard.hoverText} onChange={(v) => patch({ productCard: { ...builder.productCard, hoverText: v } })} /></label>
+                <label><span className={label}>نسبت تصویر</span><select className={input} value={builder.productCard.imageRatio} onChange={(e)=>patch({productCard:{...builder.productCard,imageRatio:e.target.value as SiteBuilder["productCard"]["imageRatio"]}})}><option value="portrait">عمودی</option><option value="square">مربع</option><option value="landscape">افقی</option></select></label>
+                <label><span className={label}>گوشه‌ها</span><select className={input} value={builder.productCard.radius} onChange={(e)=>patch({productCard:{...builder.productCard,radius:e.target.value as SiteBuilder["productCard"]["radius"]}})}><option value="none">بدون گردی</option><option value="soft">نرم</option><option value="round">گرد</option></select></label>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">{([['showSubtitle','زیرعنوان'],['showColors','پالت رنگ'],['showCompare','مقایسه'],['showQuickAdd','خرید سریع'],['showInstallment','قیمت اقساطی']] as const).map(([key,text])=><label key={key} className="flex h-10 items-center justify-between border border-neutral-200 px-3 text-[10.5px]">{text}<input type="checkbox" checked={builder.productCard[key]} onChange={(e)=>patch({productCard:{...builder.productCard,[key]:e.target.checked}})} /></label>)}</div>
+            </div>
+            <aside><p className={label}>پیش‌نمایش زنده</p><div className="border border-neutral-200 bg-white p-3"><ProductCard product={products[0]} /></div></aside>
           </div>
         </section>
       )}
@@ -101,6 +111,7 @@ export default function SiteBuilder() {
       {tab === "banner" && (
         <section className={card}>
           <h3 className="text-[12.5px] font-medium">بنر وسط صفحه اصلی (تصویر یا ویدیو)</h3>
+          <div className="mt-4 overflow-hidden rounded-[5px] border border-neutral-200"><div className="border-b bg-neutral-50 px-3 py-2 text-[10px] text-neutral-500">پیش‌نمایش زنده بنر</div><BannerPreview config={builder.banner} /></div>
           <div className="mt-3 space-y-3">
             <Row>
               <div>
@@ -120,10 +131,7 @@ export default function SiteBuilder() {
                 </div>
               </div>
             </Row>
-            <label className="block"><span className={label}>{builder.banner.mediaType === "video" ? "آدرس ویدیو (mp4/webm)" : "تصویر اصلی"}</span>
-              <input className={input} dir="ltr" value={builder.banner.media} onChange={(e) => patch({ banner: { ...builder.banner, media: e.target.value } })} />
-              {builder.banner.mediaType === "image" ? <div className="mt-1.5"><ImageDropField value={builder.banner.media} onChange={(url) => patch({ banner: { ...builder.banner, media: url } })} /></div> : <p className="mt-1 text-[9.5px] text-neutral-400">برای ویدیو آدرس مستقیم فایل را وارد کنید (مثلاً /videos/hero.mp4).</p>}
-            </label>
+            <div><span className={label}>{builder.banner.mediaType === "video" ? "ویدیو اصلی" : "تصویر اصلی"}</span><MediaDropField kind={builder.banner.mediaType} value={builder.banner.media} poster={builder.banner.poster} onChange={(media)=>patch({banner:{...builder.banner,media}})} onPosterChange={(poster)=>patch({banner:{...builder.banner,poster}})} /></div>
             {builder.banner.mode === "grid3" && (
               <Row>
                 <div><span className={label}>تصویر تکه دوم (درگ‌اند‌دراپ)</span><ImageDropField value={builder.banner.tile2} onChange={(url) => patch({ banner: { ...builder.banner, tile2: url } })} /></div>
@@ -133,6 +141,7 @@ export default function SiteBuilder() {
             <label className="block max-w-sm"><span className={label}>تیرگی پوشش: {Math.round(builder.banner.overlay * 100)}٪</span>
               <input type="range" min={0} max={85} value={Math.round(builder.banner.overlay * 100)} onChange={(e) => patch({ banner: { ...builder.banner, overlay: Number(e.target.value) / 100 } })} className="w-full accent-[#011c3a]" />
             </label>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><label><span className={label}>ارتفاع</span><select className={input} value={builder.banner.height} onChange={(e)=>patch({banner:{...builder.banner,height:e.target.value as SiteBuilder["banner"]["height"]}})}><option value="sm">کوتاه</option><option value="md">متوسط</option><option value="lg">بلند</option></select></label><label><span className={label}>تراز محتوا</span><select className={input} value={builder.banner.contentAlign} onChange={(e)=>patch({banner:{...builder.banner,contentAlign:e.target.value as SiteBuilder["banner"]["contentAlign"]}})}><option value="right">راست</option><option value="center">وسط</option><option value="left">چپ</option></select></label><label><span className={label}>فونت بنر</span><select className={input} value={builder.banner.fontFamily} onChange={(e)=>patch({banner:{...builder.banner,fontFamily:e.target.value}})}><option value="inherit">فونت سایت</option><option value="serif">سریف ادیتوریال</option>{builder.typography.customFonts.map(font=><option key={font.id} value={font.name}>{font.name}</option>)}</select></label><label><span className={label}>اندازه تیتر: {builder.banner.titleSize}</span><input type="range" min="22" max="72" value={builder.banner.titleSize} onChange={(e)=>patch({banner:{...builder.banner,titleSize:Number(e.target.value)}})} className="mt-3 w-full" /></label></div>
             <Row>
               <label className="block"><span className={label}>بالانویس</span><input className={input} value={builder.banner.eyebrow} onChange={(e) => patch({ banner: { ...builder.banner, eyebrow: e.target.value } })} /></label>
               <label className="block"><span className={label}>تیتر</span><input className={input} value={builder.banner.title} onChange={(e) => patch({ banner: { ...builder.banner, title: e.target.value } })} /></label>
@@ -155,6 +164,15 @@ export default function SiteBuilder() {
             </label>
           </div>
           <p className="mt-2 text-[10.5px] text-neutral-500">کارت را بگیر و جابه‌جا کن تا چینش عوض شود. روی کارت کلیک کن تا ویرایشش باز شود. اگر کارتی اضافه کنی، جای کارت‌های پیش‌فرض را می‌گیرند.</p>
+
+          <StyleSectionPreview config={builder.stylesSection} />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <label><span className={label}>تعداد ستون</span><select className={input} value={builder.stylesSection.columns} onChange={(e)=>patch({stylesSection:{...builder.stylesSection,columns:Number(e.target.value) as 2|3|4}})}><option value="2">۲ ستون</option><option value="3">۳ ستون</option><option value="4">۴ ستون</option></select></label>
+            <label><span className={label}>نسبت تصویر</span><select className={input} value={builder.stylesSection.imageRatio} onChange={(e)=>patch({stylesSection:{...builder.stylesSection,imageRatio:e.target.value as SiteBuilder["stylesSection"]["imageRatio"]}})}><option value="portrait">عمودی</option><option value="square">مربع</option><option value="landscape">افقی</option></select></label>
+            <label><span className={label}>گوشه‌ها</span><select className={input} value={builder.stylesSection.radius} onChange={(e)=>patch({stylesSection:{...builder.stylesSection,radius:e.target.value as SiteBuilder["stylesSection"]["radius"]}})}><option value="none">بدون گردی</option><option value="soft">نرم</option><option value="round">گرد</option></select></label>
+            <label><span className={label}>تراز متن</span><select className={input} value={builder.stylesSection.textAlign} onChange={(e)=>patch({stylesSection:{...builder.stylesSection,textAlign:e.target.value as SiteBuilder["stylesSection"]["textAlign"]}})}><option value="right">راست</option><option value="center">وسط</option></select></label>
+            <label><span className={label}>تیرگی: {Math.round(builder.stylesSection.overlay*100)}٪</span><input type="range" min="0" max="85" value={Math.round(builder.stylesSection.overlay*100)} onChange={(e)=>patch({stylesSection:{...builder.stylesSection,overlay:Number(e.target.value)/100}})} className="mt-3 w-full" /></label>
+          </div>
 
           <div className="mt-4">
             <SortableList
@@ -179,6 +197,7 @@ export default function SiteBuilder() {
               فعال
             </label>
           </div>
+          <PopupBuilderPreview config={builder.popup} />
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <Row>
               <label className="block"><span className={label}>تأخیر نمایش (ثانیه)</span><input type="number" min={0} className={input} value={builder.popup.delaySec} onChange={(e) => patch({ popup: { ...builder.popup, delaySec: Number(e.target.value) } })} /></label>
@@ -202,6 +221,8 @@ export default function SiteBuilder() {
               <label className="block"><span className={label}>رنگ متن</span><ColorField value={builder.popup.textColor} onChange={(v) => patch({ popup: { ...builder.popup, textColor: v } })} /></label>
               <label className="block"><span className={label}>رنگ تأکید (دکمه)</span><ColorField value={builder.popup.accent} onChange={(v) => patch({ popup: { ...builder.popup, accent: v } })} /></label>
               <label className="block"><span className={label}>کد تخفیف</span><input className={input} dir="ltr" value={builder.popup.couponCode} onChange={(e) => patch({ popup: { ...builder.popup, couponCode: e.target.value } })} /></label>
+              <label><span className={label}>اندازه</span><select className={input} value={builder.popup.width} onChange={(e)=>patch({popup:{...builder.popup,width:e.target.value as SiteBuilder["popup"]["width"]}})}><option value="sm">کوچک</option><option value="md">متوسط</option><option value="lg">بزرگ</option></select></label>
+              <label><span className={label}>چیدمان تصویر</span><select className={input} value={builder.popup.layout} onChange={(e)=>patch({popup:{...builder.popup,layout:e.target.value as SiteBuilder["popup"]["layout"]}})}><option value="image-right">تصویر راست</option><option value="image-left">تصویر چپ</option><option value="background">پس‌زمینه</option></select></label>
               <div className="sm:col-span-2"><span className={label}>تصویر کنار پاپ‌آپ (درگ‌اند‌دراپ)</span><ImageDropField value={builder.popup.image} onChange={(url) => patch({ popup: { ...builder.popup, image: url } })} /></div>
               <div className="sm:col-span-2"><span className={label}>تصویر پس‌زمینه کل پاپ‌آپ (اختیاری)</span><ImageDropField value={builder.popup.bgImage} onChange={(url) => patch({ popup: { ...builder.popup, bgImage: url } })} /></div>
               <label className="block sm:col-span-2"><span className={label}>تیتر</span><input className={input} value={builder.popup.title} onChange={(e) => patch({ popup: { ...builder.popup, title: e.target.value } })} /></label>
@@ -227,6 +248,12 @@ export default function SiteBuilder() {
               نمایش کل قسمت
             </label>
           </div>
+          <div className="mt-4 grid gap-3 border border-neutral-200 bg-neutral-50 p-3 sm:grid-cols-3">
+            <label><span className={label}>محصول اصلی برای پیشنهاد هوشمند</span><select className={input} value={builder.look.anchorProductId} onChange={(e)=>patch({look:{...builder.look,anchorProductId:e.target.value}})}><option value="">انتخاب محصول</option>{products.map(product=><option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+            <label><span className={label}>روش امتیازدهی</span><select className={input} value={builder.look.strategy} onChange={(e)=>patch({look:{...builder.look,strategy:e.target.value as SiteBuilder["look"]["strategy"]}})}><option value="hybrid">ترکیبی هوشمند</option><option value="visual">رنگ و ظاهر</option><option value="catalog">دسته و فصل</option><option value="behavior">رفتار مشتری</option></select></label>
+            <div className="space-y-2"><label className="flex h-10 items-center justify-between border border-neutral-200 bg-white px-3 text-[10.5px]">پیشنهاد خودکار<input type="checkbox" checked={builder.look.autoSuggest} onChange={(e)=>patch({look:{...builder.look,autoSuggest:e.target.checked}})} /></label><label className="flex h-10 items-center justify-between border border-neutral-200 bg-white px-3 text-[10.5px]">نمایش فشرده<input type="checkbox" checked={builder.look.compact} onChange={(e)=>patch({look:{...builder.look,compact:e.target.checked}})} /></label></div>
+          </div>
+          {builder.look.autoSuggest && builder.look.anchorProductId ? <SmartStyleSuggestions anchorId={builder.look.anchorProductId} onApply={(suggestions)=>patch({look:{...builder.look,products:suggestions}})} /> : null}
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block"><span className={label}>عنوان ست</span><input className={input} value={builder.look.title} onChange={(e) => patch({ look: { ...builder.look, title: e.target.value } })} /></label>
             <label className="block"><span className={label}>زیرعنوان</span><input className={input} value={builder.look.subtitle} onChange={(e) => patch({ look: { ...builder.look, subtitle: e.target.value } })} /></label>
@@ -275,7 +302,7 @@ export default function SiteBuilder() {
 
       {/* ---------------- مجله و بلاگ ---------------- */}
       {/* ---------------- کامپوننت‌ها: شمارنده جشنواره ---------------- */}
-      {tab === "components" && <ComponentsEditor countdown={builder.components.countdown} onPatch={(next) => patch({ components: { countdown: next } })} />}
+      {tab === "components" && <CommerceComponentsEditor components={builder.components} onPatch={(components) => patch({ components })} />}
 
       {tab === "blog" && (
         <section className={card}>
@@ -458,17 +485,20 @@ function StyleCardVisual({ card, onChange, onRemove }: { card: BuilderStyleCard;
 /* --------------------------- پیشنمایش زنده بنر --------------------------- */
 
 function BannerPreview({ config }: { config: SiteBuilder["banner"] }) {
+  const justify = config.contentAlign === "center" ? "items-center text-center" : config.contentAlign === "left" ? "items-end text-left" : "items-start text-right";
+  const height = config.height === "sm" ? "min-h-[180px]" : config.height === "lg" ? "min-h-[340px]" : "min-h-[260px]";
+  const radius = config.radius === "round" ? "rounded-[18px]" : config.radius === "soft" ? "rounded-[6px]" : "rounded-none";
   return (
-    <div className="relative min-h-[220px] overflow-hidden">
+    <div className={`relative overflow-hidden ${height} ${radius}`}>
       {config.mediaType === "video" && config.media ? (
-        <video src={config.media} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-cover" />
+        <video src={config.media} poster={config.poster || undefined} autoPlay muted loop playsInline className="absolute inset-0 h-full w-full object-cover" />
       ) : (
         <img src={config.media} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
       <div className="absolute inset-0" style={{ background: `rgba(7,20,34,${config.overlay})` }} />
-      <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white">
+      <div className={`absolute inset-0 flex flex-col justify-center p-6 text-white ${justify}`} style={{fontFamily:config.fontFamily}}>
         <p className="text-[9px] tracking-[0.35em] text-white/80">{config.eyebrow}</p>
-        <h3 className="mt-2 text-[20px] font-medium">{config.title}</h3>
+        <h3 className="mt-2 font-medium" style={{fontSize:Math.min(42,Math.max(18,config.titleSize*.65))}}>{config.title}</h3>
         <p className="mt-2 max-w-sm text-[10.5px] text-white/80">{config.description}</p>
         <button className="banner-cta mt-4 rounded-[3px] px-6 py-2.5 text-[11px] font-medium transition" style={{ background: config.buttonBg, color: config.buttonText, ["--banner-hover-bg" as string]: config.buttonHoverBg, ["--banner-hover-text" as string]: config.buttonHoverText }}>
           {config.buttonLabel}
@@ -476,6 +506,39 @@ function BannerPreview({ config }: { config: SiteBuilder["banner"] }) {
       </div>
     </div>
   );
+}
+
+function StyleSectionPreview({ config }: { config: SiteBuilder["stylesSection"] }) {
+  const samples = config.cards.length ? config.cards : [
+    {id:"sample-1",name:"اولد مانی",latin:"OLD MONEY",img:"/images/model-full.jpg",tagline:"کلاسیک آرام",count:"۲۴"},
+    {id:"sample-2",name:"دارک آکادمیا",latin:"DARK ACADEMIA",img:"/images/model-teal.jpg",tagline:"لایه‌های عمیق",count:"۱۸"},
+    {id:"sample-3",name:"وینتیج",latin:"VINTAGE",img:"/images/banner.jpg",tagline:"جزئیات ماندگار",count:"۳۲"},
+  ];
+  const ratio = config.imageRatio === "portrait" ? "aspect-[3/4]" : config.imageRatio === "square" ? "aspect-square" : "aspect-[4/3]";
+  const radius = config.radius === "round" ? "rounded-[16px]" : config.radius === "soft" ? "rounded-[6px]" : "rounded-none";
+  return <div className="mt-4 overflow-hidden border border-neutral-200 bg-neutral-100 p-3"><div className={`grid gap-2 ${config.columns===2?'grid-cols-2':config.columns===3?'grid-cols-3':'grid-cols-2 sm:grid-cols-4'}`}>{samples.slice(0,config.columns).map(item=><article key={item.id} className={`relative overflow-hidden ${radius}`}><img src={item.img} alt="" className={`${ratio} w-full object-cover`} /><div className="absolute inset-0" style={{background:`linear-gradient(to top,rgba(0,0,0,${config.overlay}),transparent 70%)`}}/><div className={`absolute inset-x-0 bottom-0 p-3 text-white ${config.textAlign==='center'?'text-center':'text-right'}`}><p className="text-[11px] font-medium">{item.name}</p><p className="mt-1 text-[7px] tracking-[.16em] text-white/70">{item.latin}</p></div></article>)}</div></div>;
+}
+
+function PopupBuilderPreview({ config }: { config: SiteBuilder["popup"] }) {
+  const width = config.width === "sm" ? "max-w-sm" : config.width === "lg" ? "max-w-3xl" : "max-w-xl";
+  const radius = config.radius === "round" ? "rounded-[18px]" : config.radius === "soft" ? "rounded-[6px]" : "rounded-none";
+  const reverse = config.layout === "image-left" ? "md:flex-row-reverse" : "md:flex-row";
+  return <div className="mt-4 grid min-h-72 place-items-center overflow-hidden border border-neutral-200 bg-neutral-100 p-4"><div dir={config.direction} className={`flex w-full overflow-hidden border border-black/10 ${width} ${radius} ${reverse}`} style={{background:config.bg,color:config.textColor,backgroundImage:config.layout==='background'&&config.bgImage?`linear-gradient(#0007,#0007),url(${config.bgImage})`:undefined,backgroundSize:'cover'}}>{config.layout!=="background"?<img src={config.image||"/images/detail-collar.jpg"} alt="" className="hidden w-[38%] object-cover md:block"/>:null}<div className="flex-1 p-5"><span className="text-[8px] tracking-[.2em] opacity-55">POPUP PREVIEW</span><h3 className="mt-2 text-[17px] font-medium">{config.title}</h3><p className="mt-2 text-[10px] leading-5 opacity-70">{config.body}</p>{config.couponCode?<span className="mt-3 inline-block border border-dashed border-current px-3 py-1 text-[10px]">{config.couponCode}</span>:null}<div className="mt-4 flex"><input readOnly placeholder={config.inputPlaceholder} className="h-9 min-w-0 flex-1 border border-current/20 bg-white/60 px-2 text-[9px]"/><button className="h-9 px-3 text-[9px] text-white" style={{background:config.accent}}>{config.ctaLabel}</button></div></div></div></div>;
+}
+
+function SmartStyleSuggestions({ anchorId, onApply }: { anchorId: string; onApply: (items: SiteBuilder["look"]["products"]) => void }) {
+  const anchor = products.find(product=>product.id===anchorId);
+  if (!anchor) return null;
+  const suggestions = recommendStyleProducts(anchor,products);
+  return <section className="mt-3 border border-[#b9cfbc] bg-[#f4f8f4] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-[11px] font-medium">پیشنهاد هوشمند برای «{anchor.name}»</h4><p className="mt-1 text-[9.5px] text-neutral-500">بر اساس مکمل رنگ، نوع لباس، فصل و استایل.</p></div><button type="button" onClick={()=>onApply(suggestions.slice(0,4).map(({product})=>({id:product.id,name:product.name,price:product.price,img:product.images[0],to:`/product/${product.id}`})))} className={btnPrimary}>اعمال پیشنهادها</button></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{suggestions.map(item=><article key={item.product.id} className="flex gap-2 border border-neutral-200 bg-white p-2"><img src={item.product.images[0]} alt="" className="h-14 w-11 object-cover"/><div className="min-w-0"><p className="truncate text-[10.5px] font-medium">{item.product.name}</p><p className="mt-1 text-[9px] text-[#36563a]">تطابق {item.score.toLocaleString('fa-IR')}٪</p><p className="mt-1 truncate text-[8.5px] text-neutral-400">{item.reasons.join(" · ")}</p></div></article>)}</div></section>;
+}
+
+function CommerceComponentsEditor({ components, onPatch }: { components: SiteBuilder["components"]; onPatch: (next: SiteBuilder["components"]) => void }) {
+  const installment = components.installment;
+  const samplePrice = 3_180_000;
+  const finalPrice = Math.round(samplePrice*(1+installment.markupPercent/100));
+  const provider = installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : installment.provider === "digipay" ? "دیجی‌پی" : "اسنپ‌پی";
+  return <div className="space-y-4"><section className={card}><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-[12.5px] font-medium">پرداخت اقساطی محصول</h3><p className="mt-1 text-[10px] text-neutral-500">درصد پوشش هزینه تأمین مالی روی قیمت اقساطی اعمال می‌شود؛ قیمت نقدی دست‌نخورده می‌ماند.</p></div><label className="flex items-center gap-2 text-[10.5px]">فعال<input type="checkbox" checked={installment.enabled} onChange={(e)=>onPatch({...components,installment:{...installment,enabled:e.target.checked}})}/></label></div><div className="mt-4 grid gap-4 xl:grid-cols-[1fr_320px]"><div className="grid gap-3 sm:grid-cols-2"><label><span className={label}>ارائه‌دهنده</span><select className={input} value={installment.provider} onChange={(e)=>onPatch({...components,installment:{...installment,provider:e.target.value as typeof installment.provider}})}><option value="snappay">اسنپ‌پی</option><option value="digipay">دیجی‌پی</option><option value="both">هر دو</option></select></label><label><span className={label}>تعداد قسط</span><input type="number" min="2" max="12" className={input} value={installment.installments} onChange={(e)=>onPatch({...components,installment:{...installment,installments:Number(e.target.value)}})}/></label><label><span className={label}>درصد افزایش قیمت اقساطی</span><input type="number" min="0" max="40" step="0.5" className={input} value={installment.markupPercent} onChange={(e)=>onPatch({...components,installment:{...installment,markupPercent:Number(e.target.value)}})}/></label><label><span className={label}>متن کامپوننت</span><input className={input} value={installment.label} onChange={(e)=>onPatch({...components,installment:{...installment,label:e.target.value}})}/></label>{([['showOnCard','نمایش روی کارت محصول'],['showOnProduct','نمایش در صفحه محصول']] as const).map(([key,text])=><label key={key} className="flex h-10 items-center justify-between border border-neutral-200 px-3 text-[10.5px]">{text}<input type="checkbox" checked={installment[key]} onChange={(e)=>onPatch({...components,installment:{...installment,[key]:e.target.checked}})}/></label>)}</div><aside className="border border-neutral-200 p-4"><p className="text-[9px] text-neutral-400">پیش‌نمایش روی محصول</p><p className="mt-3 text-[12px] font-medium">{installment.label}</p><p className="mt-2 text-[10px]">{provider} · {installment.installments.toLocaleString('fa-IR')} قسط</p><div className="mt-4 border-t pt-3"><p className="text-[9px] text-neutral-400">قیمت نقدی: {toman(samplePrice)}</p><p className="mt-1 text-[12px] font-medium text-[#011c3a]">قیمت اقساطی: {toman(finalPrice)}</p><p className="mt-1 text-[9px] text-neutral-500">هر قسط {toman(Math.ceil(finalPrice/installment.installments))}</p></div></aside></div></section><section className={card}><h3 className="text-[12.5px] font-medium">کامپوننت‌های فروش</h3><div className="mt-4 grid gap-3 lg:grid-cols-2"><label className="border border-neutral-200 p-3"><span className="flex items-center justify-between text-[10.5px] font-medium">ارسال رایگان<input type="checkbox" checked={components.freeShipping.enabled} onChange={(e)=>onPatch({...components,freeShipping:{...components.freeShipping,enabled:e.target.checked}})}/></span><input className={input+' mt-3'} value={components.freeShipping.threshold} type="number" onChange={(e)=>onPatch({...components,freeShipping:{...components.freeShipping,threshold:Number(e.target.value)}})}/><p className="mt-2 text-[9px] text-neutral-500">پیش‌نمایش: {components.freeShipping.label} برای سبد بالای {toman(components.freeShipping.threshold)}</p></label><label className="border border-neutral-200 p-3"><span className="flex items-center justify-between text-[10.5px] font-medium">هشدار موجودی کم<input type="checkbox" checked={components.stockUrgency.enabled} onChange={(e)=>onPatch({...components,stockUrgency:{...components.stockUrgency,enabled:e.target.checked}})}/></span><input className={input+' mt-3'} value={components.stockUrgency.threshold} type="number" onChange={(e)=>onPatch({...components,stockUrgency:{...components.stockUrgency,threshold:Number(e.target.value)}})}/><p className="mt-2 text-[9px] text-red-700">پیش‌نمایش: {components.stockUrgency.label}</p></label></div><p className="mt-4 border-t pt-3 text-[9.5px] text-neutral-500">شمارنده و تنظیمات جشنواره از این بخش حذف شده و فقط در «جشنواره و تخفیف» مدیریت می‌شود.</p></section></div>;
 }
 
 /* --------------------- کامپوننت‌ها: شمارنده جشنواره --------------------- */

@@ -177,6 +177,77 @@ export function ImageDropField({ value, onChange, compact = false }: { value: st
   );
 }
 
+/** آپلود یکپارچه تصویر/ویدیو: فایل محلی، URL یا CDN + پوستر ویدیو. */
+export function MediaDropField({
+  kind,
+  value,
+  poster = "",
+  onChange,
+  onPosterChange,
+  maxVideoMb = 12,
+}: {
+  kind: "image" | "video";
+  value: string;
+  poster?: string;
+  onChange: (url: string) => void;
+  onPosterChange?: (url: string) => void;
+  maxVideoMb?: number;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const accept = kind === "video" ? "video/mp4,video/webm,video/quicktime" : "image/*";
+
+  const read = async (file?: File) => {
+    if (!file) return;
+    setError("");
+    setBusy(true);
+    try {
+      if (kind === "image") {
+        if (!file.type.startsWith("image/")) throw new Error("فایل باید تصویر باشد.");
+        onChange(await fileToOptimizedDataUrl(file, 1920, 0.86));
+      } else {
+        if (!file.type.startsWith("video/")) throw new Error("فایل باید ویدیو باشد.");
+        if (file.size > maxVideoMb * 1_000_000) throw new Error(`حجم ویدیو باید کمتر از ${maxVideoMb} مگابایت باشد؛ برای فایل بزرگ از CDN استفاده کنید.`);
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(new Error("خواندن ویدیو ناموفق بود."));
+          reader.readAsDataURL(file);
+        });
+        onChange(dataUrl);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "آپلود رسانه ناموفق بود.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="space-y-2">
+    <div
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => { event.preventDefault(); void read(event.dataTransfer.files?.[0]); }}
+      className="overflow-hidden rounded-[5px] border border-dashed border-neutral-300 bg-neutral-50"
+    >
+      {value ? kind === "video"
+        ? <video src={value} poster={poster || undefined} muted loop controls playsInline className="aspect-video w-full bg-black object-contain" />
+        : <img src={value} alt="پیش‌نمایش رسانه" className="max-h-52 w-full object-contain" />
+        : <button type="button" onClick={() => fileRef.current?.click()} className="flex min-h-32 w-full flex-col items-center justify-center px-4 text-[10.5px] text-neutral-500"><span className="text-[13px] font-medium text-[#011c3a]">فایل را اینجا رها کنید</span><span className="mt-1">یا برای انتخاب از سیستم کلیک کنید</span></button>}
+    </div>
+    <input ref={fileRef} type="file" accept={accept} className="sr-only" onChange={(event) => void read(event.target.files?.[0])} />
+    <div className="flex flex-wrap gap-2">
+      <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-3 text-[10.5px] hover:border-[#011c3a] disabled:opacity-50">{busy ? "در حال پردازش…" : "آپلود از سیستم"}</button>
+      {value ? <button type="button" onClick={() => onChange("")} className="h-9 rounded-[3px] border border-neutral-300 px-3 text-[10.5px] text-red-700">حذف</button> : null}
+    </div>
+    <label className="block text-[9.5px] text-neutral-500">آدرس مستقیم یا CDN
+      <input dir="ltr" value={value.startsWith("data:") ? "" : value} onChange={(event) => onChange(event.target.value)} placeholder={kind === "video" ? "https://cdn.example.com/banner.mp4" : "https://cdn.example.com/banner.jpg"} className="mt-1 h-9 w-full rounded-[3px] border border-neutral-300 bg-white px-2 text-[10.5px]" />
+    </label>
+    {kind === "video" && onPosterChange ? <div><span className="mb-1 block text-[9.5px] text-neutral-500">پوستر ویدیو</span><ImageDropField compact value={poster} onChange={onPosterChange} /></div> : null}
+    {error ? <p role="alert" className="text-[9.5px] text-red-700">{error}</p> : null}
+  </div>;
+}
+
 /** لیست مرتبشدنی با درگ‌اند‌دراپ (HTML5 DnD) */
 export function SortableList<T extends { id: string }>({
   items,

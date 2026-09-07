@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
+import { trackCommerceEvent } from "../lib/analytics";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
-import { api, ApiError } from "../lib/medusa";
+import { api, ApiError } from "../lib/api";
 
 const provinces = [
   "تهران", "البرز", "اصفهان", "فارس", "خراسان رضوی", "آذربایجان شرقی", "آذربایجان غربی",
@@ -202,6 +203,7 @@ export default function Checkout() {
                 }
                 setSubmitting(true);
                 setOrderError("");
+                trackCommerceEvent({ name: "begin_checkout", value: total, quantity: lines.reduce((sum, line) => sum + line.qty, 0) });
                 try {
                   const result = await api<{ orderCode: string }>("/store/kolbe/retail/orders", {
                     method: "POST",
@@ -218,6 +220,7 @@ export default function Checkout() {
                     },
                   });
                   setOrderCode(result.orderCode);
+                  trackCommerceEvent({ name: "purchase", value: total, quantity: lines.reduce((sum, line) => sum + line.qty, 0) });
                   clearCart();
                   setDone(true);
                 } catch (error) {

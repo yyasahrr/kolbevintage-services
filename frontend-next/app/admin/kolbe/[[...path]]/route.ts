@@ -1,16 +1,15 @@
 import type { NextRequest } from "next/server";
-import { proxyToMedusa } from "@server/medusa-proxy";
+import { handleKolbeRequest } from "@server/kolbe-api";
 
 /**
- * API بک‌اند (Admin) — هر متدی روی /admin/kolbe/*
- * به موتور Medusa روی پورت ۹۰۰۰ فوروارد می‌شود.
+ * نام مستعار سازگار برای مسیرهای مدیریت قدیمی.
  */
 
 type Ctx = { params: Promise<{ path?: string[] }> };
 
 async function handler(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { path = [] } = await ctx.params;
-  return proxyToMedusa(req, "/admin/kolbe", path);
+  return handleKolbeRequest(req, ["admin", ...path]);
 }
 
 export const GET = handler;

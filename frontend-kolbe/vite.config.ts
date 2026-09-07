@@ -12,13 +12,13 @@ const __dirname = path.dirname(__filename);
  * CORS کامل برای APIهای کلبه روی پروکسی dev:
  * - پیشنمایش مرورگر ممکن است در iframe با origin مبهم (null) اجرا شود؛
  *   preflightهای OPTIONS اینجا مستقیم پاسخ داده میشوند.
- * - هدر Origin از درخواست بالادستی حذف میشود تا CORS مدوسا رد نکند.
+ * - هدر Origin از درخواست بالادستی حذف می‌شود.
  * - به پاسخهای پروکسیشده هدرهای ACAO اضافه میشود.
  */
 const KOLBE_API_PATHS = ["/store/kolbe", "/admin/kolbe"];
 const KOLBE_CORS_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, authorization, x-publishable-api-key",
+  "access-control-allow-headers": "content-type, authorization",
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   "access-control-max-age": "600",
 };
@@ -80,7 +80,7 @@ function kolbeApiCorsPlugin(): Plugin {
 }
 
 const kolbeProxy = {
-  target: "http://127.0.0.1:9000",
+  target: "http://127.0.0.1:3000",
   changeOrigin: true,
   configure: (proxy: any) => {
     proxy.on("proxyReq", (proxyReq: any) => {
@@ -98,7 +98,7 @@ const kolbeProxy = {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(), viteSingleFile(), kolbeSupplierEntryPlugin(), kolbeApiCorsPlugin()],
-  // درخواستهای API بک‌اند مدوسا (پروکسی سرور->سرور؛ مرورگر هرگز localhost صدا نمیزند)
+  // درخواست‌های API به اپ یکپارچه Next.js
   server: {
     host: "0.0.0.0",
     port: 5173,

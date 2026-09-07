@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 /** CORS کامل برای APIهای کلبه روی پروکسی dev (مشابه vite.config ریشه) */
 const KOLBE_CORS_HEADERS: Record<string, string> = {
   'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'content-type, authorization, x-publishable-api-key',
+  'access-control-allow-headers': 'content-type, authorization',
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'access-control-max-age': '600',
 }
@@ -35,7 +35,7 @@ function kolbeApiCorsPlugin(): Plugin {
 }
 
 const kolbeProxy = {
-  target: 'http://127.0.0.1:9000',
+  target: 'http://127.0.0.1:3000',
   changeOrigin: true,
   configure: (proxy: any) => {
     proxy.on('proxyReq', (proxyReq: any) => {

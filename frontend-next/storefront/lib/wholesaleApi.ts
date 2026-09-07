@@ -1,4 +1,4 @@
-import { api, ApiError, clearToken, loadToken, saveToken } from "./medusa";
+import { api, ApiError, clearToken, loadToken, saveToken } from "./api";
 
 export type AdminSupplierApplication = {
   id: string;
@@ -223,4 +223,87 @@ export async function answerSupplierTicket(id: string, status: string, adminRepl
   const token = adminToken();
   if (!token) return;
   await api(`/admin/kolbe/tickets/${id}`, { method: "POST", token, body: { status, adminReply } });
+}
+
+export type SystemLogLevel = "debug" | "info" | "warning" | "error" | "critical";
+export type SystemLogSource = "api" | "frontend" | "auth" | "system" | "integration";
+export type SystemLogStatus = "open" | "resolved" | "ignored";
+
+export type SystemLog = {
+  id: string;
+  level: SystemLogLevel;
+  source: SystemLogSource;
+  eventType: string;
+  message: string;
+  errorName: string | null;
+  stack: string | null;
+  fingerprint: string;
+  status: SystemLogStatus;
+  httpMethod: string | null;
+  path: string | null;
+  httpStatus: number | null;
+  durationMs: number | null;
+  requestId: string | null;
+  actorId: string | null;
+  actorRole: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  environment: string;
+  release: string | null;
+  metadata: Record<string, unknown> | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  occurrenceCount: number;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolutionNote: string | null;
+  createdAt?: string;
+};
+
+export type SystemLogFilters = {
+  level: "all" | SystemLogLevel;
+  source: "all" | SystemLogSource;
+  status: "all" | SystemLogStatus;
+  range: "24h" | "7d" | "30d" | "all";
+  query: string;
+  page: number;
+  limit: number;
+};
+
+export type SystemLogsResponse = {
+  logs: SystemLog[];
+  pagination: { page: number; limit: number; total: number; pageCount: number; capped: boolean };
+  summary: {
+    openErrors: number;
+    criticalOpen: number;
+    errors24h: number;
+    frontend24h: number;
+    warnings24h: number;
+    slow24h: number;
+  };
+};
+
+export async function loadSystemLogs(filters: SystemLogFilters, signal?: AbortSignal): Promise<SystemLogsResponse> {
+  const token = adminToken();
+  if (!token) throw new ApiError("UNAUTHORIZED", "ورود ادمین لازم است.");
+  const params = new URLSearchParams({
+    level: filters.level,
+    source: filters.source,
+    status: filters.status,
+    range: filters.range,
+    q: filters.query,
+    page: String(filters.page),
+    limit: String(filters.limit),
+  });
+  return api<SystemLogsResponse>(`/store/kolbe/admin/logs?${params.toString()}`, { token, signal });
+}
+
+export async function updateSystemLogStatus(id: string, status: SystemLogStatus, note?: string) {
+  const token = adminToken();
+  if (!token) throw new ApiError("UNAUTHORIZED", "ورود ادمین لازم است.");
+  return api<{ log: SystemLog }>(`/store/kolbe/admin/logs/${encodeURIComponent(id)}`, {
+    method: "POST",
+    token,
+    body: { status, note },
+  });
 }

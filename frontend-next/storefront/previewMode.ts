@@ -4,7 +4,7 @@
  * تا بتوان رابط کاربری پنلها را بازدید کرد.
  * برای غیرفعالکردن: مقدار را false کنید.
  */
-export const PANELS_PREVIEW_MODE = true;
+export const PANELS_PREVIEW_MODE = false;
 
 /** عضویت نمایشی VIP برای حالت پیشنمایش. */
 export const DEMO_VIP_MEMBERSHIP = {

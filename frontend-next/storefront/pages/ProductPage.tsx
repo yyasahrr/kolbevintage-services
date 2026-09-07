@@ -2,7 +2,7 @@ import { useSiteSettings } from "../siteSettings";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useRouter } from "../router";
-import { productById, products, specLabels, specOrder, type Product } from "../data/catalog";
+import { productById, products, type Product } from "../data/catalog";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
@@ -10,6 +10,9 @@ import Lightbox from "../components/Lightbox";
 import SizeAdvisor from "../components/SizeAdvisor";
 import ProductCard from "../components/ProductCard";
 import type { AdminProductRecord } from "../adminProducts";
+import { recommendStyleProducts } from "../lib/styleIntelligence";
+import { readCommerceEvents } from "../lib/analytics";
+import { getProductTypeDefinition } from "../productSchemas";
 
 /*
  * چیدمان صفحه جزیات محصول — بر اساس الگوی استاندارد PDP (آمازون / دیجی‌کالا / زالاندو)
@@ -91,16 +94,20 @@ function Gallery({
   activeImage: number;
   setActiveImage: (i: number) => void;
 }) {
-  const media = product.images;
-  const videoOffset = product.video ? 1 : 0;
+  const managedMedia = (product as AdminProductRecord).admin?.media?.filter((item) => item.src);
+  const managedImages = managedMedia?.filter((item) => item.kind === "image");
+  const managedVideo = managedMedia?.find((item) => item.kind === "video");
+  const media = managedImages?.length ? managedImages.map((item) => item.src) : product.images;
+  const resolvedVideo = managedVideo ? { url: managedVideo.src, poster: managedVideo.poster ?? media[0] ?? "", title: managedVideo.alt } : product.video;
+  const videoOffset = resolvedVideo ? 1 : 0;
   const desktopMedia: DesktopMedia[] = [
-    ...(product.video ? [{ kind: "video" as const, poster: product.video.poster }] : []),
+    ...(resolvedVideo ? [{ kind: "video" as const, poster: resolvedVideo.poster }] : []),
     ...media.map((src) => ({ kind: "image" as const, src })),
   ];
-  const videoActive = Boolean(product.video) && activeImage === 0;
+  const videoActive = Boolean(resolvedVideo) && activeImage === 0;
 
   /* ---- موبایل: اسلایدر لمسی ---- */
-  const mobileMediaCount = media.length + (product.video ? 1 : 0);
+  const mobileMediaCount = media.length + (resolvedVideo ? 1 : 0);
   const mobileRailRef = useRef<HTMLDivElement>(null);
   const [activeMobileMedia, setActiveMobileMedia] = useState(0);
 
@@ -149,9 +156,9 @@ function Gallery({
               />
             </button>
           ))}
-          {product.video && (
-            <button type="button" onClick={() => window.open(product.video!.url, "_blank")} className="relative w-full shrink-0 snap-center" aria-label={product.video.title}>
-              <img src={product.video.poster} alt={product.video.title} loading="lazy" className="product-gallery-media h-[54svh] max-h-[540px] min-h-[320px] w-full object-contain brightness-75" />
+          {resolvedVideo && (
+            <button type="button" onClick={() => window.open(resolvedVideo.url, "_blank")} className="relative w-full shrink-0 snap-center" aria-label={resolvedVideo.title}>
+              <img src={resolvedVideo.poster} alt={resolvedVideo.title} loading="lazy" className="product-gallery-media h-[54svh] max-h-[540px] min-h-[320px] w-full object-contain brightness-75" />
               <span className="absolute inset-0 flex items-center justify-center text-white">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 backdrop-blur-sm">
                   <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
@@ -184,9 +191,9 @@ function Gallery({
                 <img src={src} alt="" className="h-full w-full object-cover" />
               </button>
             ))}
-            {product.video && (
+            {resolvedVideo && (
               <button type="button" onClick={() => goToMobileMedia(media.length)} aria-label="رفتن به ویدئوی محصول" aria-current={activeMobileMedia === media.length ? "true" : undefined} className={`pdp-thumb relative h-16 w-12 shrink-0 ${activeMobileMedia === media.length ? "is-active" : ""}`}>
-                <img src={product.video.poster} alt="" className="h-full w-full object-cover brightness-75" />
+                <img src={resolvedVideo.poster} alt="" className="h-full w-full object-cover brightness-75" />
                 <Icon name="play" className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-white" fill="currentColor" strokeWidth={0} />
               </button>
             )}
@@ -231,13 +238,13 @@ function Gallery({
           )}
 
           {videoActive ? (
-            <button onClick={() => window.open(product.video!.url, "_blank")} className="group relative w-full overflow-hidden rounded-2xl bg-neutral-900">
-              <img src={product.video!.poster} alt={product.video!.title} className="aspect-[4/5] max-h-[78vh] w-full object-cover opacity-75 transition group-hover:opacity-65" />
+            <button onClick={() => window.open(resolvedVideo!.url, "_blank")} className="group relative w-full overflow-hidden rounded-2xl bg-neutral-900">
+              <img src={resolvedVideo!.poster} alt={resolvedVideo!.title} className="aspect-[4/5] max-h-[78vh] w-full object-cover opacity-75 transition group-hover:opacity-65" />
               <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/70 backdrop-blur-sm">
                   <Icon name="play" className="mr-1 h-5 w-5" fill="currentColor" strokeWidth={0} />
                 </span>
-                <span className="text-[11.5px]">{product.video!.title}</span>
+                <span className="text-[11.5px]">{resolvedVideo!.title}</span>
               </span>
             </button>
           ) : (
@@ -519,8 +526,8 @@ function WholesaleOrderPanel({
         </button>
       )}
       <div className="mt-3 flex items-center justify-between gap-3 text-[10.5px] text-neutral-500">
-        <span>قیمت عمده پس از تأیید حساب همکار نمایش داده می‌شود.</span>
-        <Link to="/wholesale?section=form" className="shrink-0 underline underline-offset-2">درخواست حساب همکاری</Link>
+        <span>قیمت عمده بلافاصله پس از پرداخت پلن VIP نمایش داده می‌شود.</span>
+        <Link to="/wholesale" className="shrink-0 underline underline-offset-2">مشاهده پلن‌ها</Link>
       </div>
     </div>
   );
@@ -529,6 +536,8 @@ function WholesaleOrderPanel({
 /* ------------------------------ راهنمای سایز ------------------------------- */
 
 function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" }) {
+  const definition = getProductTypeDefinition((product as AdminProductRecord).admin?.productTypeId ?? (product as AdminProductRecord).admin?.specTemplate ?? "clothing");
+  const guidance = definition.id === "shoe" ? ["طول پا را از پشت پاشنه تا نوک بلندترین انگشت اندازه بگیرید.", "هر دو پا را اندازه بگیرید و عدد پای بزرگ‌تر را مبنا قرار دهید.", "اگر بین دو سایز هستید، عرض قالب محصول را هم بررسی کنید."] : definition.id === "hat" ? ["متر را یک سانتی‌متر بالاتر از ابرو و دور پهن‌ترین بخش سر بگیرید.", "متر باید بدون فشار و موازی زمین باشد."] : definition.id === "bag" || definition.id === "accessory" ? ["ابعاد درج‌شده مربوط به خود محصول و بدون بسته‌بندی است.", "برای بند یا قطعه قابل تنظیم، کمینه و بیشینه اندازه را بررسی کنید."] : ["دور سینه را از پرترین قسمت و بدون فشار اندازه بگیرید.", "عرض شانه را از انتهای استخوان یک شانه تا شانه دیگر بگیرید.", "قد لباس را از بالای سرشانه تا پایین‌ترین نقطه اندازه بگیرید.", "قد آستین را با آرنج کمی خم اندازه بگیرید."];
   return (
     <div className="fade-up mt-3 rounded-2xl border border-neutral-200 bg-white p-4">
       <h3 className="mb-4 text-[13px] font-medium">{mode === "chart" ? "جدول سایز محصول" : "راهنمای اندازه‌گیری"}</h3>
@@ -537,29 +546,19 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-[11.5px]">
               <thead>
-                <tr className="border-b border-neutral-300 text-right">
-                  <th className="py-2 font-medium">سایز</th>
-                  <th className="py-2 font-medium">دور سینه</th>
-                  <th className="py-2 font-medium">عرض شانه</th>
-                  <th className="py-2 font-medium">قد</th>
-                  <th className="py-2 font-medium">قد آستین</th>
-                </tr>
+                <tr className="border-b border-neutral-300 text-right">{definition.sizeColumns.map((column) => <th key={column.id} className="py-2 font-medium">{column.label}{column.unit ? ` (${column.unit})` : ""}</th>)}</tr>
               </thead>
               <tbody>
                 {product.sizeChart.map((r, i) => (
                   <tr key={r.size} className={i % 2 ? "bg-[#f6f6f4]" : ""}>
-                    <td className="py-2 font-medium">{r.size}</td>
-                    <td className="py-2 num-fa">{fa(r.chest)}</td>
-                    <td className="py-2 num-fa">{fa(r.shoulder)}</td>
-                    <td className="py-2 num-fa">{fa(r.length)}</td>
-                    <td className="py-2 num-fa">{fa(r.sleeve)}</td>
+                    {definition.sizeColumns.map((column) => <td key={column.id} className={column.id === "size" ? "py-2 font-medium" : "py-2 num-fa"}>{fa(r[column.id])}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
-            اندازه‌ها بر حسب سانتی‌متر و مربوط به خود لباس است (نه بدن). {product.sizeAdvice}
+            اندازه‌ها مربوط به {definition.label} هستند. {product.sizeAdvice}
           </p>
         </>
       ) : (
@@ -573,12 +572,7 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
             </span>
           </button>
           <ol className="space-y-2.5 text-[11.5px] leading-relaxed text-neutral-600">
-            {[
-              "دور سینه: متر را از پرترین قسمت سینه و زیر بغل عبور دهید، بدون فشار.",
-              "عرض شانه: از انتهای استخوان یک شانه تا انتهای شانه دیگر، از پشت.",
-              "قد لباس: از بالای سرشانه تا پایین‌ترین نقطه لباس.",
-              "قد آستین: از وسط پشت گردن، روی شانه و تا مچ، با آرنج کمی خم.",
-            ].map((t, i) => (
+            {guidance.map((t, i) => (
               <li key={i} className="flex gap-2">
                 <span className="mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#011c3a] text-[9px] text-white">
                   {fa(i + 1)}
@@ -610,7 +604,7 @@ function Reviews({ product }: { product: Product }) {
   ];
 
   return (
-    <section id="reviews" className="product-reviews scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[170px]">
+    <section id="reviews" className="product-reviews scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[177px]">
       <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
         <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -701,17 +695,15 @@ export default function ProductPage({ id }: { id: string }) {
   const [sizeAdvisorOpen, setSizeAdvisorOpen] = useState(false);
   const [stickySizeOpen, setStickySizeOpen] = useState(false);
   const [stickyColourOpen, setStickyColourOpen] = useState(false);
-  const [subnavVisible, setSubnavVisible] = useState(false);
   const [activeSection, setActiveSection] = useState("details");
   const actionsRef = useRef<HTMLDivElement>(null);
-  const heroRef = useRef<HTMLDivElement>(null);
 
   const lookSettings = builder.look;
 
   /* ست اختصاصی محصول از پنل ادمین: عکس محصول روی تن مدل + هات‌اسپات مکملها */
   const adminLook = (product as AdminProductRecord).admin?.look;
   const productLookHotspots = (adminLook?.hotspots ?? []).filter((h) => h.visible && h.productId);
-  const productLookImage = adminLook?.image || product.images[0] || "";
+  const productLookImage = adminLook?.image || lookSettings.image || product?.images[0] || "";
 
   useEffect(() => {
     setColourIdx(0);
@@ -748,7 +740,7 @@ export default function ProductPage({ id }: { id: string }) {
   /* زیرمنوی بخش‌ها + هایلایت بخش فعال */
   const sections = [
     { id: "details", label: "جزئیات و مشخصات" },
-    ...(lookSettings.enabled ? [{ id: "look", label: "با این ست کنید" }] : []),
+    { id: "look", label: "با این ست کنید" },
     { id: "reviews", label: "نظرات" },
     { id: "related", label: "محصولات مشابه" },
   ];
@@ -758,13 +750,11 @@ export default function ProductPage({ id }: { id: string }) {
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const hero = heroRef.current;
-        if (hero) setSubnavVisible(hero.getBoundingClientRect().bottom < 170);
-        const y = window.scrollY + 260;
+        const activationLine = 190;
         let current = sections[0]?.id ?? "details";
         for (const s of sections) {
           const el = document.getElementById(s.id);
-          if (el && el.offsetTop <= y) current = s.id;
+          if (el && el.getBoundingClientRect().top <= activationLine) current = s.id;
         }
         setActiveSection(current);
       });
@@ -793,6 +783,11 @@ export default function ProductPage({ id }: { id: string }) {
   const wished = isWished(product.id);
   const inCompare = compare.includes(product.id);
   const inStockCount = product.sizes.filter((s) => s.inStock).length;
+  const campaign = builder.campaign;
+  const campaignInTime = campaign.enabled && (!campaign.startsAt || new Date(campaign.startsAt).getTime() <= Date.now()) && (!campaign.endsAt || new Date(campaign.endsAt).getTime() >= Date.now());
+  const campaignCollections = (product as Product & { admin?: { collections?: string[] } }).admin?.collections ?? [];
+  const campaignMatches = campaign.targetType === "all" || (campaign.targetType === "category" && campaign.targetValue === product.category) || (campaign.targetType === "collection" && campaignCollections.includes(campaign.targetValue)) || (campaign.targetType === "product" && campaign.targetValue === product.id);
+  const salePrice = campaignInTime && campaignMatches ? Math.round(product.price * (1 - campaign.discountPercent / 100)) : product.price;
 
   const handleColour = (i: number) => {
     setColourIdx(i);
@@ -820,7 +815,7 @@ export default function ProductPage({ id }: { id: string }) {
       name: product.name,
       colour: colour.name,
       size,
-      price: product.price,
+      price: salePrice,
       img: colour.img,
     });
     setAdded(true);
@@ -842,14 +837,47 @@ export default function ProductPage({ id }: { id: string }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const scrollToSection = (sectionId: string) => {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const detailsType = (product as AdminProductRecord).admin?.productTypeId ?? (product as AdminProductRecord).admin?.specTemplate ?? "clothing";
+  const detailsAttributes = (product as AdminProductRecord).admin?.attributeValues ?? {};
+  const materialBody = detailsType === "shoe" ? `رویه: ${detailsAttributes.upperMaterial || "ثبت نشده"}. زیره: ${detailsAttributes.outsoleMaterial || "ثبت نشده"}. نگهداری: ${detailsAttributes.care || "طبق برچسب محصول"}.` : detailsType === "hat" ? `جنس: ${detailsAttributes.material || "ثبت نشده"}. ساختار: ${detailsAttributes.structure || "ثبت نشده"}. نگهداری: ${detailsAttributes.care || "طبق برچسب محصول"}.` : detailsType === "bag" ? `بدنه: ${detailsAttributes.bodyMaterial || "ثبت نشده"}. آستر: ${detailsAttributes.liningMaterial || "ثبت نشده"}. نگهداری: ${detailsAttributes.care || "طبق برچسب محصول"}.` : detailsType === "accessory" ? `جنس: ${detailsAttributes.material || "ثبت نشده"}. ابعاد: ${detailsAttributes.dimensions || "ثبت نشده"}. نگهداری: ${detailsAttributes.care || "طبق برچسب محصول"}.` : `${detailsAttributes.composition || product.specs.fibre}. ${detailsAttributes.care || product.specs.care}. ${detailsAttributes.fabricWeight ? `وزن پارچه: ${detailsAttributes.fabricWeight}.` : ""}`;
   const accordions = [
-    { title: "جنس و مراقبت", body: `${product.specs.fibre}. ${product.specs.care}. وزن پارچه: ${product.specs.weight}.` },
+    { title: "جنس و مراقبت", body: materialBody },
     { title: "سایز و فیت", body: product.sizeAdvice },
     { title: "ارسال و مرجوعی", body: "سفارش‌های ثبت‌شده تا ساعت ۱۴ همان روز کاری ارسال می‌شوند. ارسال برای سفارش‌های بالای ۳ میلیون تومان رایگان است. تا ۳۰ روز فرصت دارید محصول را مرجوع یا تعویض کنید." },
   ];
 
-  const related = product.relatedIds.map(productById).filter(Boolean) as Product[];
-  const complementary = product.complementaryIds.map(productById).filter(Boolean) as Product[];
+  const behaviorWeights = readCommerceEvents().reduce<Record<string, number>>((result, event) => { if (event.productId) result[event.productId] = (result[event.productId] || 0) + (event.name === "add_to_cart" ? 8 : event.name === "product_view" ? 2 : 0); return result; }, {});
+  const smartStyle = recommendStyleProducts(product, products, behaviorWeights, 6).map((item) => item.product);
+  const explicitRelated = product.relatedIds.map(productById).filter(Boolean) as Product[];
+  const explicitComplementary = product.complementaryIds.map(productById).filter(Boolean) as Product[];
+  const complementary = explicitComplementary.length ? explicitComplementary : smartStyle.slice(0, 4);
+  const related = explicitRelated.length ? explicitRelated : products.filter((item) => item.id !== product.id && (item.category === product.category || item.style === product.style)).slice(0, 6);
+  const adminProduct = product as AdminProductRecord;
+  const productType = getProductTypeDefinition(adminProduct.admin?.productTypeId ?? adminProduct.admin?.specTemplate ?? "clothing");
+  const legacyAttributes: Record<string, string> = {
+    composition: product.specs.fibre,
+    fabric: product.specs.fabricType || product.specs.fabric,
+    fabricWeight: product.specs.weight,
+    stretch: product.specs.stretch,
+    fit: product.specs.styleFor,
+    cut: product.specs.cut,
+    collar: product.specs.collar,
+    sleeve: product.specs.sleeve,
+    closure: product.specs.closure,
+    season: product.specs.season,
+    country: product.specs.country,
+    care: product.specs.care,
+  };
+  const attributeValues = adminProduct.admin?.attributeValues ?? legacyAttributes;
+  const visibleSpecifications = [
+    ...productType.groups.flatMap((group) => group.fields).map((field) => ({ label: field.label, value: attributeValues[field.id], unit: field.unit })).filter((item) => item.value?.trim()),
+    ...(adminProduct.admin?.customSpecs ?? []).filter((item) => item.label.trim() && item.value.trim()).map((item) => ({ label: item.label, value: item.value, unit: undefined })),
+    { label: "کد محصول", value: product.specs.code, unit: undefined },
+  ];
 
   return (
     <>
@@ -865,7 +893,7 @@ export default function ProductPage({ id }: { id: string }) {
         )}
 
         {/* ═══════════════ ناحیهٔ اصلی: گالری (راست) + باکس خرید (چپ) ═══════════════ */}
-        <div ref={heroRef} className="mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-8">
           {/* بردکرامب — جهت‌یابی */}
           <nav aria-label="مسیر صفحه" className="flex items-center gap-1.5 py-3 text-[11px] text-neutral-500">
             <Link to="/" className="hover:underline">خانه</Link>
@@ -881,7 +909,7 @@ export default function ProductPage({ id }: { id: string }) {
 
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-10 xl:gap-14">
             {/* گالری — ستون راست (نقطهٔ شروع خواندن در RTL) و چسبان */}
-            <div className="lg:sticky lg:top-[122px] lg:self-start">
+            <div className="product-gallery-sticky lg:sticky lg:top-[131px] lg:self-start">
               <Gallery product={product} onOpen={(i) => setLightbox(i)} activeImage={activeImage} setActiveImage={setActiveImage} />
             </div>
 
@@ -899,10 +927,10 @@ export default function ProductPage({ id }: { id: string }) {
                 <p className="mt-1 text-[10.5px] tracking-[0.22em] text-neutral-400" dir="ltr">{product.latin.toUpperCase()}</p>
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px]">
-                  <a href="#reviews" className="flex items-center gap-1.5 hover:underline">
+                  <button type="button" onClick={() => scrollToSection("reviews")} className="flex items-center gap-1.5 hover:underline">
                     <Stars value={product.rating} size={13} />
                     <span className="text-neutral-500 num-fa">{fa(product.rating)} ({fa(product.reviewCount)} نظر)</span>
-                  </a>
+                  </button>
                   <span className="hidden h-3 w-px bg-neutral-300 sm:block" />
                   <span className="text-neutral-500 num-fa">{fa(product.sold)}+ فروش موفق</span>
                 </div>
@@ -916,13 +944,14 @@ export default function ProductPage({ id }: { id: string }) {
                   <div className="pdp-price-panel mt-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl p-4">
                     <div>
                       <p className="text-[10.5px] text-neutral-500">قیمت محصول</p>
-                      <p className="mt-1 text-[23px] font-semibold leading-none num-fa">{toman(product.price)}</p>
+                      {salePrice < product.price ? <p className="mt-1"><span className="ml-2 text-[12px] text-neutral-400 line-through num-fa">{toman(product.price)}</span><span className="text-[23px] font-semibold leading-none text-red-700 num-fa">{toman(salePrice)}</span></p> : <p className="mt-1 text-[23px] font-semibold leading-none num-fa">{toman(product.price)}</p>}
                     </div>
                     <p className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
                       <Icon name="truck" className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
                       ارسال رایگان بالای ۳ میلیون تومان
                     </p>
                   </div>
+                  {builder.components.installment.enabled && builder.components.installment.showOnProduct ? <section className="mt-2 border border-neutral-200 bg-white p-3" aria-label="پرداخت اقساطی"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-medium">{builder.components.installment.label}</p><p className="mt-1 text-[9.5px] text-neutral-500">از طریق {builder.components.installment.provider === "both" ? "اسنپ‌پی یا دیجی‌پی" : builder.components.installment.provider === "digipay" ? "دیجی‌پی" : "اسنپ‌پی"} · {builder.components.installment.installments.toLocaleString("fa-IR")} قسط</p></div><div className="text-left"><p className="text-[9px] text-neutral-400">قیمت اقساطی</p><p className="mt-1 text-[12px] font-medium num-fa">{toman(Math.round(salePrice*(1+builder.components.installment.markupPercent/100)))}</p></div></div></section> : null}
 
                   {/* ۳ — انتخاب رنگ */}
                   <div className="mt-6">
@@ -1056,17 +1085,19 @@ export default function ProductPage({ id }: { id: string }) {
         {/* ═══════════════ زیرمنوی چسبان بخش‌ها (دسکتاپ) ═══════════════ */}
         <nav
           aria-label="بخش‌های صفحه محصول"
-          className={`pdp-subnav sticky top-[108px] z-40 hidden border-y transition-all duration-300 lg:block ${subnavVisible ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-2 opacity-0"}`}
+          className="pdp-subnav sticky top-[115px] z-40 hidden border-y lg:block"
         >
           <div className="mx-auto flex w-full max-w-[1360px] items-center gap-7 px-8">
             {sections.map((s) => (
-              <a
+              <button
+                type="button"
                 key={s.id}
-                href={`#${s.id}`}
+                onClick={() => scrollToSection(s.id)}
+                aria-pressed={activeSection === s.id}
                 className={`pdp-subnav-link border-b-2 py-3 text-[12px] transition ${activeSection === s.id ? "is-active" : ""}`}
               >
                 {s.label}
-              </a>
+              </button>
             ))}
             <button
               type="button"
@@ -1079,7 +1110,7 @@ export default function ProductPage({ id }: { id: string }) {
         </nav>
 
         {/* ═══════════════ جزئیات محصول + مشخصات فنی ═══════════════ */}
-        <section id="details" className="scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[170px]">
+        <section id="details" className="scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[177px]">
           <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
             <header>
               <p className="text-[10px] tracking-[0.3em] text-neutral-400">PRODUCT DETAILS</p>
@@ -1132,10 +1163,10 @@ export default function ProductPage({ id }: { id: string }) {
                 <div className="product-specs-table mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
                   <table className="w-full text-[12.5px]">
                     <tbody>
-                      {specOrder.map((key, i) => (
-                        <tr key={key} className={"product-spec-row grid grid-cols-[38%_62%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
-                          <th className="text-right font-medium text-neutral-500">{specLabels[key]}</th>
-                          <td className="text-right">{product.specs[key]}</td>
+                      {visibleSpecifications.map((item, i) => (
+                        <tr key={`${item.label}-${i}`} className={"product-spec-row grid grid-cols-[38%_62%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
+                          <th className="text-right font-medium text-neutral-500">{item.label}</th>
+                          <td className="text-right">{item.value}{item.unit ? ` ${item.unit}` : ""}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1147,20 +1178,20 @@ export default function ProductPage({ id }: { id: string }) {
         </section>
 
         {/* ═══════════════ با این ست کنید — ست اختصاصی محصول (هات‌اسپات مکملها) ═══════════════ */}
-        {productLookHotspots.length > 0 && (
-          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[170px]">
+        {complementary.length > 0 && (
+          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[177px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
                 <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
                 <h2 className="mt-2 text-[20px] font-medium">با این ست کنید</h2>
                 <p className="mt-2 text-[12.5px] text-neutral-500">
-                  {product.name} روی تن مدل، همراه با قطعات مکمل پیشنهادی استایلیست‌های کلبه — روی نقاط رنگی بزنید.
+                  یک ست یکپارچه از محصولات مکمل؛ پیشنهادها با رفتار خرید، دسته، فصل و رنگ محصول هماهنگ می‌شوند.
                 </p>
               </div>
 
-              <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12">
+              <div className="grid gap-6 lg:grid-cols-[minmax(220px,340px)_1fr] lg:gap-10">
                 {/* عکس خودِ همین محصول روی تن مدل + هات‌اسپاتهای مکمل */}
-                <div className="relative overflow-hidden rounded-2xl bg-neutral-100">
+                <div className="relative mx-auto w-full max-w-[340px] overflow-hidden rounded-2xl bg-neutral-100 lg:mx-0">
                   <img src={productLookImage} alt={`${product.name} — ست پیشنهادی`} loading="lazy" className="aspect-[3/4] w-full object-cover" />
                   {productLookHotspots.map((h) => {
                     const linked = productById(h.productId);
@@ -1199,8 +1230,8 @@ export default function ProductPage({ id }: { id: string }) {
         )}
 
         {/* ═══════════════ با این ست کنید (سراسری — کنترل‌شده از سایت‌ساز) ═══════════════ */}
-        {lookSettings.enabled && productLookHotspots.length === 0 && (
-          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[170px]">
+        {lookSettings.enabled && complementary.length === 0 && (
+          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[177px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
                 <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
@@ -1247,7 +1278,7 @@ export default function ProductPage({ id }: { id: string }) {
         <Reviews product={product} />
 
         {/* ═══════════════ محصولات مشابه ═══════════════ */}
-        <section id="related" className="scroll-mt-[84px] lg:scroll-mt-[170px]">
+        <section id="related" className="scroll-mt-[84px] lg:scroll-mt-[177px]">
           <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
             <div className="mb-6 flex items-end justify-between gap-3">
               <div>

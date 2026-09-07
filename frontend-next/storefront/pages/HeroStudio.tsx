@@ -47,7 +47,7 @@ export default function HeroStudio() {
   };
 
   const publish = () => {
-    saveSiteSettings({ ...settings, heroStudio: { ...config, published: true } });
+    saveSiteSettings({ ...settings, heroStudio: { ...config, published: true, countdown: { ...config.countdown, enabled: false } } });
     flash("هیرو منتشر شد؛ صفحه اصلی همین حالا تمپلیت شما را نشان می‌دهد.");
   };
 
@@ -79,9 +79,9 @@ export default function HeroStudio() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-[16px] font-medium">استودیوی هیرو و جشنواره</h2>
+          <h2 className="text-[16px] font-medium">استودیوی هیرو</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-            تمپلیت را انتخاب کن، تصویر و متن‌ها را دلخواه خودت کن و شمارنده جشنواره را تنظیم و منتشر کن. پیش‌نمایش زنده است.
+            تمپلیت را انتخاب کن، تصویر، ویدیو و متن‌ها را دلخواه خودت کن و منتشر کن. پیش‌نمایش زنده است؛ جشنواره فقط از مرکز جشنواره مدیریت می‌شود.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -103,7 +103,7 @@ export default function HeroStudio() {
           <span className="text-[9.5px] text-neutral-400">{busy ? "در حال پردازش تصویر…" : "خودکار بهروز میشود"}</span>
         </div>
         <div className="max-h-[560px] overflow-y-auto">
-          <HeroStudioRenderer config={config} />
+          <HeroStudioRenderer config={{ ...config, countdown: { ...config.countdown, enabled: false } }} />
         </div>
       </div>
 
@@ -162,7 +162,7 @@ export default function HeroStudio() {
         </section>
 
         {/* شمارنده */}
-        <section className="rounded-[6px] border border-neutral-200 p-4">
+        <section className="hidden rounded-[6px] border border-neutral-200 p-4" aria-hidden="true">
           <h3 className="text-[12.5px] font-medium">۴. شمارنده جشنواره</h3>
           <label className="mt-3 flex items-center gap-2 text-[11.5px]">
             <input type="checkbox" checked={config.countdown.enabled} onChange={(e) => patchCountdown({ enabled: e.target.checked })} className="accent-[#011c3a]" />
@@ -228,7 +228,7 @@ export default function HeroStudio() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input ref={heroVideoFileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 8_000_000) { flash("فایل ویدیو باید کمتر از ۸ مگابایت باشد؛ از URL استفاده کنید."); return; } const reader = new FileReader(); reader.onload = () => patch({ heroVideo: String(reader.result) }); reader.readAsDataURL(file); }} />
             <button type="button" onClick={() => heroVideoFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">آپلود ویدیو از سیستم</button>
-            <span className="text-[10px] text-neutral-400">حداکثر ۸ مگابایت (ذخیره محلی) — برای فایل‌های بزرگ‌تر URL بدهید</span>
+            <span className="text-[10px] text-neutral-400">حداکثر ۸ مگابایت — ویدیو جداگانه روی سرور ذخیره و پخش می‌شود</span>
           </div>
         </section>
       )}

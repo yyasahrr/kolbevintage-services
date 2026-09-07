@@ -1,4 +1,4 @@
-import { api, ApiError, clearToken, loadToken, saveToken } from "./medusa";
+import { api, ApiError, clearToken, loadToken, saveToken } from "./api";
 
 export type WholesaleVipAccount = {
   id: string;

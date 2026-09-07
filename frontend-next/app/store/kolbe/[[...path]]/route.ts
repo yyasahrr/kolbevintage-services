@@ -1,16 +1,15 @@
 import type { NextRequest } from "next/server";
-import { proxyToMedusa } from "@server/medusa-proxy";
+import { handleKolbeRequest } from "@server/kolbe-api";
 
 /**
- * API بک‌اند (Store) — هر متدی روی /store/kolbe/*
- * به موتور Medusa روی پورت ۹۰۰۰ فوروارد می‌شود.
+ * API یکپارچه کلبه؛ مستقیم داخل Next.js اجرا می‌شود.
  */
 
 type Ctx = { params: Promise<{ path?: string[] }> };
 
 async function handler(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { path = [] } = await ctx.params;
-  return proxyToMedusa(req, "/store/kolbe", path);
+  return handleKolbeRequest(req, path);
 }
 
 export const GET = handler;

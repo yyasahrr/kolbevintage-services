@@ -5,7 +5,7 @@ import { products } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadWholesaleMembership } from "../wholesaleMembership";
-import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
+import { isBackendConfigured as isSupabaseConfigured } from "../lib/api";
 import { answerSupplierTicket, approveWholesaleOrder, bulkUpdateWholesalePrice, cancelWholesaleOrder, listSupplierApplications, listSupplierCatalogProducts, listSupplierTickets, listSuppliers, listWholesaleAccounts, listWholesaleFulfillmentOrders, updateSupplierApplication, updateSupplierProductStatus, updateWholesaleAccountStatus, type AdminSupplier, type AdminSupplierProduct, type AdminWholesaleAccount } from "../lib/wholesaleApi";
 
 type WholesaleTab = "overview" | "members" | "accounts" | "orders" | "support" | "catalog";

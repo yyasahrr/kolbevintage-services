@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useRouter } from "../router";
 import { mainNav, styles } from "../siteData";
 import { useStore } from "../store";
@@ -22,6 +22,17 @@ export default function SiteHeader() {
   const [scrolled, setScrolled] = useState(false);
   const { path } = useRouter();
   const { cartCount, setCartOpen, wishlist } = useStore();
+  const hasVideoHero =
+    path === "/" &&
+    settings.heroStudio.published &&
+    (settings.heroStudio.template === 5 || settings.heroStudio.template === 6);
+  const headerStyle = {
+    "--video-header-color": settings.header.videoHeroTextColor || "#ffffff",
+    "--header-background": settings.header.backgroundColor || "#fffdfa",
+    "--header-text": settings.header.textColor || "#071c31",
+    "--header-border": settings.header.borderColor || "#d8d3ca",
+    "--header-height": `${Math.min(88, Math.max(56, settings.header.height || 66))}px`,
+  } as CSSProperties;
 
   useEffect(() => {
     setOpen(false);
@@ -62,10 +73,18 @@ export default function SiteHeader() {
     : [];
 
   return (
-    <header className={"site-header sticky top-0 z-50 bg-white transition-[background,box-shadow,border-color,backdrop-filter] duration-300" + (scrolled ? " is-scrolled" : "")}>
+    <header
+      className={
+        "site-header sticky top-0 z-50 bg-white transition-[background,box-shadow,border-color,backdrop-filter,color] duration-300" +
+        (hasVideoHero ? " site-header--video" : "") +
+        (!settings.header.sticky ? " site-header--static" : "") +
+        (scrolled ? " is-scrolled" : "")
+      }
+      style={headerStyle}
+    >
       {/* هدر فشرده تک‌ردیفه */}
       <div className="site-primary border-b border-neutral-200">
-        <div className="relative mx-auto flex min-h-[66px] max-w-[1600px] items-center gap-4 px-4 lg:gap-6 lg:px-6">
+        <div className="header-primary-row relative mx-auto flex max-w-[1600px] items-center gap-4 px-4 lg:gap-6 lg:px-6">
           <button className="shrink-0 lg:hidden" onClick={() => setOpen(true)} aria-label="منو">
             <Icon name="menu" className="h-6 w-6" />
           </button>
@@ -80,23 +99,23 @@ export default function SiteHeader() {
           </Link>
 
           <div className="mr-auto flex shrink-0 items-center gap-4 lg:gap-4">
-            <button type="button" onClick={toggleTheme} aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
+            {settings.header.showThemeToggle && <button type="button" onClick={toggleTheme} aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
               <Icon name={theme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
-            </button>
-            <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
+            </button>}
+            {settings.header.showSearch && <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
               <Icon name="search" />
-            </button>
-            <Link to="/account" aria-label="حساب کاربری" className="hidden items-center gap-1.5 text-[11.5px] font-medium text-neutral-700 transition hover:text-[#011c3a] sm:flex">
+            </button>}
+            {settings.header.showAccount && <Link to="/account" aria-label="حساب کاربری" className="hidden items-center gap-1.5 text-[11.5px] font-medium text-neutral-700 transition hover:text-[#011c3a] sm:flex">
               {path === "/wholesale" ? "ورود / ثبت‌نام" : "ورود"}
-            </Link>
-            <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
+            </Link>}
+            {settings.header.showWishlist && <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
               <Icon name="heart" />
               {wishlist.length > 0 && (
                 <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
                   {fa(wishlist.length)}
                 </span>
               )}
-            </Link>
+            </Link>}
             <button aria-label="سبد خرید" className="relative hover:opacity-60" onClick={() => setCartOpen(true)}>
               <Icon name="bag" />
               {cartCount > 0 && (
@@ -109,7 +128,7 @@ export default function SiteHeader() {
         </div>
 
         {/* ردیف دوم: منوی دسکتاپ — وسطچین با هاور زیرخطی یکسان */}
-        <nav
+        {settings.header.showNavigation && <nav
           className="site-navigation hidden border-t border-neutral-200/70 lg:block"
           onKeyDown={(event) => event.key === "Escape" && setCatalogOpen(false)}
         >
@@ -192,11 +211,11 @@ export default function SiteHeader() {
               )}
             </div>
           </div>
-        </nav>
+        </nav>}
       </div>
 
       {/* جستجو */}
-      {searchOpen && (
+      {settings.header.showSearch && searchOpen && (
         <div className="site-search liquid-surface">
           <div className="mx-auto max-w-[900px] px-4 py-4 sm:px-6">
             <div className="search-input-shell flex items-center gap-3 rounded-full border border-neutral-200 px-4 py-3">

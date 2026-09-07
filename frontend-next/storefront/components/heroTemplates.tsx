@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "../router";
 import Icon from "./Icon";
 import HeroCountdown from "./HeroCountdown";
@@ -7,6 +8,28 @@ import type { HeroStudioConfig } from "../siteSettings";
    ۱) تمامصفحه کلاسیک   ۲) اسپلیت ادیتوریال   ۳) بنر عریض کمارتفاع   ۴) پوستر تایپوگرافیک */
 
 type TemplateProps = { config: HeroStudioConfig; preview?: boolean };
+
+function HeroVideo({ src, poster, className }: { src: string; poster: string; className: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return <img src={poster} alt="" fetchPriority="high" className={className} />;
+  }
+
+  return (
+    <video
+      src={src}
+      poster={poster}
+      autoPlay
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      onError={() => setFailed(true)}
+      className={className}
+    />
+  );
+}
 
 function Cta({ config }: TemplateProps) {
   if (!config.ctaLabel) return null;
@@ -128,14 +151,10 @@ export function HeroTemplate5({ config }: TemplateProps) {
         {[config.video1, config.video2, config.video3].map((src, i) => (
           <div key={i} className="relative overflow-hidden bg-neutral-900">
             {src ? (
-              <video
+              <HeroVideo
                 src={src}
-                autoPlay
-                muted
-                loop
-                playsInline
+                poster={config.videoPoster || config.bgImage}
                 className="absolute inset-0 h-full w-full object-cover"
-                style={{ filter: `brightness(${1 - config.overlay})` }}
               />
             ) : (
               <div className="flex h-full items-center justify-center bg-neutral-800">
@@ -176,13 +195,9 @@ export function HeroTemplate6({ config }: TemplateProps) {
   return (
     <section className="hero-video-fullscreen relative min-h-[100svh] w-full overflow-hidden bg-black">
       {config.heroVideo ? (
-        <video
+        <HeroVideo
           src={config.heroVideo}
           poster={config.videoPoster || config.bgImage}
-          autoPlay
-          muted
-          loop
-          playsInline
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (

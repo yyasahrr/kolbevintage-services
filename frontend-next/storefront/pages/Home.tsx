@@ -45,20 +45,21 @@ function NewArrivals() {
 function CollectionBanner() {
   const { collectionBanner: legacy, builder } = useSiteSettings();
   const banner = builder.banner;
+  const bannerMedia = banner.media && banner.media !== "(تصویر آپلودشده)" ? banner.media : banner.poster || "/images/banner.jpg";
   const countdown = <FestivalCountdownOverlay config={builder.components.countdown} where="featureBanner" />;
   const mediaEl =
     banner.mediaType === "video" ? (
-      <video src={banner.media} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+      <video src={bannerMedia} poster={banner.poster || undefined} autoPlay muted loop playsInline className="h-full w-full object-cover" />
     ) : (
-      <img src={banner.media} alt={banner.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+      <img src={bannerMedia} alt={banner.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
     );
   void legacy;
 
   const overlay = <div className="absolute inset-0" style={{ background: `rgba(7,20,34,${banner.overlay})` }} />;
   const copy = (
-    <div className="text-white">
+    <div className={`text-white ${banner.contentAlign === "center" ? "text-center" : banner.contentAlign === "left" ? "text-left" : "text-right"}`} style={{fontFamily:banner.fontFamily}}>
       <p className="text-[11px] tracking-[0.4em] text-white/80">{banner.eyebrow}</p>
-      <h2 className="mt-4 text-[26px] font-medium leading-snug sm:text-[34px] lg:text-[40px]">{banner.title}</h2>
+      <h2 className="mt-4 font-medium leading-snug" style={{fontSize:`clamp(26px,4vw,${banner.titleSize}px)`}}>{banner.title}</h2>
       {banner.description ? <p className="mx-auto mt-4 max-w-lg text-[13px] leading-relaxed text-white/85">{banner.description}</p> : null}
       {banner.buttonLabel ? (
         <Link
@@ -81,7 +82,7 @@ function CollectionBanner() {
     return (
       <section className="grid overflow-hidden lg:grid-cols-2">
         <div className="relative min-h-[320px] lg:min-h-[520px]">{mediaEl}{overlay}{countdown}</div>
-        <div className="flex items-center justify-center bg-[#f7f5f0] px-8 py-16 text-center">{copy}</div>
+        <div className="flex items-center justify-center bg-[#f7f5f0] px-8 py-16">{copy}</div>
       </section>
     );
   }
@@ -103,10 +104,10 @@ function CollectionBanner() {
   }
 
   return (
-    <section className="storefront-feature-banner relative h-[52svh] min-h-[360px] max-h-[620px] w-full overflow-hidden">
+    <section className={`storefront-feature-banner relative w-full overflow-hidden ${banner.height === "sm" ? "h-[38svh] min-h-[280px]" : banner.height === "lg" ? "h-[72svh] min-h-[520px]" : "h-[52svh] min-h-[360px] max-h-[620px]"} ${banner.radius === "round" ? "mx-auto max-w-[1240px] rounded-[24px]" : banner.radius === "soft" ? "mx-auto max-w-[1240px] rounded-[8px]" : ""}`}>
       {mediaEl}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" style={{ background: `linear-gradient(to top, rgba(7,20,34,${Math.min(banner.overlay + 0.25, 0.85)}), rgba(7,20,34,${banner.overlay * 0.3}))` }} />
-      <div className="absolute inset-0 flex items-center justify-center px-6 text-center">{copy}</div>
+      <div className={`absolute inset-0 flex items-center px-6 ${banner.contentAlign === "center" ? "justify-center" : banner.contentAlign === "left" ? "justify-end" : "justify-start"}`}>{copy}</div>
       {countdown}
     </section>
   );
@@ -252,8 +253,10 @@ function BrandVideo() {
 function ShopTheLook() {
   const [active, setActive] = useState(0);
   const { addToCart } = useStore();
+  const { builder } = useSiteSettings();
   const look = looks[active];
   const total = look.items.reduce((s, i) => s + i.price, 0);
+  const compact = builder.look.compact;
 
   const addAll = () => {
     look.items.forEach((i) => {
@@ -270,8 +273,8 @@ function ShopTheLook() {
   };
 
   return (
-    <section className="shop-look-section liquid-panel mx-auto my-12 w-[calc(100%_-_1rem)] max-w-[1200px] px-4 py-10 sm:w-[calc(100%_-_2rem)] lg:my-20 lg:px-8 lg:py-12">
-      <div className="mb-8 text-center">
+    <section className={`shop-look-section liquid-panel mx-auto w-[calc(100%_-_1rem)] max-w-[1200px] px-4 sm:w-[calc(100%_-_2rem)] lg:px-8 ${compact ? "my-7 py-6 lg:my-10 lg:py-8" : "my-12 py-10 lg:my-20 lg:py-12"}`}>
+      <div className={compact ? "mb-5 text-center" : "mb-8 text-center"}>
         <p className="text-[11px] tracking-[0.3em] text-neutral-400">SHOP THE LOOK</p>
         <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">استایل‌های پیشنهادی</h2>
         <p className="mx-auto mt-3 max-w-md text-[12.5px] leading-relaxed text-neutral-500">
@@ -294,9 +297,9 @@ function ShopTheLook() {
         ))}
       </div>
 
-      <div className="shop-look-layout grid gap-6 lg:grid-cols-[0.82fr_1.18fr] lg:gap-10">
+      <div className={`shop-look-layout grid gap-6 lg:grid-cols-[0.72fr_1.28fr] ${compact ? "lg:gap-7" : "lg:gap-10"}`}>
         {/* عکس با نقطه‌های تعاملی */}
-        <div className="shop-look-visual relative mx-auto w-[82%] overflow-hidden rounded-[1.4rem] border border-neutral-200 bg-neutral-100 p-1.5 sm:w-[56%] lg:w-full">
+        <div className={`shop-look-visual relative mx-auto overflow-hidden rounded-[1rem] border border-neutral-200 bg-neutral-100 p-1.5 ${compact ? "w-[68%] sm:w-[44%] lg:w-full" : "w-[82%] sm:w-[56%] lg:w-full"}`}>
           <img
             src={look.img}
             alt={look.title}
@@ -341,7 +344,7 @@ function ShopTheLook() {
               return (
                 <div key={item.productId} className="flex items-center gap-3 py-3">
                   <Link to={`/product/${item.productId}`}>
-                    <img src={p?.images[0]} alt={item.name} className="h-16 w-12 object-cover" loading="lazy" />
+                    <img src={p?.images[0] || look.img || "/images/flat.jpg"} alt={item.name} className="h-16 w-12 object-cover" loading="lazy" />
                   </Link>
                   <div className="min-w-0 flex-1">
                     <Link to={`/product/${item.productId}`} className="block truncate text-[12.5px] hover:underline">
@@ -570,19 +573,27 @@ function TrustRow() {
 
 export default function Home() {
   const { heroStudio, builder } = useSiteSettings();
+  const homepage = builder.homepage;
+  const modeSections = homepage.mode === "festival"
+    ? ["hero", "new-arrivals", "best-sellers", "banner", "trust"]
+    : homepage.mode === "landing"
+      ? ["hero", "banner", "style-look", "trust"]
+      : homepage.mode === "collection"
+        ? ["hero", "new-arrivals", "banner", "best-sellers", "trust"]
+        : homepage.sections.filter((section) => section.enabled).map((section) => section.type);
+  const renderSection = (type: string, index: number) => {
+    if (type === "hero") return <div key={`${type}-${index}`} className="relative">{heroStudio.published ? <HeroStudioRenderer config={{ ...heroStudio, countdown: { ...heroStudio.countdown, enabled: false } }} /> : <HomepageHero />}<FestivalCountdownOverlay config={builder.components.countdown} where="hero" /></div>;
+    if (type === "categories") return <CategoryBento key={`${type}-${index}`} />;
+    if (type === "new-arrivals") return <NewArrivals key={`${type}-${index}`} />;
+    if (type === "banner") return <CollectionBanner key={`${type}-${index}`} />;
+    if (type === "best-sellers") return <BestSellers key={`${type}-${index}`} />;
+    if (type === "style-look") return builder.look.enabled ? <ShopTheLook key={`${type}-${index}`} /> : null;
+    if (type === "trust") return <FeatureStrip key={`${type}-${index}`} />;
+    return null;
+  };
   return (
     <>
-      {/* هیرو + کامپوننت شمارنده جشنواره (اگر در سایت‌ساز فعال شده باشد) */}
-      <div className="relative">
-        {heroStudio.published ? <HeroStudioRenderer config={heroStudio} /> : <HomepageHero />}
-        <FestivalCountdownOverlay config={builder.components.countdown} where="hero" />
-      </div>
-      <CategoryBento />
-      <NewArrivals />
-      <MidBanner />
-      <BestSellers />
-      <BottomBanner />
-      <FeatureStrip />
+      {modeSections.map(renderSection)}
     </>
   );
 }
@@ -615,82 +626,70 @@ function FeatureStrip() {
 }
 
 
-/* --------------------- بنتو گرید دستهبندیها (بعد از هیرو) --------------------- */
+/* --------------------- دسته‌بندی‌های قابل طراحی (بعد از هیرو) --------------------- */
 
 function CategoryBento() {
-  /* بنتو گرید — الهام از دیزاینهای مدرن:
-     دسکتاپ: خانه بزرگ وسط + عمودی کنار + عریض پایین
-     تبلت: ۳ ستونه با خانه بزرگ
-     موبایل: ۲ ستونه ساده */
-  const items = [
-    { label: "کت و بلیزر", img: "/images/model-teal.jpg", to: "/shop?cat=blazer",
-      cls: "lg:col-span-1 lg:row-span-2 sm:col-span-1 sm:row-span-2",
-      text: "text-[12px] sm:text-[13px] lg:text-[14px]" },
-    { label: "پیراهن", img: "/images/detail-collar.jpg", to: "/shop?cat=shirt",
-      cls: "lg:col-span-2 lg:row-span-2 sm:col-span-2 sm:row-span-2",
-      text: "text-[15px] sm:text-[18px] lg:text-[22px]" },
-    { label: "بافت و پلیور", img: "/images/flat.jpg", to: "/shop?cat=knit",
-      cls: "lg:col-span-1 sm:col-span-1",
-      text: "text-[12px] sm:text-[13px]" },
-    { label: "شلوار", img: "/images/detail-hem.jpg", to: "/shop?cat=trouser",
-      cls: "lg:col-span-1 sm:col-span-1",
-      text: "text-[12px] sm:text-[13px]" },
-    { label: "کفش", img: "/images/model-full.jpg", to: "/shop?cat=shoes",
-      cls: "lg:col-span-2 sm:col-span-2",
-      text: "text-[13px] sm:text-[14px]" },
-    { label: "اکسسوری", img: "/images/banner.jpg", to: "/shop?cat=accessory",
-      cls: "lg:col-span-2 sm:col-span-2",
-      text: "text-[13px] sm:text-[14px]" },
-  ];
+  const { categories } = useSiteSettings();
+  const items = categories.items.filter((item) => item.enabled);
+  if (items.length === 0) return null;
+
+  const containerClass = {
+    bento: "grid grid-cols-2 gap-2 sm:grid-cols-3 sm:auto-rows-[125px] sm:gap-2.5 lg:grid-cols-4 lg:auto-rows-[145px] lg:gap-3",
+    editorial: "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-12 lg:auto-rows-[175px]",
+    grid: "grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 lg:gap-4",
+    rail: "rtl-rail flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible",
+    split: "grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:gap-4",
+  }[categories.layout];
+  const radiusClass = categories.radius === "none" ? "rounded-none" : categories.radius === "soft" ? "rounded-md" : "rounded-[1rem]";
+  const ratioClass = categories.ratio === "portrait" ? "aspect-[3/4]" : categories.ratio === "square" ? "aspect-square" : "aspect-[4/3]";
+  const responsiveRatioClass = categories.layout === "bento" || categories.layout === "editorial" ? `${ratioClass} sm:aspect-auto` : ratioClass;
+
+  const layoutClass = (index: number, featured: boolean) => {
+    if (categories.layout === "bento") {
+      if (index === 0 || featured) return "sm:row-span-2";
+      if (index === 1) return "sm:col-span-2 sm:row-span-2";
+      if (index > 3) return "sm:col-span-2";
+    }
+    if (categories.layout === "editorial") return index === 0 ? "lg:col-span-7 lg:row-span-2" : index === 1 ? "lg:col-span-5 lg:row-span-2" : "lg:col-span-4";
+    if (categories.layout === "rail") return "min-w-[78%] snap-start sm:min-w-[44%] lg:min-w-0";
+    if (categories.layout === "split") return index < 2 ? "col-span-2 sm:row-span-2" : "col-span-1";
+    return "";
+  };
 
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-3 py-8 sm:px-4 sm:py-10 lg:px-8 lg:py-14">
-      <div className="mb-5 flex items-end justify-between sm:mb-6">
+    <section className="category-section mx-auto w-full max-w-[1240px] px-3 py-6 sm:px-4 sm:py-8 lg:px-8 lg:py-9">
+      <div className="mb-5 flex items-end justify-between gap-4 sm:mb-6">
         <div>
-          <p className="text-[9px] tracking-[0.25em] text-neutral-400 sm:text-[10px]">CATEGORIES</p>
-          <h2 className="mt-1.5 text-[19px] font-medium sm:mt-2 sm:text-[22px] lg:text-[26px]">دسته‌بندی محصولات</h2>
+          <p className="text-[9px] tracking-[0.25em] text-neutral-400 sm:text-[10px]">{categories.eyebrow}</p>
+          <h2 className="mt-1.5 text-[19px] font-medium sm:mt-2 sm:text-[22px] lg:text-[26px]">{categories.title}</h2>
+          {categories.description ? <p className="mt-1 max-w-xl text-[11px] text-neutral-500 sm:text-[12px]">{categories.description}</p> : null}
         </div>
-        <Link to="/shop" className="shrink-0 text-[11px] text-neutral-500 underline underline-offset-4 transition hover:text-[#011c3a] sm:text-[12px]">
+        <Link to="/shop" className="shrink-0 text-[11px] text-neutral-500 underline underline-offset-4 transition hover:text-[var(--site-primary)] sm:text-[12px]">
           همه محصولات
         </Link>
       </div>
 
-      {/* بنتو گرید ریسپانسیو */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 sm:auto-rows-[145px] lg:grid-cols-4 lg:gap-3 lg:auto-rows-[170px]">
-        {items.map((item) => (
+      <div className={containerClass}>
+        {items.map((item, index) => (
           <Link
-            key={item.label}
+            key={item.id}
             to={item.to}
-            className={`group relative overflow-hidden rounded-[0.8rem] bg-neutral-100 sm:rounded-[1rem] ${item.cls} aspect-[4/3] sm:aspect-auto`}
+            className={`category-card group relative overflow-hidden bg-neutral-100 focus-visible:ring-2 focus-visible:ring-[var(--site-focus)] ${radiusClass} ${responsiveRatioClass} ${layoutClass(index, item.featured)}`}
           >
-            <img
-              src={item.img}
-              alt={item.label}
-              loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.05]"
-            />
-            {/* گرادیان پایین */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/8 to-transparent" />
-            {/* گرادیان hover */}
-            <div className="absolute inset-0 bg-[#011c3a]/0 transition-colors duration-300 group-hover:bg-[#011c3a]/15" />
-
-            {/* متن */}
-            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between p-3 text-white sm:p-4">
-              <h3 className={`font-medium leading-snug ${item.text}`}>
-                {item.label}
-              </h3>
-              {/* فلش */}
-              <span className={`flex shrink-0 items-center justify-center rounded-full border border-white/25 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:border-white group-hover:bg-white group-hover:text-[#011c3a] ${item.cls.includes("row-span-2") ? "h-8 w-8 lg:h-9 lg:w-9" : "h-6 w-6 sm:h-7 sm:w-7"}`}>
-                <Icon name="arrowLeft" className={`transition-transform duration-300 group-hover:-translate-x-0.5 ${item.cls.includes("row-span-2") ? "h-3.5 w-3.5 lg:h-4 lg:w-4" : "h-3 w-3"}`} />
+            <img src={item.image} alt={item.label} loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/5" />
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 text-white sm:p-4">
+              <div className="min-w-0">
+                <p className="truncate text-[8px] tracking-[0.18em] text-white/65 sm:text-[9px]">{item.latin}</p>
+                <h3 className={`mt-1 font-medium leading-snug ${item.featured ? "text-[15px] sm:text-[18px]" : "text-[12px] sm:text-[14px]"}`}>{item.label}</h3>
+              </div>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/30 bg-black/10 transition group-hover:border-white group-hover:bg-white group-hover:text-[var(--site-primary)] sm:h-8 sm:w-8">
+                <Icon name="arrowLeft" className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
               </span>
             </div>
-
-            {/* شمارنده (اختیاری) */}
-            {item.cls.includes("row-span-2") && (
-              <span className="absolute right-3 top-3 rounded-full bg-white/15 px-2.5 py-1 text-[8.5px] font-medium text-white backdrop-blur-sm sm:right-4 sm:top-4 sm:text-[9.5px]">
-                محبوب‌ترین
-              </span>
-            )}
+            {categories.showBadges && item.badge ? (
+              <span className="absolute right-3 top-3 rounded-full border border-white/20 bg-black/25 px-2.5 py-1 text-[8.5px] font-medium text-white backdrop-blur-sm">{item.badge}</span>
+            ) : null}
           </Link>
         ))}
       </div>

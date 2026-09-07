@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { productIdFromPath, trackCommerceEvent } from "./lib/analytics";
 
 type RouterValue = {
   path: string;
@@ -12,20 +13,31 @@ const RouterContext = createContext<RouterValue>({
   navigate: () => {},
 });
 
-function readHash() {
-  const raw = window.location.hash.replace(/^#/, "") || "/";
+function readLocation() {
+  const hashRoute = window.location.hash.replace(/^#/, "");
+  const raw = hashRoute || `${window.location.pathname}${window.location.search}` || "/";
   const [path, search = ""] = raw.split("?");
-  return { path: path || "/", query: new URLSearchParams(search) };
+  const normalizedPath = path.length > 1 ? path.replace(/\/+$/, "") : path;
+  return { path: normalizedPath || "/", query: new URLSearchParams(search) };
 }
 
 export function RouterProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState(readHash);
+  const [state, setState] = useState(readLocation);
 
   useEffect(() => {
-    const onChange = () => setState(readHash());
+    const onChange = () => setState(readLocation());
     window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
+    window.addEventListener("popstate", onChange);
+    return () => {
+      window.removeEventListener("hashchange", onChange);
+      window.removeEventListener("popstate", onChange);
+    };
   }, []);
+
+  useEffect(() => {
+    const productId = productIdFromPath(state.path);
+    trackCommerceEvent({ name: productId ? "product_view" : "page_view", path: state.path, productId, source: document.referrer || "direct" });
+  }, [state.path]);
 
   const navigate = (to: string) => {
     const target = to.startsWith("#") ? to.slice(1) : to;

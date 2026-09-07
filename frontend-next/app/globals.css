@@ -111,6 +111,12 @@ textarea {
   scrollbar-width: none;
 }
 
+/* ردیف‌های مرکز لاگ خارج از viewport تا زمان نیاز layout/paint نمی‌شوند. */
+.observability-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 68px;
+}
+
 @keyframes sticky-purchase-in {
   from {
     opacity: 0;
@@ -2509,4 +2515,584 @@ textarea {
 .sticky-colour-menu .pdp-swatch {
   width: 2.4rem;
   height: 2.4rem;
+}
+
+/* ═══════════ سیستم طراحی پویا — مدیریت‌شده از پنل ادمین ═══════════ */
+:root {
+  --site-bg: #f7f5f0;
+  --site-surface: #fffdfa;
+  --site-surface-muted: #efede7;
+  --site-text: #071c31;
+  --site-muted: #66727d;
+  --site-primary: #0b2a46;
+  --site-primary-text: #ffffff;
+  --site-accent: #c9654d;
+  --site-border: #d8d3ca;
+  --site-focus: #547a98;
+}
+
+body,
+.storefront-shell,
+.vip-portal-shell,
+.wholesale-system {
+  background-color: var(--site-bg);
+  color: var(--site-text);
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+.storefront-shell :where(.bg-white),
+.vip-portal-shell :where(.bg-white),
+.wholesale-system :where(.bg-white) {
+  background-color: var(--site-surface) !important;
+}
+
+.storefront-shell :where(.bg-neutral-50, .bg-neutral-100),
+.vip-portal-shell :where(.bg-neutral-50, .bg-neutral-100),
+.wholesale-system :where(.bg-neutral-50, .bg-neutral-100) {
+  background-color: var(--site-surface-muted) !important;
+}
+
+.storefront-shell :where(.text-neutral-950, .text-neutral-900, .text-neutral-800),
+.vip-portal-shell :where(.text-neutral-950, .text-neutral-900, .text-neutral-800),
+.wholesale-system :where(.text-neutral-950, .text-neutral-900, .text-neutral-800) {
+  color: var(--site-text) !important;
+}
+
+.storefront-shell :where(.text-neutral-400, .text-neutral-500, .text-neutral-600),
+.vip-portal-shell :where(.text-neutral-400, .text-neutral-500, .text-neutral-600),
+.wholesale-system :where(.text-neutral-400, .text-neutral-500, .text-neutral-600) {
+  color: var(--site-muted) !important;
+}
+
+.storefront-shell :where(.border-neutral-100, .border-neutral-200, .border-neutral-300),
+.vip-portal-shell :where(.border-neutral-100, .border-neutral-200, .border-neutral-300),
+.wholesale-system :where(.border-neutral-100, .border-neutral-200, .border-neutral-300) {
+  border-color: var(--site-border) !important;
+}
+
+.storefront-shell :where(.bg-\[\#011c3a\], .bg-\[\#0a2c55\]),
+.vip-portal-shell :where(.bg-\[\#011c3a\], .bg-\[\#0a2c55\]),
+.wholesale-system :where(.bg-\[\#011c3a\], .bg-\[\#0a2c55\]) {
+  background-color: var(--site-primary) !important;
+  color: var(--site-primary-text);
+}
+
+.storefront-shell :where(.text-\[\#011c3a\], .text-\[\#0a2c55\]),
+.vip-portal-shell :where(.text-\[\#011c3a\], .text-\[\#0a2c55\]),
+.wholesale-system :where(.text-\[\#011c3a\], .text-\[\#0a2c55\]) {
+  color: var(--site-primary) !important;
+}
+
+.storefront-shell :where(button, a, input, select, textarea):focus-visible,
+.vip-portal-shell :where(button, a, input, select, textarea):focus-visible,
+.wholesale-system :where(button, a, input, select, textarea):focus-visible {
+  outline-color: var(--site-focus);
+}
+
+[data-atmosphere="paper"] .storefront-shell {
+  background-image: linear-gradient(to bottom, color-mix(in srgb, var(--site-primary) 2%, transparent) 1px, transparent 1px);
+  background-size: 100% 36px;
+}
+
+[data-atmosphere="noir"] .storefront-shell {
+  box-shadow: inset 0 3px 0 var(--site-accent);
+}
+
+[data-atmosphere="noir"] .category-card img {
+  filter: saturate(.72) contrast(1.08);
+}
+
+[data-atmosphere="romantic"] .category-card {
+  border-radius: 1.5rem;
+}
+
+[data-atmosphere="festive"] .site-header {
+  border-bottom-color: var(--site-accent) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .storefront-shell,
+  .vip-portal-shell,
+  .wholesale-system {
+    transition: none;
+  }
+}
+
+/* ═══════════ صحنه‌های مناسبتی کامل ═══════════ */
+.storefront-shell {
+  position: relative;
+  isolation: isolate;
+  background: var(--site-bg) !important;
+}
+
+.storefront-shell > :where(.site-main, .site-footer, .seasonal-ribbon) {
+  position: relative;
+  z-index: 2;
+}
+
+/* هدر باید مرجع ثابت نوار بخش‌های صفحه باشد؛ صحنهٔ مناسبتی نباید sticky را بازنویسی کند. */
+.storefront-shell > .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.site-main {
+  background-color: transparent;
+}
+
+.seasonal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--site-bg);
+  transition: background 420ms ease;
+}
+
+.seasonal-motifs {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--site-accent);
+}
+
+.seasonal-motif {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.2rem;
+  font-weight: 600;
+  line-height: 1;
+  opacity: .16;
+  filter: drop-shadow(0 .5rem 1rem color-mix(in srgb, var(--site-primary) 14%, transparent));
+  animation: seasonal-drift 8s ease-in-out infinite alternate;
+}
+
+.seasonal-motif svg {
+  width: 100%;
+  height: 100%;
+}
+
+.motif-0 { right: 2%; top: 18%; transform: rotate(12deg); }
+.motif-1 { left: 4%; top: 13%; transform: rotate(-14deg); animation-delay: -2s; }
+.motif-2 { right: 8%; top: 48%; transform: rotate(-8deg); animation-delay: -5s; }
+.motif-3 { left: 2%; top: 58%; transform: rotate(18deg); animation-delay: -3s; }
+.motif-4 { right: 4%; top: 78%; transform: rotate(-16deg); animation-delay: -6s; }
+.motif-5 { left: 7%; top: 84%; transform: rotate(10deg); animation-delay: -1s; }
+.motif-6 { right: 38%; top: 29%; transform: rotate(8deg); animation-delay: -4s; opacity: .09; }
+.motif-7 { left: 36%; top: 70%; transform: rotate(-10deg); animation-delay: -7s; opacity: .09; }
+
+.scene-black-friday .seasonal-motif {
+  width: 6rem;
+  font-family: Arial, sans-serif;
+  font-size: 1.35rem;
+  letter-spacing: .12em;
+  border: 1px solid currentColor;
+}
+
+.seasonal-pomegranate {
+  position: relative;
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 48% 48% 52% 52%;
+  background: currentColor;
+}
+
+.seasonal-pomegranate::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -.65rem;
+  width: 1.25rem;
+  height: 1rem;
+  border: .38rem solid currentColor;
+  border-bottom: 0;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.seasonal-pomegranate i {
+  position: absolute;
+  inset: .55rem;
+  border: 1px solid color-mix(in srgb, var(--site-bg) 60%, transparent);
+  border-radius: 50%;
+}
+
+.seasonal-pomegranate b {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--site-bg) 70%, white);
+  font-size: .85rem;
+}
+
+.seasonal-ribbon {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  min-height: 3.25rem;
+  padding: .55rem clamp(1rem, 4vw, 4rem);
+  border-bottom: 1px solid color-mix(in srgb, var(--site-accent) 35%, var(--site-border));
+  background: color-mix(in srgb, var(--site-primary) 92%, var(--site-bg));
+  color: var(--site-primary-text);
+  box-shadow: 0 .65rem 2rem color-mix(in srgb, var(--site-primary) 16%, transparent);
+}
+
+.seasonal-ribbon-mark {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-radius: 50%;
+  color: var(--site-accent);
+}
+
+.seasonal-ribbon-copy {
+  display: flex;
+  align-items: baseline;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.seasonal-ribbon-copy b {
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.seasonal-ribbon-copy small {
+  font-size: .65rem;
+  opacity: .68;
+}
+
+.seasonal-ribbon-latin {
+  font-size: .52rem;
+  letter-spacing: .22em;
+  opacity: .72;
+}
+
+.site-header,
+.site-header .site-primary,
+.site-header .site-navigation {
+  border-color: var(--site-border) !important;
+  background: color-mix(in srgb, var(--site-surface) 91%, transparent) !important;
+  color: var(--site-text);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+}
+
+.storefront-shell > .site-header {
+  z-index: 50;
+}
+
+.storefront-shell > .seasonal-ribbon {
+  z-index: 4;
+}
+
+.storefront-shell :where(.liquid-surface, .catalog-menu, .mobile-navigation, .site-search) {
+  border-color: var(--site-border) !important;
+  background: color-mix(in srgb, var(--site-surface) 94%, transparent) !important;
+  color: var(--site-text) !important;
+}
+
+.storefront-shell :where(input, textarea, select) {
+  border-color: var(--site-border);
+  background-color: color-mix(in srgb, var(--site-surface) 92%, transparent);
+  color: var(--site-text);
+}
+
+.storefront-shell :where(.journal-section, .shop-look-section) {
+  border-color: var(--site-border) !important;
+  background-color: color-mix(in srgb, var(--site-surface-muted) 84%, transparent) !important;
+}
+
+.storefront-shell :where(.product-card-media, .style-tile, .category-card, .editorial-tile) {
+  border: 1px solid color-mix(in srgb, var(--site-border) 78%, transparent);
+  background-color: var(--site-surface-muted) !important;
+  box-shadow: 0 1.1rem 2.8rem color-mix(in srgb, var(--site-primary) 8%, transparent);
+}
+
+.storefront-shell :where(.product-card-action, .hero-cta-primary) {
+  border-color: var(--site-primary) !important;
+  background-color: var(--site-primary) !important;
+  color: var(--site-primary-text) !important;
+}
+
+.site-footer {
+  border: 1px solid var(--site-border);
+  background: color-mix(in srgb, var(--site-surface-muted) 90%, var(--site-primary)) !important;
+  color: var(--site-text) !important;
+  box-shadow: 0 -1.2rem 4rem color-mix(in srgb, var(--site-primary) 10%, transparent);
+}
+
+.site-footer :where(h2, h3, h4, p, a, span, li) {
+  color: inherit;
+}
+
+.site-footer a {
+  opacity: .72;
+}
+
+.site-footer a:hover {
+  opacity: 1;
+  color: var(--site-accent) !important;
+}
+
+/* ولنتاین: کاغذ صورتی، هاله رز، قلب و رد بوسه */
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .seasonal-backdrop {
+  background:
+    radial-gradient(circle at 12% 12%, color-mix(in srgb, #ffffff 78%, transparent) 0 8rem, transparent 22rem),
+    radial-gradient(circle at 87% 32%, color-mix(in srgb, var(--site-accent) 18%, transparent), transparent 29rem),
+    radial-gradient(circle at 24% 82%, color-mix(in srgb, var(--site-primary) 11%, transparent), transparent 26rem),
+    var(--site-bg);
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .seasonal-ribbon {
+  background:
+    radial-gradient(circle at 15% 50%, color-mix(in srgb, white 15%, transparent), transparent 22%),
+    var(--site-primary);
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .seasonal-motif {
+  color: #c52462;
+  opacity: .24;
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .motif-kiss {
+  width: 5.5rem;
+  height: 3.7rem;
+  opacity: .19;
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .storefront-hero,
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .storefront-feature-banner {
+  border: 1px solid color-mix(in srgb, var(--site-accent) 55%, white);
+  box-shadow: 0 2rem 5rem color-mix(in srgb, var(--site-primary) 24%, transparent);
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) :where(.storefront-hero, .storefront-feature-banner)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(125deg, rgba(199, 35, 94, .24), rgba(255, 181, 207, .1) 48%, rgba(104, 15, 51, .2));
+  mix-blend-mode: color;
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) .site-footer {
+  background:
+    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--site-accent) 17%, transparent), transparent 19rem),
+    color-mix(in srgb, var(--site-surface-muted) 88%, var(--site-primary)) !important;
+}
+
+:is([data-site-theme="valentine"], [data-atmosphere="romantic"]) :where(.product-card-media, .category-card, .editorial-tile) {
+  border-radius: 1.25rem;
+}
+
+/* بلک‌فرایدی: کل ویترین ذغالی، خطوط طلایی و تایپوگرافی تخفیف */
+:is([data-site-theme="black-friday"], [data-atmosphere="noir"]) .seasonal-backdrop {
+  background:
+    linear-gradient(108deg, transparent 0 48%, color-mix(in srgb, var(--site-accent) 5%, transparent) 48% 52%, transparent 52%),
+    repeating-linear-gradient(90deg, transparent 0 5.5rem, color-mix(in srgb, var(--site-border) 24%, transparent) 5.5rem 5.55rem),
+    var(--site-bg);
+}
+
+:is([data-site-theme="black-friday"], [data-atmosphere="noir"]) .seasonal-ribbon {
+  border-block: 1px solid var(--site-accent);
+  background: #050505;
+  color: #fff9e9;
+}
+
+:is([data-site-theme="black-friday"], [data-atmosphere="noir"]) :where(.storefront-hero, .storefront-feature-banner, .category-card) img {
+  filter: saturate(.55) contrast(1.12) brightness(.82);
+}
+
+:is([data-site-theme="black-friday"], [data-atmosphere="noir"]) .site-main h2 {
+  color: var(--site-accent);
+}
+
+:is([data-site-theme="black-friday"], [data-atmosphere="noir"]) :where(.product-card-media, .category-card, .editorial-tile) {
+  border-color: color-mix(in srgb, var(--site-accent) 36%, var(--site-border));
+  box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .38);
+}
+
+/* نوروز: زمینه سبز روشن، شکوفه و درخشش طلایی */
+:is([data-site-theme="nowruz"], [data-atmosphere="festive"]) .seasonal-backdrop {
+  background:
+    radial-gradient(circle at 6% 15%, color-mix(in srgb, #ffffff 72%, transparent), transparent 21rem),
+    radial-gradient(circle at 88% 22%, color-mix(in srgb, var(--site-accent) 12%, transparent), transparent 25rem),
+    linear-gradient(165deg, transparent 58%, color-mix(in srgb, var(--site-primary) 8%, transparent)),
+    var(--site-bg);
+}
+
+:is([data-site-theme="nowruz"], [data-atmosphere="festive"]) .seasonal-motif {
+  color: color-mix(in srgb, var(--site-primary) 70%, var(--site-accent));
+}
+
+[data-site-theme="nowruz"] .site-footer {
+  background:
+    radial-gradient(circle at 85% 15%, color-mix(in srgb, var(--site-accent) 18%, transparent), transparent 18rem),
+    color-mix(in srgb, var(--site-surface-muted) 78%, var(--site-primary)) !important;
+}
+
+/* یلدا: شرابی شبانه، انار و ستاره */
+[data-site-theme="yalda"] .seasonal-backdrop {
+  background:
+    radial-gradient(circle at 10% 20%, color-mix(in srgb, #d79b6b 10%, transparent) 0 .13rem, transparent .17rem),
+    radial-gradient(circle at 82% 32%, color-mix(in srgb, var(--site-primary) 18%, transparent), transparent 27rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--site-bg) 84%, #17090e), var(--site-bg));
+  background-size: 2rem 2rem, auto, auto;
+}
+
+[data-site-theme="yalda"] .seasonal-motif {
+  color: color-mix(in srgb, var(--site-primary) 82%, #d59b6b);
+}
+
+[data-site-theme="yalda"] .seasonal-ribbon {
+  background: color-mix(in srgb, var(--site-primary) 90%, #17090e);
+}
+
+[data-site-theme="yalda"] :where(.storefront-hero, .storefront-feature-banner, .category-card) img {
+  filter: saturate(.88) sepia(.1) hue-rotate(325deg);
+}
+
+/* دارک آکادمیا: کاغذ کهنه، خطوط دفتر و تون گرم عکس */
+[data-site-theme="dark-academia"] .seasonal-backdrop {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--site-primary) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--site-primary) 5%, transparent) 1px, transparent 1px),
+    radial-gradient(circle at 72% 18%, color-mix(in srgb, var(--site-accent) 12%, transparent), transparent 28rem),
+    var(--site-bg);
+  background-size: 4rem 4rem, 4rem 4rem, auto, auto;
+}
+
+[data-site-theme="dark-academia"] :where(.storefront-hero, .storefront-feature-banner, .category-card, .style-tile) img {
+  filter: sepia(.24) saturate(.72) contrast(1.04);
+}
+
+[data-site-theme="dark-academia"] :where(.site-main h1, .site-main h2, .site-main h3) {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+@keyframes seasonal-drift {
+  from { translate: 0 0; }
+  to { translate: 0 -1rem; }
+}
+
+@media (max-width: 639px) {
+  .seasonal-ribbon {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-height: 3rem;
+    padding-inline: .8rem;
+  }
+
+  .seasonal-ribbon-copy {
+    display: block;
+  }
+
+  .seasonal-ribbon-copy small {
+    display: block;
+    margin-top: .15rem;
+  }
+
+  .seasonal-ribbon-latin,
+  .motif-2,
+  .motif-3,
+  .motif-6,
+  .motif-7 {
+    display: none;
+  }
+
+  .seasonal-motif {
+    width: 3.2rem;
+    height: 3.2rem;
+    font-size: 1.55rem;
+    opacity: .11;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seasonal-motif {
+    animation: none;
+  }
+}
+
+/* هدر روی هیروی ویدیویی: در ابتدای صفحه شفاف و روی تصویر، پس از اسکرول عادی. */
+.storefront-shell > .site-header.site-header--video {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  width: 100%;
+}
+
+.site-header.site-header--video:not(.is-scrolled),
+.site-header.site-header--video:not(.is-scrolled) .site-primary,
+.site-header.site-header--video:not(.is-scrolled) .site-navigation {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--video-header-color, #ffffff) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.site-header.site-header--video:not(.is-scrolled) .site-primary :where(a, button),
+.site-header.site-header--video:not(.is-scrolled) .site-navigation > div > a,
+.site-header.site-header--video:not(.is-scrolled) .site-navigation > div > .catalog-picker > button {
+  color: var(--video-header-color, #ffffff) !important;
+}
+
+.site-header.site-header--video:not(.is-scrolled) .site-primary > div > a > span:last-child {
+  color: color-mix(in srgb, var(--video-header-color, #ffffff) 72%, transparent) !important;
+}
+
+.site-header.site-header--video:not(.is-scrolled) .theme-toggle {
+  border-color: color-mix(in srgb, var(--video-header-color, #ffffff) 48%, transparent) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: none !important;
+}
+
+.site-header.site-header--video:not(.is-scrolled) .theme-toggle:hover {
+  background: rgba(0, 0, 0, 0.2) !important;
+}
+
+/* سطوح بازشونده مستقل‌اند و رنگ روشن هدر نباید داخل آن‌ها نشت کند. */
+.site-header.site-header--video:not(.is-scrolled) :where(.catalog-menu, .site-search, .mobile-navigation),
+.site-header.site-header--video:not(.is-scrolled) :where(.catalog-menu, .site-search, .mobile-navigation) :where(a, button, input, p, span, svg) {
+  color: var(--site-text) !important;
+}
+
+/* مقادیر قابل ویرایش مرکز طراحی سایت */
+.site-header:not(.site-header--video),
+.site-header.site-header--video.is-scrolled,
+.site-header:not(.site-header--video) .site-primary,
+.site-header.site-header--video.is-scrolled .site-primary,
+.site-header:not(.site-header--video) .site-navigation,
+.site-header.site-header--video.is-scrolled .site-navigation {
+  border-color: var(--header-border, var(--site-border)) !important;
+  background: color-mix(in srgb, var(--header-background, var(--site-surface)) 92%, transparent) !important;
+  color: var(--header-text, var(--site-text)) !important;
+}
+
+.site-header .header-primary-row {
+  min-height: var(--header-height, 66px);
+}
+
+.storefront-shell > .site-header.site-header--static:not(.site-header--video) {
+  position: relative !important;
+}
+
+.site-footer.site-footer--custom {
+  background: var(--footer-background, #f2f0eb) !important;
+  color: var(--footer-text, #011c3a) !important;
 }

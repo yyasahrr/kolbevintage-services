@@ -3,7 +3,7 @@ import { Link } from "../router";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
-import { api, ApiError } from "../lib/medusa";
+import { api, ApiError } from "../lib/api";
 
 const provinces = [
   "تهران", "البرز", "اصفهان", "فارس", "خراسان رضوی", "آذربایجان شرقی", "آذربایجان غربی",

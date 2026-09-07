@@ -1,10 +1,7 @@
 /**
- * لایه API پنل ساپلایر روی بک‌اند مدوسا (کوکوبه).
- * درخواستها نسبی هستند و از پروکسی vite به سرور ۹۰۰۰ میروند.
- * توکن نشست ساپلایر: kv_medusa_supplier
+ * لایه API پنل ساپلایر روی اپ یکپارچه Next.js.
  */
-const TOKEN_KEY = 'kv_medusa_supplier'
-const PUBLISHABLE_KEY = 'pk_8f89ce3f6e86e7085af4fa9f374537c7efc4bbb7f3a591406cb67fb44b3604ee'
+const TOKEN_KEY = 'kv_supplier'
 
 export type SupplierContext = { supplierId: string; displayName: string; legalName: string }
 
@@ -20,7 +17,7 @@ async function api<T = unknown>(path: string, init?: { method?: string; body?: u
   try {
     response = await fetch(path, {
       method: init?.method ?? 'GET',
-      headers: { 'content-type': 'application/json', 'x-publishable-api-key': PUBLISHABLE_KEY, ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}) },
+      headers: { 'content-type': 'application/json', ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}) },
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     })
   } catch { throw new ApiError('NETWORK', 'اتصال به سرور برقرار نشد.') }

@@ -1,132 +1,68 @@
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "../router";
-import { fa } from "../utils/format";
 import Icon from "./Icon";
 import { useSiteSettings } from "../siteSettings";
-import { useStorefrontTheme } from "../theme";
+
+function FooterGroup({ title, children, accordion }: { title: string; children: ReactNode; accordion: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="footer-group border-b border-current/10 py-1 sm:border-0 sm:py-0">
+      <button type="button" onClick={() => accordion && setOpen((value) => !value)} aria-expanded={accordion ? open : true} className="flex min-h-11 w-full items-center justify-between text-right text-[11.5px] font-semibold sm:pointer-events-none sm:min-h-0">
+        {title}
+        {accordion ? <Icon name="chevronDown" className={`h-3.5 w-3.5 transition-transform sm:hidden ${open ? "rotate-180" : ""}`} /> : null}
+      </button>
+      <div className={`${accordion && !open ? "hidden" : "block"} pb-3 sm:block sm:pb-0 sm:pt-3`}>{children}</div>
+    </section>
+  );
+}
 
 export default function SiteFooter() {
-  const { footer, builder } = useSiteSettings();
+  const { footer, builder, header } = useSiteSettings();
+  const appearance = footer.appearance;
   const socials = builder.footer.socials;
-  const theme = useStorefrontTheme();
-  const dark = theme === "dark";
-
-  /* رنگها بر اساس تم */
-  const bg = dark ? "bg-[#0a1622]" : "bg-[#f2f0eb]";
-  const border = dark ? "border-white/10" : "border-[#011c3a]/10";
-  const text = dark ? "text-white" : "text-[#011c3a]";
-  const textMuted = dark ? "text-white/55" : "text-[#011c3a]/55";
-  const textFaint = dark ? "text-white/35" : "text-[#011c3a]/35";
-  const linkHover = dark ? "hover:text-white" : "hover:text-[#011c3a]";
-  const socialBorder = dark ? "border-white/20 hover:border-white" : "border-[#011c3a]/20 hover:border-[#011c3a]";
-  const licenseBg = dark ? "bg-white/5 border-white/15" : "bg-white border-[#011c3a]/10";
+  const columns = appearance.layout === "compact" ? footer.columns.slice(0, 2) : footer.columns;
+  const footerStyle = { "--footer-background": appearance.backgroundColor, "--footer-text": appearance.textColor } as CSSProperties;
 
   return (
-    <footer className={`mx-2 mb-2 overflow-hidden rounded-[1.5rem] ${bg} ${text} transition-colors duration-300 sm:mx-3 sm:mb-3`}>
-      <div className="mx-auto max-w-[1000px] px-5 lg:px-8">
-
-        {/* لوگو */}
-        <div className={`flex flex-col items-center border-b ${border} py-8`}>
-          <span className="text-[20px] font-semibold tracking-[0.12em]">کلبه وینتیج</span>
-          <span className={`mt-1 text-[8px] tracking-[0.35em] ${textFaint}`}>KOLBE VINTAGE</span>
-        </div>
-
-        {/* دو ستون: دسترسی سریع + پشتیبانی */}
-        <div className={`grid gap-8 py-8 sm:grid-cols-2 lg:grid-cols-4`}>
-
-          {/* دسترسی سریع */}
-          <div>
-            <h4 className={`mb-3 text-[11px] font-semibold ${text}`}>دسترسی سریع</h4>
-            <ul className="space-y-2">
-              {[
-                { label: "فروشگاه", to: "/shop" },
-                { label: "خرید عمده", to: "/wholesale" },
-                { label: "مجله", to: "/blog" },
-                { label: "استایل‌ها", to: "/styles" },
-                { label: "درباره ما", to: "/about" },
-              ].map(link => (
-                <li key={link.label}>
-                  <Link to={link.to} className={`text-[11px] ${textMuted} transition ${linkHover}`}>{link.label}</Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* پشتیبانی */}
-          <div>
-            <h4 className={`mb-3 text-[11px] font-semibold ${text}`}>پشتیبانی</h4>
-            <ul className="space-y-2">
-              {[
-                { label: "تماس با ما", to: "/contact" },
-                { label: "پیگیری سفارش", to: "/account" },
-                { label: "قوانین و مقررات", to: "/about" },
-                { label: "حریم خصوصی", to: "/about" },
-                { label: "مرجوعی و تعویض", to: "/about" },
-              ].map(link => (
-                <li key={link.label}>
-                  <Link to={link.to} className={`text-[11px] ${textMuted} transition ${linkHover}`}>{link.label}</Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* اطلاعات تماس */}
-          <div>
-            <h4 className={`mb-3 text-[11px] font-semibold ${text}`}>اطلاعات تماس</h4>
-            <ul className={`space-y-2 text-[10.5px] ${textMuted}`}>
-              <li className="flex items-start gap-2">
-                <Icon name="pin" className={`mt-[2px] h-3.5 w-3.5 shrink-0 ${textFaint}`} />
-                {footer.address}
-              </li>
-              <li className="flex items-center gap-2">
-                <Icon name="phone" className={`h-3.5 w-3.5 shrink-0 ${textFaint}`} />
-                <span className="num-fa">{footer.phone}</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Icon name="clock" className={`h-3.5 w-3.5 shrink-0 ${textFaint}`} />
-                {footer.hours}
-              </li>
-              <li className="flex items-center gap-2">
-                <Icon name="mail" className={`h-3.5 w-3.5 shrink-0 ${textFaint}`} />
-                {footer.email}
-              </li>
-            </ul>
-
-            {/* سوشال */}
-            <div className="mt-4 flex gap-2">
-              {socials.map((social, i) => (
-                <a key={i} href={social.url} target="_blank" rel="noreferrer" className={`flex h-8 w-8 items-center justify-center rounded-full border ${socialBorder} ${textMuted} transition`}>
-                  <Icon name={social.icon} className="h-3.5 w-3.5" />
-                </a>
-              ))}
+    <footer data-template={appearance.template} className={`site-footer site-footer--custom mx-2 mb-2 overflow-hidden sm:mx-3 sm:mb-3 ${appearance.template === "minimal" ? "rounded-none" : appearance.template === "centered" ? "rounded-[2rem]" : "rounded-[1.25rem]"}`} style={footerStyle}>
+      <div className="mx-auto max-w-[1120px] px-5 lg:px-8">
+        {appearance.showBrand ? (
+          <div className="flex items-center justify-between gap-4 border-b border-current/10 py-5 sm:justify-center sm:py-7">
+            <div className="sm:text-center">
+              <span className="block text-[17px] font-semibold tracking-[0.12em] sm:text-[20px]">{header.brand}</span>
+              <span className="mt-1 block text-[7.5px] tracking-[0.34em] opacity-45">{header.latinBrand}</span>
             </div>
+            {socials.length ? <div className="flex gap-1.5 sm:hidden">{socials.slice(0, 3).map((social, index) => <a key={`${social.url}-${index}`} href={social.url} target="_blank" rel="noreferrer" aria-label={social.label} className="grid h-8 w-8 place-items-center rounded-full border border-current/20 opacity-70"><Icon name={social.icon} className="h-3.5 w-3.5" /></a>)}</div> : null}
           </div>
+        ) : null}
 
-          {/* مجوزها */}
-          <div>
-            <h4 className={`mb-3 text-[11px] font-semibold ${text}`}>مجوزها</h4>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: "نماد اعتماد", sub: "اینماد" },
-                { label: "ساماندهی", sub: "رسانه‌های دیجیتال" },
-                { label: "اتحادیه", sub: "کسب و کار مجازی" },
-              ].map(license => (
-                <div key={license.label} className={`flex h-16 w-16 flex-col items-center justify-center rounded-lg border ${licenseBg}`}>
-                  <Icon name="shield" className={`h-5 w-5 ${textFaint}`} strokeWidth={1.2} />
-                  <span className={`mt-1 text-[7.5px] leading-tight ${textFaint}`}>{license.label}</span>
-                  <span className={`text-[6.5px] leading-tight ${textFaint}`}>{license.sub}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className={`grid gap-x-8 py-3 sm:py-7 ${appearance.template === "centered" ? "text-center" : ""} ${appearance.layout === "compact" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-5"}`}>
+          {columns.map((column, columnIndex) => (
+            <FooterGroup key={`${column.title}-${columnIndex}`} title={column.title} accordion={appearance.mobileAccordion}>
+              <ul className="space-y-2">{column.items.map((label, itemIndex) => <li key={`${label}-${itemIndex}`}><Link to={footer.columnUrls[columnIndex]?.[itemIndex] || "/shop"} className="text-[11px] opacity-55 transition hover:opacity-100">{label}</Link></li>)}</ul>
+            </FooterGroup>
+          ))}
+
+          {appearance.showContact ? (
+            <FooterGroup title="اطلاعات تماس" accordion={appearance.mobileAccordion}>
+              <ul className="space-y-2 text-[10.5px] opacity-60">
+                <li className="flex items-start gap-2"><Icon name="pin" className="mt-0.5 h-3.5 w-3.5 shrink-0" />{footer.address}</li>
+                <li className="flex items-center gap-2"><Icon name="phone" className="h-3.5 w-3.5 shrink-0" /><span className="num-fa">{footer.phone}</span></li>
+                <li className="flex items-center gap-2"><Icon name="clock" className="h-3.5 w-3.5 shrink-0" />{footer.hours}</li>
+                <li className="flex items-center gap-2"><Icon name="mail" className="h-3.5 w-3.5 shrink-0" />{footer.email}</li>
+              </ul>
+              {socials.length ? <div className="mt-3 hidden gap-2 sm:flex">{socials.map((social, index) => <a key={`${social.url}-${index}`} href={social.url} target="_blank" rel="noreferrer" aria-label={social.label} className="grid h-8 w-8 place-items-center rounded-full border border-current/20 opacity-60 transition hover:opacity-100"><Icon name={social.icon} className="h-3.5 w-3.5" /></a>)}</div> : null}
+            </FooterGroup>
+          ) : null}
+
+          {appearance.showLicenses ? (
+            <FooterGroup title="مجوزها" accordion={appearance.mobileAccordion}>
+              <div className="flex flex-wrap gap-2">{["نماد اعتماد", "ساماندهی", "اتحادیه"].map((label) => <div key={label} className="flex h-14 w-14 flex-col items-center justify-center rounded-md border border-current/15 bg-white/20"><Icon name="shield" className="h-4 w-4 opacity-45" /><span className="mt-1 text-[7px] opacity-55">{label}</span></div>)}</div>
+            </FooterGroup>
+          ) : null}
         </div>
       </div>
-
-      {/* کپی‌رایت */}
-      <div className={`border-t ${border}`}>
-        <div className={`mx-auto flex max-w-[1000px] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-5 py-3 text-[10px] ${textFaint}`}>
-          <span className="num-fa">© کلبه وینتیج {fa("۱۴۰۵")} — تمامی حقوق محفوظ است</span>
-        </div>
-      </div>
+      <div className="border-t border-current/10 px-5 py-3 text-[9.5px] opacity-55"><div className="mx-auto flex max-w-[1120px] flex-col items-center justify-between gap-2 sm:flex-row"><span className="num-fa opacity-70">{footer.copyright}</span><nav aria-label="پیوندهای حقوقی" className="flex flex-wrap justify-center gap-x-4 gap-y-1"><Link to="/terms" className="hover:opacity-100">شرایط استفاده</Link><Link to="/privacy" className="hover:opacity-100">حریم خصوصی</Link><Link to="/returns" className="hover:opacity-100">مرجوعی</Link><Link to="/shipping" className="hover:opacity-100">ارسال</Link><Link to="/wholesale-terms" className="hover:opacity-100">قوانین عمده</Link></nav></div></div>
     </footer>
   );
 }

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { trackCommerceEvent } from "./lib/analytics";
 
 export type CartLine = {
   id: string;
@@ -79,13 +80,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (found) return prev.map((p) => (lineKey(p) === k ? { ...p, qty: p.qty + (line.qty ?? 1) } : p));
         return [...prev, { ...line, qty: line.qty ?? 1 }];
       });
+      trackCommerceEvent({ name: "add_to_cart", productId: line.id, productName: line.name, value: line.price, quantity: line.qty ?? 1 });
       notify(`${line.name} به سبد خرید اضافه شد`);
     },
     [notify],
   );
 
   const removeLine = useCallback((key: string) => {
-    setLines((prev) => prev.filter((p) => lineKey(p) !== key));
+    setLines((prev) => {
+      const removed = prev.find((p) => lineKey(p) === key);
+      if (removed) trackCommerceEvent({ name: "remove_from_cart", productId: removed.id, productName: removed.name, value: removed.price, quantity: removed.qty });
+      return prev.filter((p) => lineKey(p) !== key);
+    });
   }, []);
 
   const setLineQty = useCallback((key: string, qty: number) => {

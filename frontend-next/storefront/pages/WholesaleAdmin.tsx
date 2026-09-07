@@ -5,10 +5,11 @@ import { products } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadWholesaleMembership } from "../wholesaleMembership";
-import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
+import { isBackendConfigured as isSupabaseConfigured } from "../lib/api";
 import { answerSupplierTicket, approveWholesaleOrder, bulkUpdateWholesalePrice, cancelWholesaleOrder, listSupplierApplications, listSupplierCatalogProducts, listSupplierTickets, listSuppliers, listWholesaleAccounts, listWholesaleFulfillmentOrders, updateSupplierApplication, updateSupplierProductStatus, updateWholesaleAccountStatus, type AdminSupplier, type AdminSupplierProduct, type AdminWholesaleAccount } from "../lib/wholesaleApi";
+import WholesaleCatalogManager from "./WholesaleCatalogManager";
 
-type WholesaleTab = "overview" | "members" | "accounts" | "orders" | "support" | "catalog";
+type WholesaleTab = "overview" | "direct" | "marketplace" | "fulfillment" | "plans" | "members" | "accounts" | "orders" | "support" | "catalog";
 type WholesaleOrder = { id?: string; code: string; totalQty: number; totalAmount?: number; status: string; date: string; storeName?: string; lines?: Array<{ productName: string; productCode: string; colour: string; size: string; qty: number }>; purchaseOrders?: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null }> };
 type WholesaleLead = { id?: string; name: string; store: string; city: string; phone: string; plan: string; status: "جدید" | "در تماس" | "تأیید شده" | "رد شده" };
 
@@ -26,11 +27,14 @@ function readStorage<T>(key: string, fallback: T): T {
 
 const tabs: Array<{ id: WholesaleTab; label: string; icon: string }> = [
   { id: "overview", label: "نمای عملیات", icon: "star" },
-  { id: "members", label: "درخواست‌های همکاری", icon: "user" },
-  { id: "accounts", label: "حساب‌های عمده", icon: "shield" },
+  { id: "direct", label: "محصولات عمده کلبه", icon: "bag" },
+  { id: "marketplace", label: "کاتالوگ ساپلایرها", icon: "pin" },
+  { id: "fulfillment", label: "تامین و تجمیع", icon: "truck" },
+  { id: "plans", label: "پلن‌های VIP", icon: "shield" },
+  { id: "members", label: "ساپلایرها", icon: "user" },
+  { id: "accounts", label: "خریداران VIP", icon: "shield" },
   { id: "orders", label: "سفارش‌های عمده", icon: "truck" },
   { id: "support", label: "پشتیبانی", icon: "mail" },
-  { id: "catalog", label: "کاتالوگ و موجودی", icon: "bag" },
 ];
 
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
@@ -70,8 +74,8 @@ export default function WholesaleAdmin() {
     <main className="min-h-[calc(100vh-73px)] bg-[#f6f6f4]">
       <section className="border-b border-neutral-200 bg-white px-4 py-5 lg:px-7">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-4">
-          <div><p className="text-[9px] tracking-[0.24em] text-neutral-400">WHOLESALE OPERATIONS</p><h1 className="mt-2 text-[22px] font-medium tracking-tight">مرکز مدیریت عمده‌فروشی</h1><p className="mt-1.5 max-w-2xl text-[11px] leading-6 text-neutral-500">درخواست همکاری، سفارش، پشتیبانی و آمادگی کاتالوگ را از یک جریان عملیاتی مدیریت کنید.</p></div>
-          <div className="flex gap-2"><Link to="/wholesale" className={`flex h-10 items-center border border-neutral-300 bg-white px-4 text-[10.5px] transition hover:border-[#011c3a] ${focusRing}`}>مشاهده صفحه عمده</Link><button type="button" onClick={() => setTab("members")} className={`h-10 bg-[#011c3a] px-4 text-[10.5px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px ${focusRing}`}>بررسی درخواست‌ها</button></div>
+          <div><p className="text-[9px] tracking-[0.24em] text-neutral-400">WHOLESALE OPERATIONS</p><h1 className="mt-2 text-[22px] font-medium tracking-tight">مرکز مدیریت عمده‌فروشی</h1><p className="mt-1.5 max-w-2xl text-[11px] leading-6 text-neutral-500">عملیات دو بازیگر اصلی—ساپلایر و خریدار VIP—از کاتالوگ تا تامین چندفروشنده‌ای و ارسال تجمیعی.</p></div>
+          <div className="flex gap-2"><Link to="/wholesale" className={`flex h-10 items-center border border-neutral-300 bg-white px-4 text-[10.5px] transition hover:border-[#011c3a] ${focusRing}`}>مشاهده فروشگاه عمده</Link><button type="button" onClick={() => setTab("direct")} className={`h-10 bg-[#011c3a] px-4 text-[10.5px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px ${focusRing}`}>+ محصول عمده کلبه</button></div>
         </div>
       </section>
 
@@ -86,6 +90,10 @@ export default function WholesaleAdmin() {
         {remoteError && <div role="alert" className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-[10.5px] text-red-700">{remoteError}</div>}
         {notice && <div role="status" className="mb-4 flex items-center justify-between border border-[#b9cfbc] bg-[#edf3ee] px-4 py-2.5 text-[10.5px] text-[#36563a]"><span>{notice}</span><button type="button" onClick={() => setNotice("")} className={`underline ${focusRing}`}>بستن</button></div>}
         {tab === "overview" && <Overview membership={membership} suppliers={suppliers} leads={leads} orders={orders} tickets={tickets} pendingUnits={pendingUnits} openTickets={openTickets} onTab={setTab} accounts={accounts} />}
+        {tab === "direct" && <WholesaleCatalogManager />}
+        {tab === "marketplace" && <><PageTitle eyebrow="SUPPLIER CATALOG" title="کاتالوگ فروشندگان دیگر" text="محصولات تاییدشده ساپلایرها، قیمت همکاری و موجودی قابل تخصیص." /><CatalogPanel supplierProducts={supplierProducts} onChange={setSupplierProducts} onNotice={setNotice} onError={setRemoteError} /></>}
+        {tab === "fulfillment" && <><PageTitle eyebrow="MULTI SELLER FULFILLMENT" title="تامین، کنترل و ارسال تجمیعی" text="یک سفارش مشتری به سفارش‌های تامین تفکیک می‌شود؛ اقلام در هاب کلبه کنترل و در یک مرسوله ارسال می‌شوند." /><MultiSellerFlow orders={orders} suppliers={suppliers}/></>}
+        {tab === "plans" && <VipPlanManager />}
         {tab === "members" && <><SuppliersPanel suppliers={suppliers} /><MembersPanel membership={membership} leads={leads} onChange={persistLeads} /></>}
         {tab === "accounts" && <AccountsPanel accounts={accounts} onChange={setAccounts} onNotice={setNotice} onError={setRemoteError} />}
         {tab === "orders" && <OrdersPanel orders={orders} onChange={persistOrders} />}
@@ -181,7 +189,7 @@ function SupportPanel({ tickets, onChange }: { tickets: SupportTicket[]; onChang
 function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: AdminWholesaleAccount[]; onChange: (items: AdminWholesaleAccount[]) => void; onNotice: (message: string) => void; onError: (message: string) => void }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const statusLabel: Record<AdminWholesaleAccount["status"], string> = {
-    pending: "در انتظار تأیید",
+    pending: "پرداخت تکمیل‌نشده",
     approved: "فعال",
     suspended: "تعلیق موقت",
     financial_blocked: "مسدود مالی",
@@ -209,7 +217,7 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
     }
   };
   return <section>
-    <PageTitle eyebrow="WHOLESALE ACCOUNTS" title="حساب‌های عمده VIP" text="وضعیت هر حساب را مدیریت کنید: فعال، تعلیق موقت یا مسدود مالی. حساب‌های تعلیق/مسدود نمی‌توانند سفارش ثبت کنند." />
+    <PageTitle eyebrow="WHOLESALE BUYERS" title="خریداران عمده VIP" text="عضویت پس از پرداخت خودکار فعال می‌شود؛ اینجا فقط انقضا، تعلیق امنیتی و مسدودی مالی را کنترل کنید." />
     <div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[860px] text-right text-[10.5px]">
       <thead className="bg-neutral-50 text-neutral-500"><tr>{["فروشگاه", "عضو", "شهر", "پلن", "وضعیت", "تغییر وضعیت"].map((head) => <th key={head} className="border-b p-3 font-medium">{head}</th>)}</tr></thead>
       <tbody>
@@ -222,7 +230,7 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
             <td className="p-3"><span className={`inline-flex px-2 py-1 text-[9px] ${statusTone[account.status]}`}>{statusLabel[account.status]}</span></td>
             <td className="p-3">
               <div className="flex flex-wrap gap-1.5">
-                <button disabled={busyId === account.id || account.status === "approved"} onClick={() => changeStatus(account, "approved")} className={`h-8 border border-[#3d5c3a] px-2.5 text-[9px] text-[#36563a] transition hover:bg-[#edf3ee] disabled:opacity-35 ${focusRing}`}>فعال</button>
+                <button disabled={busyId === account.id || account.status === "approved" || account.status === "pending"} onClick={() => changeStatus(account, "approved")} className={`h-8 border border-[#3d5c3a] px-2.5 text-[9px] text-[#36563a] transition hover:bg-[#edf3ee] disabled:opacity-35 ${focusRing}`}>رفع تعلیق</button>
                 <button disabled={busyId === account.id || account.status === "suspended"} onClick={() => changeStatus(account, "suspended")} className={`h-8 border border-[#d9b98f] px-2.5 text-[9px] text-[#8a5a20] transition hover:bg-[#fdf3e7] disabled:opacity-35 ${focusRing}`}>تعلیق موقت</button>
                 <button disabled={busyId === account.id || account.status === "financial_blocked"} onClick={() => changeStatus(account, "financial_blocked")} className={`h-8 border border-red-200 px-2.5 text-[9px] text-red-700 transition hover:bg-red-50 disabled:opacity-35 ${focusRing}`}>مسدود مالی</button>
               </div>
@@ -230,7 +238,7 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
           </tr>
         ))}
       </tbody>
-    </table>{!accounts.length && <Empty title="حساب عمده‌ای ثبت نشده" text="پس از تأیید درخواست‌های همکاری، حساب‌ها اینجا مدیریت می‌شوند." />}</div>
+    </table>{!accounts.length && <Empty title="خریدار VIP ثبت نشده" text="پس از اولین پرداخت موفق پلن، حساب به‌صورت خودکار اینجا ظاهر می‌شود." />}</div>
   </section>;
 }
 
@@ -280,6 +288,15 @@ function CatalogPanel({ supplierProducts, onChange, onNotice, onError }: { suppl
     <div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[920px] text-right text-[10.5px]"><thead className="bg-neutral-50 text-neutral-500"><tr><th className="w-10 border-b p-3"></th>{["محصول", "تأمین‌کننده", "دسته", "موجودی", "قیمت عمده", "وضعیت"].map((head) => <th key={head} className="border-b p-3 font-medium">{head}</th>)}</tr></thead><tbody>{filtered.map((product) => <tr key={product.id} className="border-b border-neutral-100 hover:bg-neutral-50"><td className="p-3"><input type="checkbox" aria-label={`انتخاب ${product.name}`} checked={selectedIds.has(product.id)} onChange={() => toggleSelect(product.id)} className="accent-[#011c3a]" /></td><td className="p-3"><div className="flex items-center gap-3">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-10 object-cover" /> : <div className="flex h-12 w-10 items-center justify-center bg-neutral-100 text-[9px] text-neutral-400">بدون عکس</div>}<div><b className="block font-medium">{product.name}</b><span className="mt-1 block text-neutral-400 num-fa">{product.sku}</span></div></div></td><td className="p-3">{product.supplierName}</td><td className="p-3">{product.category}</td><td className="p-3 num-fa">{fa(product.stock)} عدد</td><td className="p-3 num-fa">{toman(product.wholesalePrice)}</td><td className="p-3"><select aria-label={`وضعیت محصول ${product.name}`} value={product.status} onChange={(event) => setStatus(product.id, event.target.value as AdminSupplierProduct["status"])} className={`h-9 border border-neutral-300 bg-white px-2 ${focusRing}`}><option value="draft">پیش‌نویس</option><option value="submitted">در انتظار بررسی</option><option value="approved">تأیید و انتشار</option><option value="changes_requested">نیازمند اصلاح</option><option value="rejected">رد شده</option></select></td></tr>)}</tbody></table>{!filtered.length && <Empty title="محصولی در صف کاتالوگ نیست" text="محصول ثبت‌شده توسط ساپلایر در این بخش ظاهر می‌شود." />}</div>
   </section>;
 }
+
+function MultiSellerFlow({orders,suppliers}:{orders:WholesaleOrder[];suppliers:AdminSupplier[]}){
+  const sample=orders.find(order=>order.purchaseOrders?.length)??orders[0];
+  return <section className="border border-neutral-200 bg-white p-4"><div className="grid gap-2 md:grid-cols-4">{[["۱","سفارش واحد مشتری","سبد شامل چند فروشنده"],["۲","تفکیک تأمین","ساخت PO برای هر فروشنده"],["۳","تجمیع در هاب کلبه","کنترل کیفیت و بسته‌بندی"],["۴","ارسال یکپارچه","یک فاکتور و یک رهگیری"]].map(([step,title,text])=><article key={step} className="border border-neutral-200 p-3"><span className="text-[9px] text-neutral-400">مرحله {step}</span><h3 className="mt-2 text-[11px] font-medium">{title}</h3><p className="mt-1 text-[9px] leading-5 text-neutral-500">{text}</p></article>)}</div><div className="mt-4 grid gap-4 lg:grid-cols-[1fr_320px]"><div><p className="text-[10px] font-medium">نمونه تخصیص سفارش {sample?.code??"—"}</p><div className="mt-2 divide-y border-y">{(sample?.purchaseOrders?.length?sample.purchaseOrders:suppliers.slice(0,2).map((supplier,index)=>({id:supplier.id,orderCode:`PO-${index+1}`,status:index?"pending":"preparing",supplierName:supplier.displayName,trackingCode:null}))).map(po=><div key={po.id} className="grid gap-2 py-3 text-[9.5px] sm:grid-cols-[1fr_120px_120px]"><strong>{po.supplierName}</strong><span>{po.orderCode}</span><span className="text-neutral-500">{po.status}</span></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[9px] text-white/50">قانون ارسال</p><p className="mt-2 text-[11px] leading-6">تا رسیدن همه اقلام به هاب، سفارش مشتری «در حال تأمین» می‌ماند؛ سپس یک مرسوله و یک فاکتور نهایی صادر می‌شود.</p></aside></div></section>;
+}
+
+type VipPlan={id:string;name:string;price:number;discount:number;earlyAccessHours:number;credit:boolean;dedicatedSupport:boolean;minOrder:number;enabled:boolean};
+const defaultVipPlans:VipPlan[]=[{id:"basic",name:"VIP پایه",price:6_000_000,discount:25,earlyAccessHours:0,credit:false,dedicatedSupport:false,minOrder:20,enabled:true},{id:"pro",name:"VIP حرفه‌ای",price:12_000_000,discount:35,earlyAccessHours:12,credit:false,dedicatedSupport:true,minOrder:12,enabled:true},{id:"elite",name:"VIP ویژه",price:24_000_000,discount:45,earlyAccessHours:24,credit:true,dedicatedSupport:true,minOrder:6,enabled:true}];
+function VipPlanManager(){const [plans,setPlans]=useState(()=>readStorage<VipPlan[]>("kv_vip_plans_v1",defaultVipPlans));const persist=(next:VipPlan[])=>{setPlans(next);localStorage.setItem("kv_vip_plans_v1",JSON.stringify(next))};return <section><PageTitle eyebrow="VIP ACCESS CONTROL" title="پلن‌های VIP و دسترسی‌ها" text="قیمت، تخفیف، دسترسی زودهنگام جشنواره، خرید اعتباری و حداقل سفارش هر پلن را مستقل کنترل کنید."/><div className="grid gap-4 lg:grid-cols-3">{plans.map((plan,index)=><article key={plan.id} className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between"><input aria-label="نام پلن" value={plan.name} onChange={e=>persist(plans.map((item,i)=>i===index?{...item,name:e.target.value}:item))} className="h-9 min-w-0 border-b border-neutral-300 text-[12px] font-medium outline-none"/><input type="checkbox" aria-label={`فعال‌سازی ${plan.name}`} checked={plan.enabled} onChange={()=>persist(plans.map((item,i)=>i===index?{...item,enabled:!item.enabled}:item))}/></div><div className="mt-4 grid grid-cols-2 gap-2"><label className="text-[9px] text-neutral-500">هزینه سالانه<input type="number" value={plan.price} onChange={e=>persist(plans.map((item,i)=>i===index?{...item,price:Number(e.target.value)}:item))} className="mt-1 h-9 w-full border px-2"/></label><label className="text-[9px] text-neutral-500">تخفیف ٪<input type="number" value={plan.discount} onChange={e=>persist(plans.map((item,i)=>i===index?{...item,discount:Number(e.target.value)}:item))} className="mt-1 h-9 w-full border px-2"/></label><label className="text-[9px] text-neutral-500">دسترسی زودتر (ساعت)<input type="number" value={plan.earlyAccessHours} onChange={e=>persist(plans.map((item,i)=>i===index?{...item,earlyAccessHours:Number(e.target.value)}:item))} className="mt-1 h-9 w-full border px-2"/></label><label className="text-[9px] text-neutral-500">حداقل سفارش<input type="number" value={plan.minOrder} onChange={e=>persist(plans.map((item,i)=>i===index?{...item,minOrder:Number(e.target.value)}:item))} className="mt-1 h-9 w-full border px-2"/></label></div><div className="mt-4 space-y-2 border-t pt-3"><label className="flex items-center justify-between text-[9.5px]">خرید اعتباری<input type="checkbox" checked={plan.credit} onChange={()=>persist(plans.map((item,i)=>i===index?{...item,credit:!item.credit}:item))}/></label><label className="flex items-center justify-between text-[9.5px]">پشتیبان اختصاصی<input type="checkbox" checked={plan.dedicatedSupport} onChange={()=>persist(plans.map((item,i)=>i===index?{...item,dedicatedSupport:!item.dedicatedSupport}:item))}/></label></div></article>)}</div></section>}
 
 function PageTitle({ eyebrow, title, text }: { eyebrow: string; title: string; text: string }) { return <header className="mb-5"><p className="text-[9px] tracking-[0.22em] text-neutral-400">{eyebrow}</p><h1 className="mt-2 text-[20px] font-medium tracking-tight">{title}</h1><p className="mt-1.5 text-[10.5px] leading-6 text-neutral-500">{text}</p></header>; }
 function ActionRow({ title, meta, action, onClick }: { title: string; meta: string; action: string; onClick: () => void }) { return <div className="flex items-center justify-between gap-4 p-4"><div className="min-w-0"><p className="truncate text-[11px] font-medium">{title}</p><p className="mt-1 text-[9.5px] text-neutral-400">{meta}</p></div><button onClick={onClick} className={`shrink-0 text-[10px] underline underline-offset-4 ${focusRing}`}>{action}</button></div>; }

@@ -3,10 +3,9 @@ import Admin from "./Admin";
 import WholesaleAdmin from "./WholesaleAdmin";
 import Icon from "../components/Icon";
 import { Link } from "../router";
-import { isBackendConfigured as isSupabaseConfigured } from "../lib/medusa";
+import { isBackendConfigured as isSupabaseConfigured } from "../lib/api";
 import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
 import { PANELS_PREVIEW_MODE } from "../previewMode";
-import { MEDUSA_PUBLISHABLE_KEY } from "../nextEnv";
 
 type Workspace = "retail" | "wholesale";
 
@@ -20,9 +19,7 @@ function BackendStatus() {
     const ping = async () => {
       const started = performance.now();
       try {
-        const res = await fetch("/store/kolbe/health", {
-          headers: { "x-publishable-api-key": MEDUSA_PUBLISHABLE_KEY },
-        });
+        const res = await fetch("/store/kolbe/health");
         if (!alive) return;
         setState(res.ok
           ? { ok: true, detail: `\u200e${Math.round(performance.now() - started)}ms` }
