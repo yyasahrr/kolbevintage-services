@@ -40,6 +40,8 @@ function saveToken(token: string) {
 
 export function clearSession() {
   try { localStorage.removeItem(TOKEN_KEY) } catch { /* ignore */ }
+  // Clears the HttpOnly session cookie as well; best-effort.
+  void fetch('/store/kolbe/auth/logout', { method: 'POST' }).catch(() => undefined)
 }
 
 export async function signInSupplier(email: string, password: string): Promise<SupplierContext> {

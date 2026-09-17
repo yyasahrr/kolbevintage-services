@@ -60,6 +60,7 @@ export default function Wholesale() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [vipError, setVipError] = useState("");
+  const [vipNotice, setVipNotice] = useState("");
   const [vipBusy, setVipBusy] = useState(false);
 
   /* بازیابی نشستها */
@@ -106,16 +107,20 @@ export default function Wholesale() {
 
   const handleApplyVip = async (plan:typeof VIP_PLANS[number]) => {
     if(!siteCustomer){setShowVipPlans(false);setShowLoginModal(true);return}
-    setVipBusy(true);setVipError("");
+    setVipBusy(true);setVipError("");setVipNotice("");
     try{
       const paymentReference=`VIP-${Date.now()}`;
-      const account=await applyWholesaleVip({memberName:siteCustomer.name,storeName:`فروشگاه ${siteCustomer.name}`,phone:siteCustomer.phone||"ثبت نشده",city:"ثبت نشده",planName:plan.name,paymentReference});
+      const {account,status}=await applyWholesaleVip({memberName:siteCustomer.name,storeName:`فروشگاه ${siteCustomer.name}`,phone:siteCustomer.phone||"ثبت نشده",city:"ثبت نشده",planName:plan.name,paymentReference});
+      if(status!=="approved"){
+        setVipNotice("درخواست عضویت VIP ثبت شد؛ پس از بررسی مدارک و تأیید مدیر کل، قیمت‌های عمده برای شما فعال می‌شود.");
+        return;
+      }
       const activatedAt=account.activatedAt??new Date().toISOString();
       const expiresAt=account.expiresAt??new Date(Date.now()+365*86400000).toISOString();
       saveWholesaleMembership({customerId:siteCustomer.id,planId:plan.id,planName:plan.name,memberName:siteCustomer.name,storeName:account.storeName,phone:siteCustomer.phone,city:account.city,activatedAt,expiresAt,status:"active",vip:true});
       setVipAccount({storeName:account.storeName,planName:account.planName});
       setShowVipPlans(false);
-    }catch(error){setVipError(error instanceof Error?error.message:"فعال‌سازی عضویت انجام نشد.")}
+    }catch(error){setVipError(error instanceof Error?error.message:"ثبت درخواست عضویت انجام نشد.")}
     finally{setVipBusy(false)}
   };
 
@@ -271,12 +276,13 @@ export default function Wholesale() {
                     ))}
                   </ul>
                   <button disabled={vipBusy} onClick={()=>void handleApplyVip(plan)} className={`mt-5 h-10 w-full rounded text-[11.5px] font-medium transition disabled:opacity-45 ${plan.highlight ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]" : "border border-[#011c3a] text-[#011c3a] hover:bg-[#011c3a] hover:text-white"}`}>
-                    {vipBusy?"در حال فعال‌سازی…":`پرداخت آزمایشی و فعال‌سازی ${plan.name}`}
+                    {vipBusy?"در حال ثبت درخواست…":`پرداخت آزمایشی و ثبت درخواست ${plan.name}`}
                   </button>
                 </div>
               ))}
             </div>
-            <p className="mt-4 text-center text-[9.5px] leading-5 text-neutral-400">درگاه بانکی این محیط تنظیم نشده است؛ این دکمه چرخه پرداخت موفق و فعال‌سازی خودکار را برای تست شبیه‌سازی می‌کند.</p>
+            <p className="mt-4 text-center text-[9.5px] leading-5 text-neutral-400">درگاه بانکی این محیط تنظیم نشده است؛ این دکمه چرخه پرداخت موفق و ثبت درخواست عضویت را برای تست شبیه‌سازی می‌کند. فعال‌سازی نهایی با تأیید مدیر کل انجام می‌شود.</p>
+            {vipNotice&&<p role="status" className="mt-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-center text-[10px] text-[#36563a]">{vipNotice}</p>}
             {vipError&&<p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-center text-[10px] text-red-700">{vipError}</p>}
             <button onClick={() => setShowVipPlans(false)} className="mt-4 block mx-auto text-[11px] text-neutral-400 underline">بستن</button>
           </div>

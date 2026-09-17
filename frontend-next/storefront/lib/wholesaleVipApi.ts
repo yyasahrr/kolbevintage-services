@@ -67,15 +67,22 @@ export async function restoreWholesaleVip() {
 
 export async function signOutWholesaleVip() {
   clearToken("vip");
+  void api("/store/kolbe/auth/logout", { method: "POST" }).catch(() => undefined);
 }
 
-/** درخواست عضویت عمده برای مشتری واردشده فروشگاه. */
-export async function applyWholesaleVip(input: { memberName: string; storeName: string; phone: string; city: string; planName: string; paymentReference: string }) {
+/** درخواست عضویت عمده برای مشتری واردشده فروشگاه؛ دسترسی با تأیید مدیر کل فعال می‌شود. */
+export async function applyWholesaleVip(input: {
+  memberName: string; storeName: string; phone: string; city: string; planName: string; paymentReference: string;
+}): Promise<{ account: WholesaleVipAccount; status: "pending" | "approved" }> {
   const token = loadToken("customer");
   if (!token) throw new Error("ابتدا وارد حساب کاربری فروشگاه شوید.");
-  const data = await api<{ account: ApiAccount }>("/store/kolbe/wholesale/apply", { method: "POST", token, body: input });
-  saveToken("vip", token);
-  return toAccount(data.account);
+  const data = await api<{ status: "pending" | "approved"; account: ApiAccount }>("/store/kolbe/wholesale/apply", {
+    method: "POST",
+    token,
+    body: input,
+  });
+  if (data.status === "approved") saveToken("vip", token);
+  return { account: toAccount(data.account), status: data.status };
 }
 
 export async function loadWholesaleVipProducts(): Promise<WholesaleVipProduct[]> {

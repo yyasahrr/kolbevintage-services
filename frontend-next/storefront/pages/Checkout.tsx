@@ -226,6 +226,12 @@ export default function Checkout() {
                 } catch (error) {
                   if (error instanceof ApiError && error.code === "NETWORK") {
                     setOrderError("اتصال به سرور برقرار نشد؛ لطفاً دوباره تلاش کنید.");
+                  } else if (error instanceof ApiError && error.code === "UNKNOWN_PRODUCT") {
+                    setOrderError("برخی کالاهای سبد دیگر در دسترس نیستند؛ لطفاً صفحه را تازه‌سازی کنید و دوباره به سبد اضافه کنید.");
+                  } else if (error instanceof ApiError && error.code === "INVALID_QUANTITY") {
+                    setOrderError("تعداد سفارش نامعتبر است؛ حداکثر ۹۹ عدد از هر کالا.");
+                  } else if (error instanceof ApiError && error.code === "EMPTY_CART") {
+                    setOrderError("سبد خرید خالی است.");
                   } else {
                     setOrderError("ثبت سفارش انجام نشد؛ اطلاعات را بررسی و دوباره تلاش کنید.");
                   }

@@ -45,4 +45,5 @@ export async function signUpSiteCustomer(input: { name: string; phone: string; e
 
 export async function signOutSiteCustomer() {
   clearToken("customer");
+  void api("/store/kolbe/auth/logout", { method: "POST" }).catch(() => undefined);
 }

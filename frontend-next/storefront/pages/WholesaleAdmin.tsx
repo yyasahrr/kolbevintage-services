@@ -189,7 +189,7 @@ function SupportPanel({ tickets, onChange }: { tickets: SupportTicket[]; onChang
 function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: AdminWholesaleAccount[]; onChange: (items: AdminWholesaleAccount[]) => void; onNotice: (message: string) => void; onError: (message: string) => void }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const statusLabel: Record<AdminWholesaleAccount["status"], string> = {
-    pending: "پرداخت تکمیل‌نشده",
+    pending: "در انتظار تأیید مدیر",
     approved: "فعال",
     suspended: "تعلیق موقت",
     financial_blocked: "مسدود مالی",
@@ -217,7 +217,7 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
     }
   };
   return <section>
-    <PageTitle eyebrow="WHOLESALE BUYERS" title="خریداران عمده VIP" text="عضویت پس از پرداخت خودکار فعال می‌شود؛ اینجا فقط انقضا، تعلیق امنیتی و مسدودی مالی را کنترل کنید." />
+    <PageTitle eyebrow="WHOLESALE BUYERS" title="خریداران عمده VIP" text="عضویت با ثبت درخواست و پرداخت آزمایشی شروع می‌شود؛ دسترسی عمده فقط پس از تأیید مدیر کل فعال می‌گردد. انقضا، تعلیق امنیتی و مسدودی مالی را همین‌جا کنترل کنید." />
     <div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[860px] text-right text-[10.5px]">
       <thead className="bg-neutral-50 text-neutral-500"><tr>{["فروشگاه", "عضو", "شهر", "پلن", "وضعیت", "تغییر وضعیت"].map((head) => <th key={head} className="border-b p-3 font-medium">{head}</th>)}</tr></thead>
       <tbody>
@@ -230,7 +230,11 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
             <td className="p-3"><span className={`inline-flex px-2 py-1 text-[9px] ${statusTone[account.status]}`}>{statusLabel[account.status]}</span></td>
             <td className="p-3">
               <div className="flex flex-wrap gap-1.5">
-                <button disabled={busyId === account.id || account.status === "approved" || account.status === "pending"} onClick={() => changeStatus(account, "approved")} className={`h-8 border border-[#3d5c3a] px-2.5 text-[9px] text-[#36563a] transition hover:bg-[#edf3ee] disabled:opacity-35 ${focusRing}`}>رفع تعلیق</button>
+                {account.status === "pending" || account.status === "rejected" ? (
+                  <button disabled={busyId === account.id} onClick={() => changeStatus(account, "approved")} className={`h-8 border border-[#3d5c3a] px-2.5 text-[9px] font-medium text-[#36563a] transition hover:bg-[#edf3ee] disabled:opacity-35 ${focusRing}`}>تأیید و فعال‌سازی</button>
+                ) : (
+                  <button disabled={busyId === account.id || account.status === "approved"} onClick={() => changeStatus(account, "approved")} className={`h-8 border border-[#3d5c3a] px-2.5 text-[9px] text-[#36563a] transition hover:bg-[#edf3ee] disabled:opacity-35 ${focusRing}`}>رفع تعلیق</button>
+                )}
                 <button disabled={busyId === account.id || account.status === "suspended"} onClick={() => changeStatus(account, "suspended")} className={`h-8 border border-[#d9b98f] px-2.5 text-[9px] text-[#8a5a20] transition hover:bg-[#fdf3e7] disabled:opacity-35 ${focusRing}`}>تعلیق موقت</button>
                 <button disabled={busyId === account.id || account.status === "financial_blocked"} onClick={() => changeStatus(account, "financial_blocked")} className={`h-8 border border-red-200 px-2.5 text-[9px] text-red-700 transition hover:bg-red-50 disabled:opacity-35 ${focusRing}`}>مسدود مالی</button>
               </div>
@@ -238,7 +242,7 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
           </tr>
         ))}
       </tbody>
-    </table>{!accounts.length && <Empty title="خریدار VIP ثبت نشده" text="پس از اولین پرداخت موفق پلن، حساب به‌صورت خودکار اینجا ظاهر می‌شود." />}</div>
+    </table>{!accounts.length && <Empty title="خریدار VIP ثبت نشده" text="پس از ثبت درخواست عضویت VIP در فروشگاه، حساب برای بررسی همین‌جا ظاهر می‌شود." />}</div>
   </section>;
 }
 
