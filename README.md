@@ -52,6 +52,24 @@ npm exec --workspace kolbe-next -- next dev -H 0.0.0.0 -p 3001
 فایل `.env.example` را برای محیط واقعی به `.env` تبدیل کنید و حتماً
 `KOLBE_SESSION_SECRET` را با یک مقدار تصادفی طولانی جایگزین کنید.
 
+## تست و CI
+
+```bash
+npm run test --workspace kolbe-next    # ۲۷ تست یکپارچه‌سازی روی PostgreSQL واقعی
+npm run typecheck --workspace kolbe-next
+```
+
+فایل workflow آماده در `ci/workflows/ci.yml` است (تایپ‌چک، تست با سرویس
+`postgres:16`، بیلد). برای فعال‌سازی آن را یک‌بار به مسیر گیت‌هاب منتقل کنید —
+دلیل قرارگیری فعلی، نداشتن مجوز `workflows` توسط ربات ارسال‌کننده است:
+
+```bash
+mkdir -p .github/workflows && git mv ci/workflows/ci.yml .github/workflows/ci.yml
+```
+
+در پروداکشن ست‌کردن `KOLBE_SESSION_SECRET` الزامی است و سرویس بدون آن بالا
+نمی‌آید.
+
 برای فعال‌کردن پرو مجازی لباس، کلید API ساخته‌شده در پنل Perfect Corp را فقط در
 فایل `frontend-next/.env.local` قرار دهید (این مقدار نباید با پیشوند
 `NEXT_PUBLIC_` تعریف شود):
