@@ -1,0 +1,46 @@
+# NOTE: committed under ci/ because the automation GitHub App lacks `workflows`
+# permission (GitHub blocks workflow-dir writes for such pushes). To activate,
+# the repo owner runs once:
+#   mkdir -p .github/workflows && git mv ci/workflows/ci.yml .github/workflows/ci.yml && git commit -m "ci: activate platform workflow"
+name: CI
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+
+jobs:
+  platform:
+    name: Typecheck · Tests · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kolbe
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:55432/kolbe
+      KOLBE_SESSION_SECRET: ci-only-throwaway-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Typecheck (strict)
+        run: npm run typecheck --workspace kolbe-next
+      - name: API integration tests (real PostgreSQL)
+        run: npm run test --workspace kolbe-next
+      - name: Production build
+        run: npm run build --workspace kolbe-next

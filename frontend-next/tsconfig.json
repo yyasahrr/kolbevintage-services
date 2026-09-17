@@ -41,6 +41,9 @@
     "storefront/**/*.tsx",
     "supplier-src/**/*.ts",
     "supplier-src/**/*.tsx",
+    "tests/**/*.ts",
+    "vitest.config.ts",
+    "instrumentation.ts",
     ".next-dev/types/**/*.ts"
   ],
   "exclude": [
