@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS wholesale_order (
   total_amount bigint NOT NULL DEFAULT 0, total_units integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE wholesale_order ADD COLUMN IF NOT EXISTS idempotency_key text;
 CREATE TABLE IF NOT EXISTS wholesale_order_item (
   id text PRIMARY KEY, order_id text NOT NULL, product_id text NOT NULL, variant_id text NOT NULL,
   product_name text NOT NULL, sku text NOT NULL, quantity integer NOT NULL DEFAULT 1, unit_price bigint NOT NULL DEFAULT 0,
@@ -95,6 +96,13 @@ CREATE TABLE IF NOT EXISTS retail_order (
   lines jsonb NOT NULL DEFAULT '[]', address jsonb NOT NULL DEFAULT '{}', shipping_method text NOT NULL DEFAULT 'post',
   shipping_price bigint NOT NULL DEFAULT 0, pay_method text NOT NULL DEFAULT 'gateway', total_amount bigint NOT NULL DEFAULT 0,
   payment_status text NOT NULL DEFAULT 'pending_gateway', fulfillment_status text NOT NULL DEFAULT 'processing',
+  amount_source text NOT NULL DEFAULT 'client', idempotency_key text,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE retail_order ADD COLUMN IF NOT EXISTS amount_source text NOT NULL DEFAULT 'client';
+ALTER TABLE retail_order ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE TABLE IF NOT EXISTS retail_product (
+  id text PRIMARY KEY, name text NOT NULL, price bigint NOT NULL, active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS system_log (
@@ -112,6 +120,11 @@ CREATE TABLE IF NOT EXISTS site_setting (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS system_log_open_fingerprint ON system_log(fingerprint) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS system_log_last_seen ON system_log(last_seen_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS retail_order_idempotency ON retail_order(idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS wholesale_order_idempotency ON wholesale_order(account_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS wholesale_order_account ON wholesale_order(account_id);
+CREATE INDEX IF NOT EXISTS purchase_order_supplier ON purchase_order(supplier_id);
+CREATE INDEX IF NOT EXISTS supplier_product_status ON supplier_product(status);
 `;
 
 export function makeId(prefix: string) {
@@ -185,6 +198,30 @@ async function seed(client: PoolClient) {
       `INSERT INTO supplier_inventory (id,variant_id,on_hand,reserved) VALUES ($1,$2,$3,0)
        ON CONFLICT (variant_id) DO NOTHING`,
       [`inv_${id.slice(4)}`, variantId, stock],
+    );
+  }
+
+  // Canonical retail price list — the source of truth checkout validates against.
+  // Mirrors frontend-next/storefront/data/catalog.ts (ids, names, prices in IRR).
+  const retailProducts = [
+    ["blazer-oxford", "بلیزر آکسفورد", 4_850_000],
+    ["shirt-linen", "پیراهن کتان کلبه", 2_390_000],
+    ["knit-cable", "پلیور بافت کابلی", 3_180_000],
+    ["trouser-pleated", "شلوار پیلی‌دار کلاسیک", 2_950_000],
+    ["polo-pique", "پولوشرت پیکه", 1_890_000],
+    ["coat-herringbone", "پالتو شِوِرون", 7_450_000],
+    ["vest-knit", "جلیقه بافت آرگایل", 1_650_000],
+    ["belt-leather", "کمربند چرم دست‌دوز", 980_000],
+    ["shirt-oxford", "پیراهن آکسفورد راه‌راه", 2_150_000],
+    ["scarf-wool", "شال گردن پشمی", 890_000],
+    ["trouser-chino", "شلوار چینو کلبه", 1_980_000],
+    ["cardigan-shawl", "ژاکت یقه شال", 3_450_000],
+  ] as const;
+  for (const [id, name, price] of retailProducts) {
+    await client.query(
+      `INSERT INTO retail_product (id,name,price) VALUES ($1,$2,$3)
+       ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, price=EXCLUDED.price, updated_at=now()`,
+      [id, name, price],
     );
   }
 }

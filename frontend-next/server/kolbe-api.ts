@@ -89,7 +89,47 @@ class HttpError extends Error {
   }
 }
 
+/**
+ * Fail fast in production if no session secret is configured. The dev fallback
+ * is usable for the embedded-PG dev flow only; keeping it reachable in prod
+ * would allow anyone to mint admin tokens. `next build` compiles route modules
+ * with NODE_ENV=production but no runtime env, so that phase is exempt.
+ */
+const isNextBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+if (process.env.NODE_ENV === "production" && !isNextBuildPhase && !process.env.KOLBE_SESSION_SECRET && !process.env.JWT_SECRET) {
+  throw new Error("KOLBE_SESSION_SECRET (or JWT_SECRET) must be set in production");
+}
+
 const sessionSecret = () => process.env.KOLBE_SESSION_SECRET ?? process.env.JWT_SECRET ?? "kolbe-dev-secret-change-me";
+
+const SESSION_COOKIE = "kolbe_session";
+
+function readSessionCookie(req: NextRequest): string | null {
+  const header = req.headers.get("cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join("="));
+  }
+  return null;
+}
+
+function serializeSessionCookie(token: string, req: NextRequest): string {
+  const secure = process.env.NODE_ENV === "production" || new URL(req.url).protocol === "https:";
+  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 14}${secure ? "; Secure" : ""}`;
+}
+
+function authedResponse(data: unknown, req: NextRequest, status = 200, token?: string) {
+  const res = response(data, status);
+  if (token) res.headers.append("set-cookie", serializeSessionCookie(token, req));
+  return res;
+}
+
+function idempotencyKeyFrom(req: NextRequest): string | null {
+  const raw = req.headers.get("idempotency-key");
+  const key = raw?.trim();
+  return key && key.length <= 200 ? key : null;
+}
 
 function issueToken(userId: string, role: string) {
   const payload: Claims = { sub: userId, role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14 };
@@ -99,7 +139,7 @@ function issueToken(userId: string, role: string) {
 }
 
 function claimsFrom(req: NextRequest): Claims | null {
-  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1] ?? readSessionCookie(req);
   if (!token) return null;
   const [body, signature] = token.split(".");
   if (!body || !signature) return null;
@@ -269,6 +309,106 @@ function logShape(log: any) {
   };
 }
 
+/** Canonical retail shipping rate card (mirrors the storefront Checkout page). */
+const RETAIL_SHIPPING_RATES: Record<string, number> = { post: 59_000, pishtaz: 89_000, tipax: 145_000 };
+const RETAIL_FREE_SHIPPING_THRESHOLD = 3_000_000;
+const RETAIL_PAY_METHODS = new Set(["gateway", "installment", "cod", "wallet"]);
+const RETAIL_ADDRESS_FIELDS = ["province", "city", "address", "plaque", "unit", "postal", "note"] as const;
+
+function sanitizeRetailAddress(address: unknown): Record<string, string> {
+  const source = (address && typeof address === "object" ? address : {}) as Record<string, unknown>;
+  const clean: Record<string, string> = {};
+  for (const field of RETAIL_ADDRESS_FIELDS) {
+    const value = source[field];
+    if (typeof value === "string" && value.trim()) clean[field] = value.trim().slice(0, 300);
+  }
+  return clean;
+}
+
+async function handleRetailOrders(req: NextRequest, path: string) {
+  if (path !== "retail/orders" || req.method !== "POST") throw new HttpError(404, "NOT_FOUND");
+  const body = await jsonBody(req);
+  if (!Array.isArray(body.lines) || !body.lines.length) throw new HttpError(422, "EMPTY_CART");
+  if (body.lines.length > 50) throw new HttpError(422, "TOO_MANY_LINES");
+  if (!body.customer?.name?.trim() || !body.customer?.phone?.trim()) throw new HttpError(422, "CUSTOMER_INFO_REQUIRED");
+
+  const payMethod = RETAIL_PAY_METHODS.has(body.payMethod) ? body.payMethod : "gateway";
+  const shippingId =
+    typeof body.shipping?.id === "string" && RETAIL_SHIPPING_RATES[body.shipping.id] !== undefined
+      ? body.shipping.id
+      : "post";
+  const idempotencyKey = idempotencyKeyFrom(req);
+  const orderCode = `RT-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
+
+  const result = await transaction(async (client) => {
+    if (idempotencyKey) {
+      const replay = (await client.query<any>(
+        "SELECT order_code FROM retail_order WHERE idempotency_key=$1 LIMIT 1",
+        [idempotencyKey],
+      )).rows[0];
+      if (replay) return { orderCode: replay.order_code, replay: true };
+    }
+
+    // Server-authoritative pricing: unit prices, shipping and totals are recomputed
+    // from the canonical retail price list; client values are never trusted.
+    let itemsAmount = 0;
+    const lines: Json[] = [];
+    for (const line of body.lines) {
+      const qty = Number(line?.qty);
+      if (!Number.isInteger(qty) || qty <= 0 || qty > 99) throw new HttpError(422, "INVALID_QUANTITY");
+      const product = (await client.query<any>(
+        "SELECT id,name,price FROM retail_product WHERE id=$1 AND active LIMIT 1",
+        [String(line?.id ?? "")],
+      )).rows[0];
+      if (!product) throw new HttpError(422, "UNKNOWN_PRODUCT");
+      const price = Number(product.price);
+      itemsAmount += price * qty;
+      const image = typeof line?.img === "string" && line.img.startsWith("/") && line.img.length <= 500 ? line.img : null;
+      lines.push({
+        id: product.id,
+        name: product.name,
+        colour: String(line?.colour ?? "").slice(0, 40) || null,
+        size: String(line?.size ?? "").slice(0, 20) || null,
+        price,
+        qty,
+        img: image,
+      });
+    }
+    const shippingPrice =
+      payMethod === "cod" ? 0 : itemsAmount >= RETAIL_FREE_SHIPPING_THRESHOLD ? 0 : RETAIL_SHIPPING_RATES[shippingId];
+    const totalAmount = itemsAmount + shippingPrice;
+
+    if (idempotencyKey) {
+      // Two racing replays: ON CONFLICT DO NOTHING, then read the winner back.
+      const inserted = await client.query(
+        `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status,amount_source,idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'server',$13)
+         ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`,
+        [makeId("rord"), orderCode, body.customer.name.trim(), body.customer.phone.trim(), body.customer.email?.trim() || null,
+         JSON.stringify(lines), JSON.stringify(sanitizeRetailAddress(body.address)), shippingId, shippingPrice, payMethod,
+         totalAmount, payMethod === "cod" ? "pending_cod" : "pending_gateway", idempotencyKey],
+      );
+      if (!inserted.rowCount) {
+        const winner = (await client.query<any>(
+          "SELECT order_code FROM retail_order WHERE idempotency_key=$1 LIMIT 1",
+          [idempotencyKey],
+        )).rows[0];
+        if (winner) return { orderCode: winner.order_code, replay: true };
+      }
+    } else {
+      await client.query(
+        `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status,amount_source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'server') RETURNING id`,
+        [makeId("rord"), orderCode, body.customer.name.trim(), body.customer.phone.trim(), body.customer.email?.trim() || null,
+         JSON.stringify(lines), JSON.stringify(sanitizeRetailAddress(body.address)), shippingId, shippingPrice, payMethod,
+         totalAmount, payMethod === "cod" ? "pending_cod" : "pending_gateway"],
+      );
+    }
+    return { orderCode, replay: false };
+  });
+  return response({ orderCode: result.orderCode, ...(result.replay ? { replay: true } : {}) }, result.replay ? 200 : 201);
+}
+
 async function handleAuth(req: NextRequest, path: string) {
   const body = await jsonBody(req);
   if (path === "auth/register") {
@@ -293,10 +433,19 @@ async function handleAuth(req: NextRequest, path: string) {
       throw new HttpError(401, "INVALID_CREDENTIALS");
     }
     if (body.role && body.role !== user.role) throw new HttpError(403, "ROLE_MISMATCH");
-    return response({
-      token: issueToken(user.id, user.role),
-      user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone },
-    });
+    const token = issueToken(user.id, user.role);
+    return authedResponse(
+      { token, user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone } },
+      req,
+      200,
+      token,
+    );
+  }
+  if (path === "auth/logout" && req.method === "POST") {
+    // Clears the HttpOnly session cookie; Bearer clients keep clearing their own token.
+    const res = response({ ok: true });
+    res.headers.append("set-cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+    return res;
   }
   throw new HttpError(404, "NOT_FOUND");
 }
@@ -322,7 +471,8 @@ async function handleSupplier(req: NextRequest, path: string) {
     if (!user || !passwordMatches(String(body.password ?? ""), user.salt, user.password_hash)) throw new HttpError(401, "INVALID_CREDENTIALS");
     const context = await supplierContext(user.id);
     if (!context) throw new HttpError(403, "SUPPLIER_ACCESS_INACTIVE");
-    return response({ token: issueToken(user.id, user.role), supplier: context });
+    const token = issueToken(user.id, user.role);
+    return authedResponse({ token, supplier: context }, req, 200, token);
   }
 
   const claims = requireRole(req, "supplier");
@@ -409,15 +559,31 @@ async function handleWholesale(req: NextRequest, path: string) {
     if (!body.storeName?.trim() || !body.phone?.trim() || !body.city?.trim()) throw new HttpError(422, "INVALID_INPUT");
     if (!body.paymentReference?.trim() || !body.planName?.trim()) throw new HttpError(422, "PAYMENT_REQUIRED");
     const existing = (await rows<any>("SELECT * FROM wholesale_account WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1", [claims.sub]))[0];
-    const account = existing ? (await rows<any>(
-      `UPDATE wholesale_account SET member_name=$2,store_name=$3,phone=$4,city=$5,plan_name=$6,status='approved',activated_at=now(),expires_at=now()+interval '1 year',updated_at=now() WHERE id=$1 RETURNING *`,
-      [existing.id, body.memberName?.trim() || body.storeName.trim(), body.storeName.trim(), body.phone.trim(), body.city.trim(), body.planName.trim()],
-    ))[0] : (await rows<any>(
-      `INSERT INTO wholesale_account (id,user_id,member_name,store_name,phone,city,plan_name,status,activated_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'approved',now(),now()+interval '1 year') RETURNING *`,
-      [makeId("wacc"), claims.sub, body.memberName?.trim() || body.storeName.trim(), body.storeName.trim(), body.phone.trim(), body.city.trim(), body.planName.trim()],
-    ))[0];
-    await rows("UPDATE account_user SET role='vip',updated_at=now() WHERE id=$1", [claims.sub]);
-    return response({ status: "approved", account, paymentReference: body.paymentReference }, 201);
+    if (existing && existing.status === "approved" && (!existing.expires_at || new Date(existing.expires_at).getTime() > Date.now())) {
+      return response({ status: "approved", account: existing, message: "access-active" });
+    }
+    if (existing && ["suspended", "financial_blocked"].includes(existing.status)) {
+      throw new HttpError(409, `ACCOUNT_${String(existing.status).toUpperCase()}`);
+    }
+    const details = {
+      memberName: body.memberName?.trim() || body.storeName.trim(),
+      storeName: body.storeName.trim(),
+      phone: body.phone.trim(),
+      city: body.city.trim(),
+      planName: body.planName.trim(),
+    };
+    const account = existing
+      ? (await rows<any>(
+          `UPDATE wholesale_account SET member_name=$2,store_name=$3,phone=$4,city=$5,plan_name=$6,status='pending',activated_at=NULL,expires_at=NULL,updated_at=now() WHERE id=$1 RETURNING *`,
+          [existing.id, details.memberName, details.storeName, details.phone, details.city, details.planName],
+        ))[0]
+      : (await rows<any>(
+          `INSERT INTO wholesale_account (id,user_id,member_name,store_name,phone,city,plan_name,status) VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING *`,
+          [makeId("wacc"), claims.sub, details.memberName, details.storeName, details.phone, details.city, details.planName],
+        ))[0];
+    // Access is granted only by admin approval (POST admin/accounts/:id/status);
+    // the vip role elevation intentionally does NOT happen here.
+    return response({ status: "pending", account, paymentReference: body.paymentReference }, 201);
   }
   const claims = claimsFrom(req);
   if (!claims || !["customer", "vip"].includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
@@ -429,13 +595,22 @@ async function handleWholesale(req: NextRequest, path: string) {
   if (path === "wholesale/orders" && req.method === "POST") {
     const body = await jsonBody(req);
     if (!Array.isArray(body.lines) || !body.lines.length) throw new HttpError(422, "EMPTY_ORDER");
+    if (body.lines.length > 200) throw new HttpError(422, "TOO_MANY_LINES");
+    const idempotencyKey = idempotencyKeyFrom(req);
     const result = await transaction(async (client) => {
+      if (idempotencyKey) {
+        const replay = (await client.query<any>(
+          "SELECT order_code FROM wholesale_order WHERE account_id=$1 AND idempotency_key=$2 LIMIT 1",
+          [account.id, idempotencyKey],
+        )).rows[0];
+        if (replay) return { orderCode: replay.order_code, replay: true };
+      }
       const resolved: any[] = [];
       let totalUnits = 0;
       let totalAmount = 0;
       for (const line of body.lines) {
         const quantity = Math.floor(Number(line.quantity));
-        if (quantity <= 0) throw new HttpError(422, "INVALID_QUANTITY");
+        if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 100_000) throw new HttpError(422, "INVALID_QUANTITY");
         const item = (await client.query<any>(
           `SELECT v.id AS variant_id,v.sku,p.id AS product_id,p.name,p.wholesale_price,i.on_hand,i.reserved
            FROM supplier_variant v JOIN supplier_product p ON p.id=v.product_id
@@ -452,8 +627,8 @@ async function handleWholesale(req: NextRequest, path: string) {
       const orderId = makeId("word");
       const orderCode = `KV-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}`;
       await client.query(
-        `INSERT INTO wholesale_order (id,order_code,account_id,total_amount,total_units) VALUES ($1,$2,$3,$4,$5)`,
-        [orderId, orderCode, account.id, totalAmount, totalUnits],
+        `INSERT INTO wholesale_order (id,order_code,account_id,total_amount,total_units,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [orderId, orderCode, account.id, totalAmount, totalUnits, idempotencyKey],
       );
       for (const item of resolved) {
         await client.query("UPDATE supplier_inventory SET reserved=reserved+$2,updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
@@ -463,9 +638,9 @@ async function handleWholesale(req: NextRequest, path: string) {
           [makeId("woi"), orderId, item.product_id, item.variant_id, item.name, item.sku, item.quantity, item.wholesale_price],
         );
       }
-      return { orderCode };
+      return { orderCode, replay: false };
     });
-    return response(result, 201);
+    return response(result, result.replay ? 200 : 201);
   }
   throw new HttpError(404, "NOT_FOUND");
 }
@@ -508,10 +683,11 @@ async function handleAdmin(req: NextRequest, path: string) {
     const body = await jsonBody(req);
     const account = (await rows<any>("SELECT * FROM wholesale_account WHERE id=$1", [accountStatus[1]]))[0];
     if (!account || !body.status) throw new HttpError(account ? 422 : 404, account ? "INVALID_INPUT" : "ACCOUNT_NOT_FOUND");
+    if (!["approved", "pending", "suspended", "financial_blocked", "rejected"].includes(body.status)) throw new HttpError(422, "INVALID_STATUS");
     await transaction(async (client) => {
       await client.query(
         `UPDATE wholesale_account SET status=$2,activated_at=CASE WHEN $2='approved' THEN now() ELSE activated_at END,
-         expires_at=CASE WHEN $2='approved' THEN $3 ELSE expires_at END,updated_at=now() WHERE id=$1`,
+         expires_at=CASE WHEN $2='approved' THEN COALESCE($3, now()+interval '365 days') ELSE expires_at END,updated_at=now() WHERE id=$1`,
         [account.id, body.status, body.expiresAt ?? null],
       );
       if (body.status === "approved") await client.query("UPDATE account_user SET role='vip',updated_at=now() WHERE id=$1", [account.user_id]);
@@ -789,23 +965,15 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   }
   if (path.startsWith("auth/")) return handleAuth(req, path);
   if (path === "me" && req.method === "GET") {
-    const claims = requireRole(req, "customer");
+    // Any authenticated role can read its own profile; exact-role checks belong to
+    // domain endpoints (vip users kept getting logged out here previously).
+    const claims = claimsFrom(req);
+    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
     const user = (await rows<any>("SELECT id,email,display_name,phone FROM account_user WHERE id=$1", [claims.sub]))[0];
     if (!user) throw new HttpError(401, "UNAUTHORIZED");
     return response({ id: user.id, name: user.display_name ?? user.email.split("@")[0], phone: user.phone ?? "—", email: user.email });
   }
-  if (path === "retail/orders" && req.method === "POST") {
-    const body = await jsonBody(req);
-    if (!Array.isArray(body.lines) || !body.lines.length) throw new HttpError(422, "EMPTY_CART");
-    if (!body.customer?.name?.trim() || !body.customer?.phone?.trim()) throw new HttpError(422, "CUSTOMER_INFO_REQUIRED");
-    const orderCode = `RT-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
-    await rows(
-      `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      [makeId("rord"), orderCode, body.customer.name.trim(), body.customer.phone.trim(), body.customer.email?.trim() || null, body.lines, body.address ?? {}, body.shipping?.id ?? "post", Number(body.totals?.shipping ?? 0), body.payMethod ?? "gateway", Number(body.totals?.total ?? 0), body.payMethod === "cod" ? "pending_cod" : "pending_gateway"],
-    );
-    return response({ orderCode }, 201);
-  }
+  if (path === "retail/orders" && req.method === "POST") return handleRetailOrders(req, path);
   if (path === "logs/client" && req.method === "POST") {
     const body = await jsonBody(req);
     const message = String(body.message ?? "خطای بدون پیام").slice(0, 2000);
@@ -824,14 +992,29 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   throw new HttpError(404, "NOT_FOUND");
 }
 
+/**
+ * CORS posture: public reads stay open (widgets, media), but state-changing
+ * requests in production are same-origin only — the browser must not be able
+ * to POST orders/tickets/settings from a foreign page. Legacy Vite dev twins
+ * keep working because dev mode stays permissive and their API calls are
+ * proxied through the Vite server anyway.
+ */
+function applyCors(res: Response, req: NextRequest): Response {
+  const permissive = req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS" || process.env.NODE_ENV !== "production";
+  const headers = new Headers(res.headers);
+  if (permissive) headers.set("access-control-allow-origin", "*");
+  else headers.delete("access-control-allow-origin");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 export async function handleKolbeRequest(req: NextRequest, pathParts: string[]) {
   try {
-    return await handleRequest(req, pathParts);
+    return applyCors(await handleRequest(req, pathParts), req);
   } catch (error: any) {
     const status = error instanceof HttpError || isPerfectCorpError(error) ? error.status : 500;
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
     if (status >= 500) console.error("Kolbe API error", error);
-    return response({ error: code, message: status >= 500 ? "خطای داخلی سرور" : code }, status);
+    return applyCors(response({ error: code, message: status >= 500 ? "خطای داخلی سرور" : code }, status), req);
   }
 }
 
