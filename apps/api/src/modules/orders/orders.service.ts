@@ -824,6 +824,26 @@ export class OrdersService {
         executor: tx,
       });
 
+      // Phase 4.4 — Assign child_order_id to reservations for isolated release/consume
+      // Map orderItemId -> childOrderId via sellerGroups and createdChildOrders
+      const orderItemToChildMap = new Map<string, string>();
+      for (const child of createdChildOrders) {
+        const sellerId = child.sellerId;
+        const itemsForSeller = sellerGroups.get(sellerId) || [];
+        for (const parentItem of itemsForSeller) {
+          orderItemToChildMap.set(parentItem.id, child.id);
+        }
+      }
+      for (const reservation of reservations) {
+        const childId = orderItemToChildMap.get(reservation.orderItemId);
+        if (childId) {
+          await tx
+            .update((await import("@kolbe/database")).inventoryReservation)
+            .set({ childOrderId: childId, updatedAt: new Date() } as any)
+            .where(eq((await import("@kolbe/database")).inventoryReservation.id, reservation.id));
+        }
+      }
+
       // Mark requests ordered with orderId for integrity check
       for (const req of lockedRequests) {
         await this.vipService.markRequestOrdered(req.id, req.version, tx, parentOrder.id);
@@ -973,6 +993,919 @@ export class OrdersService {
         reservations,
         replayed: false,
       };
+    });
+  }
+
+  // ── Phase 4.4 — Child order workflow (confirmation, preparation, ready, dispatch, delivery, cancel) ──
+  private hashChildCommand(input: unknown): string {
+    const canonical = canonicalStringify(input as any);
+    return createHash("sha256").update(canonical).digest("hex");
+  }
+
+  async confirmChildOrder(input: {
+    childOrderId: string;
+    actorUserId: string;
+    actorRole: "supplier" | "admin" | "system";
+    supplierRole?: "owner" | "sales" | "warehouse" | "finance";
+    expectedVersion?: number;
+    idempotencyKey: string;
+  }) {
+    if (!input.idempotencyKey) throw new OrderDomainError("ORDER_IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+
+    return this.db.transaction(async (tx: any) => {
+      // Lock child order FOR UPDATE
+      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+
+      // Version check
+      if (input.expectedVersion !== undefined && child.version !== input.expectedVersion) {
+        throw new OrderDomainError("REQUEST_VERSION_CONFLICT", `Child version conflict expected ${input.expectedVersion} got ${child.version}`);
+      }
+
+      // Check terminal
+      if (child.status === "cancelled" || child.status === "delivered") {
+        throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Cannot confirm from ${child.status}`);
+      }
+
+      // Validate transition pending→confirmed
+      validateChildOrderTransition(child.status as ChildOrderStatus, "confirmed");
+
+      // Supplier authorization: child belongs to actor's seller
+      if (input.actorRole === "supplier") {
+        const sellerId = child.seller_id || child.sellerId;
+        const membership = await this.suppliersService.getSellerEligibility(sellerId, tx);
+        // Check user is member of exact supplier
+        const { supplierMember } = await import("@kolbe/database");
+        const [member] = await tx
+          .select()
+          .from(supplierMember)
+          .where(and(eq(supplierMember.supplierId, membership.supplier.id), eq(supplierMember.userId, input.actorUserId)))
+          .limit(1);
+        if (!member) {
+          throw new OrderDomainError("ORDER_OWNERSHIP_VIOLATION", `User ${input.actorUserId} not member of supplier ${membership.supplier.id}`);
+        }
+        // Role check: owner/sales allowed to confirm, warehouse cannot negotiate commercial terms but can confirm? Spec says owner/sales may view/confirm/report inability/propose resolution
+        if (input.supplierRole && !["owner", "sales"].includes(input.supplierRole)) {
+          if (input.supplierRole === "warehouse") {
+            throw new OrderDomainError("ROLE_NOT_ALLOWED", `warehouse cannot confirm commercial`);
+          }
+          if (input.supplierRole === "finance") {
+            throw new OrderDomainError("ROLE_NOT_ALLOWED", `finance cannot confirm`);
+          }
+        }
+        // Ensure member role matches if provided, else check actual member role
+        const actualRole = member.role;
+        if (!["owner", "sales"].includes(actualRole)) {
+          throw new OrderDomainError("ROLE_NOT_ALLOWED", `Role ${actualRole} cannot confirm`);
+        }
+      }
+
+      // Parent not cancelled/completed
+      if (child.wholesale_order_id) {
+        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
+        const parent = parentResult.rows?.[0];
+        if (parent && (parent.status === "cancelled" || parent.status === "completed")) {
+          throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Parent ${parent.status} blocks child confirm`);
+        }
+      }
+
+      // Check no unresolved blocking exception
+      const { fulfillmentException } = await import("@kolbe/database");
+      const openExceptions = await tx
+        .select()
+        .from(fulfillmentException)
+        .where(and(eq(fulfillmentException.childOrderId, input.childOrderId), eq(fulfillmentException.status, "open")))
+        .limit(1);
+      if (openExceptions.length > 0) {
+        throw new OrderDomainError("EXCEPTION_BLOCKING", `Unresolved exception blocks confirmation`);
+      }
+
+      // Idempotency check for child confirm
+      const { commandIdempotency } = await import("@kolbe/database");
+      const reqHash = this.hashChildCommand({ childOrderId: input.childOrderId, action: "confirm" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_confirm"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== reqHash) {
+          throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload");
+        }
+        if (existingIdem.state === "completed") {
+          const payload = existingIdem.resultPayload as any;
+          return { child, replayed: true, payload };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "child_order",
+          scopeId: input.childOrderId,
+          commandType: "orders.child_confirm",
+          idempotencyKey: input.idempotencyKey,
+          requestHash: reqHash,
+          state: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(purchaseOrder)
+        .set({ status: "confirmed", version: child.version + 1, confirmedAt: now, updatedAt: now })
+        .where(eq(purchaseOrder.id, input.childOrderId))
+        .returning();
+
+      await this.appendStatusHistory(
+        {
+          orderId: null,
+          childOrderId: input.childOrderId,
+          fromStatus: child.status,
+          toStatus: "confirmed",
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          orderVersion: updated.version,
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "child.confirmed",
+          payload: { childOrderId: input.childOrderId, sellerId: child.seller_id || child.sellerId },
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: updated.id, resultPayload: updated as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_confirm"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { child: updated, replayed: false };
+    });
+  }
+
+  async startChildPreparation(input: {
+    childOrderId: string;
+    actorUserId: string;
+    actorRole: "supplier" | "admin" | "system";
+    supplierRole?: "owner" | "sales" | "warehouse" | "finance";
+    expectedVersion?: number;
+    idempotencyKey: string;
+  }) {
+    if (!input.idempotencyKey) throw new OrderDomainError("ORDER_IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+
+    return this.db.transaction(async (tx: any) => {
+      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+
+      if (input.expectedVersion !== undefined && child.version !== input.expectedVersion) {
+        throw new OrderDomainError("REQUEST_VERSION_CONFLICT", `Child version conflict`);
+      }
+
+      validateChildOrderTransition(child.status as ChildOrderStatus, "preparing");
+
+      // Payment gate: parent must be in allowed operational state per frozen status machine
+      // Parent must be at least processing (or fulfillment/shipped) — not draft/confirmed/awaiting_payment
+      if (child.wholesale_order_id) {
+        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
+        const parent = parentResult.rows?.[0];
+        if (!parent) throw new OrderDomainError("ORDER_NOT_FOUND", "Parent not found");
+        const allowedParentStates = ["processing", "fulfillment", "shipped", "completed"];
+        if (!allowedParentStates.includes(parent.status)) {
+          throw new OrderDomainError("PARENT_PAYMENT_GATE", `Parent ${parent.status} blocks preparation — payment gate`);
+        }
+      }
+
+      // Supplier role check: warehouse may begin preparation, owner/sales also allowed, finance NOT
+      if (input.actorRole === "supplier") {
+        const sellerId = child.seller_id || child.sellerId;
+        const membership = await this.suppliersService.getSellerEligibility(sellerId, tx);
+        const { supplierMember } = await import("@kolbe/database");
+        const [member] = await tx
+          .select()
+          .from(supplierMember)
+          .where(and(eq(supplierMember.supplierId, membership.supplier.id), eq(supplierMember.userId, input.actorUserId)))
+          .limit(1);
+        if (!member) throw new OrderDomainError("ORDER_OWNERSHIP_VIOLATION", "Not member of supplier");
+        const role = input.supplierRole || member.role;
+        if (role === "finance") {
+          throw new OrderDomainError("ROLE_NOT_ALLOWED", "finance cannot start preparation");
+        }
+        if (!["owner", "sales", "warehouse"].includes(role)) {
+          throw new OrderDomainError("ROLE_NOT_ALLOWED", `Role ${role} cannot start preparation`);
+        }
+      }
+
+      const { commandIdempotency } = await import("@kolbe/database");
+      const reqHash = this.hashChildCommand({ childOrderId: input.childOrderId, action: "prepare" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_prepare"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== reqHash) throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused");
+        if (existingIdem.state === "completed") return { child, replayed: true, payload: existingIdem.resultPayload };
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "child_order",
+          scopeId: input.childOrderId,
+          commandType: "orders.child_prepare",
+          idempotencyKey: input.idempotencyKey,
+          requestHash: reqHash,
+          state: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(purchaseOrder)
+        .set({ status: "preparing", version: child.version + 1, preparationStartedAt: now, updatedAt: now })
+        .where(eq(purchaseOrder.id, input.childOrderId))
+        .returning();
+
+      await this.appendStatusHistory(
+        {
+          orderId: null,
+          childOrderId: input.childOrderId,
+          fromStatus: child.status,
+          toStatus: "preparing",
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          orderVersion: updated.version,
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "child.preparing",
+          payload: { childOrderId: input.childOrderId },
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: updated.id, resultPayload: updated as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_prepare"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { child: updated, replayed: false };
+    });
+  }
+
+  async markChildReady(input: {
+    childOrderId: string;
+    actorUserId: string;
+    actorRole: "supplier" | "admin" | "system";
+    supplierRole?: "owner" | "sales" | "warehouse" | "finance";
+    idempotencyKey: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+
+      if (child.status !== "preparing") {
+        throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Ready only allowed from preparing, got ${child.status}`);
+      }
+
+      // Role: warehouse may mark ready
+      if (input.actorRole === "supplier") {
+        const sellerId = child.seller_id || child.sellerId;
+        const membership = await this.suppliersService.getSellerEligibility(sellerId, tx);
+        const { supplierMember } = await import("@kolbe/database");
+        const [member] = await tx
+          .select()
+          .from(supplierMember)
+          .where(and(eq(supplierMember.supplierId, membership.supplier.id), eq(supplierMember.userId, input.actorUserId)))
+          .limit(1);
+        if (!member) throw new OrderDomainError("ORDER_OWNERSHIP_VIOLATION", "Not member");
+        const role = input.supplierRole || member.role;
+        if (!["owner", "warehouse"].includes(role)) {
+          throw new OrderDomainError("ROLE_NOT_ALLOWED", `Role ${role} cannot mark ready`);
+        }
+      }
+
+      const { commandIdempotency } = await import("@kolbe/database");
+      const reqHash = this.hashChildCommand({ childOrderId: input.childOrderId, action: "ready" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_ready"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== reqHash) throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused");
+        if (existingIdem.state === "completed") {
+          return { child, replayed: true, payload: existingIdem.resultPayload };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "child_order",
+          scopeId: input.childOrderId,
+          commandType: "orders.child_ready",
+          idempotencyKey: input.idempotencyKey,
+          requestHash: reqHash,
+          state: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      const now = new Date();
+      // Ready_at once, idempotent repeat allowed, no stock decrement
+      let updated = child;
+      if (!child.ready_at) {
+        const [upd] = await tx
+          .update(purchaseOrder)
+          .set({ readyAt: now, updatedAt: now })
+          .where(eq(purchaseOrder.id, input.childOrderId))
+          .returning();
+        updated = upd;
+      }
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "child.ready",
+          payload: { childOrderId: input.childOrderId, readyAt: now.toISOString() },
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: updated.id, resultPayload: updated as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_ready"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { child: updated, replayed: false };
+    });
+  }
+
+  async dispatchChildOrder(input: {
+    childOrderId: string;
+    actorUserId: string;
+    actorRole: "supplier" | "admin" | "system";
+    trackingCode?: string;
+    idempotencyKey: string;
+    supplierRole?: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+
+      if (child.status !== "preparing") {
+        throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Dispatch only from preparing, got ${child.status}`);
+      }
+
+      // Parent payment gate
+      if (child.wholesale_order_id) {
+        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
+        const parent = parentResult.rows?.[0];
+        if (!parent) throw new OrderDomainError("ORDER_NOT_FOUND", "Parent not found");
+        const allowedParentStates = ["processing", "fulfillment", "shipped"];
+        if (!allowedParentStates.includes(parent.status)) {
+          throw new OrderDomainError("PARENT_PAYMENT_GATE", `Parent ${parent.status} blocks dispatch`);
+        }
+      }
+
+      // Check for blocking exception
+      const { fulfillmentException } = await import("@kolbe/database");
+      const blocking = await tx
+        .select()
+        .from(fulfillmentException)
+        .where(and(eq(fulfillmentException.childOrderId, input.childOrderId), eq(fulfillmentException.status, "open")))
+        .limit(1);
+      if (blocking.length > 0) {
+        throw new OrderDomainError("EXCEPTION_BLOCKING", "Unresolved exception blocks dispatch");
+      }
+
+      const { commandIdempotency } = await import("@kolbe/database");
+      const reqHash = this.hashChildCommand({ childOrderId: input.childOrderId, action: "dispatch", trackingCode: input.trackingCode });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_dispatch"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== reqHash) throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused");
+        if (existingIdem.state === "completed") {
+          return { child, replayed: true, payload: existingIdem.resultPayload };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "child_order",
+          scopeId: input.childOrderId,
+          commandType: "orders.child_dispatch",
+          idempotencyKey: input.idempotencyKey,
+          requestHash: reqHash,
+          state: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      // Inventory consume only this child's active allocations
+      const sellerId = child.seller_id || child.sellerId;
+      const orderId = child.wholesale_order_id || child.wholesaleOrderId;
+
+      await this.inventoryService.confirmChildOrderAllocations({
+        orderId,
+        childOrderId: input.childOrderId,
+        sellerId,
+        requester: { userId: input.actorUserId, role: input.actorRole, sellerId } as any,
+        idempotencyKey: `${input.idempotencyKey}:inventory`,
+        executor: tx,
+      });
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(purchaseOrder)
+        .set({
+          status: "shipped",
+          version: child.version + 1,
+          shippedAt: now,
+          trackingCode: input.trackingCode || child.tracking_code || null,
+          updatedAt: now,
+        })
+        .where(eq(purchaseOrder.id, input.childOrderId))
+        .returning();
+
+      await this.appendStatusHistory(
+        {
+          orderId: null,
+          childOrderId: input.childOrderId,
+          fromStatus: child.status,
+          toStatus: "shipped",
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          orderVersion: updated.version,
+          metadata: { trackingCode: input.trackingCode },
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "child.shipped",
+          payload: { childOrderId: input.childOrderId, trackingCode: input.trackingCode, financialImpact: null },
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "inventory.consumed",
+          payload: { childOrderId: input.childOrderId, orderId },
+          actorId: input.actorUserId,
+          actorRole: "system",
+        },
+        tx,
+      );
+
+      // Parent aggregation: if one child shipped and others remain, parent NOT auto cancelled, status derives from remaining
+      if (child.wholesale_order_id) {
+        const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, child.wholesale_order_id));
+        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
+        const parent = parentResult.rows?.[0];
+        if (parent) {
+          const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === input.childOrderId ? "shipped" : c.status })) as any;
+          const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
+          if (newParentStatus !== parent.status) {
+            await tx.update(wholesaleOrder).set({ status: newParentStatus, updatedAt: now }).where(eq(wholesaleOrder.id, parent.id));
+            await this.appendStatusHistory(
+              {
+                orderId: parent.id,
+                childOrderId: null,
+                fromStatus: parent.status,
+                toStatus: newParentStatus,
+                actorId: input.actorUserId,
+                actorRole: "system",
+                orderVersion: parent.version + 1,
+                metadata: { trigger: "child.shipped", childOrderId: input.childOrderId },
+              },
+              tx,
+            );
+            await this.appendEvent(
+              {
+                aggregateType: "wholesale_order",
+                aggregateId: parent.id,
+                eventType: `order.${newParentStatus === "shipped" ? "shipped" : newParentStatus === "completed" ? "completed" : "fulfillment_started"}`,
+                payload: { parentStatus: newParentStatus, childOrderId: input.childOrderId },
+                actorId: input.actorUserId,
+                actorRole: "system",
+              },
+              tx,
+            );
+          }
+        }
+      }
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: updated.id, resultPayload: updated as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_dispatch"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { child: updated, replayed: false };
+    });
+  }
+
+  async deliverChildOrder(input: {
+    childOrderId: string;
+    actorUserId: string;
+    actorRole: "supplier" | "admin" | "system";
+    idempotencyKey: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+
+      if (child.status !== "shipped") {
+        throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Deliver only from shipped, got ${child.status}`);
+      }
+
+      const { commandIdempotency } = await import("@kolbe/database");
+      const reqHash = this.hashChildCommand({ childOrderId: input.childOrderId, action: "deliver" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_deliver"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== reqHash) throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused");
+        if (existingIdem.state === "completed") return { child, replayed: true };
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "child_order",
+          scopeId: input.childOrderId,
+          commandType: "orders.child_deliver",
+          idempotencyKey: input.idempotencyKey,
+          requestHash: reqHash,
+          state: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(purchaseOrder)
+        .set({ status: "delivered", version: child.version + 1, deliveredAt: now, updatedAt: now })
+        .where(eq(purchaseOrder.id, input.childOrderId))
+        .returning();
+
+      await this.appendStatusHistory(
+        {
+          orderId: null,
+          childOrderId: input.childOrderId,
+          fromStatus: child.status,
+          toStatus: "delivered",
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          orderVersion: updated.version,
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "child.delivered",
+          payload: { childOrderId: input.childOrderId },
+          actorId: input.actorUserId,
+          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+
+      // Parent aggregation
+      if (child.wholesale_order_id) {
+        const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, child.wholesale_order_id));
+        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
+        const parent = parentResult.rows?.[0];
+        if (parent) {
+          const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === input.childOrderId ? "delivered" : c.status })) as any;
+          const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
+          if (newParentStatus !== parent.status) {
+            await tx.update(wholesaleOrder).set({ status: newParentStatus, updatedAt: now }).where(eq(wholesaleOrder.id, parent.id));
+          }
+        }
+      }
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: updated.id, resultPayload: updated as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_deliver"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { child: updated, replayed: false };
+    });
+  }
+
+  async cancelChildOrder(input: {
+    childOrderId: string;
+    actorUserId: string;
+    actorRole: "supplier" | "admin" | "buyer" | "system";
+    reason?: string;
+    idempotencyKey: string;
+    financialImpact?: { kind: string; amount: bigint; currency: string; childOrderId: string };
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+
+      if (child.status === "shipped" || child.status === "delivered") {
+        throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Cannot cancel from ${child.status} — dispatch already occurred`);
+      }
+      if (child.status === "cancelled") {
+        return { child, replayed: true };
+      }
+
+      validateChildOrderTransition(child.status as ChildOrderStatus, "cancelled");
+
+      const { commandIdempotency } = await import("@kolbe/database");
+      const reqHash = this.hashChildCommand({ childOrderId: input.childOrderId, action: "cancel", reason: input.reason });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_cancel"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== reqHash) throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused");
+        if (existingIdem.state === "completed") return { child, replayed: true };
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "child_order",
+          scopeId: input.childOrderId,
+          commandType: "orders.child_cancel",
+          idempotencyKey: input.idempotencyKey,
+          requestHash: reqHash,
+          state: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      // Release only this child's reservations
+      const sellerId = child.seller_id || child.sellerId;
+      const orderId = child.wholesale_order_id || child.wholesaleOrderId;
+
+      try {
+        await this.inventoryService.releaseChildOrderAllocations({
+          orderId,
+          childOrderId: input.childOrderId,
+          sellerId,
+          requester: { userId: input.actorUserId, role: input.actorRole, sellerId } as any,
+          idempotencyKey: `${input.idempotencyKey}:inventory`,
+          executor: tx,
+          reason: input.reason || "child cancelled",
+        });
+      } catch (e: any) {
+        if (e.code !== "RESERVATION_ALREADY_CONFIRMED" && !e.message?.includes("already confirmed")) {
+          // If no reservations, continue
+          if (!e.message?.includes("No reservations") && !e.message?.includes("not found")) {
+            // For already confirmed, we already blocked above, but keep error
+            if (e.code === "RESERVATION_ALREADY_CONFIRMED" || e.message?.includes("dispatch already occurred")) {
+              throw new OrderDomainError("INVALID_STATUS_TRANSITION", "Cannot release confirmed — dispatch occurred");
+            }
+          }
+        }
+      }
+
+      const now = new Date();
+      const [updated] = await tx
+        .update(purchaseOrder)
+        .set({
+          status: "cancelled",
+          version: child.version + 1,
+          cancelledAt: now,
+          cancellationReason: input.reason || null,
+          updatedAt: now,
+        })
+        .where(eq(purchaseOrder.id, input.childOrderId))
+        .returning();
+
+      await this.appendStatusHistory(
+        {
+          orderId: null,
+          childOrderId: input.childOrderId,
+          fromStatus: child.status,
+          toStatus: "cancelled",
+          actorId: input.actorUserId,
+          actorRole: input.actorRole as any,
+          reason: input.reason || null,
+          orderVersion: updated.version,
+          metadata: {
+            financialImpact: input.financialImpact
+              ? {
+                  kind: input.financialImpact.kind,
+                  amount: input.financialImpact.amount.toString(),
+                  currency: input.financialImpact.currency,
+                  childOrderId: input.financialImpact.childOrderId,
+                }
+              : null,
+          },
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "child.cancelled",
+          payload: {
+            childOrderId: input.childOrderId,
+            reason: input.reason,
+            financialImpact: input.financialImpact
+              ? {
+                  kind: input.financialImpact.kind,
+                  amount: input.financialImpact.amount.toString(),
+                  currency: input.financialImpact.currency,
+                  childOrderId: input.financialImpact.childOrderId,
+                }
+              : null,
+          },
+          actorId: input.actorUserId,
+          actorRole: input.actorRole as any,
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+
+      await this.appendEvent(
+        {
+          aggregateType: "purchase_order",
+          aggregateId: input.childOrderId,
+          eventType: "inventory.released",
+          payload: { childOrderId: input.childOrderId, orderId },
+          actorId: input.actorUserId,
+          actorRole: "system",
+        },
+        tx,
+      );
+
+      // Parent aggregation: if one child cancelled and others remain parent NOT auto cancelled
+      if (child.wholesale_order_id) {
+        const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, child.wholesale_order_id));
+        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
+        const parent = parentResult.rows?.[0];
+        if (parent) {
+          const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === input.childOrderId ? "cancelled" : c.status })) as any;
+          const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
+          // Only update parent if all children cancelled → parent cancelled via canonical orchestration, else keep
+          if (newParentStatus !== parent.status) {
+            await tx.update(wholesaleOrder).set({ status: newParentStatus, updatedAt: now }).where(eq(wholesaleOrder.id, parent.id));
+            await this.appendStatusHistory(
+              {
+                orderId: parent.id,
+                childOrderId: null,
+                fromStatus: parent.status,
+                toStatus: newParentStatus,
+                actorId: input.actorUserId,
+                actorRole: "system",
+                orderVersion: parent.version + 1,
+                metadata: { trigger: "child.cancelled", childOrderId: input.childOrderId },
+              },
+              tx,
+            );
+          }
+        }
+      }
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: updated.id, resultPayload: updated as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "child_order"),
+            eq(commandIdempotency.scopeId, input.childOrderId),
+            eq(commandIdempotency.commandType, "orders.child_cancel"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { child: updated, replayed: false };
     });
   }
 }

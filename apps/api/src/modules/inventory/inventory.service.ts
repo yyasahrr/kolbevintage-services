@@ -1491,5 +1491,372 @@ export class InventoryService {
 
     return { reservations: createdReservations, replayed: false };
   }
+
+  // ── Phase 4.4 — Child order confirm/release (isolated) ───────────────────
+  async confirmChildOrderAllocations(input: {
+    orderId: string;
+    childOrderId: string;
+    sellerId: string;
+    orderItemIds?: string[];
+    requester: Requester;
+    idempotencyKey: string;
+    executor: DbOrTx;
+  }) {
+    if (!input.childOrderId) throw new CatalogDomainError("CHILD_ORDER_ID_REQUIRED", "childOrderId required");
+    if (!input.sellerId) throw new CatalogDomainError("SELLER_ID_REQUIRED", "sellerId required");
+    if (!input.idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "idempotencyKey required");
+
+    const requestHash = hashRequest({
+      orderId: input.orderId,
+      childOrderId: input.childOrderId,
+      sellerId: input.sellerId,
+      orderItemIds: input.orderItemIds?.slice().sort() || [],
+    });
+
+    const scopeType = "seller";
+    const scopeId = input.sellerId;
+    const commandType = "inventory.confirm_child";
+    const idempotencyKey = input.idempotencyKey;
+    const tx = input.executor as any;
+
+    const claim = await this.claimIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, requestHash);
+    if (claim.isReplay && claim.existing) {
+      const payload = claim.existing.resultPayload as any;
+      if (payload) return { ...payload, replayed: true };
+      const existing = await tx
+        .select()
+        .from(inventoryReservation)
+        .where(and(eq(inventoryReservation.childOrderId, input.childOrderId), eq(inventoryReservation.sellerId, input.sellerId)));
+      const allConfirmed = existing.every((r: any) => r.status === "confirmed");
+      if (allConfirmed && existing.length > 0) {
+        return { reservations: existing, consumed: existing.length, replayed: true };
+      }
+    }
+
+    try {
+      const reservations = await tx
+        .select()
+        .from(inventoryReservation)
+        .where(and(eq(inventoryReservation.childOrderId, input.childOrderId), eq(inventoryReservation.sellerId, input.sellerId)))
+        .orderBy(inventoryReservation.variantId)
+        .for("update");
+
+      if (reservations.length === 0) {
+        await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.childOrderId, {
+          childOrderId: input.childOrderId,
+          consumed: 0,
+          reservations: [],
+        });
+        return { reservations: [], consumed: 0, replayed: false };
+      }
+
+      let filtered = reservations;
+      if (input.orderItemIds && input.orderItemIds.length > 0) {
+        const idSet = new Set(input.orderItemIds);
+        filtered = reservations.filter((r: any) => idSet.has(r.orderItemId));
+      }
+
+      const allConfirmed = filtered.every((r: any) => r.status === "confirmed");
+      if (allConfirmed) {
+        await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.childOrderId, {
+          childOrderId: input.childOrderId,
+          consumed: filtered.length,
+          reservations: filtered,
+        });
+        return { reservations: filtered, consumed: filtered.length, replayed: true };
+      }
+
+      for (const r of filtered) {
+        if (r.status !== "active") {
+          if (r.status === "confirmed") continue;
+          throw new CatalogDomainError(
+            "RESERVATION_NOT_ACTIVE",
+            `Reservation ${r.id} status ${r.status} not active for confirm`,
+          );
+        }
+      }
+
+      const agg = new Map<string, { sellerId: string; variantId: string; totalQty: number }>();
+      for (const r of filtered) {
+        if (r.status !== "active") continue;
+        const key = `${r.sellerId}::${r.variantId}`;
+        const ex = agg.get(key);
+        if (ex) ex.totalQty += r.quantity;
+        else agg.set(key, { sellerId: r.sellerId, variantId: r.variantId, totalQty: r.quantity });
+      }
+
+      const sortedKeys = Array.from(agg.keys()).sort();
+      const inventoryMap = new Map<string, any>();
+      for (const key of sortedKeys) {
+        const { sellerId, variantId } = agg.get(key)!;
+        const [inv] = await tx
+          .select()
+          .from(productVariantInventory)
+          .where(and(eq(productVariantInventory.variantId, variantId), eq(productVariantInventory.sellerId, sellerId)))
+          .for("update")
+          .limit(1);
+        if (!inv) throw new NotFoundError(`موجودی برای واریانت ${variantId} یافت نشد`);
+        inventoryMap.set(key, inv);
+      }
+
+      for (const key of sortedKeys) {
+        const { totalQty } = agg.get(key)!;
+        const inv = inventoryMap.get(key)!;
+        if (inv.onHand < totalQty) {
+          throw new CatalogDomainError("ON_HAND_UNDERFLOW", `on_hand ${inv.onHand} < confirm ${totalQty}`);
+        }
+        if (inv.reserved < totalQty) {
+          throw new CatalogDomainError("RESERVED_UNDERFLOW", `reserved ${inv.reserved} < confirm ${totalQty}`);
+        }
+      }
+
+      const confirmedReservations: any[] = [];
+      for (const key of sortedKeys) {
+        const { sellerId, variantId, totalQty } = agg.get(key)!;
+        const inv = inventoryMap.get(key)!;
+        const before = { onHand: inv.onHand, reserved: inv.reserved };
+        const afterOnHand = inv.onHand - totalQty;
+        const afterReserved = inv.reserved - totalQty;
+
+        await tx
+          .update(productVariantInventory)
+          .set({ onHand: afterOnHand, reserved: afterReserved, updatedAt: new Date() })
+          .where(eq(productVariantInventory.id, inv.id));
+
+        await tx.insert(inventoryLedger).values({
+          id: ledgerId(),
+          variantId,
+          sellerId,
+          changeType: "DECREASE",
+          quantityDelta: -totalQty,
+          beforeOnHand: before.onHand,
+          afterOnHand,
+          beforeReserved: before.reserved,
+          afterReserved,
+          reason: `confirm child ${input.childOrderId} order ${input.orderId}`,
+          actorId: input.requester.userId === "system" ? null : input.requester.userId,
+        });
+
+        inventoryMap.set(key, { ...inv, onHand: afterOnHand, reserved: afterReserved });
+      }
+
+      for (const r of filtered) {
+        if (r.status !== "active") continue;
+        const [updated] = await tx
+          .update(inventoryReservation)
+          .set({ status: "confirmed", updatedAt: new Date() })
+          .where(eq(inventoryReservation.id, r.id))
+          .returning();
+        confirmedReservations.push(updated);
+
+        await this.auditService.record(
+          {
+            actorId: input.requester.userId === "system" ? null : input.requester.userId,
+            actorRole: input.requester.role,
+            action: "inventory.confirmed",
+            entityType: "inventory_reservation",
+            entityId: r.id,
+            before: { status: r.status, quantity: r.quantity },
+            after: { status: "confirmed", quantity: r.quantity },
+            metadata: {
+              childOrderId: input.childOrderId,
+              orderId: input.orderId,
+              sellerId: input.sellerId,
+              variantId: r.variantId,
+            },
+            requestId: r.requestId || null,
+          },
+          tx,
+        );
+      }
+
+      const result = {
+        childOrderId: input.childOrderId,
+        orderId: input.orderId,
+        consumed: confirmedReservations.length,
+        reservations: confirmedReservations,
+      };
+      await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.childOrderId, result);
+      return { ...result, replayed: false };
+    } catch (e) {
+      await this.failIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey);
+      throw e;
+    }
+  }
+
+  async releaseChildOrderAllocations(input: {
+    orderId: string;
+    childOrderId: string;
+    sellerId: string;
+    requester: Requester;
+    idempotencyKey: string;
+    executor: DbOrTx;
+    reason?: string;
+  }) {
+    if (!input.childOrderId) throw new CatalogDomainError("CHILD_ORDER_ID_REQUIRED", "childOrderId required");
+    if (!input.sellerId) throw new CatalogDomainError("SELLER_ID_REQUIRED", "sellerId required");
+    if (!input.idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "idempotencyKey required");
+
+    const requestHash = hashRequest({
+      orderId: input.orderId,
+      childOrderId: input.childOrderId,
+      sellerId: input.sellerId,
+      reason: input.reason,
+    });
+
+    const scopeType = "seller";
+    const scopeId = input.sellerId;
+    const commandType = "inventory.release_child";
+    const idempotencyKey = input.idempotencyKey;
+    const tx = input.executor as any;
+
+    const claim = await this.claimIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, requestHash);
+    if (claim.isReplay && claim.existing) {
+      const payload = claim.existing.resultPayload as any;
+      if (payload) return { ...payload, replayed: true };
+      const existing = await tx
+        .select()
+        .from(inventoryReservation)
+        .where(and(eq(inventoryReservation.childOrderId, input.childOrderId), eq(inventoryReservation.sellerId, input.sellerId)));
+      const allReleased = existing.every((r: any) => ["released", "expired", "cancelled"].includes(r.status));
+      if (allReleased) {
+        return { reservations: existing, released: existing.length, replayed: true };
+      }
+    }
+
+    try {
+      const reservations = await tx
+        .select()
+        .from(inventoryReservation)
+        .where(and(eq(inventoryReservation.childOrderId, input.childOrderId), eq(inventoryReservation.sellerId, input.sellerId)))
+        .orderBy(inventoryReservation.variantId)
+        .for("update");
+
+      if (reservations.length === 0) {
+        await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.childOrderId, {
+          childOrderId: input.childOrderId,
+          released: 0,
+          reservations: [],
+        });
+        return { reservations: [], released: 0, replayed: false };
+      }
+
+      const activeReservations = reservations.filter((r: any) => r.status === "active");
+      const nonActiveConfirmed = reservations.filter((r: any) => r.status === "confirmed");
+
+      if (nonActiveConfirmed.length > 0) {
+        throw new CatalogDomainError(
+          "RESERVATION_ALREADY_CONFIRMED",
+          `Cannot release confirmed reservations for child ${input.childOrderId} — dispatch already occurred`,
+        );
+      }
+
+      if (activeReservations.length === 0) {
+        await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.childOrderId, {
+          childOrderId: input.childOrderId,
+          released: reservations.length,
+          reservations,
+        });
+        return { reservations, released: reservations.length, replayed: true };
+      }
+
+      const agg = new Map<string, { sellerId: string; variantId: string; totalQty: number }>();
+      for (const r of activeReservations) {
+        const key = `${r.sellerId}::${r.variantId}`;
+        const ex = agg.get(key);
+        if (ex) ex.totalQty += r.quantity;
+        else agg.set(key, { sellerId: r.sellerId, variantId: r.variantId, totalQty: r.quantity });
+      }
+
+      const sortedKeys = Array.from(agg.keys()).sort();
+      const inventoryMap = new Map<string, any>();
+      for (const key of sortedKeys) {
+        const { sellerId, variantId } = agg.get(key)!;
+        const [inv] = await tx
+          .select()
+          .from(productVariantInventory)
+          .where(and(eq(productVariantInventory.variantId, variantId), eq(productVariantInventory.sellerId, sellerId)))
+          .for("update")
+          .limit(1);
+        if (!inv) throw new NotFoundError(`موجودی برای واریانت ${variantId} یافت نشد`);
+        inventoryMap.set(key, inv);
+      }
+
+      const releasedReservations: any[] = [];
+
+      for (const key of sortedKeys) {
+        const { sellerId, variantId, totalQty } = agg.get(key)!;
+        const inv = inventoryMap.get(key)!;
+        const before = { onHand: inv.onHand, reserved: inv.reserved };
+        const afterReserved = inv.reserved - totalQty;
+        if (afterReserved < 0) {
+          throw new CatalogDomainError("RESERVED_UNDERFLOW", `release would underflow reserved ${inv.reserved} < ${totalQty}`);
+        }
+
+        await tx
+          .update(productVariantInventory)
+          .set({ reserved: afterReserved, updatedAt: new Date() })
+          .where(eq(productVariantInventory.id, inv.id));
+
+        await tx.insert(inventoryLedger).values({
+          id: ledgerId(),
+          variantId,
+          sellerId,
+          changeType: "RELEASE",
+          quantityDelta: -totalQty,
+          beforeOnHand: before.onHand,
+          afterOnHand: before.onHand,
+          beforeReserved: before.reserved,
+          afterReserved,
+          reason: input.reason || `release child ${input.childOrderId} order ${input.orderId}`,
+          actorId: input.requester.userId === "system" ? null : input.requester.userId,
+        });
+
+        inventoryMap.set(key, { ...inv, reserved: afterReserved });
+      }
+
+      for (const r of activeReservations) {
+        const [updated] = await tx
+          .update(inventoryReservation)
+          .set({ status: "released", updatedAt: new Date() })
+          .where(eq(inventoryReservation.id, r.id))
+          .returning();
+        releasedReservations.push(updated);
+
+        await this.auditService.record(
+          {
+            actorId: input.requester.userId === "system" ? null : input.requester.userId,
+            actorRole: input.requester.role,
+            action: "inventory.released",
+            entityType: "inventory_reservation",
+            entityId: r.id,
+            before: { status: r.status, quantity: r.quantity },
+            after: { status: "released", quantity: r.quantity },
+            metadata: {
+              childOrderId: input.childOrderId,
+              orderId: input.orderId,
+              sellerId: input.sellerId,
+              variantId: r.variantId,
+              reason: input.reason,
+            },
+            requestId: r.requestId || null,
+          },
+          tx,
+        );
+      }
+
+      const result = {
+        childOrderId: input.childOrderId,
+        orderId: input.orderId,
+        released: releasedReservations.length,
+        reservations: releasedReservations,
+      };
+      await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.childOrderId, result);
+      return { ...result, replayed: false };
+    } catch (e) {
+      await this.failIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey);
+      throw e;
+    }
+  }
 }
 

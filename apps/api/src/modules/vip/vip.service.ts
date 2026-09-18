@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { eq, and, sql } from "drizzle-orm";
 import {
   vipPlan,
@@ -14,6 +14,8 @@ import {
   productVariant,
   wholesalePricingTier,
   wholesaleOrderRequest,
+  wholesaleRequestRevision,
+  commandIdempotency,
 } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { ForbiddenError, NotFoundError } from "@kolbe/shared";
@@ -23,15 +25,32 @@ import {
   assertVipAccess,
   validateWholesaleRequestQuantity,
   transitionWholesaleRequest,
+  type WholesaleRequestStatus,
 } from "./vip.logic";
-import { resolvePrice, hashAcceptedTerms, type AcceptedTermsSnapshot } from "../pricing/pricing.logic";
+import { resolvePrice, hashAcceptedTerms, type AcceptedTermsSnapshot, canonicalStringify } from "../pricing/pricing.logic";
+import { createHash, randomUUID } from "node:crypto";
+import { AuditService } from "../audit/audit.service";
 
 type Tx = Parameters<Parameters<KolbeDatabase["transaction"]>[0]>[0];
 export type DbOrTx = KolbeDatabase | Tx;
 
+function revisionId(): string {
+  return `wrev_${randomUUID().replaceAll("-", "")}`;
+}
+function idemId(): string {
+  return `cid_${randomUUID().replaceAll("-", "")}`;
+}
+function hashReq(input: unknown): string {
+  const canonical = canonicalStringify(input as any);
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
 @Injectable()
 export class VipService {
-  constructor(@Inject(KOLBE_DB) private readonly db: KolbeDatabase) {}
+  constructor(
+    @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
+    @Optional() @Inject(AuditService) private readonly auditService?: AuditService,
+  ) {}
 
   private getExecutor(executor?: DbOrTx) {
     return (executor as any) || this.db;
@@ -156,7 +175,6 @@ export class VipService {
       }
     }
 
-    // Phase 4.3.1 — strict selector validation for NEW requests
     const hasVariant = !!input.variantId;
     const hasPackage = !!input.packageId;
     if (hasVariant && hasPackage) {
@@ -165,7 +183,6 @@ export class VipService {
     if (!hasVariant && !hasPackage) {
       throw new CatalogDomainError("REQUEST_SELECTOR_REQUIRED", "selector required: either variant_id or package_id must be provided");
     }
-    // For PIECE sale, variant required; for PACKAGE-like, package required
     if (offer.moqUnit === "PIECE") {
       if (!hasVariant) {
         throw new CatalogDomainError("REQUEST_SELECTOR_REQUIRED", "PIECE sale requires variant_id, package_id must be NULL");
@@ -229,15 +246,14 @@ export class VipService {
 
   async transitionRequest(
     requestId: string,
-    nextStatus: "pending" | "supplier_review" | "accepted" | "rejected" | "ordered",
-    actorRole: "vip" | "supplier" | "admin",
+    nextStatus: WholesaleRequestStatus,
+    actorRole: "vip" | "supplier" | "admin" | "system",
     actorId?: string,
     rejectionReason?: string,
     executor?: DbOrTx,
     expectedVersion?: number,
   ) {
     const db = this.getExecutor(executor);
-    // Lock request FOR UPDATE if executor is a transaction
     let existing: any;
     if (executor) {
       const rows = await (db as any).execute(sql`SELECT * FROM wholesale_request WHERE id = ${requestId} FOR UPDATE`);
@@ -249,7 +265,6 @@ export class VipService {
 
     if (!existing) throw new NotFoundError("درخواست یافت نشد");
 
-    // Version check for optimistic concurrency
     if (expectedVersion !== undefined && existing.version !== expectedVersion) {
       throw new CatalogDomainError("REQUEST_VERSION_CONFLICT", `نسخهٔ درخواست منقضی شده: expected ${expectedVersion}, got ${existing.version}`);
     }
@@ -279,7 +294,7 @@ export class VipService {
       }
     }
 
-    transitionWholesaleRequest(existing.status as any, nextStatus as any, actorRole, rejectionReason);
+    transitionWholesaleRequest(existing.status as WholesaleRequestStatus, nextStatus as WholesaleRequestStatus, actorRole, rejectionReason);
 
     const [updated] = await db
       .update(wholesaleRequest)
@@ -294,10 +309,6 @@ export class VipService {
     return updated;
   }
 
-  /**
-   * Phase 4.2.2 — Acceptance with frozen commercial terms snapshot
-   * When supplier_review → accepted, server must lock, verify, load authoritative offer/seller/package/variant/composition/pricing, validate MOQ, calculate piece quantity and line total, construct snapshot, hash, persist
-   */
   async acceptRequest(
     requestId: string,
     actorId: string,
@@ -307,10 +318,8 @@ export class VipService {
   ) {
     const db = this.getExecutor(executor);
 
-    // Lock request FOR UPDATE
     let existing: any;
     if (executor) {
-      // Use raw SQL FOR UPDATE
       const result = await (db as any).execute(sql`SELECT * FROM wholesale_request WHERE id = ${requestId} FOR UPDATE`);
       existing = result.rows?.[0];
       if (!existing) {
@@ -332,14 +341,12 @@ export class VipService {
       throw new CatalogDomainError("REQUEST_NOT_ACCEPTABLE", `درخواست در وضعیت ${existing.status} قابل پذیرش نیست`);
     }
 
-    // Load authoritative Offer, Seller, Package/Variant, composition, pricing
     const [offer] = await db.select().from(sellerOffer).where(eq(sellerOffer.id, existing.offerId)).limit(1);
     if (!offer) throw new NotFoundError("پیشنهاد یافت نشد");
 
     const [sellerRow] = await db.select().from(seller).where(eq(seller.id, offer.sellerId)).limit(1);
     if (!sellerRow) throw new NotFoundError("فروشنده یافت نشد");
 
-    // Verify actor ownership for supplier
     if (actorRole === "supplier" && sellerRow.supplierId) {
       const { supplierMember } = await import("@kolbe/database");
       const [member] = await db
@@ -348,6 +355,9 @@ export class VipService {
         .where(and(eq(supplierMember.supplierId, sellerRow.supplierId), eq(supplierMember.userId, actorId)))
         .limit(1);
       if (!member) throw new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "شما مالک این پیشنهاد نیستید");
+      if (!["owner", "sales"].includes(member.role)) {
+        throw new CatalogDomainError("ROLE_NOT_ALLOWED", `Role ${member.role} cannot accept`);
+      }
     }
 
     let variant: any = null;
@@ -372,10 +382,8 @@ export class VipService {
       if (composition.length === 0) throw new CatalogDomainError("PACKAGE_EMPTY", "بسته خالی است");
     }
 
-    // Load pricing tiers
     const tiers = await db.select().from(wholesalePricingTier).where(eq(wholesalePricingTier.offerId, offer.id));
 
-    // Resolve authoritative pricing via PricingService logic
     const pricingInput = {
       offer: {
         id: offer.id,
@@ -415,10 +423,8 @@ export class VipService {
 
     const resolved = resolvePrice(pricingInput as any);
 
-    // Validate MOQ (already done at creation, but re-validate with authoritative offer)
     validateWholesaleRequestQuantity(existing.quantity, offer.moq);
 
-    // Construct accepted terms snapshot — server-side, never from client — Phase 4.3.1 complete freeze
     const snapshot: AcceptedTermsSnapshot = {
       requestVersion: existing.version,
       productId: existing.productId,
@@ -475,7 +481,6 @@ export class VipService {
         acceptedBy: actorId,
         acceptedTermsSnapshot: snapshot as any,
         acceptedTermsHash: hash,
-        // acceptanceExpiresAt remains nullable, Phase 4.4 will configure
         updatedAt: now,
       })
       .where(eq(wholesaleRequest.id, requestId))
@@ -484,10 +489,6 @@ export class VipService {
     return updated;
   }
 
-  /**
-   * Phase 4.2.2 — Prepare atomic request conversion contract for Phase 4.3
-   * Executor aware, SELECT FOR UPDATE, verifies buyer/account ownership, status accepted, snapshot/hash existence, version match, not expired, not already ordered
-   */
   async getAcceptedRequestForConversion(
     requestId: string,
     buyerUserId: string,
@@ -496,7 +497,6 @@ export class VipService {
   ) {
     const db = this.getExecutor(executor);
 
-    // Lock FOR UPDATE
     const result = await (db as any).execute(sql`SELECT * FROM wholesale_request WHERE id = ${requestId} FOR UPDATE`);
     const existingRaw = result.rows?.[0] || (await db.select().from(wholesaleRequest).where(eq(wholesaleRequest.id, requestId)).limit(1).then((r: any) => r[0]));
 
@@ -512,7 +512,6 @@ export class VipService {
       status: (existingRaw as any).status,
     };
 
-    // Verify buyer/account ownership
     const [account] = await db.select().from(wholesaleAccount).where(eq(wholesaleAccount.id, existing.vipAccountId)).limit(1);
     if (!account || account.userId !== buyerUserId) {
       throw new CatalogDomainError("VIP_OWNERSHIP_VIOLATION", "شما مالک این درخواست نیستید");
@@ -539,13 +538,11 @@ export class VipService {
       throw new CatalogDomainError("REQUEST_ACCEPTANCE_EXPIRED", "اعتبار پذیرش منقضی شده است");
     }
 
-    // Check if already linked to an order (via wholesale_order_request)
     const [linked] = await db.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.requestId, requestId)).limit(1);
     if (linked) {
       throw new CatalogDomainError("REQUEST_ALREADY_ORDERED", "درخواست قبلاً به سفارش تبدیل شده است");
     }
 
-    // Verify hash matches snapshot
     const expectedHash = hashAcceptedTerms(existing.acceptedTermsSnapshot as any);
     if (expectedHash !== existing.acceptedTermsHash) {
       throw new CatalogDomainError("REQUEST_HASH_MISMATCH", "هش اسنپ‌شات نامعتبر است");
@@ -554,7 +551,6 @@ export class VipService {
     return { request: existing, account };
   }
 
-  // ── Phase 4.3.1 — Order-related public queries ───────────────────────
   async getWholesaleAccountForOrder(accountId: string, executor?: DbOrTx) {
     const db = this.getExecutor(executor);
     const [account] = await db.select().from(wholesaleAccount).where(eq(wholesaleAccount.id, accountId)).limit(1);
@@ -580,11 +576,9 @@ export class VipService {
   async markRequestOrdered(requestId: string, expectedVersion: number, executor: DbOrTx, orderId?: string) {
     const db = this.getExecutor(executor);
 
-    // Lock request FOR UPDATE to ensure state remains accepted
     const lockResult = await (db as any).execute(sql`SELECT * FROM wholesale_request WHERE id = ${requestId} FOR UPDATE`);
     const existingRaw = lockResult.rows?.[0] || (await db.select().from(wholesaleRequest).where(eq(wholesaleRequest.id, requestId)).limit(1).then((r: any) => r[0]));
     if (!existingRaw) throw new NotFoundError("درخواست یافت نشد");
-    // Normalize snake_case vs camelCase (raw SQL vs drizzle)
     const existing = {
       ...existingRaw,
       acceptedTermsSnapshot: (existingRaw as any).acceptedTermsSnapshot || (existingRaw as any).accepted_terms_snapshot,
@@ -606,13 +600,11 @@ export class VipService {
       throw new CatalogDomainError("ACCEPTED_TERMS_MISSING", "اسنپ‌شات پذیرفته‌شده وجود ندارد");
     }
 
-    // Verify hash remains valid
     const recomputed = hashAcceptedTerms(existing.acceptedTermsSnapshot as any);
     if (recomputed !== existing.acceptedTermsHash) {
       throw new CatalogDomainError("ACCEPTED_TERMS_HASH_MISMATCH", "هش اسنپ‌شات نامعتبر است");
     }
 
-    // If orderId supplied, verify link exists and matches version/hash and DB-time expiry
     if (orderId) {
       const [link] = await db.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.requestId, requestId)).limit(1);
       if (!link) {
@@ -629,7 +621,6 @@ export class VipService {
       }
     }
 
-    // DB-time expiry check
     const dbNow = await this.getDbNow(db);
     if (existing.acceptanceExpiresAt && new Date(existing.acceptanceExpiresAt).getTime() <= dbNow.getTime()) {
       throw new CatalogDomainError("REQUEST_ACCEPTANCE_EXPIRED", "اعتبار پذیرش منقضی شده است");
@@ -646,5 +637,468 @@ export class VipService {
       .returning();
 
     return updated;
+  }
+
+  // ── Phase 4.4 — Revision workflow ───────────────────────────────────────
+  private async claimIdempotency(
+    tx: DbOrTx,
+    scopeType: string,
+    scopeId: string,
+    commandType: string,
+    idempotencyKey: string,
+    requestHash: string,
+  ) {
+    if (!idempotencyKey) return { isReplay: false, existing: null as any };
+    const [existing] = await (tx as any)
+      .select()
+      .from(commandIdempotency)
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scopeType),
+          eq(commandIdempotency.scopeId, scopeId),
+          eq(commandIdempotency.commandType, commandType),
+          eq(commandIdempotency.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (existing) {
+      if (existing.requestHash !== requestHash) {
+        throw new CatalogDomainError("IDEMPOTENCY_KEY_REUSED", `کلید عدم‌تکرار با payload متفاوت`);
+      }
+      if (existing.state === "completed") {
+        return { isReplay: true, existing };
+      }
+      if (existing.state === "pending") {
+        throw new CatalogDomainError("COMMAND_IN_PROGRESS", `دستور در حال اجراست`);
+      }
+    }
+    try {
+      await (tx as any).insert(commandIdempotency).values({
+        id: idemId(),
+        scopeType,
+        scopeId,
+        commandType,
+        idempotencyKey,
+        requestHash,
+        state: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } catch (e: any) {
+      if (e?.code === "23505") throw new CatalogDomainError("COMMAND_IN_PROGRESS", "هم‌زمانی کلید");
+      throw e;
+    }
+    return { isReplay: false, existing: null as any };
+  }
+
+  private async completeIdempotency(tx: DbOrTx, scopeType: string, scopeId: string, commandType: string, idempotencyKey: string, resultId: string, payload: any) {
+    if (!idempotencyKey) return;
+    await (tx as any)
+      .update(commandIdempotency)
+      .set({ state: "completed", resultResourceId: resultId, resultPayload: payload as any, completedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scopeType),
+          eq(commandIdempotency.scopeId, scopeId),
+          eq(commandIdempotency.commandType, commandType),
+          eq(commandIdempotency.idempotencyKey, idempotencyKey),
+        ),
+      );
+  }
+
+  async proposeRevision(input: {
+    requestId: string;
+    supplierUserId: string;
+    reason: string;
+    proposedQuantity?: number | null;
+    proposedVariantId?: string | null;
+    proposedPackageId?: string | null;
+    proposedUnitPrice?: bigint | null;
+    pricingUnit?: string | null;
+    currency?: string;
+    leadTimeDays?: number | null;
+    idempotencyKey: string;
+    expectedVersion?: number;
+  }) {
+    if (!input.reason || input.reason.trim().length === 0) {
+      throw new CatalogDomainError("REJECTION_REASON_REQUIRED", "Reason required for revision");
+    }
+    if (!input.idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+
+    return this.db.transaction(async (tx: any) => {
+      const lockRes = await tx.execute(sql`SELECT * FROM wholesale_request WHERE id = ${input.requestId} FOR UPDATE`);
+      const req = lockRes.rows?.[0];
+      if (!req) throw new NotFoundError("درخواست یافت نشد");
+
+      if (input.expectedVersion !== undefined && req.version !== input.expectedVersion) {
+        throw new CatalogDomainError("REQUEST_VERSION_CONFLICT", "Version conflict");
+      }
+
+      if (["rejected", "cancelled", "expired", "ordered"].includes(req.status)) {
+        throw new CatalogDomainError("INVALID_REQUEST_TRANSITION", `Cannot revise terminal ${req.status}`);
+      }
+      if (req.status !== "supplier_review") {
+        throw new CatalogDomainError("INVALID_REQUEST_TRANSITION", `Revision only from supplier_review, got ${req.status}`);
+      }
+
+      // Supplier ownership: exact supplier
+      const [offer] = await tx.select().from(sellerOffer).where(eq(sellerOffer.id, req.offer_id || req.offerId)).limit(1);
+      if (!offer) throw new NotFoundError("پیشنهاد یافت نشد");
+      const [sellerRow] = await tx.select().from(seller).where(eq(seller.id, offer.sellerId)).limit(1);
+      if (!sellerRow) throw new NotFoundError("فروشنده یافت نشد");
+      if (!sellerRow.supplierId) {
+        throw new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "KOLBE request cannot be revised by supplier flow? Use admin");
+      }
+      const { supplierMember } = await import("@kolbe/database");
+      const [member] = await tx
+        .select()
+        .from(supplierMember)
+        .where(and(eq(supplierMember.supplierId, sellerRow.supplierId), eq(supplierMember.userId, input.supplierUserId)))
+        .limit(1);
+      if (!member) throw new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "Not member of supplier");
+      if (!["owner", "sales"].includes(member.role)) {
+        throw new CatalogDomainError("ROLE_NOT_ALLOWED", `Role ${member.role} cannot negotiate commercial terms`);
+      }
+
+      // Validate proposed quantity: reduced quantity allowed, must be >0 and <= original
+      if (input.proposedQuantity != null) {
+        if (!Number.isSafeInteger(input.proposedQuantity) || input.proposedQuantity <= 0) {
+          throw new CatalogDomainError("INVALID_QUANTITY", "proposedQuantity must be positive");
+        }
+        const originalQty = req.quantity;
+        if (input.proposedQuantity > originalQty) {
+          throw new CatalogDomainError("INVALID_QUANTITY", `proposedQuantity ${input.proposedQuantity} > original ${originalQty} — only reduced allowed`);
+        }
+      }
+
+      // Validate proposed variant/package: cannot silently change buyer, VIP account, arbitrary seller, arbitrary product identity
+      // Enforce same product
+      if (input.proposedVariantId) {
+        const [variant] = await tx.select().from(productVariant).where(eq(productVariant.id, input.proposedVariantId)).limit(1);
+        if (!variant) throw new NotFoundError("واریانت پیشنهادی یافت نشد");
+        if (variant.productId !== req.product_id && variant.productId !== req.productId) {
+          throw new CatalogDomainError("PRODUCT_MISMATCH", "Proposed variant must belong to same product — fundamentally different product requires new request");
+        }
+      }
+      if (input.proposedPackageId) {
+        const [pkg] = await tx.select().from(wholesalePackage).where(eq(wholesalePackage.id, input.proposedPackageId)).limit(1);
+        if (!pkg) throw new NotFoundError("بسته پیشنهادی یافت نشد");
+        // Package must belong to same product via offer
+        const [pkgOffer] = await tx.select().from(sellerOffer).where(eq(sellerOffer.id, pkg.offerId)).limit(1);
+        if (!pkgOffer || pkgOffer.productId !== req.product_id) {
+          throw new CatalogDomainError("PRODUCT_MISMATCH", "Proposed package must belong to same product — new request required");
+        }
+        // Also seller must be same seller? Spec says cannot arbitrarily change seller
+        if (pkgOffer.sellerId !== sellerRow.id) {
+          throw new CatalogDomainError("SELLER_MISMATCH", "Proposed package seller mismatch — cannot change seller silently");
+        }
+      }
+      if (input.proposedVariantId && input.proposedPackageId) {
+        throw new CatalogDomainError("REQUEST_SELECTOR_AMBIGUOUS", "Cannot propose both variant and package");
+      }
+
+      // Validate unit price if provided
+      if (input.proposedUnitPrice != null) {
+        if (input.proposedUnitPrice < 0n || input.proposedUnitPrice > 1000000000000000n) {
+          throw new CatalogDomainError("INVALID_PRICE", "proposedUnitPrice out of range");
+        }
+      }
+
+      // Idempotency
+      const reqHash = hashReq({
+        requestId: input.requestId,
+        reason: input.reason,
+        proposedQuantity: input.proposedQuantity,
+        proposedVariantId: input.proposedVariantId,
+        proposedPackageId: input.proposedPackageId,
+        proposedUnitPrice: input.proposedUnitPrice?.toString(),
+        pricingUnit: input.pricingUnit,
+        currency: input.currency,
+      });
+
+      const claim = await this.claimIdempotency(tx, "wholesale_request", input.requestId, "vip.request_revision", input.idempotencyKey, reqHash);
+      if (claim.isReplay && claim.existing) {
+        return { revision: claim.existing.resultPayload as any, request: req, replayed: true };
+      }
+
+      // Determine next revision number
+      const existingRevs = await tx.select().from(wholesaleRequestRevision).where(eq(wholesaleRequestRevision.requestId, input.requestId));
+      const nextRevNumber = existingRevs.length > 0 ? Math.max(...existingRevs.map((r: any) => r.revisionNumber)) + 1 : 1;
+
+      const termsSnapshot = {
+        proposedQuantity: input.proposedQuantity,
+        proposedVariantId: input.proposedVariantId,
+        proposedPackageId: input.proposedPackageId,
+        proposedUnitPrice: input.proposedUnitPrice?.toString() || null,
+        pricingUnit: input.pricingUnit,
+        currency: input.currency || "IRR",
+        leadTimeDays: input.leadTimeDays,
+        reason: input.reason,
+      };
+      const termsHash = hashReq(termsSnapshot);
+
+      const revId = revisionId();
+      const [revision] = await tx
+        .insert(wholesaleRequestRevision)
+        .values({
+          id: revId,
+          requestId: input.requestId,
+          requestVersion: req.version,
+          revisionNumber: nextRevNumber,
+          proposedByUserId: input.supplierUserId,
+          proposedByRole: "supplier",
+          reason: input.reason,
+          proposedQuantity: input.proposedQuantity,
+          proposedVariantId: input.proposedVariantId,
+          proposedPackageId: input.proposedPackageId,
+          pricingUnit: input.pricingUnit,
+          proposedUnitPrice: input.proposedUnitPrice as any,
+          currency: input.currency || "IRR",
+          proposedTermsSnapshot: termsSnapshot as any,
+          proposedTermsHash: termsHash,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      // Transition request to revision_requested
+      transitionWholesaleRequest(req.status as WholesaleRequestStatus, "revision_requested", "supplier", input.reason);
+
+      const [updatedReq] = await tx
+        .update(wholesaleRequest)
+        .set({ status: "revision_requested", version: req.version + 1, updatedAt: new Date() })
+        .where(eq(wholesaleRequest.id, input.requestId))
+        .returning();
+
+      await this.completeIdempotency(tx, "wholesale_request", input.requestId, "vip.request_revision", input.idempotencyKey, revision.id, revision);
+
+      return { revision, request: updatedReq, replayed: false };
+    });
+  }
+
+  async acceptRevision(input: {
+    requestId: string;
+    revisionId: string;
+    buyerUserId: string;
+    idempotencyKey: string;
+    expectedVersion?: number;
+  }) {
+    if (!input.idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+    return this.db.transaction(async (tx: any) => {
+      const lockRes = await tx.execute(sql`SELECT * FROM wholesale_request WHERE id = ${input.requestId} FOR UPDATE`);
+      const req = lockRes.rows?.[0];
+      if (!req) throw new NotFoundError("درخواست یافت نشد");
+
+      if (input.expectedVersion !== undefined && req.version !== input.expectedVersion) {
+        throw new CatalogDomainError("REQUEST_VERSION_CONFLICT", "Version conflict");
+      }
+
+      if (req.status !== "revision_requested") {
+        throw new CatalogDomainError("INVALID_REQUEST_TRANSITION", `Accept revision only from revision_requested, got ${req.status}`);
+      }
+
+      // Verify buyer ownership
+      const [account] = await tx.select().from(wholesaleAccount).where(eq(wholesaleAccount.id, req.vip_account_id || req.vipAccountId)).limit(1);
+      if (!account || account.userId !== input.buyerUserId) {
+        throw new CatalogDomainError("VIP_OWNERSHIP_VIOLATION", "شما مالک این درخواست نیستید");
+      }
+
+      const revRes = await tx.execute(sql`SELECT * FROM wholesale_request_revision WHERE id = ${input.revisionId} FOR UPDATE`);
+      const revision = revRes.rows?.[0];
+      if (!revision) throw new NotFoundError("بازنگری یافت نشد");
+      if (revision.request_id !== input.requestId) throw new CatalogDomainError("REVISION_REQUEST_MISMATCH", "Revision does not belong to request");
+      if (revision.buyer_response) {
+        throw new CatalogDomainError("REVISION_ALREADY_RESPONDED", `Revision already responded ${revision.buyer_response}`);
+      }
+
+      const reqHash = hashReq({ requestId: input.requestId, revisionId: input.revisionId, action: "accept" });
+      const claim = await this.claimIdempotency(tx, "wholesale_request", input.requestId, "vip.revision_response", input.idempotencyKey, reqHash);
+      if (claim.isReplay && claim.existing) {
+        return { revision: claim.existing.resultPayload as any, request: req, replayed: true };
+      }
+
+      const now = new Date();
+      const [updatedRev] = await tx
+        .update(wholesaleRequestRevision)
+        .set({ buyerResponse: "accepted", buyerRespondedAt: now, buyerRespondedBy: input.buyerUserId })
+        .where(eq(wholesaleRequestRevision.id, input.revisionId))
+        .returning();
+
+      // Accepting does NOT create order, returns to supplier_review for final supplier confirmation
+      transitionWholesaleRequest(req.status as WholesaleRequestStatus, "supplier_review", "vip");
+
+      const [updatedReq] = await tx
+        .update(wholesaleRequest)
+        .set({ status: "supplier_review", version: req.version + 1, updatedAt: now })
+        .where(eq(wholesaleRequest.id, input.requestId))
+        .returning();
+
+      await this.completeIdempotency(tx, "wholesale_request", input.requestId, "vip.revision_response", input.idempotencyKey, updatedRev.id, updatedRev);
+
+      return { revision: updatedRev, request: updatedReq, replayed: false };
+    });
+  }
+
+  async rejectRevision(input: {
+    requestId: string;
+    revisionId: string;
+    buyerUserId: string;
+    idempotencyKey: string;
+    reason?: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const lockRes = await tx.execute(sql`SELECT * FROM wholesale_request WHERE id = ${input.requestId} FOR UPDATE`);
+      const req = lockRes.rows?.[0];
+      if (!req) throw new NotFoundError("درخواست یافت نشد");
+      if (req.status !== "revision_requested") {
+        throw new CatalogDomainError("INVALID_REQUEST_TRANSITION", `Reject revision only from revision_requested, got ${req.status}`);
+      }
+      const [account] = await tx.select().from(wholesaleAccount).where(eq(wholesaleAccount.id, req.vip_account_id || req.vipAccountId)).limit(1);
+      if (!account || account.userId !== input.buyerUserId) throw new CatalogDomainError("VIP_OWNERSHIP_VIOLATION", "Not owner");
+
+      const revRes = await tx.execute(sql`SELECT * FROM wholesale_request_revision WHERE id = ${input.revisionId} FOR UPDATE`);
+      const revision = revRes.rows?.[0];
+      if (!revision) throw new NotFoundError("بازنگری یافت نشد");
+      if (revision.buyer_response) throw new CatalogDomainError("REVISION_ALREADY_RESPONDED", "Already responded");
+
+      const reqHash = hashReq({ requestId: input.requestId, revisionId: input.revisionId, action: "reject" });
+      const claim = await this.claimIdempotency(tx, "wholesale_request", input.requestId, "vip.revision_response", input.idempotencyKey, reqHash);
+      if (claim.isReplay && claim.existing) {
+        return { revision: claim.existing.resultPayload as any, request: req, replayed: true };
+      }
+
+      const now = new Date();
+      const [updatedRev] = await tx
+        .update(wholesaleRequestRevision)
+        .set({ buyerResponse: "rejected", buyerRespondedAt: now, buyerRespondedBy: input.buyerUserId })
+        .where(eq(wholesaleRequestRevision.id, input.revisionId))
+        .returning();
+
+      // Rejecting revision keeps request in revision_requested (buyer can still negotiate or cancel)
+      // No status transition, version unchanged? But we increment version to record buyer response? Spec says versioned, append-only, audited.
+      // We will keep status same but version+1 to reflect buyer response? However transition table does not have revision_requested→revision_requested.
+      // So we keep version same? Let's increment version to track change but keep status.
+      const [updatedReq] = await tx
+        .update(wholesaleRequest)
+        .set({ version: req.version + 1, updatedAt: now })
+        .where(eq(wholesaleRequest.id, input.requestId))
+        .returning();
+
+      await this.completeIdempotency(tx, "wholesale_request", input.requestId, "vip.revision_response", input.idempotencyKey, updatedRev.id, updatedRev);
+
+      return { revision: updatedRev, request: updatedReq, replayed: false };
+    });
+  }
+
+  async rejectRequest(input: {
+    requestId: string;
+    actorId: string;
+    actorRole: "supplier" | "admin";
+    reason: string;
+    idempotencyKey: string;
+    expectedVersion?: number;
+  }) {
+    if (!input.reason) throw new CatalogDomainError("REJECTION_REASON_REQUIRED", "Reason required");
+    return this.db.transaction(async (tx: any) => {
+      const lockRes = await tx.execute(sql`SELECT * FROM wholesale_request WHERE id = ${input.requestId} FOR UPDATE`);
+      const req = lockRes.rows?.[0];
+      if (!req) throw new NotFoundError("درخواست یافت نشد");
+      if (input.expectedVersion !== undefined && req.version !== input.expectedVersion) throw new CatalogDomainError("REQUEST_VERSION_CONFLICT", "Version conflict");
+      if (["rejected", "cancelled", "expired", "ordered"].includes(req.status)) throw new CatalogDomainError("INVALID_REQUEST_TRANSITION", `Terminal ${req.status}`);
+
+      // Ownership check
+      if (input.actorRole === "supplier") {
+        const [offer] = await tx.select().from(sellerOffer).where(eq(sellerOffer.id, req.offer_id || req.offerId)).limit(1);
+        if (!offer) throw new NotFoundError("Offer not found");
+        const [sellerRow] = await tx.select().from(seller).where(eq(seller.id, offer.sellerId)).limit(1);
+        if (!sellerRow?.supplierId) throw new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "KOLBE cannot be rejected by supplier");
+        const { supplierMember } = await import("@kolbe/database");
+        const [member] = await tx.select().from(supplierMember).where(and(eq(supplierMember.supplierId, sellerRow.supplierId), eq(supplierMember.userId, input.actorId))).limit(1);
+        if (!member) throw new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "Not member");
+        if (!["owner", "sales"].includes(member.role)) throw new CatalogDomainError("ROLE_NOT_ALLOWED", `Role ${member.role} cannot reject`);
+      }
+
+      const reqHash = hashReq({ requestId: input.requestId, action: "reject", reason: input.reason });
+      const claim = await this.claimIdempotency(tx, "wholesale_request", input.requestId, "vip.request_reject", input.idempotencyKey, reqHash);
+      if (claim.isReplay && claim.existing) return { request: claim.existing.resultPayload as any, replayed: true };
+
+      transitionWholesaleRequest(req.status as WholesaleRequestStatus, "rejected", input.actorRole as any, input.reason);
+
+      const [updated] = await tx
+        .update(wholesaleRequest)
+        .set({ status: "rejected", rejectionReason: input.reason, version: req.version + 1, updatedAt: new Date() })
+        .where(eq(wholesaleRequest.id, input.requestId))
+        .returning();
+
+      await this.completeIdempotency(tx, "wholesale_request", input.requestId, "vip.request_reject", input.idempotencyKey, updated.id, updated);
+      return { request: updated, replayed: false };
+    });
+  }
+
+  async cancelRequest(input: {
+    requestId: string;
+    actorId: string;
+    actorRole: "vip" | "admin";
+    reason?: string;
+    idempotencyKey: string;
+    expectedVersion?: number;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const lockRes = await tx.execute(sql`SELECT * FROM wholesale_request WHERE id = ${input.requestId} FOR UPDATE`);
+      const req = lockRes.rows?.[0];
+      if (!req) throw new NotFoundError("درخواست یافت نشد");
+      if (input.expectedVersion !== undefined && req.version !== input.expectedVersion) throw new CatalogDomainError("REQUEST_VERSION_CONFLICT", "Version conflict");
+      if (["rejected", "cancelled", "expired", "ordered"].includes(req.status)) throw new CatalogDomainError("INVALID_REQUEST_TRANSITION", `Terminal ${req.status}`);
+
+      if (input.actorRole === "vip") {
+        const [account] = await tx.select().from(wholesaleAccount).where(eq(wholesaleAccount.id, req.vip_account_id || req.vipAccountId)).limit(1);
+        if (!account || account.userId !== input.actorId) throw new CatalogDomainError("VIP_OWNERSHIP_VIOLATION", "Not owner");
+      }
+
+      const reqHash = hashReq({ requestId: input.requestId, action: "cancel", reason: input.reason });
+      const claim = await this.claimIdempotency(tx, "wholesale_request", input.requestId, "vip.request_cancel", input.idempotencyKey, reqHash);
+      if (claim.isReplay && claim.existing) return { request: claim.existing.resultPayload as any, replayed: true };
+
+      transitionWholesaleRequest(req.status as WholesaleRequestStatus, "cancelled", input.actorRole as any);
+
+      const [updated] = await tx
+        .update(wholesaleRequest)
+        .set({ status: "cancelled", version: req.version + 1, updatedAt: new Date() })
+        .where(eq(wholesaleRequest.id, input.requestId))
+        .returning();
+
+      await this.completeIdempotency(tx, "wholesale_request", input.requestId, "vip.request_cancel", input.idempotencyKey, updated.id, updated);
+      return { request: updated, replayed: false };
+    });
+  }
+
+  async expireWholesaleRequests(limit = 100) {
+    return this.db.transaction(async (tx: any) => {
+      // Worker-safe using DB time SELECT NOW() + SKIP LOCKED
+      const claimedRes = await tx.execute(
+        sql`SELECT * FROM wholesale_request WHERE status IN ('pending','supplier_review','revision_requested','accepted') AND acceptance_expires_at IS NOT NULL AND acceptance_expires_at < NOW() ORDER BY acceptance_expires_at ASC LIMIT ${limit} FOR UPDATE SKIP LOCKED`,
+      );
+      const claimed = claimedRes.rows as any[];
+      const expired: any[] = [];
+      for (const req of claimed) {
+        try {
+          transitionWholesaleRequest(req.status as WholesaleRequestStatus, "expired", "system");
+          const [updated] = await tx
+            .update(wholesaleRequest)
+            .set({ status: "expired", version: req.version + 1, updatedAt: new Date() })
+            .where(eq(wholesaleRequest.id, req.id))
+            .returning();
+          expired.push(updated);
+        } catch {
+          continue;
+        }
+      }
+      return expired;
+    });
+  }
+
+  async listRevisions(requestId: string, executor?: DbOrTx) {
+    const db = this.getExecutor(executor);
+    return db.select().from(wholesaleRequestRevision).where(eq(wholesaleRequestRevision.requestId, requestId)).orderBy(wholesaleRequestRevision.revisionNumber);
   }
 }

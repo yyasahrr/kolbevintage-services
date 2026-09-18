@@ -54,4 +54,6 @@ export {
   wholesalePackageItem,
   wholesalePricingTier,
   wholesaleRequest,
+  wholesaleRequestRevision,
+  fulfillmentException,
 } from "./tables";

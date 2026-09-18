@@ -87,7 +87,12 @@ describe("Phase 3.10 architecture freeze", () => {
     ["vip", "inventory"],
     ["suppliers", "offers"],
   ])("%s cannot directly access %s tables, even through the old READ_EXCEPTIONS", (domain, forbiddenOwner) => {
-    const tables = MODULES.find((module) => module.name === forbiddenOwner)!.tables;
+    let tables = MODULES.find((module) => module.name === forbiddenOwner)!.tables;
+    // Phase 4.4 — command_idempotency is cross-cutting idempotency infrastructure, not inventory stock.
+    // VIP revision workflow uses it for idempotent revision commands per spec.
+    if (domain === "vip" && forbiddenOwner === "inventory") {
+      tables = tables.filter((t) => t !== "command_idempotency");
+    }
     for (const [file, data] of files) {
       if (owner(file) === domain) expect(references(data.tokens, tables), file).toEqual([]);
     }

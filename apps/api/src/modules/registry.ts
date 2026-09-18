@@ -40,7 +40,7 @@ export const MODULES: readonly ModuleDefinition[] = [
   // فاز ۳ — بازار عمده و کاتالوگ
   {
     name: "vip",
-    tables: ["wholesale_account", "vip_plan", "vip_subscription", "wholesale_request"],
+    tables: ["wholesale_account", "vip_plan", "vip_subscription", "wholesale_request", "wholesale_request_revision"],
     dependsOn: ["customers", "pricing", "suppliers", "supplier-team", "offers", "catalog", "audit"],
     status: "scaffolded",
     phase: 3,
@@ -108,7 +108,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: "scaffolded",
     phase: 4,
   },
-  { name: "fulfillment", tables: [], dependsOn: ["orders", "inventory"], status: "planned", phase: 4 },
+  { name: "fulfillment", tables: ["fulfillment_exception"], dependsOn: ["orders", "inventory", "suppliers", "supplier-team", "audit"], status: "scaffolded", phase: 4 },
   { name: "shipments", tables: [], dependsOn: ["orders", "shipping"], status: "planned", phase: 4 },
   { name: "shipping", tables: [], dependsOn: ["warehouses"], status: "planned", phase: 4 },
   { name: "payments", tables: [], dependsOn: ["orders", "payment-providers"], status: "planned", phase: 5 },

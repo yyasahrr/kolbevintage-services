@@ -28,6 +28,7 @@ import { SupplierTeamModule } from "./modules/supplier-team/supplier-team.module
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { VipModule } from "./modules/vip/vip.module";
 import { OrdersModule } from "./modules/orders/orders.module";
+import { FulfillmentModule } from "./modules/fulfillment/fulfillment.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
 
@@ -46,6 +47,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     InventoryModule,
     VipModule,
     OrdersModule,
+    FulfillmentModule,
     RatingsModule,
     AdminModule,
   ],

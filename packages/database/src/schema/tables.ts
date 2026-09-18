@@ -50,6 +50,9 @@ import {
   COMMAND_IDEMPOTENCY_STATES,
   COMMAND_TYPES,
   CURRENCIES,
+  FULFILLMENT_EXCEPTION_BUYER_RESOLUTIONS,
+  FULFILLMENT_EXCEPTION_STATUSES,
+  FULFILLMENT_EXCEPTION_TYPES,
   INVENTORY_LEDGER_CHANGE_TYPES,
   INVENTORY_RESERVATION_STATUSES,
   MAX_MONEY_RIAL,
@@ -86,6 +89,7 @@ import {
   WHOLESALE_ORDER_STATUS_VALUES,
   WHOLESALE_PAYMENT_MODES,
   WHOLESALE_REQUEST_STATUSES,
+  WHOLESALE_REVISION_BUYER_RESPONSES,
 } from "./state-values";
 
 /** ستون‌های زمانی تکراری — یک‌بار تعریف می‌شوند تا همهٔ جداول یکدست بمانند. */
@@ -1593,6 +1597,8 @@ export const inventoryReservation = pgTable(
     /** Phase 4.2 — linkage to orders */
     orderId: text("order_id"),
     orderItemId: text("order_item_id"),
+    /** Phase 4.4 — linkage to child order for isolated release/consume */
+    childOrderId: text("child_order_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1629,11 +1635,17 @@ export const inventoryReservation = pgTable(
       columns: [table.orderItemId],
       foreignColumns: [wholesaleOrderItem.id],
     }).onDelete("restrict"),
+    foreignKey({
+      name: "inventory_reservation_child_order_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
     index("inventory_reservation_variant_seller").on(table.variantId, table.sellerId),
     index("inventory_reservation_status_expires").on(table.status, table.expiresAt),
     index("inventory_reservation_allocation").on(table.allocationId),
     index("inventory_reservation_order").on(table.orderId),
     index("inventory_reservation_order_item").on(table.orderItemId),
+    index("inventory_reservation_child_order").on(table.childOrderId),
     uniqueIndex("inventory_reservation_idempotency_unique").on(table.sellerId, table.idempotencyKey).where(sql`${table.idempotencyKey} IS NOT NULL`),
     uniqueIndex("inventory_reservation_allocation_unique").on(table.allocationId, table.sellerId, table.variantId).where(sql`${table.allocationId} IS NOT NULL`),
     // Phase 4.2 — invariant (order_item_id, variant_id, seller_id) unique for active canonical allocation
@@ -1742,5 +1754,134 @@ export const commandIdempotency = pgTable(
     uniqueIndex("command_idempotency_scope_key_unique").on(table.scopeType, table.scopeId, table.commandType, table.idempotencyKey),
     index("command_idempotency_expires").on(table.expiresAt),
     index("command_idempotency_created").on(table.createdAt),
+  ],
+);
+
+/* ── Phase 4.4 — Wholesale request revision (VIP-owned, append-only) ─────── */
+export const wholesaleRequestRevision = pgTable(
+  "wholesale_request_revision",
+  {
+    id: text("id").primaryKey(),
+    requestId: text("request_id").notNull(),
+    requestVersion: integer("request_version").notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    proposedByUserId: text("proposed_by_user_id").notNull(),
+    proposedByRole: text("proposed_by_role").notNull(),
+    reason: text("reason"),
+    proposedQuantity: integer("proposed_quantity"),
+    proposedVariantId: text("proposed_variant_id"),
+    proposedPackageId: text("proposed_package_id"),
+    pricingUnit: text("pricing_unit"),
+    proposedUnitPrice: bigint("proposed_unit_price", { mode: "bigint" }),
+    currency: text("currency").notNull().default("IRR"),
+    proposedTermsSnapshot: jsonb("proposed_terms_snapshot").notNull().default({}),
+    proposedTermsHash: text("proposed_terms_hash"),
+    buyerRespondedAt: timestamp("buyer_responded_at", { withTimezone: true }),
+    buyerRespondedBy: text("buyer_responded_by"),
+    buyerResponse: text("buyer_response"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    quantityCheck("wholesale_request_revision_request_version_non_negative", "request_version"),
+    positiveQuantityCheck("wholesale_request_revision_revision_number_positive", "revision_number"),
+    quantityCheck("wholesale_request_revision_proposed_quantity_non_negative", "proposed_quantity"),
+    stateCheck("wholesale_request_revision_pricing_unit_allowed", "pricing_unit", PRICING_UNITS),
+    stateCheck("wholesale_request_revision_currency_allowed", "currency", CURRENCIES),
+    stateCheck("wholesale_request_revision_buyer_response_allowed", "buyer_response", WHOLESALE_REVISION_BUYER_RESPONSES),
+    stateCheck("wholesale_request_revision_proposed_by_role_allowed", "proposed_by_role", ORDER_ACTOR_ROLES),
+    moneyCheck("wholesale_request_revision_proposed_unit_price_range", "proposed_unit_price"),
+    check(
+      "wholesale_request_revision_selector_check",
+      sql.raw(
+        `(("proposed_variant_id" IS NULL AND "proposed_package_id" IS NULL) OR ("proposed_variant_id" IS NOT NULL AND "proposed_package_id" IS NULL) OR ("proposed_variant_id" IS NULL AND "proposed_package_id" IS NOT NULL))`,
+      ),
+    ),
+    uniqueIndex("wholesale_request_revision_request_revision_unique").on(table.requestId, table.revisionNumber),
+    index("wholesale_request_revision_request_created").on(table.requestId, table.createdAt),
+    foreignKey({
+      name: "wholesale_request_revision_request_fk",
+      columns: [table.requestId],
+      foreignColumns: [wholesaleRequest.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_request_revision_proposed_by_fk",
+      columns: [table.proposedByUserId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_request_revision_buyer_responded_by_fk",
+      columns: [table.buyerRespondedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_request_revision_proposed_variant_fk",
+      columns: [table.proposedVariantId],
+      foreignColumns: [productVariant.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_request_revision_proposed_package_fk",
+      columns: [table.proposedPackageId],
+      foreignColumns: [wholesalePackage.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/* ── Phase 4.4 — Fulfillment exception (Fulfillment-owned) ───────────────── */
+export const fulfillmentException = pgTable(
+  "fulfillment_exception",
+  {
+    id: text("id").primaryKey(),
+    childOrderId: text("child_order_id").notNull(),
+    sellerId: text("seller_id").notNull(),
+    wholesaleOrderId: text("wholesale_order_id"),
+    type: text("type").notNull(),
+    reasonCode: text("reason_code"),
+    reason: text("reason"),
+    status: text("status").notNull().default("open"),
+    reportedBy: text("reported_by").notNull(),
+    reportedAt: timestamp("reported_at", { withTimezone: true }).notNull().defaultNow(),
+    affectedAmount: bigint("affected_amount", { mode: "bigint" }).notNull().default(sql`0`),
+    currency: text("currency").notNull().default("IRR"),
+    affectedItemsSnapshot: jsonb("affected_items_snapshot").notNull().default([]),
+    buyerResolution: text("buyer_resolution"),
+    buyerResolvedAt: timestamp("buyer_resolved_at", { withTimezone: true }),
+    buyerResolvedBy: text("buyer_resolved_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("fulfillment_exception_type_allowed", "type", FULFILLMENT_EXCEPTION_TYPES),
+    stateCheck("fulfillment_exception_status_allowed", "status", FULFILLMENT_EXCEPTION_STATUSES),
+    stateCheck("fulfillment_exception_buyer_resolution_allowed", "buyer_resolution", FULFILLMENT_EXCEPTION_BUYER_RESOLUTIONS),
+    stateCheck("fulfillment_exception_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("fulfillment_exception_affected_amount_range", "affected_amount"),
+    index("fulfillment_exception_child_status").on(table.childOrderId, table.status),
+    index("fulfillment_exception_seller_status").on(table.sellerId, table.status),
+    index("fulfillment_exception_wholesale_status").on(table.wholesaleOrderId, table.status),
+    foreignKey({
+      name: "fulfillment_exception_child_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fulfillment_exception_seller_fk",
+      columns: [table.sellerId],
+      foreignColumns: [seller.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fulfillment_exception_wholesale_fk",
+      columns: [table.wholesaleOrderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fulfillment_exception_reported_by_fk",
+      columns: [table.reportedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fulfillment_exception_buyer_resolved_by_fk",
+      columns: [table.buyerResolvedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
   ],
 );

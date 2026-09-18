@@ -133,6 +133,8 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "user_session",
       "order_status_history",
       "order_event",
+      "wholesale_request_revision",
+      "fulfillment_exception",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);
@@ -187,6 +189,7 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "vip_plan",
         "vip_subscription",
         "wholesale_request",
+        "wholesale_request_revision",
         "product",
         "seller_offer",
         "wholesale_package",
@@ -199,10 +202,12 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "product_variant_inventory",
         "inventory_reservation",
         "inventory_ledger",
+        "command_idempotency",
         "wholesale_order",
         "wholesale_order_item",
         "wholesale_order_request",
         "product_media",
+        "fulfillment_exception",
       ],
       inventory: [
         "supplier",
@@ -262,6 +267,7 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
       orders: [
         "wholesale_account",
         "wholesale_request",
+        "wholesale_request_revision",
         "vip_plan",
         "vip_subscription",
         "product",
@@ -286,6 +292,24 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "product_variant_media",
         "quote",
         "rfq",
+        "fulfillment_exception",
+      ],
+      fulfillment: [
+        "purchase_order",
+        "purchase_order_item",
+        "wholesale_order",
+        "wholesale_order_item",
+        "wholesale_order_request",
+        "seller",
+        "supplier",
+        "supplier_member",
+        "command_idempotency",
+        "audit_log",
+        "inventory_reservation",
+        "product_variant_inventory",
+        "account_user",
+        "wholesale_account",
+        "wholesale_request",
       ],
     };
 

@@ -141,12 +141,16 @@ export const VIP_SUBSCRIPTION_STATUSES = ["pending", "active", "expired", "suspe
 
 /**
  * درخواست عمده — VIP محصول را انتخاب می‌کند، تأمین‌کننده بررسی می‌کند
+ * Phase 4.4 — added revision_requested, cancelled, expired
  */
 export const WHOLESALE_REQUEST_STATUSES = [
   "pending",
   "supplier_review",
+  "revision_requested",
   "accepted",
   "rejected",
+  "cancelled",
+  "expired",
   "ordered",
 ] as const;
 
@@ -190,6 +194,21 @@ export const COMMAND_TYPES = [
   "inventory.confirm",
   "inventory.adjust",
   "inventory.expire_batch",
+  "inventory.confirm_child",
+  "inventory.release_child",
+  "vip.request_revision",
+  "vip.revision_response",
+  "vip.request_reject",
+  "vip.request_cancel",
+  "vip.request_expire",
+  "orders.child_confirm",
+  "orders.child_prepare",
+  "orders.child_ready",
+  "orders.child_dispatch",
+  "orders.child_deliver",
+  "orders.child_cancel",
+  "fulfillment.report_exception",
+  "fulfillment.resolve_exception",
 ] as const;
 
 /**
@@ -279,7 +298,7 @@ export const WHOLESALE_PAYMENT_MODES = ["prepaid", "credit", "on_delivery", "tra
 /** Phase 4.2 — واحد قیمت‌گذاری خط سفارش */
 export const PRICING_UNITS = ["PIECE", "PACKAGE", "SERIES", "BOX", "CARTON", "SET", "PER_PIECE"] as const;
 
-/** Phase 4.2 — انواع رویداد سفارش */
+/** Phase 4.2 — انواع رویداد سفارش + Phase 4.4 extensions */
 export const ORDER_EVENT_TYPES = [
   "order.created",
   "order.confirmed",
@@ -292,10 +311,18 @@ export const ORDER_EVENT_TYPES = [
   "child.created",
   "child.confirmed",
   "child.preparing",
+  "child.ready",
   "child.shipped",
   "child.delivered",
   "child.cancelled",
+  "child.exception_opened",
+  "child.exception_resolved",
   "request.converted",
+  "request.revision_requested",
+  "request.revision_accepted",
+  "request.rejected",
+  "request.cancelled",
+  "request.expired",
   "inventory.reserved",
   "inventory.released",
   "inventory.consumed",
@@ -320,4 +347,48 @@ export const ALL_ORDER_STATUSES = [
   "pending",
   "preparing",
   "delivered",
+] as const;
+
+/** Phase 4.4 — Wholesale request revision buyer response */
+export const WHOLESALE_REVISION_BUYER_RESPONSES = ["accepted", "rejected"] as const;
+
+/** Phase 4.4 — Fulfillment exception types */
+export const FULFILLMENT_EXCEPTION_TYPES = [
+  "cannot_fulfill",
+  "partial_shortage",
+  "package_unavailable",
+  "operational_failure",
+] as const;
+
+export const FULFILLMENT_EXCEPTION_STATUSES = [
+  "open",
+  "awaiting_buyer",
+  "replacement_requested",
+  "resolved",
+  "cancelled",
+] as const;
+
+export const FULFILLMENT_EXCEPTION_BUYER_RESOLUTIONS = [
+  "replacement_requested",
+  "quantity_reduction",
+  "cancel_portion",
+] as const;
+
+/** Phase 4.4 — extended order event types for revision and fulfillment */
+export const ORDER_EVENT_TYPES_44 = [
+  "request.revision_requested",
+  "request.revision_accepted",
+  "request.rejected",
+  "request.cancelled",
+  "request.expired",
+  "child.confirmed",
+  "child.preparing",
+  "child.ready",
+  "child.exception_opened",
+  "child.exception_resolved",
+  "child.cancelled",
+  "child.shipped",
+  "child.delivered",
+  "inventory.released",
+  "inventory.consumed",
 ] as const;

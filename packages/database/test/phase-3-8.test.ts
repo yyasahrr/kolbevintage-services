@@ -23,12 +23,12 @@ describe("فاز ۳.۸ — Legacy Removal & Clean Architecture", () => {
     expect(rows).toEqual([]);
   });
 
-  it("46 جدول پس از حذف legacy و افزودن submission کانونیکال و idempotency و order foundation و multi-request link (phase 4.2.2)", async () => {
+  it("48 جدول پس از حذف legacy و افزودن submission کانونیکال و idempotency و order foundation و multi-request link و revision و exception (phase 4.4)", async () => {
     const { rows } = await withClient(DB, (client) =>
       client.query<{ count: string }>(`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`),
     );
-    // 42 from phase 3.8 + 1 command_idempotency from phase 4.1 + 2 order tables from 4.2 + 1 wholesale_order_request from 4.2.2
-    expect(Number(rows[0].count)).toBe(46);
+    // 42 from phase 3.8 + 1 command_idempotency from phase 4.1 + 2 order tables from 4.2 + 1 wholesale_order_request from 4.2.2 + 2 phase 4.4 (revision + exception)
+    expect(Number(rows[0].count)).toBe(48);
   });
 
   it("wholesale_order_item به canonical references اشاره می‌کند (Phase 4.2 evolved)", async () => {

@@ -1,5 +1,5 @@
 /**
- * منطق VIP — پلن و اشتراک و درخواست عمده
+ * منطق VIP — پلن و اشتراک و درخواست عمده Phase 4.4
  */
 
 import { CatalogDomainError } from "../catalog/catalog.logic";
@@ -24,13 +24,23 @@ export type VipSubscription = {
   expiresAt?: Date | null;
 };
 
+export type WholesaleRequestStatus =
+  | "pending"
+  | "supplier_review"
+  | "revision_requested"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "expired"
+  | "ordered";
+
 export type WholesaleRequest = {
   id: string;
   productId: string;
   offerId: string;
   vipAccountId: string;
   quantity: number;
-  status: "pending" | "supplier_review" | "accepted" | "rejected" | "ordered";
+  status: WholesaleRequestStatus;
 };
 
 export function isVipSubscriptionActive(sub: VipSubscription): boolean {
@@ -72,31 +82,55 @@ export function validateWholesaleRequestQuantity(
   if (quantity < moq) {
     throw new CatalogDomainError("QUANTITY_BELOW_MOQ", `تعداد درخواستی کمتر از حداقل ${moq} است`);
   }
-  // Stock availability is NOT checked at request creation — inventory rechecks at order creation under locks
-  // per inventory-contract: supplier acceptance is evidence, not guarantee
   if (available != null && quantity > available) {
     throw new CatalogDomainError("INSUFFICIENT_STOCK", "موجودی کافی نیست");
   }
 }
 
 /**
- * جریان درخواست عمده:
- * VIP selects → Request → Supplier availability → Accept/Reject with reason → Order
+ * جریان درخواست عمده Phase 4.4:
+ * pending → supplier_review → revision_requested → supplier_review → accepted → ordered
+ * pending/supplier_review/revision_requested/accepted → cancelled (buyer/admin)
+ * supplier_review/revision_requested → rejected (supplier/admin)
+ * pending/supplier_review/revision_requested/accepted → expired (system)
+ * Terminal: rejected, cancelled, expired, ordered
  */
 export function transitionWholesaleRequest(
-  current: WholesaleRequest["status"],
-  next: WholesaleRequest["status"],
-  actorRole: "vip" | "supplier" | "admin",
+  current: WholesaleRequestStatus,
+  next: WholesaleRequestStatus,
+  actorRole: "vip" | "supplier" | "admin" | "system",
   rejectionReason?: string,
 ): void {
-  const allowed: Record<string, Array<{ to: WholesaleRequest["status"]; roles: Array<typeof actorRole> }>> = {
-    pending: [{ to: "supplier_review", roles: ["vip", "admin"] }],
+  const allowed: Record<
+    WholesaleRequestStatus,
+    Array<{ to: WholesaleRequestStatus; roles: Array<"vip" | "supplier" | "admin" | "system"> }>
+  > = {
+    pending: [
+      { to: "supplier_review", roles: ["vip", "admin"] },
+      { to: "cancelled", roles: ["vip", "admin"] },
+      { to: "expired", roles: ["system"] },
+    ],
     supplier_review: [
+      { to: "revision_requested", roles: ["supplier", "admin"] },
       { to: "accepted", roles: ["supplier", "admin"] },
       { to: "rejected", roles: ["supplier", "admin"] },
+      { to: "cancelled", roles: ["vip", "admin"] },
+      { to: "expired", roles: ["system"] },
     ],
-    accepted: [{ to: "ordered", roles: ["vip", "admin"] }],
+    revision_requested: [
+      { to: "supplier_review", roles: ["vip", "admin"] },
+      { to: "rejected", roles: ["supplier", "admin"] },
+      { to: "cancelled", roles: ["vip", "admin"] },
+      { to: "expired", roles: ["system"] },
+    ],
+    accepted: [
+      { to: "ordered", roles: ["vip", "admin", "system"] },
+      { to: "cancelled", roles: ["vip", "admin"] },
+      { to: "expired", roles: ["system"] },
+    ],
     rejected: [],
+    cancelled: [],
+    expired: [],
     ordered: [],
   };
 
@@ -112,4 +146,8 @@ export function transitionWholesaleRequest(
   if (next === "rejected" && !rejectionReason) {
     throw new CatalogDomainError("REJECTION_REASON_REQUIRED", "برای رد درخواست، دلیل لازم است");
   }
+}
+
+export function isTerminalRequestStatus(status: WholesaleRequestStatus): boolean {
+  return ["rejected", "cancelled", "expired", "ordered"].includes(status);
 }
