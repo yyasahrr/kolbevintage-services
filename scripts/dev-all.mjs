@@ -18,9 +18,19 @@ if (postgres.status !== 0) {
 }
 
 console.log("\nکلبه وینتیج — Next.js + PostgreSQL");
+
+/*
+ * دادهٔ نمایشی (حساب‌های admin/vip/supplier و کاتالوگ نمونه) از اصلاح D18
+ * پیش‌فرض خاموش است و فقط با درخواست صریح کاشته می‌شود. `npm run dev` مسیر
+ * توسعهٔ محلی است، پس اینجا صریحاً روشن می‌شود تا تجربهٔ توسعه‌دهنده عوض نشود.
+ * محیط تولید هرگز از این اسکریپت اجرا نمی‌شود و در تولید حتی با فلگ روشن هم
+ * کاشتی انجام نمی‌شود (`demoSeedDecision`).
+ */
+const devEnv = { ...process.env, KOLBE_SEED_DEMO_DATA: process.env.KOLBE_SEED_DEMO_DATA ?? "true" };
+
 const child = spawn(npmCommand, npmArgs(["run", "dev", "--workspace", "kolbe-next"]), {
   cwd: ROOT,
-  env: process.env,
+  env: devEnv,
   stdio: "inherit",
 });
 child.on("error", (error) => console.error(error.message));

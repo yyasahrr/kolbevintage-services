@@ -638,8 +638,14 @@ function CustomersPanel() {
   const unblock = (phone: string) => { persistCustomers(customers.map((c) => c.phone === phone ? { ...c, block: null } : c)); setNotice("مسدودسازی برداشته شد."); };
   const [notice, setNotice] = useState("");
   const [selected,setSelected]=useState<(typeof initialCustomers)[number]|null>(null);
-  const [wallet,setWallet]=useState(0);
-  const saveWallet=()=>{if(!selected)return;const key=`kv_wallet_${selected.phone}`;localStorage.setItem(key,String(wallet));};
+  /*
+   * ⚠️ اصلاح D24/D38: ویرایشگر «کیف پول مشتری» حذف شد.
+   * پیش از این موجودی کیف پول در `localStorage` (کلید `kv_wallet_<phone>`) نوشته
+   * می‌شد؛ یعنی یک ادعای مالی فقط در مرورگر همان مدیر زندگی می‌کرد، هیچ تراکنش
+   * حسابداری نداشت و هیچ‌جای دیگری خوانده نمی‌شد. سامانهٔ کیف پول دامنهٔ فاز ۵ است
+   * (`wallet` module + ledger append-only)؛ تا آن زمان هیچ کنترل مالی در پنل
+   * نمایش داده نمی‌شود تا مدیر فکر نکند پول واقعی جابه‌جا شده است.
+   */
 
   return (
     <div>
@@ -676,7 +682,7 @@ function CustomersPanel() {
                   )}
                 </td>
                 <td className="p-3">
-                  <button onClick={()=>{setSelected(c);setWallet(Number(localStorage.getItem(`kv_wallet_${c.phone}`)||0));}} className="text-[11.5px] underline">پروفایل</button>
+                  <button onClick={()=>setSelected(c)} className="text-[11.5px] underline">پروفایل</button>
                   <button onClick={()=>{setBlocking(c);setBlockForm({type:"temp",reason:""});}} className="mr-2 text-[11.5px] text-[#9e4b3c] underline">مسدودسازی</button>
                 </td>
               </tr>
@@ -706,7 +712,7 @@ function CustomersPanel() {
           </div>
         </div>
       )}
-      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">CUSTOMER 360</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول مشتری</p><label className="mt-3 block text-[9.5px] text-white/70">موجودی (تومان)<input type="number" min="0" value={wallet} onChange={e=>setWallet(Number(e.target.value))} className="mt-1.5 h-10 w-full bg-white px-3 text-[11px] text-[#011c3a]"/></label><button onClick={saveWallet} className="mt-3 h-9 w-full border border-white/30 text-[10px] hover:border-white">ذخیره موجودی کیف پول</button></aside></section>}
+      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">CUSTOMER 360</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول و اعتبار</p><p className="mt-3 text-[10px] leading-6 text-white/70">کیف پول کلبه هنوز راه‌اندازی نشده است. موجودی و تراکنش‌های مالی پس از ساخته شدن ماژول «کیف پول و دفتر کل» (فاز ۵) و به‌صورت فقط‌افزودنی (append-only) نمایش داده می‌شوند؛ تا آن زمان هیچ عددی در پنل به‌عنوان موجودی مالی قابل ویرایش نیست.</p></aside></section>}
     </div>
   );
 }

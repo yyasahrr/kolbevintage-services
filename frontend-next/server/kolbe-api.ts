@@ -1,18 +1,88 @@
-import { createHash, createHmac, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import type { PoolClient } from "pg";
-import { database, makeId, passwordRecord, rows, transaction } from "./database";
+import { NextResponse } from "next/server";
+import { assertDatabaseReady } from "../../packages/database/src/verify";
+import { DatabaseNotMigratedError, database, makeId, passwordRecord, rows, transaction } from "./database";
+import { ErrorCodes, HttpError, isHttpError } from "./http-error";
+import { parseMoneyInput, parseNonNegativeInteger } from "./money-input";
+import { consumeRateLimit } from "./rate-limit";
+import {
+  consumeTryOnTaskQuota,
+  consumeTryOnUploadQuota,
+} from "./try-on-guard";
+import {
+  assertPaymentMethodAllowed,
+  parseCustomerContact,
+  parseDeliveryAddress,
+  paymentSettlementStatus,
+  priceRetailOrder,
+  type RetailPaymentMethod,
+} from "./retail-pricing";
 import { handlePerfectCorpRequest, isPerfectCorpError } from "./perfect-corp";
 
-const CORS_HEADERS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, authorization",
-  "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-  "access-control-max-age": "600",
-};
+/**
+ * CORS — فاز ۲: محاسبه per-request (D36).
+ *
+ * قبلاً همیشه `access-control-allow-origin: *` برگردانده می‌شد که با کوکی‌های
+ * HttpOnly (نیازمند `credentials`) ناسازگار و برای API مالی ناامن است.
+ * حالا فقط مبدأهای مجاز از `KOLBE_ALLOWED_ORIGINS` (با کاما جدا شده) اکو می‌شوند.
+ *
+ * - در توسعه، اگر متغیر تنظیم نشده باشد، برای سازگاری با پوسته‌های قدیمی Vite مقدار `*` می‌ماند.
+ * - در تولید، اگر تنظیم نشده باشد هیچ هدر CORS صادر نمی‌شود؛ یعنی فقط درخواست‌های
+ *   same-origin (فروشگاه Next.js) کار می‌کنند که رفتار مورد انتظار است.
+ * - فاز ۲: CORS_HEADERS دیگر در زمان import محاسبه نمی‌شود؛ هر درخواست
+ *   origin خودش را می‌گیرد (D36).
+ */
+function allowedOrigins(): string[] {
+  return (process.env.KOLBE_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
 
-type Claims = { sub: string; role: string; exp: number };
+export function corsHeadersFor(origin: string | null): Record<string, string> {
+  const allowed = allowedOrigins();
+  const base: Record<string, string> = {
+    "access-control-allow-headers": "content-type, authorization, idempotency-key",
+    "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "access-control-max-age": "600",
+  };
+  function isAllowed(o: string): boolean {
+    if (allowed.includes(o)) return true;
+    return allowed.some((a) => {
+      if (a === "*") return true;
+      if (a === o) return true;
+      if (a.startsWith("https://*.")) {
+        const suffix = a.slice("https://*.".length);
+        try {
+          const url = new URL(o);
+          return url.hostname === suffix || url.hostname.endsWith("." + suffix);
+        } catch { return false; }
+      }
+      if (a.startsWith("http://*.")) {
+        const suffix = a.slice("http://*.".length);
+        try {
+          const url = new URL(o);
+          return url.hostname === suffix || url.hostname.endsWith("." + suffix);
+        } catch { return false; }
+      }
+      return false;
+    });
+  }
+  if (allowed.length) {
+    if (origin && isAllowed(origin)) {
+      return { ...base, "access-control-allow-origin": origin, "access-control-allow-credentials": "true", vary: "origin" };
+    }
+    return base;
+  }
+  if (process.env.NODE_ENV === "production") return base;
+  return { ...base, "access-control-allow-origin": "*" };
+}
+
+type Claims = { sub: string; role: string; exp: number; tv?: number };
 type Json = Record<string, any>;
+
 
 const HERO_VIDEO_SETTING_KEY = "storefront-hero-video";
 const HERO_VIDEO_URL = "/store/kolbe/site/hero-video";
@@ -64,6 +134,29 @@ function parseVideoDataUrl(dataUrl: string) {
   return { mime, bytes: Buffer.from(dataUrl.slice(comma + 1), "base64") };
 }
 
+/**
+ * اعتبارسنجی سمت سرور فایل‌های آپلودی.
+ *
+ * قاعدهٔ حاکم: «All uploads must be validated server-side» (PROMPT 0).
+ * ممیزی (D9) نشان داد ویدیوهای سایت‌ساز به‌صورت Data-URL چندمگابایتی در
+ * `site_setting` ذخیره می‌شوند بدون هیچ بررسی اندازه/نوع سمت سرور.
+ * این تابع حداقلِ لازم را اضافه می‌کند تا یک مدیر (یا توکن دزدیده‌شدهٔ مدیر)
+ * نتواند دیتابیس را با فایل حجیم/نامعتبر پر کند.
+ *
+ * هدف نهایی (فاز ۶): آپلود مستقیم به S3/ParsPack با URL امضاشده و
+ * `files` table. این تابع تا آن زمان نقش نگهبان را دارد.
+ */
+const MAX_EMBEDDED_VIDEO_BYTES = 25 * 1024 * 1024;
+const ALLOWED_EMBEDDED_VIDEO_MIME = new Set(["video/mp4", "video/webm"]);
+
+function validateEmbeddedVideo(dataUrl: string): number {
+  const parsed = parseVideoDataUrl(dataUrl);
+  if (!parsed) throw new HttpError(422, "INVALID_VIDEO_FORMAT");
+  if (!ALLOWED_EMBEDDED_VIDEO_MIME.has(parsed.mime)) throw new HttpError(422, "UNSUPPORTED_VIDEO_TYPE");
+  if (parsed.bytes.length > MAX_EMBEDDED_VIDEO_BYTES) throw new HttpError(413, "VIDEO_TOO_LARGE");
+  return parsed.bytes.length;
+}
+
 function videoStream(bytes: Uint8Array, start = 0, end = bytes.length - 1) {
   const chunkSize = 64 * 1024;
   let offset = start;
@@ -83,24 +176,89 @@ function videoStream(bytes: Uint8Array, start = 0, end = bytes.length - 1) {
   });
 }
 
-class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
+/** نام کوکی نشست. توکن حاوی نقش است، پس یک کوکی برای همهٔ نقش‌ها کافی است. */
+export const SESSION_COOKIE = "kolbe_session";
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14;
+
+let warnedAboutDevSecret = false;
+
+const sessionSecret = () => {
+  const secret = process.env.KOLBE_SESSION_SECRET ?? process.env.JWT_SECRET;
+  if (secret && secret.length >= 16) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new HttpError(500, ErrorCodes.SESSION_SECRET_MISSING);
   }
+  if (secret) return secret;
+  if (!warnedAboutDevSecret) {
+    warnedAboutDevSecret = true;
+    console.warn(
+      "[kolbe] KOLBE_SESSION_SECRET تنظیم نشده است؛ مقدار توسعه استفاده می‌شود. " +
+        "در تولید برنامه بالا نمی‌آید تا از جعل توکن جلوگیری شود.",
+    );
+  }
+  return "kolbe-dev-secret-change-me";
+};
+
+
+/** ── TOTP ────────────────────────────────────────────────────────────────
+ * پیاده‌سازی حداقلی TOTP برای enrolment — مشابه NestJS TotpService
+ */
+const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function base32EncodeTotp(buffer: Buffer): string {
+  let bits = 0; let value = 0; let output = "";
+  for (let i = 0; i < buffer.length; i++) {
+    value = (value << 8) | buffer[i]; bits += 8;
+    while (bits >= 5) { output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+  return output;
+}
+function base32DecodeTotp(input: string): Buffer {
+  const cleaned = input.toUpperCase().replace(/=+$/, "").replace(/[^A-Z2-7]/g, "");
+  let bits = 0; let value = 0; const bytes: number[] = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    const idx = BASE32_ALPHABET.indexOf(cleaned[i]); if (idx === -1) continue;
+    value = (value << 5) | idx; bits += 5;
+    if (bits >= 8) { bytes.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(bytes);
+}
+function intToBufferTotp(counter: number): Buffer {
+  const buf = Buffer.alloc(8); buf.writeUInt32BE(0,0); buf.writeUInt32BE(counter,4); return buf;
+}
+function totpGenerateCode(secret: string, timeStep?: number): string {
+  const step = timeStep ?? Math.floor(Date.now() / 1000 / 30);
+  const key = base32DecodeTotp(secret);
+  const counter = intToBufferTotp(step);
+  const hmac = createHmac("sha1", key).update(counter).digest();
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset+1] & 0xff) << 16) | ((hmac[offset+2] & 0xff) << 8) | (hmac[offset+3] & 0xff);
+  return (code % 1_000_000).toString().padStart(6, "0");
+}
+function totpVerify(secret: string, token: string, window = 1): boolean {
+  if (!/^\d{6}$/.test(token)) return false;
+  const current = Math.floor(Date.now() / 1000 / 30);
+  for (let i = -window; i <= window; i++) if (totpGenerateCode(secret, current + i) === token) return true;
+  return false;
+}
+function totpSecretRandom(): string {
+  return base32EncodeTotp(randomBytes(20));
+}
+function totpOtpauthUrl(secret: string, email: string, issuer = "Kolbe Vintage"): string {
+  const label = encodeURIComponent(`${issuer}:${email}`);
+  const params = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
+  return `otpauth://totp/${label}?${params.toString()}`;
 }
 
-const sessionSecret = () => process.env.KOLBE_SESSION_SECRET ?? process.env.JWT_SECRET ?? "kolbe-dev-secret-change-me";
 
-function issueToken(userId: string, role: string) {
-  const payload: Claims = { sub: userId, role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14 };
+function issueToken(userId: string, role: string, tokenVersion: number = 0) {
+  const payload: Claims = { sub: userId, role, exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS, tv: tokenVersion };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signature = createHmac("sha256", sessionSecret()).update(body).digest("base64url");
   return `${body}.${signature}`;
 }
 
-function claimsFrom(req: NextRequest): Claims | null {
-  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) return null;
+function verifyToken(token: string): Claims | null {
   const [body, signature] = token.split(".");
   if (!body || !signature) return null;
   const expected = createHmac("sha256", sessionSecret()).update(body).digest("base64url");
@@ -109,20 +267,242 @@ function claimsFrom(req: NextRequest): Claims | null {
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
     const claims = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Claims;
-    return claims.exp * 1000 > Date.now() ? claims : null;
+    if (!claims.sub || !claims.role || typeof claims.exp !== "number") return null;
+    if (claims.exp * 1000 <= Date.now()) return null;
+    if (claims.tv !== undefined && typeof claims.tv !== "number") return null;
+    return claims;
   } catch {
     return null;
   }
 }
 
-function requireRole(req: NextRequest, role: string) {
-  const claims = claimsFrom(req);
-  if (!claims || claims.role !== role) throw new HttpError(401, "UNAUTHORIZED");
-  return claims;
+function readCookie(req: NextRequest, name: string): string | null {
+  const header = req.headers.get("cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("="));
+  }
+  return null;
 }
 
-function response(data: unknown, status = 200) {
-  return Response.json(data, { status, headers: CORS_HEADERS });
+function claimsFrom(req: NextRequest): Claims | null {
+  const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) return verifyToken(bearer);
+  const cookie = readCookie(req, SESSION_COOKIE);
+  return cookie ? verifyToken(cookie) : null;
+}
+
+async function assertTokenVersion(claims: Claims): Promise<Claims> {
+  // فاز ۲: بررسی نسخهٔ توکن و وضعیت حساب در دیتابیس
+  try {
+    const user = (await rows<any>("SELECT id, role, status, token_version FROM account_user WHERE id=$1 LIMIT 1", [claims.sub]))[0];
+    if (!user) throw new HttpError(401, "UNAUTHORIZED");
+    if (user.status !== "active") throw new HttpError(403, "ACCOUNT_SUSPENDED");
+    const tv = claims.tv;
+    if (tv !== undefined) {
+      if (tv !== Number(user.token_version)) throw new HttpError(401, "UNAUTHORIZED");
+    } else {
+      if (Number(user.token_version) !== 0) throw new HttpError(401, "UNAUTHORIZED");
+    }
+    if (user.role !== claims.role) throw new HttpError(401, "UNAUTHORIZED");
+    return claims;
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(401, "UNAUTHORIZED");
+  }
+}
+
+async function requireRole(req: NextRequest, role: string) {
+  const claims = claimsFrom(req);
+  if (!claims || claims.role !== role) throw new HttpError(401, "UNAUTHORIZED");
+  return assertTokenVersion(claims);
+}
+
+async function requireAnyRole(req: NextRequest, roles: string[]) {
+  const claims = claimsFrom(req);
+  if (!claims || !roles.includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
+  return assertTokenVersion(claims);
+}
+
+function sessionCookie(token: string) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
+}
+
+function clearedSessionCookie() {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`;
+}
+
+function response(reqOrData: NextRequest | unknown, dataOrStatus?: unknown, statusOrHeaders?: number | Record<string, string>, extraHeaders?: Record<string, string>) {
+  // فاز ۲: سازگار با هر دو امضا — قدیمی response(data, status, headers) و جدید response(req, data, status, headers)
+  let req: NextRequest | null = null;
+  let data: unknown;
+  let status = 200;
+  let headers: Record<string, string> = {};
+  if (reqOrData && typeof (reqOrData as any).headers?.get === "function") {
+    req = reqOrData as NextRequest;
+    data = dataOrStatus;
+    if (typeof statusOrHeaders === "number") {
+      status = statusOrHeaders;
+      headers = extraHeaders ?? {};
+    } else {
+      headers = (statusOrHeaders as Record<string, string>) ?? {};
+    }
+  } else {
+    data = reqOrData;
+    if (typeof dataOrStatus === "number") {
+      status = dataOrStatus;
+      headers = (statusOrHeaders as Record<string, string>) ?? {};
+    } else if (typeof dataOrStatus === "object" && dataOrStatus !== null) {
+      // امضای قدیمی: response(data, status, headers) — اما dataOrStatus می‌تواند status باشد
+      // تشخیص: اگر dataOrStatus عدد است status، وگرنه headers
+      if (typeof statusOrHeaders === "object") {
+        status = 200;
+        headers = statusOrHeaders as Record<string, string>;
+        // dataOrStatus در این حالت status نیست، بلکه دومین آرگومان قدیمی که status است
+        // در فراخوانی‌های قدیمی: response(data, 201) => dataOrStatus=201
+        // پس اگر dataOrStatus عدد است، status است
+        if (typeof dataOrStatus === "number") {
+          status = dataOrStatus;
+          headers = (statusOrHeaders as Record<string, string>) ?? {};
+        } else {
+          // response(data, status, headers) با status عددی
+          // ما قبلاً data را گرفتیم، حالا باید status را از dataOrStatus بخوانیم اگر عدد است
+          // اما این شاخه برای response(data, status) نیست
+        }
+      }
+    }
+    // بازسازی منطق قدیمی ساده: اگر dataOrStatus عدد است status
+    if (typeof dataOrStatus === "number") {
+      status = dataOrStatus;
+      headers = (statusOrHeaders as Record<string, string>) ?? {};
+    } else if (typeof dataOrStatus === "object" && dataOrStatus !== null && !Array.isArray(dataOrStatus)) {
+      // ممکن است dataOrStatus همان status نباشد — در فراخوانی response(data, 201) دومین آرگومان عدد است
+      // پس این شاخه نباید اجرا شود
+    }
+    // برای امضای قدیمی response(data, status, headers):
+    if (typeof dataOrStatus === "number" && typeof statusOrHeaders === "object") {
+      data = reqOrData;
+      status = dataOrStatus;
+      headers = statusOrHeaders as Record<string, string>;
+    } else if (typeof reqOrData !== "object" || (reqOrData as any).headers?.get) {
+      // already handled
+    } else {
+      // قدیمی: response(data, status, extraHeaders)
+      // اگر سه آرگومان: data, status, headers
+      // ما data را داریم، status را اگر dataOrStatus عدد است، و headers را اگر statusOrHeaders شیء است
+      if (typeof dataOrStatus === "number") {
+        status = dataOrStatus;
+        headers = (statusOrHeaders as Record<string, string>) ?? {};
+      } else {
+        // فقط یک آرگومان
+        data = reqOrData;
+        status = 200;
+        headers = {};
+      }
+    }
+  }
+  const origin = req?.headers.get("origin") ?? null;
+  const cors = corsHeadersFor(origin);
+  return Response.json(data, { status, headers: { ...cors, ...headers } });
+}
+
+function responseWithoutReq(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
+  return Response.json(data, { status, headers: { ...corsHeadersFor(null), ...extraHeaders } });
+}
+
+
+function clientIp(req: NextRequest): string | null {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    null
+  );
+}
+
+function checkOrigin(req: NextRequest) {
+  const method = String(req.method ?? "GET").toUpperCase();
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) return;
+  const origin = req.headers.get("origin");
+  if (!origin) return;
+  const allowed = allowedOrigins();
+  if (allowed.length === 0) {
+    if (process.env.NODE_ENV !== "production") return;
+    throw new HttpError(403, "FORBIDDEN_ORIGIN");
+  }
+  if (!allowed.includes(origin)) {
+    // پشتیبانی wildcard ساده
+    const ok = allowed.some((a) => {
+      if (a === "*") return true;
+      if (a === origin) return true;
+      if (a.startsWith("https://*.")) {
+        const suffix = a.slice("https://*.".length);
+        try {
+          const url = new URL(origin);
+          return url.hostname === suffix || url.hostname.endsWith(`.${suffix}`);
+        } catch { return false; }
+      }
+      return false;
+    });
+    if (!ok) throw new HttpError(403, "FORBIDDEN_ORIGIN");
+  }
+}
+
+
+/**
+ * ثبت رکورد حسابرسی — قاعدهٔ «Admin operations must be auditable».
+ *
+ * این تابع باید **داخل همان تراکنش** تغییر دامنه صدا زده شود تا اگر تغییر rollback شد،
+ * رکورد حسابرسی هم ثبت نشود (و برعکس). جدول `audit_log` در سطح دیتابیس فقط-افزودنی است.
+ */
+async function appendAudit(
+  client: PoolClient,
+  entry: {
+    actorId: string;
+    actorRole: string;
+    action: string;
+    entityType: string;
+    entityId?: string | null;
+    before?: unknown;
+    after?: unknown;
+    metadata?: unknown;
+  },
+) {
+  await client.query(
+    `INSERT INTO audit_log (id,actor_id,actor_role,action,entity_type,entity_id,before,after,metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      makeId("aud"),
+      entry.actorId,
+      entry.actorRole,
+      entry.action,
+      entry.entityType,
+      entry.entityId ?? null,
+      entry.before === undefined ? null : JSON.stringify(entry.before),
+      entry.after === undefined ? null : JSON.stringify(entry.after),
+      entry.metadata === undefined ? null : JSON.stringify(entry.metadata),
+    ],
+  );
+}
+
+/**
+ * عدم‌تکرار (Idempotency) — قاعدهٔ «All external callbacks/webhooks must be idempotent».
+ *
+ * کلید از هدر `Idempotency-Key` خوانده می‌شود. اگر همان کلید قبلاً سفارش ساخته باشد،
+ * به‌جای ساخت سفارش دوم، همان سفارش برگردانده می‌شود (پاسخ ۲۰۰ به‌جای ۲۰۱).
+ */
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
+function readIdempotencyKey(req: NextRequest): string | null {
+  const raw = req.headers.get("idempotency-key");
+  if (!raw) return null;
+  const key = raw.trim();
+  if (!IDEMPOTENCY_KEY_PATTERN.test(key)) {
+    throw new HttpError(422, "INVALID_IDEMPOTENCY_KEY");
+  }
+  return key;
 }
 
 async function jsonBody(req: NextRequest): Promise<Json> {
@@ -148,6 +528,13 @@ async function supplierContext(userId: string) {
   ))[0] ?? null;
 }
 
+/** آیا این رکورد عضویت، «فعال و معتبر» است؟ (منبع یکتای تصمیم برای دسترسی عمده) */
+function isAccountActive(account: any): boolean {
+  if (!account || account.status !== "approved") return false;
+  if (!account.expires_at) return true;
+  return new Date(account.expires_at).getTime() > Date.now();
+}
+
 async function activeAccount(userId: string) {
   return (await rows<any>(
     `SELECT * FROM wholesale_account WHERE user_id=$1 AND status='approved'
@@ -157,27 +544,34 @@ async function activeAccount(userId: string) {
 }
 
 async function catalog(where = "", values: unknown[] = []) {
+  // Phase 3.8 canonical — product is source of truth
   const products = await rows<any>(
-    `SELECT * FROM supplier_product ${where} ORDER BY updated_at DESC`, values,
+    `SELECT p.*, so.wholesale_price, so.seller_id, s.supplier_id FROM product p
+     LEFT JOIN seller_offer so ON so.product_id=p.id AND so.status='active'
+     LEFT JOIN seller s ON s.id=so.seller_id
+     ${where} ORDER BY p.updated_at DESC`, values,
   );
   if (!products.length) return [];
   const variants = await rows<any>(
-    `SELECT v.*, i.on_hand, i.reserved FROM supplier_variant v
-     LEFT JOIN supplier_inventory i ON i.variant_id=v.id WHERE v.product_id=ANY($1::text[])`,
-    [products.map((product) => product.id)],
+    `SELECT v.*, i.on_hand, i.reserved, v.attributes FROM product_variant v
+     LEFT JOIN product_variant_inventory i ON i.variant_id=v.id WHERE v.product_id=ANY($1::text[])`,
+    [products.map((product: any) => product.id)],
   );
   const byProduct = new Map<string, any[]>();
   for (const variant of variants) {
+    const attrs = variant.attributes || {};
     const item = {
-      id: variant.id, sku: variant.sku, color: variant.color, color_hex: variant.color_hex,
-      size: variant.size, inventory: { on_hand: variant.on_hand ?? 0, reserved: variant.reserved ?? 0 },
+      id: variant.id, sku: variant.sku, color: attrs.color || null, color_hex: attrs.color_hex || null,
+      size: attrs.size || null, attributes: attrs,
+      inventory: { on_hand: variant.on_hand ?? 0, reserved: variant.reserved ?? 0 },
     };
     byProduct.set(variant.product_id, [...(byProduct.get(variant.product_id) ?? []), item]);
   }
-  return products.map((product) => ({
-    id: product.id, supplier_id: product.supplier_id, name: product.name, sku: product.sku,
-    category: product.category, description: product.description, wholesale_price: Number(product.wholesale_price),
-    image_url: product.image_url, status: product.status, updated_at: product.updated_at,
+  return products.map((product: any) => ({
+    id: product.id, supplier_id: product.supplier_id || null, seller_id: product.seller_id || null,
+    name: product.name, sku: product.sku, slug: product.slug,
+    category: product.category_id, description: product.description, wholesale_price: Number(product.wholesale_price ?? 0),
+    image_url: null, status: product.status, updated_at: product.updated_at,
     product_variants: byProduct.get(product.id) ?? [],
   }));
 }
@@ -242,7 +636,7 @@ async function updatePurchaseOrder(client: PoolClient, id: string, status: strin
     const items = (await client.query<any>("SELECT * FROM purchase_order_item WHERE purchase_order_id=$1", [id])).rows;
     for (const item of items) {
       if (item.variant_id) await client.query(
-        `UPDATE supplier_inventory SET on_hand=GREATEST(0,on_hand-$2), reserved=GREATEST(0,reserved-$2), updated_at=now() WHERE variant_id=$1`,
+        `UPDATE product_variant_inventory SET on_hand=GREATEST(0,on_hand-$2), reserved=GREATEST(0,reserved-$2), updated_at=now() WHERE variant_id=$1`,
         [item.variant_id, item.quantity],
       );
     }
@@ -271,16 +665,23 @@ function logShape(log: any) {
 
 async function handleAuth(req: NextRequest, path: string) {
   const body = await jsonBody(req);
+  const ip = clientIp(req);
   if (path === "auth/register") {
     if (!body.email || !body.password || String(body.password).length < 8) throw new HttpError(422, "INVALID_INPUT");
     const { salt, passwordHash } = passwordRecord(String(body.password));
     try {
       const [user] = await rows<any>(
-        `INSERT INTO account_user (id,email,password_hash,salt,role,display_name,phone)
-         VALUES ($1,$2,$3,$4,'customer',$5,$6) RETURNING id,email,role,display_name,phone`,
+        `INSERT INTO account_user (id,email,password_hash,salt,role,display_name,phone,token_version,failed_login_attempts)
+         VALUES ($1,$2,$3,$4,'customer',$5,$6,0,0) RETURNING id,email,role,display_name,phone,token_version`,
         [makeId("usr"), String(body.email).trim().toLowerCase(), passwordHash, salt, body.name?.trim() || null, body.phone?.trim() || null],
       );
-      return response({ user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone } }, 201);
+      const token = issueToken(user.id, user.role, Number(user.token_version ?? 0));
+      // نشست اختیاری — خطا نباید ثبت‌نام را بشکند
+      try {
+        const tokenHash = createHash("sha256").update(token).digest("hex");
+        await rows(`INSERT INTO user_session (id,user_id,token_hash,expires_at,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6)`, [makeId("ses"), user.id, tokenHash, new Date(Date.now() + 14*24*60*60*1000), ip, req.headers.get("user-agent") ?? null]);
+      } catch {}
+      return response(req, { user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone } }, 201, { "set-cookie": sessionCookie(token) });
     } catch (error: any) {
       if (error?.code === "23505") throw new HttpError(409, "EMAIL_EXISTS");
       throw error;
@@ -288,18 +689,110 @@ async function handleAuth(req: NextRequest, path: string) {
   }
   if (path === "auth/login") {
     if (!body.email || !body.password) throw new HttpError(422, "INVALID_INPUT");
-    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 LIMIT 1", [String(body.email).trim().toLowerCase()]))[0];
-    if (!user || user.status !== "active" || !passwordMatches(String(body.password), user.salt, user.password_hash)) {
+    const email = String(body.email).trim().toLowerCase();
+    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 LIMIT 1", [email]))[0];
+    const attemptId = makeId("lat");
+    if (!user) {
+      try { await rows(`INSERT INTO login_attempt (id,email,ip,success) VALUES ($1,$2,$3,false)`, [attemptId, email, ip]); } catch {}
       throw new HttpError(401, "INVALID_CREDENTIALS");
     }
-    if (body.role && body.role !== user.role) throw new HttpError(403, "ROLE_MISMATCH");
-    return response({
-      token: issueToken(user.id, user.role),
-      user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone },
-    });
+    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
+      throw new HttpError(423, "ACCOUNT_LOCKED");
+    }
+    if (user.status !== "active") throw new HttpError(403, "ACCOUNT_SUSPENDED");
+    if (!passwordMatches(String(body.password), user.salt, user.password_hash)) {
+      const attempts = Number(user.failed_login_attempts ?? 0) + 1;
+      let lockedUntil: Date | null = null;
+      if (attempts >= 5) lockedUntil = new Date(Date.now() + 15*60*1000);
+      try { await rows(`UPDATE account_user SET failed_login_attempts=$2, locked_until=$3, updated_at=now() WHERE id=$1`, [user.id, attempts, lockedUntil]); } catch {}
+      try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
+      throw new HttpError(401, "INVALID_CREDENTIALS");
+    }
+    if (body.role && body.role !== user.role) {
+      try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
+      throw new HttpError(403, "ROLE_MISMATCH");
+    }
+    if (user.totp_enabled) {
+      if (!body.totpCode) throw new HttpError(401, "TOTP_REQUIRED");
+      if (!user.totp_secret || !totpVerify(user.totp_secret, String(body.totpCode))) {
+        try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
+        throw new HttpError(401, "INVALID_TOTP");
+      }
+    }
+    try { await rows(`UPDATE account_user SET failed_login_attempts=0, locked_until=NULL, last_login_at=now(), updated_at=now() WHERE id=$1`, [user.id]); } catch {}
+    try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,true)`, [makeId("lat"), user.id, email, ip]); } catch {}
+    const token = issueToken(user.id, user.role, Number(user.token_version ?? 0));
+    try {
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      await rows(`INSERT INTO user_session (id,user_id,token_hash,expires_at,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6)`, [makeId("ses"), user.id, tokenHash, new Date(Date.now() + 14*24*60*60*1000), ip, req.headers.get("user-agent") ?? null]);
+    } catch {}
+    return response(req, 
+      {
+        token,
+        user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone },
+      },
+      200,
+      { "set-cookie": sessionCookie(token) },
+    );
+  }
+  if (path === "auth/logout" && req.method === "POST") {
+    const claims = claimsFrom(req);
+    if (claims) {
+      try {
+        const u = (await rows<any>("SELECT token_version FROM account_user WHERE id=$1 LIMIT 1", [claims.sub]))[0];
+        if (u) {
+          await rows(`UPDATE account_user SET token_version=$2, updated_at=now() WHERE id=$1`, [claims.sub, Number(u.token_version ?? 0) + 1]);
+          await rows(`UPDATE user_session SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, [claims.sub]);
+        }
+      } catch {}
+    }
+    return response(req, { ok: true }, 200, { "set-cookie": clearedSessionCookie() });
+  }
+  if (path === "auth/me" && req.method === "GET") {
+    const claims = claimsFrom(req);
+    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
+    const verified = await assertTokenVersion(claims);
+    const user = (await rows<any>("SELECT id,email,role,display_name,phone,status,totp_enabled FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
+    if (!user) throw new HttpError(401, "UNAUTHORIZED");
+    return response(req, { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone, status: user.status, totpEnabled: !!user.totp_enabled });
+  }
+  if (path === "auth/totp/enroll" && req.method === "POST") {
+    const claims = claimsFrom(req);
+    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
+    const verified = await assertTokenVersion(claims);
+    const user = (await rows<any>("SELECT email FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
+    if (!user) throw new HttpError(401, "UNAUTHORIZED");
+    const secret = totpSecretRandom();
+    const otpauthUrl = totpOtpauthUrl(secret, user.email);
+    await rows("UPDATE account_user SET totp_secret=$2, updated_at=now() WHERE id=$1", [verified.sub, secret]);
+    return response(req, { secret, otpauthUrl });
+  }
+  if (path === "auth/totp/verify" && req.method === "POST") {
+    const claims = claimsFrom(req);
+    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
+    const verified = await assertTokenVersion(claims);
+    const user = (await rows<any>("SELECT totp_secret FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
+    if (!user?.totp_secret) throw new HttpError(400, "TOTP_NOT_ENROLLED");
+    if (!totpVerify(user.totp_secret, String(body.code ?? ""))) throw new HttpError(401, "INVALID_TOTP");
+    await rows("UPDATE account_user SET totp_enabled=true, totp_enrolled_at=now(), updated_at=now() WHERE id=$1", [verified.sub]);
+    return response(req, { ok: true, enabled: true });
+  }
+  if (path === "auth/totp/disable" && req.method === "POST") {
+    const claims = claimsFrom(req);
+    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
+    const verified = await assertTokenVersion(claims);
+    const user = (await rows<any>("SELECT totp_secret, totp_enabled FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
+    if (!user) throw new HttpError(404, "NOT_FOUND");
+    if (user.totp_enabled) {
+      if (!body.code) throw new HttpError(400, "TOTP_REQUIRED");
+      if (!user.totp_secret || !totpVerify(user.totp_secret, String(body.code))) throw new HttpError(401, "INVALID_TOTP");
+    }
+    await rows("UPDATE account_user SET totp_secret=NULL, totp_enabled=false, totp_enrolled_at=NULL, updated_at=now() WHERE id=$1", [verified.sub]);
+    return response(req, { ok: true, enabled: false });
   }
   throw new HttpError(404, "NOT_FOUND");
 }
+
 
 async function handleSupplier(req: NextRequest, path: string) {
   const method = req.method;
@@ -314,61 +807,113 @@ async function handleSupplier(req: NextRequest, path: string) {
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
       [id, body.companyName.trim(), body.representativeName.trim(), body.phone.trim(), body.category.trim(), body.monthlyCapacity ?? null],
     );
-    return response({ id }, 201);
+    return response(req, { id }, 201);
   }
   if (path === "supplier/auth/login" && method === "POST") {
     const body = await jsonBody(req);
-    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 AND role='supplier' LIMIT 1", [String(body.email ?? "").trim().toLowerCase()]))[0];
-    if (!user || !passwordMatches(String(body.password ?? ""), user.salt, user.password_hash)) throw new HttpError(401, "INVALID_CREDENTIALS");
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const ip = clientIp(req);
+    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 AND role='supplier' LIMIT 1", [email]))[0];
+    if (!user || !passwordMatches(String(body.password ?? ""), user.salt, user.password_hash)) {
+      if (user) {
+        const attempts = Number(user.failed_login_attempts ?? 0) + 1;
+        let lockedUntil: Date | null = null;
+        if (attempts >= 5) lockedUntil = new Date(Date.now() + 15*60*1000);
+        try { await rows(`UPDATE account_user SET failed_login_attempts=$2, locked_until=$3, updated_at=now() WHERE id=$1`, [user.id, attempts, lockedUntil]); } catch {}
+        try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
+      } else {
+        try { await rows(`INSERT INTO login_attempt (id,email,ip,success) VALUES ($1,$2,$3,false)`, [makeId("lat"), email, ip]); } catch {}
+      }
+      throw new HttpError(401, "INVALID_CREDENTIALS");
+    }
+    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) throw new HttpError(423, "ACCOUNT_LOCKED");
+    if (user.status !== "active") throw new HttpError(403, "ACCOUNT_SUSPENDED");
+    if (user.totp_enabled) {
+      if (!body.totpCode) throw new HttpError(401, "TOTP_REQUIRED");
+      if (!user.totp_secret || !totpVerify(user.totp_secret, String(body.totpCode))) {
+        try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
+        throw new HttpError(401, "INVALID_TOTP");
+      }
+    }
     const context = await supplierContext(user.id);
     if (!context) throw new HttpError(403, "SUPPLIER_ACCESS_INACTIVE");
-    return response({ token: issueToken(user.id, user.role), supplier: context });
+    try { await rows(`UPDATE account_user SET failed_login_attempts=0, locked_until=NULL, last_login_at=now(), updated_at=now() WHERE id=$1`, [user.id]); } catch {}
+    try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,true)`, [makeId("lat"), user.id, email, ip]); } catch {}
+    const token = issueToken(user.id, user.role, Number(user.token_version ?? 0));
+    try {
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      await rows(`INSERT INTO user_session (id,user_id,token_hash,expires_at,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6)`, [makeId("ses"), user.id, tokenHash, new Date(Date.now() + 14*24*60*60*1000), ip, req.headers.get("user-agent") ?? null]);
+    } catch {}
+    return response(req, { token, supplier: context }, 200, { "set-cookie": sessionCookie(token) });
   }
 
-  const claims = requireRole(req, "supplier");
+  const claims = await requireRole(req, "supplier");
   const context = await supplierContext(claims.sub);
   if (!context) throw new HttpError(403, "SUPPLIER_ACCESS_INACTIVE");
-  if (path === "supplier/session" && method === "GET") return response({ supplier: context });
-  if (path === "supplier/products" && method === "GET") return response({ products: await catalog("WHERE supplier_id=$1", [context.supplierId]) });
+  if (path === "supplier/session" && method === "GET") return response(req, { supplier: context });
+  if (path === "supplier/products" && method === "GET") {
+    const submissions = await rows<any>(`SELECT * FROM supplier_product_submission WHERE supplier_id=$1 ORDER BY created_at DESC`, [context.supplierId]);
+    return response(req, { products: submissions.map((item) => ({ id: item.id, name: item.proposed_name, sku: item.attributes?.sku ?? "", category: item.attributes?.category ?? "", description: item.proposed_description, wholesale_price: item.attributes?.wholesalePrice ?? 0, status: item.status, product_variants: item.variants ?? [] })) });
+  }
   if (path === "supplier/products" && method === "POST") {
     const body = await jsonBody(req);
     if (!body.name?.trim() || !body.sku?.trim() || !body.category?.trim()) throw new HttpError(422, "INVALID_INPUT");
+    const wholesalePrice = parseMoneyInput(body.wholesalePrice ?? 0, "INVALID_WHOLESALE_PRICE");
+    const stock = parseNonNegativeInteger(body.stock ?? 0, "INVALID_STOCK", 1_000_000);
     try {
-      const product = await transaction(async (client) => {
-        const id = makeId("prd");
+      const submission = await transaction(async (client) => {
         const sku = body.sku.trim().toUpperCase();
-        const result = await client.query<any>(
-          `INSERT INTO supplier_product (id,supplier_id,name,sku,category,description,wholesale_price,image_url,status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'submitted') RETURNING *`,
-          [id, context.supplierId, body.name.trim(), sku, body.category.trim(), body.description?.trim() || "", Number(body.wholesalePrice ?? 0), body.imageUrl?.trim() || null],
-        );
-        const variantId = makeId("var");
-        const size = body.size?.trim() || "تک‌سایز";
+        const submissionId = makeId("sps");
+        const slug = body.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-') + '-' + submissionId.slice(-6);
+        // Ensure seller exists for this supplier
+        const sellerId = `seller_${context.supplierId}`;
         await client.query(
-          `INSERT INTO supplier_variant (id,product_id,sku,color,color_hex,size,cost) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [variantId, id, `${sku}-${size}`.toUpperCase(), body.color?.trim() || "بدون رنگ", body.colorHex ?? null, size, Number(body.wholesalePrice ?? 0)],
+          `INSERT INTO seller (id,type,supplier_id,display_name,status) VALUES ($1,'SUPPLIER',$2,$3,'active') ON CONFLICT (id) DO NOTHING`,
+          [sellerId, context.supplierId, context.displayName || context.supplierId]
         );
-        await client.query("INSERT INTO supplier_inventory (id,variant_id,on_hand,reserved) VALUES ($1,$2,$3,0)", [makeId("inv"), variantId, Math.max(0, Number(body.stock ?? 0))]);
+        const size = body.size?.trim() || "تک‌سایز";
+        const color = body.color?.trim() || "بدون رنگ";
+        const result = await client.query<any>(
+          `INSERT INTO supplier_product_submission
+             (id,supplier_id,seller_id,proposed_name,proposed_slug,proposed_description,attributes,variants,media,status,created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending_review',$10) RETURNING *`,
+          [submissionId, context.supplierId, sellerId, body.name.trim(), slug, body.description?.trim() || "",
+           JSON.stringify({ sku, category: body.category.trim(), wholesalePrice, proposedStock: stock }),
+           JSON.stringify([{ sku: `${sku}-${size}`.toUpperCase(), attributes: { size, color, color_hex: body.colorHex || null } }]),
+           JSON.stringify(body.imageUrl ? [{ url: body.imageUrl, type: "image" }] : []), claims.sub],
+        );
         return result.rows[0];
       });
-      return response({ product: { id: product.id, name: product.name, sku: product.sku, status: product.status } }, 201);
+      return response(req, { product: { id: submission.id, name: submission.proposed_name, sku: body.sku.trim().toUpperCase(), status: submission.status } }, 201);
     } catch (error: any) {
       if (error?.code === "23505") throw new HttpError(409, "DUPLICATE_SKU");
       throw error;
     }
   }
-  if (path === "supplier/orders" && method === "GET") return response({ orders: await purchaseOrders(context.supplierId) });
+  if (path === "supplier/orders" && method === "GET") return response(req, { orders: await purchaseOrders(context.supplierId) });
   const orderStatus = path.match(/^supplier\/orders\/([^/]+)\/status$/);
   if (orderStatus && method === "POST") {
     const body = await jsonBody(req);
     const owns = (await rows("SELECT 1 FROM purchase_order WHERE id=$1 AND supplier_id=$2", [orderStatus[1], context.supplierId])).length > 0;
     if (!owns) throw new HttpError(404, "ORDER_NOT_FOUND");
-    await transaction((client) => updatePurchaseOrder(client, orderStatus[1], body.status, body.trackingCode));
-    return response({ status: body.status });
+    await transaction(async (client) => {
+      await updatePurchaseOrder(client, orderStatus[1], body.status, body.trackingCode);
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "supplier",
+        action: "purchase_order.status_changed",
+        entityType: "purchase_order",
+        entityId: orderStatus[1],
+        before: null,
+        after: { status: body.status, tracking_code: body.trackingCode ?? null },
+        metadata: { ip: clientIp(req), supplier_id: context.supplierId },
+      });
+    });
+    return response(req, { status: body.status });
   }
   if (path === "supplier/rfqs" && method === "GET") {
     const rfqs = await rows<any>("SELECT * FROM rfq WHERE supplier_id=$1 ORDER BY created_at DESC", [context.supplierId]);
-    return response({ rfqs });
+    return response(req, { rfqs });
   }
   const quoteMatch = path.match(/^supplier\/rfqs\/([^/]+)\/quote$/);
   if (quoteMatch && method === "POST") {
@@ -383,10 +928,10 @@ async function handleSupplier(req: NextRequest, path: string) {
       );
       await client.query("UPDATE rfq SET status='quoted',updated_at=now() WHERE id=$1", [rfq.id]);
     });
-    return response({ status: "quoted" }, 201);
+    return response(req, { status: "quoted" }, 201);
   }
   if (path === "supplier/tickets" && method === "GET") {
-    return response({ tickets: await rows("SELECT * FROM support_ticket WHERE supplier_id=$1 ORDER BY created_at DESC", [context.supplierId]) });
+    return response(req, { tickets: await rows("SELECT * FROM support_ticket WHERE supplier_id=$1 ORDER BY created_at DESC", [context.supplierId]) });
   }
   if (path === "supplier/tickets" && method === "POST") {
     const body = await jsonBody(req);
@@ -396,40 +941,144 @@ async function handleSupplier(req: NextRequest, path: string) {
       `INSERT INTO support_ticket (id,supplier_id,subject,category,message,priority) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
       [id, context.supplierId, body.subject.trim(), body.category?.trim() || "عمومی", body.message.trim(), ["low", "normal", "high"].includes(body.priority) ? body.priority : "normal"],
     );
-    return response({ id }, 201);
+    return response(req, { id }, 201);
   }
   throw new HttpError(404, "NOT_FOUND");
 }
 
 async function handleWholesale(req: NextRequest, path: string) {
   if (path === "wholesale/apply" && req.method === "POST") {
-    const claims = claimsFrom(req);
+    let claims = claimsFrom(req);
     if (!claims || !["customer", "vip"].includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
+    claims = await assertTokenVersion(claims);
     const body = await jsonBody(req);
     if (!body.storeName?.trim() || !body.phone?.trim() || !body.city?.trim()) throw new HttpError(422, "INVALID_INPUT");
     if (!body.paymentReference?.trim() || !body.planName?.trim()) throw new HttpError(422, "PAYMENT_REQUIRED");
-    const existing = (await rows<any>("SELECT * FROM wholesale_account WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1", [claims.sub]))[0];
-    const account = existing ? (await rows<any>(
-      `UPDATE wholesale_account SET member_name=$2,store_name=$3,phone=$4,city=$5,plan_name=$6,status='approved',activated_at=now(),expires_at=now()+interval '1 year',updated_at=now() WHERE id=$1 RETURNING *`,
-      [existing.id, body.memberName?.trim() || body.storeName.trim(), body.storeName.trim(), body.phone.trim(), body.city.trim(), body.planName.trim()],
-    ))[0] : (await rows<any>(
-      `INSERT INTO wholesale_account (id,user_id,member_name,store_name,phone,city,plan_name,status,activated_at,expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'approved',now(),now()+interval '1 year') RETURNING *`,
-      [makeId("wacc"), claims.sub, body.memberName?.trim() || body.storeName.trim(), body.storeName.trim(), body.phone.trim(), body.city.trim(), body.planName.trim()],
-    ))[0];
-    await rows("UPDATE account_user SET role='vip',updated_at=now() WHERE id=$1", [claims.sub]);
-    return response({ status: "approved", account, paymentReference: body.paymentReference }, 201);
+
+    /**
+     * ⚠️ اصلاح P0 ممیزی (ایراد D2 — «خودتأییدی عضویت VIP»).
+     *
+     * رفتار قبلی: این endpoint با یک «شمارهٔ پیگیری پرداخت» متنی آزاد، عضویت را
+     * بلافاصله `approved` می‌کرد و نقش کاربر را به `vip` ارتقا می‌داد. یعنی هر
+     * مشتری می‌توانست بدون هیچ تأییدی به قیمت‌های عمده و کاتالوگ تأمین‌کنندهٔ
+     * تأییدشده دسترسی بگیرد.
+     *
+     * رفتار جدید: درخواست همیشه `pending` ثبت می‌شود؛ تصمیم فقط با
+     * `POST admin/accounts/:id/status` (نقش admin) گرفته می‌شود و ارتقای نقش
+     * نیز فقط همان‌جا انجام می‌شود.
+     */
+    const account = await transaction(async (client) => {
+      const existing = (
+        await client.query<any>(
+          "SELECT * FROM wholesale_account WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
+          [claims.sub],
+        )
+      ).rows[0];
+
+      // اگر عضویت فعال یا در انتظار تأیید است، درخواست دوباره نباید آن را بازنشانی کند.
+      if (existing && (existing.status === "approved" || existing.status === "pending")) {
+        return existing;
+      }
+
+      const status = "pending";
+      if (existing) {
+        return (
+          await client.query<any>(
+            `UPDATE wholesale_account
+             SET member_name=$2,store_name=$3,phone=$4,city=$5,plan_name=$6,status=$7,
+                 activated_at=NULL,expires_at=NULL,updated_at=now()
+             WHERE id=$1 RETURNING *`,
+            [
+              existing.id,
+              body.memberName?.trim() || body.storeName.trim(),
+              body.storeName.trim(),
+              body.phone.trim(),
+              body.city.trim(),
+              body.planName.trim(),
+              status,
+            ],
+          )
+        ).rows[0];
+      }
+
+      return (
+        await client.query<any>(
+          `INSERT INTO wholesale_account (id,user_id,member_name,store_name,phone,city,plan_name,status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [
+            makeId("wacc"),
+            claims.sub,
+            body.memberName?.trim() || body.storeName.trim(),
+            body.storeName.trim(),
+            body.phone.trim(),
+            body.city.trim(),
+            body.planName.trim(),
+            status,
+          ],
+        )
+      ).rows[0];
+    });
+
+    return response(req, 
+      {
+        status: account.status,
+        account,
+        // ارجاع متنی پرداخت دیگر مبنای تأیید نیست و فقط برای پیگیری مالی نگه داشته می‌شود.
+        paymentReference: body.paymentReference,
+        message: "درخواست عضویت ثبت شد و در انتظار بررسی کارشناسان کلبه است.",
+      },
+      201,
+    );
   }
   const claims = claimsFrom(req);
   if (!claims || !["customer", "vip"].includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
+
+  // خواندن وضعیت عضویت برای نمایش «در انتظار تأیید» در UI؛ بدون فعال‌سازی دسترسی.
+  if (path === "wholesale/account" && req.method === "GET") {
+    const latest = (
+      await rows<any>(
+        "SELECT * FROM wholesale_account WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1",
+        [claims.sub],
+      )
+    )[0];
+    return response(req, { account: latest ?? null, active: isAccountActive(latest) });
+  }
+
+  // از این پس فقط عضویت تأییدشده و معتبر اجازهٔ استفاده از عمده را دارد.
   const account = await activeAccount(claims.sub);
   if (!account) throw new HttpError(403, "VIP_ACCOUNT_INACTIVE");
-  if (path === "wholesale/account" && req.method === "GET") return response({ account });
-  if (path === "wholesale/products" && req.method === "GET") return response({ products: await catalog("WHERE status='approved'") });
-  if (path === "wholesale/orders" && req.method === "GET") return response({ orders: await wholesaleOrders(account.id) });
+  if (path === "wholesale/products" && req.method === "GET") return response(req, { products: await catalog("WHERE p.status='published'") });
+  if (path === "wholesale/orders" && req.method === "GET") return response(req, { orders: await wholesaleOrders(account.id) });
   if (path === "wholesale/orders" && req.method === "POST") {
     const body = await jsonBody(req);
     if (!Array.isArray(body.lines) || !body.lines.length) throw new HttpError(422, "EMPTY_ORDER");
+    // ── اصلاح D23 ────────────────────────────────────────────────────────────
+    // پیش از این، `paymentMethod` در ثبت سفارش عمده **کاملاً نادیده** گرفته
+    // می‌شد: کلاینت می‌توانست `installment` (خرید اعتباری/BNPL) بفرستد و سفارش
+    // بی‌هیچ اعتراضی ساخته شود. این هم قاعدهٔ صریح «BNPL فقط خرده‌فروشی» را
+    // نقض می‌کرد و هم روش‌های پرداخت مجاز عمده را بی‌اثر می‌کرد.
+    // حالا روش پرداخت الزامی و در همان مسیر فاکتور سمت سرور اعتبارسنجی می‌شود.
+    const paymentMethod = String(body.paymentMethod ?? "").trim();
+    if (!paymentMethod) throw new HttpError(422, "PAYMENT_METHOD_REQUIRED");
+    assertPaymentMethodAllowed("wholesale", paymentMethod);
+    const idempotencyKey = readIdempotencyKey(req);
     const result = await transaction(async (client) => {
+      if (idempotencyKey) {
+        const existing = (
+          await client.query<any>(
+            "SELECT order_code, total_amount, total_units FROM wholesale_order WHERE idempotency_key=$1 LIMIT 1",
+            [idempotencyKey],
+          )
+        ).rows[0];
+        if (existing) {
+          return {
+            orderCode: existing.order_code,
+            totalAmount: Number(existing.total_amount),
+            totalUnits: existing.total_units,
+            replayed: true as const,
+          };
+        }
+      }
       const resolved: any[] = [];
       let totalUnits = 0;
       let totalAmount = 0;
@@ -437,9 +1086,10 @@ async function handleWholesale(req: NextRequest, path: string) {
         const quantity = Math.floor(Number(line.quantity));
         if (quantity <= 0) throw new HttpError(422, "INVALID_QUANTITY");
         const item = (await client.query<any>(
-          `SELECT v.id AS variant_id,v.sku,p.id AS product_id,p.name,p.wholesale_price,i.on_hand,i.reserved
-           FROM supplier_variant v JOIN supplier_product p ON p.id=v.product_id
-           JOIN supplier_inventory i ON i.variant_id=v.id WHERE v.id=$1 AND p.status='approved' FOR UPDATE OF i`,
+          `SELECT v.id AS variant_id,v.sku,p.id AS product_id,p.name,so.wholesale_price,i.on_hand,i.reserved, so.id as offer_id
+           FROM product_variant v JOIN product p ON p.id=v.product_id
+           JOIN product_variant_inventory i ON i.variant_id=v.id
+           JOIN seller_offer so ON so.variant_id=v.id WHERE v.id=$1 AND p.status='published' FOR UPDATE OF i`,
           [line.variantId],
         )).rows[0];
         if (!item) throw new HttpError(404, "VARIANT_NOT_FOUND");
@@ -452,32 +1102,44 @@ async function handleWholesale(req: NextRequest, path: string) {
       const orderId = makeId("word");
       const orderCode = `KV-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}`;
       await client.query(
-        `INSERT INTO wholesale_order (id,order_code,account_id,total_amount,total_units) VALUES ($1,$2,$3,$4,$5)`,
-        [orderId, orderCode, account.id, totalAmount, totalUnits],
+        `INSERT INTO wholesale_order (id,order_code,account_id,total_amount,total_units,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [orderId, orderCode, account.id, totalAmount, totalUnits, idempotencyKey],
       );
       for (const item of resolved) {
-        await client.query("UPDATE supplier_inventory SET reserved=reserved+$2,updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
+        await client.query("UPDATE product_variant_inventory SET reserved=reserved+$2,updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
         await client.query(
-          `INSERT INTO wholesale_order_item (id,order_id,product_id,variant_id,product_name,sku,quantity,unit_price)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [makeId("woi"), orderId, item.product_id, item.variant_id, item.name, item.sku, item.quantity, item.wholesale_price],
+          `INSERT INTO wholesale_order_item (id,order_id,product_id,variant_id,seller_offer_id,product_name,sku,quantity,unit_price)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [makeId("woi"), orderId, item.product_id, item.variant_id, item.offer_id, item.name, item.sku, item.quantity, item.wholesale_price],
         );
       }
-      return { orderCode };
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: claims.role,
+        action: "wholesale_order.created",
+        entityType: "wholesale_order",
+        entityId: orderId,
+        after: { order_code: orderCode, total_amount: totalAmount, total_units: totalUnits },
+        metadata: { ip: clientIp(req) },
+      });
+      return { orderCode, totalAmount, totalUnits, replayed: false as const };
     });
-    return response(result, 201);
+    return response(req, result, result.replayed ? 200 : 201);
   }
   throw new HttpError(404, "NOT_FOUND");
 }
 
 async function handleAdmin(req: NextRequest, path: string) {
-  const claims = requireRole(req, "admin");
+  const claims = await requireRole(req, "admin");
   const method = req.method;
   if (path === "admin/site-settings" && method === "PUT") {
     const body = await jsonBody(req);
     if (!body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) throw new HttpError(422, "INVALID_SETTINGS");
     const video = embeddedHeroVideo(body.settings);
     const bannerVideo = embeddedBannerVideo(body.settings);
+    // اعتبارسنجی سمت سرور پیش از هر ذخیره‌سازی (قاعدهٔ upload validation).
+    const heroVideoBytes = video ? validateEmbeddedVideo(video) : 0;
+    const bannerVideoBytes = bannerVideo ? validateEmbeddedVideo(bannerVideo) : 0;
     const settings = withoutEmbeddedVideos(body.settings);
     await transaction(async (client) => {
       if (video) {
@@ -499,34 +1161,87 @@ async function handleAdmin(req: NextRequest, path: string) {
          ON CONFLICT (setting_key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=now()`,
         [settings, claims.sub],
       );
+      // فقط خلاصهٔ تغییرات ثبت می‌شود، نه کل blob تنظیمات (حجم و حساسیت).
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "site_settings.updated",
+        entityType: "site_setting",
+        entityId: "storefront",
+        before: null,
+        after: { keys: Object.keys(settings ?? {}).slice(0, 50) },
+        metadata: {
+          ip: clientIp(req),
+          heroVideoBytes,
+          bannerVideoBytes,
+        },
+      });
     });
-    return response({ saved: true, updatedAt: new Date().toISOString() });
+    return response(req, { saved: true, updatedAt: new Date().toISOString() });
   }
-  if (path === "admin/accounts" && method === "GET") return response({ accounts: await rows("SELECT * FROM wholesale_account ORDER BY created_at DESC") });
+  if (path === "admin/accounts" && method === "GET") return response(req, { accounts: await rows("SELECT * FROM wholesale_account ORDER BY created_at DESC") });
   const accountStatus = path.match(/^admin\/accounts\/([^/]+)\/status$/);
   if (accountStatus && method === "POST") {
     const body = await jsonBody(req);
     const account = (await rows<any>("SELECT * FROM wholesale_account WHERE id=$1", [accountStatus[1]]))[0];
     if (!account || !body.status) throw new HttpError(account ? 422 : 404, account ? "INVALID_INPUT" : "ACCOUNT_NOT_FOUND");
+    if (!["pending", "approved", "rejected", "suspended", "expired"].includes(body.status)) {
+      throw new HttpError(422, "INVALID_INPUT");
+    }
+    // این تنها مسیر قانونی تأیید عضویت VIP است (اصلاح ایراد D2 — خودتأییدی).
     await transaction(async (client) => {
       await client.query(
         `UPDATE wholesale_account SET status=$2,activated_at=CASE WHEN $2='approved' THEN now() ELSE activated_at END,
          expires_at=CASE WHEN $2='approved' THEN $3 ELSE expires_at END,updated_at=now() WHERE id=$1`,
         [account.id, body.status, body.expiresAt ?? null],
       );
-      if (body.status === "approved") await client.query("UPDATE account_user SET role='vip',updated_at=now() WHERE id=$1", [account.user_id]);
+      if (body.status === "approved") {
+        await client.query("UPDATE account_user SET role='vip',updated_at=now() WHERE id=$1", [account.user_id]);
+      } else if (body.status === "rejected" || body.status === "suspended") {
+        // پس‌گرفتن دسترسی عمده: اگر کاربر عضویت دیگری ندارد، نقش به customer برمی‌گردد.
+        await client.query(
+          `UPDATE account_user SET role='customer',updated_at=now()
+           WHERE id=$1 AND NOT EXISTS (
+             SELECT 1 FROM wholesale_account
+             WHERE user_id=$1 AND id<>$2 AND status='approved' AND (expires_at IS NULL OR expires_at > now())
+           )`,
+          [account.user_id, account.id],
+        );
+      }
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "vip_account.status_changed",
+        entityType: "wholesale_account",
+        entityId: account.id,
+        before: { status: account.status },
+        after: { status: body.status, expires_at: body.expiresAt ?? account.expires_at },
+        metadata: { ip: clientIp(req), note: body.note ?? null },
+      });
     });
-    return response({ status: body.status });
+    return response(req, { status: body.status });
   }
-  if (path === "admin/supplier-applications" && method === "GET") return response({ applications: await rows("SELECT * FROM supplier_application ORDER BY created_at DESC") });
+  if (path === "admin/supplier-applications" && method === "GET") return response(req, { applications: await rows("SELECT * FROM supplier_application ORDER BY created_at DESC") });
   const applicationStatus = path.match(/^admin\/supplier-applications\/([^/]+)$/);
   if (applicationStatus && method === "POST") {
     const body = await jsonBody(req);
     const application = (await rows<any>("SELECT * FROM supplier_application WHERE id=$1", [applicationStatus[1]]))[0];
     if (!application || !body.status) throw new HttpError(application ? 422 : 404, application ? "INVALID_INPUT" : "APPLICATION_NOT_FOUND");
     if (body.status !== "approved") {
-      await rows("UPDATE supplier_application SET status=$2,updated_at=now() WHERE id=$1 RETURNING id", [application.id, body.status]);
-      return response({ status: body.status });
+      await transaction(async (client) => {
+        await client.query("UPDATE supplier_application SET status=$2,updated_at=now() WHERE id=$1", [application.id, body.status]);
+        await appendAudit(client, {
+          actorId: claims.sub,
+          actorRole: "admin",
+          action: "supplier_application.reviewed",
+          entityType: "supplier_application",
+          entityId: application.id,
+          before: { status: application.status },
+          after: { status: body.status },
+          metadata: { ip: clientIp(req) },
+        });
+      });
+      return response(req, { status: body.status });
     }
     const supplierId = makeId("sup");
     await transaction(async (client) => {
@@ -535,6 +1250,7 @@ async function handleAdmin(req: NextRequest, path: string) {
         [supplierId, application.company_name, application.phone, application.category, application.monthly_capacity],
       );
       await client.query("UPDATE supplier_application SET status='approved',updated_at=now() WHERE id=$1", [application.id]);
+      let createdUserId: string | null = null;
       if (body.loginEmail && String(body.loginPassword ?? "").length >= 8) {
         const credentials = passwordRecord(String(body.loginPassword));
         const userId = makeId("usr");
@@ -543,17 +1259,54 @@ async function handleAdmin(req: NextRequest, path: string) {
           [userId, String(body.loginEmail).trim().toLowerCase(), credentials.passwordHash, credentials.salt, application.company_name, application.phone],
         );
         await client.query("INSERT INTO supplier_member (id,supplier_id,user_id,title) VALUES ($1,$2,$3,$4)", [makeId("smem"), supplierId, userId, "مدیر تأمین"]);
+        createdUserId = userId;
       }
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "supplier_application.approved",
+        entityType: "supplier_application",
+        entityId: application.id,
+        before: { status: application.status },
+        // هیچ رمز عبوری در حسابرسی ثبت نمی‌شود؛ فقط اینکه حساب ساخته شد یا نه.
+        after: { status: "approved", supplier_id: supplierId, login_created: createdUserId !== null },
+        metadata: { ip: clientIp(req) },
+      });
     });
-    return response({ status: "approved", supplier_id: supplierId });
+    return response(req, { status: "approved", supplier_id: supplierId });
   }
-  if (path === "admin/suppliers" && method === "GET") return response({ suppliers: await rows("SELECT * FROM supplier ORDER BY created_at DESC") });
+  if (path === "admin/audit-logs" && method === "GET") {
+    const url = new URL(req.url);
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+    const entityType = url.searchParams.get("entityType");
+    const entityId = url.searchParams.get("entityId");
+    const values: unknown[] = [];
+    const filters: string[] = [];
+    if (entityType) {
+      values.push(entityType);
+      filters.push(`entity_type=$${values.length}`);
+    }
+    if (entityId) {
+      values.push(entityId);
+      filters.push(`entity_id=$${values.length}`);
+    }
+    values.push(limit);
+    const logs = await rows<any>(
+      `SELECT * FROM audit_log ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""}
+       ORDER BY created_at DESC LIMIT $${values.length}`,
+      values,
+    );
+    return response(req, { logs });
+  }
+  if (path === "admin/suppliers" && method === "GET") return response(req, { suppliers: await rows("SELECT * FROM supplier ORDER BY created_at DESC") });
   if (path === "admin/catalog" && method === "GET") {
     const products = await catalog();
     const suppliers = await rows<any>("SELECT id,display_name FROM supplier");
     const names = new Map(suppliers.map((supplier) => [supplier.id, supplier.display_name]));
-    return response({ products: products.map((product) => ({
-      ...product, supplier_name: names.get(product.supplier_id) ?? "—",
+    const sellerMap = await rows<any>("SELECT id,supplier_id FROM seller");
+    const sellerToSupplier = new Map(sellerMap.map((s: any) => [s.id, s.supplier_id]));
+    return response(req, { products: products.map((product: any) => ({
+      ...product, supplier_name: names.get(product.supplier_id ?? sellerToSupplier.get(product.seller_id) ?? "") ?? "—",
       stock: product.product_variants.reduce((sum: number, variant: any) => sum + Number(variant.inventory?.on_hand ?? 0), 0),
     })) });
   }
@@ -561,30 +1314,105 @@ async function handleAdmin(req: NextRequest, path: string) {
   if (catalogStatus && method === "POST") {
     const body = await jsonBody(req);
     if (!body.status) throw new HttpError(422, "INVALID_INPUT");
-    await rows("UPDATE supplier_product SET status=$2,updated_at=now() WHERE id=$1 RETURNING id", [catalogStatus[1], body.status]);
-    return response({ status: body.status });
+    // قاعدهٔ «Moderation»: محصول تأمین‌کننده فقط با تصمیم صریح کلبه منتشر می‌شود.
+    if (!["draft", "submitted", "approved", "rejected", "archived"].includes(body.status)) {
+      throw new HttpError(422, "INVALID_INPUT");
+    }
+    await transaction(async (client) => {
+      const before = (
+        await client.query<any>("SELECT status FROM product WHERE id=$1 FOR UPDATE", [catalogStatus[1]])
+      ).rows[0];
+      if (!before) throw new HttpError(404, "PRODUCT_NOT_FOUND");
+      await client.query("UPDATE product SET status=$2,updated_at=now() WHERE id=$1", [
+        catalogStatus[1],
+        body.status,
+      ]);
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "catalog.moderation_status_changed",
+        entityType: "product",
+        entityId: catalogStatus[1],
+        before: { status: before.status },
+        after: { status: body.status },
+        metadata: { ip: clientIp(req), note: body.note ?? null },
+      });
+    });
+    return response(req, { status: body.status });
   }
   if (path === "admin/catalog/bulk-price" && method === "POST") {
     const body = await jsonBody(req);
     if (!Array.isArray(body.ids) || !body.ids.length || !Number.isFinite(Number(body.value))) throw new HttpError(422, "INVALID_INPUT");
-    const result = await database().then((db) => db.query(
-      `UPDATE supplier_product SET wholesale_price=GREATEST(0,ROUND(CASE WHEN $2='amount' THEN wholesale_price+$3 ELSE wholesale_price*(1+$3/100.0) END)),updated_at=now()
-       WHERE id=ANY($1::text[])`, [body.ids, body.mode, Number(body.value)],
-    ));
-    return response({ updated: result.rowCount ?? 0 });
+    if (body.ids.length > 500) throw new HttpError(422, "TOO_MANY_ROWS");
+    if (!["amount", "percent"].includes(body.mode ?? "amount")) throw new HttpError(422, "INVALID_INPUT");
+    const mode = body.mode ?? "amount";
+
+    /**
+     * قاعدهٔ «Do not store monetary values as float» (ایراد D11 ممیزی).
+     *
+     * نسخهٔ قبلی از `wholesale_price*(1+$3/100.0)` استفاده می‌کرد؛ یعنی محاسبهٔ
+     * اعشاری روی پول. حالا درصد با حساب صحیح (basis points) و به‌صورت
+     * `price * bp / 10000` محاسبه می‌شود و نتیجه با ROUND به نزدیک‌ترین ریال می‌رود.
+     * تقسیم صحیح پستگرس روی bigint، عدد صحیح برمی‌گرداند (بدون کسر اعشاری).
+     */
+    const result = await transaction(async (client) => {
+      const value = BigInt(Math.trunc(Number(body.value)));
+      // مقدار «درصد» است؛ برای پرهیز از ریاضی اعشاری به صدم‌درصد (basis point) تبدیل می‌شود:
+      //   قیمت جدید = ROUND( قیمت × (10000 + درصد×100) / 10000 )
+      const basisPoints = value * 100n;
+      const updated = await client.query<any>(
+        mode === "percent"
+          ? `UPDATE seller_offer
+             SET wholesale_price=GREATEST(0,
+                   ((wholesale_price * (10000 + $2)) + 5000) / 10000),
+                 updated_at=now()
+             WHERE product_id=ANY($1::text[]) RETURNING id, wholesale_price`
+          : `UPDATE seller_offer
+             SET wholesale_price=GREATEST(0, wholesale_price + $2), updated_at=now()
+             WHERE product_id=ANY($1::text[]) RETURNING id, wholesale_price`,
+        [body.ids, (mode === "percent" ? basisPoints : value).toString()],
+      );
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "catalog.bulk_price_updated",
+        entityType: "seller_offer",
+        entityId: null,
+        before: null,
+        after: { mode, value: value.toString(), ids: body.ids },
+        metadata: { ip: clientIp(req), updated: updated.rowCount ?? 0, prices: updated.rows },
+      });
+      return updated.rowCount ?? 0;
+    });
+    return response(req, { updated: result });
   }
-  if (path === "admin/purchase-orders" && method === "GET") return response({ orders: await purchaseOrders() });
+  if (path === "admin/purchase-orders" && method === "GET") return response(req, { orders: await purchaseOrders() });
   const poStatus = path.match(/^admin\/purchase-orders\/([^/]+)\/status$/);
   if (poStatus && method === "POST") {
     const body = await jsonBody(req);
-    await transaction((client) => updatePurchaseOrder(client, poStatus[1], body.status, body.trackingCode));
-    return response({ status: body.status });
+    await transaction(async (client) => {
+      const before = (
+        await client.query<any>("SELECT status FROM purchase_order WHERE id=$1", [poStatus[1]])
+      ).rows[0];
+      await updatePurchaseOrder(client, poStatus[1], body.status, body.trackingCode);
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "purchase_order.status_changed",
+        entityType: "purchase_order",
+        entityId: poStatus[1],
+        before: before ? { status: before.status } : null,
+        after: { status: body.status, tracking_code: body.trackingCode ?? null },
+        metadata: { ip: clientIp(req) },
+      });
+    });
+    return response(req, { status: body.status });
   }
   if (path === "admin/orders" && method === "GET") {
     const [orders, accounts, suppliers, pos] = await Promise.all([wholesaleOrders(), rows<any>("SELECT * FROM wholesale_account"), rows<any>("SELECT * FROM supplier"), purchaseOrders()]);
     const accountMap = new Map(accounts.map((account) => [account.id, account]));
     const supplierMap = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
-    return response({ orders: orders.map((order) => ({
+    return response(req, { orders: orders.map((order) => ({
       ...order, store_name: accountMap.get(order.account_id)?.store_name ?? "—",
       purchase_orders: pos.filter((po) => po.wholesale_order_id === order.id).map((po) => ({
         id: po.id, order_code: po.order_code, status: po.status,
@@ -599,7 +1427,7 @@ async function handleAdmin(req: NextRequest, path: string) {
       const order = (await client.query<any>("SELECT * FROM wholesale_order WHERE id=$1 FOR UPDATE", [approveOrder[1]])).rows[0];
       if (!order || order.status !== "pending") throw new HttpError(409, "ORDER_NOT_PENDING");
       const items = (await client.query<any>(
-        `SELECT wi.*,p.supplier_id FROM wholesale_order_item wi JOIN supplier_product p ON p.id=wi.product_id WHERE wi.order_id=$1`, [order.id],
+        `SELECT wi.*, s.supplier_id FROM wholesale_order_item wi JOIN seller_offer so ON so.id=wi.seller_offer_id JOIN seller s ON s.id=so.seller_id WHERE wi.order_id=$1`, [order.id],
       )).rows;
       const groups = new Map<string, any[]>();
       for (const item of items) groups.set(item.supplier_id, [...(groups.get(item.supplier_id) ?? []), item]);
@@ -619,24 +1447,45 @@ async function handleAdmin(req: NextRequest, path: string) {
         );
       }
       await client.query("UPDATE wholesale_order SET status='approved',updated_at=now() WHERE id=$1", [order.id]);
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "wholesale_order.approved",
+        entityType: "wholesale_order",
+        entityId: order.id,
+        before: { status: order.status },
+        after: { status: "approved", purchase_orders: count },
+        metadata: { ip: clientIp(req), due_date: body.dueDate ?? null },
+      });
       return { order_id: order.id, purchase_orders: count };
     });
-    return response(result);
+    return response(req, result);
   }
   const cancelOrder = path.match(/^admin\/orders\/([^/]+)\/cancel$/);
   if (cancelOrder && method === "POST") {
+    const body = await jsonBody(req);
     await transaction(async (client) => {
       const order = (await client.query<any>("SELECT * FROM wholesale_order WHERE id=$1 FOR UPDATE", [cancelOrder[1]])).rows[0];
       if (!order) throw new HttpError(404, "ORDER_NOT_FOUND");
       if (order.status === "fulfilled") throw new HttpError(409, "ORDER_ALREADY_FULFILLED");
       const items = (await client.query<any>("SELECT * FROM wholesale_order_item WHERE order_id=$1", [order.id])).rows;
-      for (const item of items) await client.query("UPDATE supplier_inventory SET reserved=GREATEST(0,reserved-$2),updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
+      for (const item of items) await client.query("UPDATE product_variant_inventory SET reserved=GREATEST(0,reserved-$2),updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
       await client.query("UPDATE purchase_order SET status='cancelled',updated_at=now() WHERE wholesale_order_id=$1 AND status IN ('pending','confirmed','preparing')", [order.id]);
       await client.query("UPDATE wholesale_order SET status='cancelled',updated_at=now() WHERE id=$1", [order.id]);
+      await appendAudit(client, {
+        actorId: claims.sub,
+        actorRole: "admin",
+        action: "wholesale_order.cancelled",
+        entityType: "wholesale_order",
+        entityId: order.id,
+        before: { status: order.status },
+        after: { status: "cancelled", released_reservations: items.length },
+        metadata: { ip: clientIp(req), reason: body.reason ?? null },
+      });
     });
-    return response({ status: "cancelled" });
+    return response(req, { status: "cancelled" });
   }
-  if (path === "admin/rfqs" && method === "GET") return response({ rfqs: await rows("SELECT * FROM rfq ORDER BY created_at DESC") });
+  if (path === "admin/rfqs" && method === "GET") return response(req, { rfqs: await rows("SELECT * FROM rfq ORDER BY created_at DESC") });
   if (path === "admin/rfqs" && method === "POST") {
     const body = await jsonBody(req);
     if (!body.supplierId || !body.title?.trim()) throw new HttpError(422, "INVALID_INPUT");
@@ -647,9 +1496,9 @@ async function handleAdmin(req: NextRequest, path: string) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [id, body.supplierId, referenceCode, body.title.trim(), body.customerName?.trim() || "کلبه وینتیج", Number(body.quantity ?? 0), body.requestedDeliveryDate ?? null, body.specifications ?? {}],
     );
-    return response({ id, reference_code: referenceCode }, 201);
+    return response(req, { id, reference_code: referenceCode }, 201);
   }
-  if (path === "admin/tickets" && method === "GET") return response({ tickets: await rows("SELECT * FROM support_ticket ORDER BY created_at DESC") });
+  if (path === "admin/tickets" && method === "GET") return response(req, { tickets: await rows("SELECT * FROM support_ticket ORDER BY created_at DESC") });
   const ticketStatus = path.match(/^admin\/tickets\/([^/]+)$/);
   if (ticketStatus && method === "POST") {
     const body = await jsonBody(req);
@@ -658,7 +1507,7 @@ async function handleAdmin(req: NextRequest, path: string) {
       `UPDATE support_ticket SET status=$2,admin_reply=COALESCE($3,admin_reply),updated_at=now() WHERE id=$1 RETURNING id`,
       [ticketStatus[1], body.status, body.adminReply?.trim() || null],
     );
-    return response({ status: body.status });
+    return response(req, { status: body.status });
   }
   if (path === "admin/logs" && method === "GET") {
     const url = new URL(req.url);
@@ -691,7 +1540,7 @@ async function handleAdmin(req: NextRequest, path: string) {
        coalesce(sum(occurrence_count) FILTER (WHERE last_seen_at>=now()-interval '24 hours' AND event_type='api.slow'),0) AS slow_24h
        FROM system_log`,
     ))[0];
-    return response({
+    return response(req, {
       logs: logs.map(logShape),
       pagination: { page, limit, total, pageCount: Math.max(1, Math.ceil(total / limit)), capped: false },
       summary: { openErrors: Number(summary.open_errors), criticalOpen: Number(summary.critical_open), errors24h: Number(summary.errors_24h), frontend24h: Number(summary.frontend_24h), warnings24h: Number(summary.warnings_24h), slow24h: Number(summary.slow_24h) },
@@ -706,20 +1555,164 @@ async function handleAdmin(req: NextRequest, path: string) {
       [logStatus[1], body.status, claims.sub, body.note?.trim() || null],
     );
     if (!log) throw new HttpError(404, "LOG_NOT_FOUND");
-    return response({ log: logShape(log) });
+    return response(req, { log: logShape(log) });
   }
   throw new HttpError(404, "NOT_FOUND");
 }
 
+/**
+ * مسیرهای پرو مجازی که **هزینه‌زا** هستند (بارگذاری فایل و ساخت task).
+ * بقیهٔ مسیرهای `try-on/*` (خواندن وضعیت/دانلود) سهمیه مصرف نمی‌کنند.
+ */
+const TRY_ON_BILLABLE_PATHS = new Set(["try-on/files", "try-on/tasks"]);
+
+/**
+ * نگهبان پرو مجازی — اصلاح D20 (فاز ۱.۵).
+ *
+ * ── چه چیزی خراب بود ───────────────────────────────────────────────────────
+ * `try-on/*` **پیش از** زنجیرهٔ احراز هویت و **پیش از** `await database()`
+ * پردازش می‌شد. یعنی یک کاربر ناشناس (یا ربات) می‌توانست با کلید پولی
+ * Perfect Corp کلبه تصویر آپلود کند و task بسازد؛ هم هزینهٔ مستقیم و هم
+ * quota ارائه‌دهنده را مصرف می‌کرد و هیچ ردی از مصرف‌کننده باقی نمی‌ماند.
+ *
+ * ── اصلاح ──────────────────────────────────────────────────────────────────
+ *   ۱) نشست الزامی است (نقش customer یا vip) — پیش از رسیدن به ارائه‌دهنده.
+ *   ۲) سهمیهٔ ساعتی و روزانه روی عملیات هزینه‌زا (`try-on-guard.ts`).
+ *   ۳) کلید سهمیه همان شناسهٔ امضاشدهٔ کاربر است، نه IP (قابل جعل با XFF).
+ *
+ * خواندن وضعیت task و دانلود نتیجه همچنان نشست لازم دارد اما سهمیه مصرف نمی‌کند
+ * تا polling سمت مرورگر (`TryOn.tsx`) سهمیهٔ کاربر را نسوزاند.
+ */
+async function handleTryOn(req: NextRequest, path: string) {
+  const claims = await requireAnyRole(req, ["customer", "vip"]);
+  if (TRY_ON_BILLABLE_PATHS.has(path)) {
+    const quota = path === "try-on/tasks"
+      ? consumeTryOnTaskQuota(claims.sub)
+      : consumeTryOnUploadQuota(claims.sub);
+    if (!quota.allowed) {
+      throw new HttpError(429, "TRY_ON_QUOTA_EXCEEDED");
+    }
+  }
+  const result = await handlePerfectCorpRequest(req, path);
+  return result instanceof Response ? result : response(result);
+}
+
+/**
+ * نگهبان لاگ کلاینت — اصلاح D21 (فاز ۱.۵).
+ *
+ * ── چه چیزی خراب بود ───────────────────────────────────────────────────────
+ * `POST logs/client` بدون هیچ احراز هویتی، هر درخواست را به یک ردیف
+ * `system_log` تبدیل می‌کرد (Probe 6 ممیزی: `202` بدون توکن). یعنی یک
+ * primitive نوشتنِ آزاد با پیام/نشانیِ کنترل‌شده توسط مهاجم: پر شدن دیسک و
+ * مسموم‌سازی داشبورد خطاها (پنهان‌کردن رخدادهای واقعی بین نویز).
+ *
+ * ── اصلاح ──────────────────────────────────────────────────────────────────
+ *   ۱) نشست الزامی است؛ لاگ ناشناس پذیرفته نمی‌شود.
+ *   ۲) سهمیهٔ ساعتی برای هر کاربر (۶۰ رخداد) تا حتی کاربر واردشده هم نتواند
+ *      دیتابیس را با نویز پر کند.
+ *   ۳) سقف اندازهٔ بدنه و بریدن فیلدها (پیش از این هم بود، حفظ شد).
+ *
+ * هزینهٔ پذیرفته‌شده: خطاهای کارِ کاربران **ناشناس** دیگر ثبت نمی‌شوند
+ * (`clientLogger.ts` وقتی نشستی نیست چیزی نمی‌فرستد). بازگرداندن تلمتری ناشناس
+ * با یک توکن امضاشدهٔ سایت، کار فاز ۶ است (یادداشت در گزارش فاز ۱.۵).
+ */
+const CLIENT_LOG_LIMIT_PER_HOUR = 60;
+
+/**
+ * نتیجهٔ سنجش سلامت: «قابل اطمینان» یا «نامطمئن با دلیل عمومی».
+ * هیچ متن خطای دیتابیس از این تابع بیرون نمی‌رود.
+ */
+async function healthProbe(): Promise<
+  { ok: true } | { ok: false; reason: "query-failed" | "migrations-required"; detail?: string }
+> {
+  try {
+    return await transaction(async (client) => {
+      await client.query("SELECT 1");
+      await assertDatabaseReady(client);
+      return { ok: true as const };
+    });
+  } catch (error) {
+    if (error instanceof DatabaseNotMigratedError) {
+      return { ok: false, reason: "migrations-required", detail: `${error.code}: ${error.details?.join("; ")}` };
+    }
+    return { ok: false, reason: "query-failed", detail: "database: query failed" };
+  }
+}
+
+async function handleClientLog(req: NextRequest) {
+  const claims = await requireAnyRole(req, ["customer", "vip", "admin", "supplier"]);
+  const quota = consumeRateLimit(`logs:client:${claims.sub}`, {
+    limit: CLIENT_LOG_LIMIT_PER_HOUR,
+    windowMs: 60 * 60 * 1000,
+  });
+  if (!quota.allowed) throw new HttpError(429, "LOG_QUOTA_EXCEEDED");
+
+  const body = await jsonBody(req);
+  const message = String(body.message ?? "خطای بدون پیام").slice(0, 2000);
+  const fingerprint = createHash("sha256")
+    .update([body.type, body.name, body.url, message].join("|"))
+    .digest("hex")
+    .slice(0, 32);
+  await rows(
+    `INSERT INTO system_log (id,level,source,event_type,message,error_name,stack,fingerprint,http_method,path,http_status,environment,release,metadata,actor_id,actor_role,first_seen_at,last_seen_at)
+     VALUES ($1,$2,'frontend',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now(),now())
+     ON CONFLICT (fingerprint) WHERE status='open' DO UPDATE SET last_seen_at=now(),occurrence_count=system_log.occurrence_count+1,updated_at=now() RETURNING id`,
+    [
+      makeId("log"),
+      body.status && body.status < 500 ? "warning" : "error",
+      body.type ?? "frontend.error",
+      message,
+      body.name ? String(body.name).slice(0, 160) : null,
+      body.stack ? String(body.stack).slice(0, 12_000) : null,
+      fingerprint,
+      body.method ? String(body.method).slice(0, 16) : null,
+      body.url ? String(body.url).slice(0, 512) : null,
+      Number.isInteger(body.status) ? body.status : null,
+      process.env.NODE_ENV ?? "development",
+      body.release ? String(body.release).slice(0, 64) : null,
+      JSON.stringify({ line: body.line, column: body.column, componentStack: body.componentStack }),
+      claims.sub,
+      claims.role,
+    ],
+  );
+  return response(req, { accepted: true }, 202);
+}
+
 async function handleRequest(req: NextRequest, pathParts: string[]) {
   const path = pathParts.join("/");
-  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
+  // فاز ۲: بررسی Origin برای درخواست‌های تغییردهنده (D35)
+  try { checkOrigin(req); } catch (e) { throw e; }
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeadersFor(req.headers.get("origin")) });
+  }
   if (path.startsWith("try-on/")) {
-    const result = await handlePerfectCorpRequest(req, path);
-    return result instanceof Response ? result : response(result);
+    return handleTryOn(req, path);
+  }
+  if (path === "health") {
+    /**
+     * سلامت = «دیتابیس مهاجرت‌شده و سازگار است؟». این مسیر باید **بسته** شکست
+     * بخورد (fail closed) و هیچ جزئیات دیتابیسی به بیرون ندهد:
+     *   • ۲۰۰ → اتصال برقرار و `assertDatabaseReady` قبول شد
+     *   • ۵۰۳ → دیتابیس در دسترس نیست یا مهاجرت/سازگاری اسکیما تأیید نشد
+     * متن خطا فقط در لاگ سرور می‌ماند و پاسخ همیشه پیام عمومی دارد.
+     */
+    const probe = await healthProbe();
+    if (!probe.ok) {
+      console.error(`[kolbe] health probe failed: ${probe.reason} ${probe.detail ?? ""}`.trim());
+      return NextResponse.json(
+        { ok: false, service: "kolbe-api", database: "unavailable", reason: probe.reason },
+        { status: 503, headers: { "cache-control": "no-store" } },
+      );
+    }
+    return NextResponse.json(
+      { ok: true, service: "kolbe-api", database: "postgresql", schema: "verified" },
+      { headers: { "cache-control": "no-store" } },
+    );
+  }
+  if (path === "logs/client" && req.method === "POST") {
+    return handleClientLog(req);
   }
   await database();
-  if (path === "health") return response({ ok: true, service: "kolbe-api", database: "postgresql" });
   if ((path === "site/hero-video" || path === "site/banner-video") && req.method === "GET") {
     const isBanner = path === "site/banner-video";
     const settingKey = isBanner ? BANNER_VIDEO_SETTING_KEY : HERO_VIDEO_SETTING_KEY;
@@ -734,7 +1727,7 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
 
     const range = req.headers.get("range")?.match(/^bytes=(\d*)-(\d*)$/);
     const commonHeaders = {
-      ...CORS_HEADERS,
+      ...corsHeadersFor(req.headers.get("origin")),
       "content-type": video.mime,
       "accept-ranges": "bytes",
       "cache-control": "public, max-age=3600",
@@ -785,38 +1778,179 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
         await client.query("UPDATE site_setting SET value=$1,updated_at=now() WHERE setting_key='storefront'", [settings]);
       });
     }
-    return response({ settings, updatedAt: setting?.updated_at ?? null });
+    return response(req, { settings, updatedAt: setting?.updated_at ?? null });
   }
   if (path.startsWith("auth/")) return handleAuth(req, path);
   if (path === "me" && req.method === "GET") {
-    const claims = requireRole(req, "customer");
+    const claims = await requireRole(req, "customer");
     const user = (await rows<any>("SELECT id,email,display_name,phone FROM account_user WHERE id=$1", [claims.sub]))[0];
     if (!user) throw new HttpError(401, "UNAUTHORIZED");
-    return response({ id: user.id, name: user.display_name ?? user.email.split("@")[0], phone: user.phone ?? "—", email: user.email });
+    return response(req, { id: user.id, name: user.display_name ?? user.email.split("@")[0], phone: user.phone ?? "—", email: user.email });
   }
+  /**
+   * ثبت سفارش خرده‌فروشی.
+   *
+   * ⚠️ این تابع در گام ۰.۱ و ۰.۳ به‌طور کامل بازنویسی شد:
+   *
+   * ایراد D1 (P0): `body.lines` به‌صورت آرایهٔ جاوااسکریپت به پارامتر `jsonb` پاس می‌شد؛
+   * `pg` آن را به شکل آرایهٔ پستگرس سریالایز می‌کرد و هر درخواست با خطای
+   * `invalid input syntax for type json` (HTTP 500) شکست می‌خورد — یعنی چک‌اوت
+   * خرده‌فروشی در عمل از کار افتاده بود.
+   *
+   * ایراد D3 (P0): جمع کل و قیمت هر قلم از مرورگر گرفته و بدون بازبینی ذخیره می‌شد
+   * (Price Tampering). حالا `priceRetailOrder` قیمت را از مرجع سرور بازمحاسبه می‌کند،
+   * اقلام را در `retail_order_item` به‌صورت Snapshot ذخیره می‌کند و کل مبلغ سفارش
+   * هرگز از کلاینت پذیرفته نمی‌شود.
+   *
+   * همچنین: پشتیبانی از `Idempotency-Key` تا دوبار کلیک/دوباره‌فرست، دو سفارش نسازد.
+   */
   if (path === "retail/orders" && req.method === "POST") {
     const body = await jsonBody(req);
-    if (!Array.isArray(body.lines) || !body.lines.length) throw new HttpError(422, "EMPTY_CART");
-    if (!body.customer?.name?.trim() || !body.customer?.phone?.trim()) throw new HttpError(422, "CUSTOMER_INFO_REQUIRED");
-    const orderCode = `RT-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
-    await rows(
-      `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-      [makeId("rord"), orderCode, body.customer.name.trim(), body.customer.phone.trim(), body.customer.email?.trim() || null, body.lines, body.address ?? {}, body.shipping?.id ?? "post", Number(body.totals?.shipping ?? 0), body.payMethod ?? "gateway", Number(body.totals?.total ?? 0), body.payMethod === "cod" ? "pending_cod" : "pending_gateway"],
+    const customer = parseCustomerContact(body.customer);
+    const address = parseDeliveryAddress(body.address);
+    const idempotencyKey = readIdempotencyKey(req);
+
+    // قیمت‌گذاری سمت سرور (بدون هیچ ورودی مالی از کلاینت).
+    const priced = priceRetailOrder(body.lines, {
+      shippingMethodId: body.shipping?.id ?? body.shippingMethodId,
+      paymentMethod: body.payMethod ?? body.paymentMethod,
+    });
+    // Snapshot اقلام برای ذخیره — قیمت/نام از سرور، نه از مرورگر.
+    const linePayload = priced.lines.map((line) => ({
+      id: line.productId,
+      sku: line.sku,
+      name: line.productName,
+      colour: line.colour,
+      size: line.size,
+      img: line.imageUrl,
+      price: Number(line.unitPrice),
+      qty: line.quantity,
+      lineTotal: Number(line.lineTotal),
+    }));
+
+    const created = await transaction(async (client) => {
+      // اگر همین کلید قبلاً سفارش ساخته باشد، همان را برگردان (idempotent).
+      if (idempotencyKey) {
+        const existing = (
+          await client.query<any>(
+            "SELECT order_code, total_amount, items_total, shipping_price, order_status, pay_method, payment_status FROM retail_order WHERE idempotency_key=$1 LIMIT 1",
+            [idempotencyKey],
+          )
+        ).rows[0];
+        if (existing) return { order: existing, replayed: true as const };
+      }
+
+      const orderId = makeId("rord");
+      const orderCode = `RT-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
+      let claims = claimsFrom(req);
+      if (claims) {
+        try { claims = await assertTokenVersion(claims); } catch { claims = null; }
+      }
+
+      const order = (
+        await client.query<any>(
+          `INSERT INTO retail_order (
+             id,order_code,customer_id,customer_name,phone,email,lines,address,
+             shipping_method,shipping_price,pay_method,total_amount,payment_status,
+             items_total,currency,price_book_version,payment_method,amount_source,
+             order_status,idempotency_key
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'IRR',$15,$16,'server','placed',$17)
+           RETURNING order_code, total_amount, items_total, shipping_price, order_status, pay_method, payment_status`,
+          [
+            orderId,
+            orderCode,
+            claims?.sub ?? null,
+            customer.name,
+            customer.phone,
+            customer.email,
+            // D1: jsonb باید صریحاً JSON.stringify شود، وگرنه pg آرایهٔ پستگرس می‌سازد.
+            JSON.stringify(linePayload),
+            JSON.stringify(address),
+            priced.shippingMethod,
+            priced.shippingTotal.toString(),
+            priced.paymentMethod,
+            priced.grandTotal.toString(),
+            priced.paymentStatus,
+            priced.itemsTotal.toString(),
+            priced.priceBookVersion,
+            priced.paymentMethod,
+            idempotencyKey,
+          ],
+        )
+      ).rows[0];
+
+      for (const line of priced.lines) {
+        await client.query(
+          `INSERT INTO retail_order_item
+             (id,order_id,product_id,sku,product_name,colour,size,quantity,unit_price,line_total,image_url)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            makeId("roi"),
+            orderId,
+            line.productId,
+            line.sku,
+            line.productName,
+            line.colour,
+            line.size,
+            line.quantity,
+            line.unitPrice.toString(),
+            line.lineTotal.toString(),
+            line.imageUrl,
+          ],
+        );
+      }
+
+      // رکورد حسابرسی چرخهٔ سفارش (append-only) — پایهٔ گزارش‌های مالی و پشتیبانی.
+      await appendAudit(client, {
+        actorId: claims?.sub ?? "guest",
+        actorRole: claims?.role ?? "guest",
+        action: "retail_order.created",
+        entityType: "retail_order",
+        entityId: orderId,
+        after: {
+          order_code: orderCode,
+          items_total: priced.itemsTotal.toString(),
+          shipping_total: priced.shippingTotal.toString(),
+          grand_total: priced.grandTotal.toString(),
+          price_book_version: priced.priceBookVersion,
+          lines: priced.lines.length,
+        },
+        metadata: { ip: clientIp(req), adjusted: priced.adjusted },
+      });
+
+      return { order, replayed: false as const };
+    });
+
+    return response(req, 
+      {
+        orderCode: created.order.order_code,
+        status: created.order.order_status,
+        replayed: created.replayed,
+        currency: "IRR",
+        totals: {
+          items: Number(created.order.items_total),
+          shipping: Number(created.order.shipping_price),
+          total: Number(created.order.total_amount),
+        },
+        // اگر قیمت مرورگر با مرجع سرور یکی نبود، UI می‌تواند به کاربر اطلاع دهد.
+        adjusted: priced.adjusted,
+        /**
+         * ── D19a ────────────────────────────────────────────────────────────
+         * وضعیت پرداخت صریح. `collected` تا فاز ۵ همیشه `false` است چون هیچ
+         * ارائه‌دهندهٔ پرداختی وجود ندارد؛ کلاینت **نباید** از موفقیت ساخت
+         * سفارش نتیجه بگیرد که پول وصول شده است. برای روش‌های نیازمند
+         * ارائه‌دهنده، `requiresManualSettlement` یعنی «هماهنگی پرداخت لازم است».
+         * در پاسخِ replay هم از ردیف ذخیره‌شده خوانده می‌شود، نه از فرض.
+         */
+        payment: {
+          method: created.order.pay_method ?? priced.paymentMethod,
+          status: created.order.payment_status ?? priced.paymentStatus,
+          collected: false,
+          requiresManualSettlement: (created.order.pay_method ?? priced.paymentMethod) !== "cod",
+        },
+      },
+      created.replayed ? 200 : 201,
     );
-    return response({ orderCode }, 201);
-  }
-  if (path === "logs/client" && req.method === "POST") {
-    const body = await jsonBody(req);
-    const message = String(body.message ?? "خطای بدون پیام").slice(0, 2000);
-    const fingerprint = createHash("sha256").update([body.type, body.name, body.url, message].join("|")).digest("hex").slice(0, 32);
-    await rows(
-      `INSERT INTO system_log (id,level,source,event_type,message,error_name,stack,fingerprint,http_method,path,http_status,environment,release,metadata,first_seen_at,last_seen_at)
-       VALUES ($1,$2,'frontend',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
-       ON CONFLICT (fingerprint) WHERE status='open' DO UPDATE SET last_seen_at=now(),occurrence_count=system_log.occurrence_count+1,updated_at=now() RETURNING id`,
-      [makeId("log"), body.status && body.status < 500 ? "warning" : "error", body.type ?? "frontend.error", message, body.name ?? null, body.stack ?? null, fingerprint, body.method ?? null, body.url ?? null, body.status ?? null, process.env.NODE_ENV ?? "development", body.release ?? null, { line: body.line, column: body.column, componentStack: body.componentStack }],
-    );
-    return response({ accepted: true }, 202);
   }
   if (path.startsWith("supplier/")) return handleSupplier(req, path);
   if (path.startsWith("wholesale/")) return handleWholesale(req, path);
@@ -824,17 +1958,71 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   throw new HttpError(404, "NOT_FOUND");
 }
 
+/**
+ * طبقه‌بندی خطا برای پاسخ عمومی کلاینت.
+ *
+ * ── اصلاح D26 (فاز ۱.۵) ─────────────────────────────────────────────────────
+ * پیش از این، کد عمومی مستقیماً از `error.code` خوانده می‌شد. خطاهای `pg` هم
+ * فیلد `code` دارند و آن **SQLSTATE** است؛ نتیجهٔ عملی این بود که یک قیمت
+ * اعشاری در ثبت محصول تأمین‌کننده، به‌جای خطای دامنه‌ای،
+ * `{"error":"22P02","message":"خطای داخلی سرور"}` برمی‌گرداند — یعنی کد داخلی
+ * پستگرس بخشی از قرارداد عمومی API شده بود. کدهایی مثل `23505`/`23503` هم
+ * می‌توانند ساختار اسکیما را افشا کنند.
+ *
+ * قاعدهٔ جدید: فقط خطاهای **شناخته‌شدهٔ دامنه** کد خودشان را دارند.
+ * هر خطای دیگر (خطای درایور، خطای برنامه‌نویسی، استثنای پیش‌بینی‌نشده)
+ * `INTERNAL_ERROR` با پیام عمومی می‌شود و جزئیات فقط در لاگ سرور می‌ماند.
+ *
+ * `export` شده تا تست رگرسیون D26 بتواند مستقیماً خطاهای شبیه‌سازِ درایور
+ * (مثل `{code:"22P02"}`) را به آن بدهد و ثابت کند کد SQLSTATE به بیرون درز نمی‌کند.
+ */
+export function publicError(error: unknown): { status: number; code: string; message: string } {
+  if (isHttpError(error)) {
+    return {
+      status: error.status,
+      code: error.code,
+      message: error.status >= 500 ? "خطای داخلی سرور" : error.message,
+    };
+  }
+  // کدهای ارائه‌دهندهٔ پرو مجازی عمداً منتقل می‌شوند: `TryOn.tsx` آن‌ها را به
+  // پیام فارسی نگاشت می‌کند (`PERFECT_CORP_NOT_CONFIGURED`, `error_pose`, …) و
+  // خودشان راز داخلی نیستند؛ فقط ۵xx پیام عمومی می‌گیرد.
+  if (isPerfectCorpError(error)) {
+    return {
+      status: error.status,
+      code: error.message,
+      message: error.status >= 500 ? "خطای داخلی سرور" : error.message,
+    };
+  }
+  /**
+   * دیتابیس مهاجرت‌نشده یا ناقص → ۵۰۳ با پیام عمومی.
+   *
+   * چرا ۵۰۳ و نه ۵۰۰؟ چون این یک نقص کد نیست، «سرویس آماده نیست» است؛
+   * orchestrator/healthcheck باید بتواند آن را از یک باگ تشخیص دهد. جزئیات
+   * (نام جدول/ستون/مهاجرت) هرگز به کلاینت نمی‌رود؛ فقط در لاگ سرور ثبت می‌شود
+   * (`initialize()` در `database.ts` آن‌ها را چاپ می‌کند).
+   */
+  if (error instanceof DatabaseNotMigratedError) {
+    return { status: 503, code: "SERVICE_UNAVAILABLE", message: "سرویس موقتاً در دسترس نیست" };
+  }
+  return { status: 500, code: "INTERNAL_ERROR", message: "خطای داخلی سرور" };
+}
+
 export async function handleKolbeRequest(req: NextRequest, pathParts: string[]) {
+  const cors = corsHeadersFor(req.headers.get("origin"));
   try {
     return await handleRequest(req, pathParts);
   } catch (error: any) {
-    const status = error instanceof HttpError || isPerfectCorpError(error) ? error.status : 500;
-    const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
-    if (status >= 500) console.error("Kolbe API error", error);
-    return response({ error: code, message: status >= 500 ? "خطای داخلی سرور" : code }, status);
+    const { status, code, message } = publicError(error);
+    if (status >= 500) {
+      // قانون حاکم: هیچ جزئیات داخلی (stack/پیام دیتابیس) به کلاینت درز نمی‌کند؛
+      // فقط در لاگ سرور ثبت می‌شود. کد واقعی در لاگ می‌ماند تا اشکال‌زدایی ممکن باشد.
+      console.error(`[kolbe-api] ${req.method} /${pathParts.join("/")} → ${status} (${code})`, error);
+    }
+    return Response.json({ error: code, message }, { status, headers: cors });
   }
 }
 
-export function corsHeaders() {
-  return { ...CORS_HEADERS };
+export function corsHeaders(origin: string | null = null) {
+  return { ...corsHeadersFor(origin) };
 }

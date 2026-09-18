@@ -3,10 +3,28 @@ import { Link } from "../router";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import type { Product } from "../data/catalog";
+import { isInstallmentAvailable, type PurchaseChannel } from "../lib/purchaseChannel";
 import Icon from "./Icon";
 import { useSiteSettings } from "../siteSettings";
 
-export default function ProductCard({ product, compact = false }: { product: Product; compact?: boolean }) {
+/**
+ * کارت محصول — **فقط کانال خرده‌فروشی**.
+ *
+ * ⚠️ `channel` (اصلاح D22): کارت امروز فقط در صفحات خرده‌فروشی
+ * (خانه/فروشگاه/کالکشن/…‌) استفاده می‌شود، اما پیش از این هیچ قید کانالی نداشت و
+ * بخش «اقساطی» را بی‌قید رندر می‌کرد؛ اگر روزی در پورتال عمده هم سوار شود،
+ * قاعدهٔ «BNPL فقط خرده‌فروشی» به‌طور خاموش نقض می‌شد. اکنون پیش‌فرض خرده‌فروشی
+ * است و مصرف‌کنندهٔ عمده باید صریحاً `channel="wholesale"` بدهد.
+ */
+export default function ProductCard({
+  product,
+  compact = false,
+  channel = "retail",
+}: {
+  product: Product;
+  compact?: boolean;
+  channel?: PurchaseChannel;
+}) {
   const [idx, setIdx] = useState(0);
   const [colourIdx, setColourIdx] = useState(0);
   const [sizeOpen, setSizeOpen] = useState(false);
@@ -202,7 +220,7 @@ export default function ProductCard({ product, compact = false }: { product: Pro
           )}
         </div> : null}
 
-        {cardSettings.showInstallment && installment.enabled && installment.showOnCard ? <div className="mt-2 border-r-2 border-[#ffd200] pr-2 text-[9.5px] leading-5 text-neutral-500"><span className="font-medium text-[#011c3a]">{installment.provider === "digipay" ? "دیجی‌پی" : installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : "اسنپ‌پی"}</span> · {installment.installments.toLocaleString("fa-IR")} قسط از {toman(Math.ceil(installmentPrice/installment.installments))}</div> : null}
+        {isInstallmentAvailable(channel) && cardSettings.showInstallment && installment.enabled && installment.showOnCard ? <div className="mt-2 border-r-2 border-[#ffd200] pr-2 text-[9.5px] leading-5 text-neutral-500"><span className="font-medium text-[#011c3a]">{installment.provider === "digipay" ? "دیجی‌پی" : installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : "اسنپ‌پی"}</span> · {installment.installments.toLocaleString("fa-IR")} قسط از {toman(Math.ceil(installmentPrice/installment.installments))}</div> : null}
 
         {cardSettings.showQuickAdd ? <div className="product-card-purchase mt-auto pt-4">
           {sizeOpen && (

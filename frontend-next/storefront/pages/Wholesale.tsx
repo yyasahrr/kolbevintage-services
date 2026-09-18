@@ -4,7 +4,7 @@ import { products, type Product } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import { restoreSiteCustomer, signInSiteCustomer } from "../lib/siteAuthApi";
-import { restoreWholesaleVip, applyWholesaleVip, signInWholesaleVip } from "../lib/wholesaleVipApi";
+import { restoreWholesaleVip, applyWholesaleVip, signInWholesaleVip, loadWholesaleMembership } from "../lib/wholesaleVipApi";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
 import CartDrawer from "../components/CartDrawer";
@@ -60,6 +60,8 @@ export default function Wholesale() {
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [vipError, setVipError] = useState("");
+  /* وضعیت «در انتظار تأیید» عضویت — تأیید فقط توسط مدیر کلبه انجام می‌شود (اصلاح D2). */
+  const [vipPending, setVipPending] = useState(false);
   const [vipBusy, setVipBusy] = useState(false);
 
   /* بازیابی نشستها */
@@ -69,6 +71,9 @@ export default function Wholesale() {
     });
     restoreWholesaleVip().then(account => {
       if (account) setVipAccount({ storeName: account.storeName, planName: account.planName });
+    });
+    loadWholesaleMembership().then(membership => {
+      if (membership?.status === "pending") setVipPending(true);
     });
   }, []);
 
@@ -110,6 +115,8 @@ export default function Wholesale() {
     try{
       const paymentReference=`VIP-${Date.now()}`;
       const account=await applyWholesaleVip({memberName:siteCustomer.name,storeName:`فروشگاه ${siteCustomer.name}`,phone:siteCustomer.phone||"ثبت نشده",city:"ثبت نشده",planName:plan.name,paymentReference});
+      /* عضویت هرگز در مرورگر فعال نمی‌شود؛ فقط مدیر کلبه می‌تواند تأیید کند. */
+      if(account.status!=="approved"){setVipPending(true);setShowVipPlans(false);return}
       const activatedAt=account.activatedAt??new Date().toISOString();
       const expiresAt=account.expiresAt??new Date(Date.now()+365*86400000).toISOString();
       saveWholesaleMembership({customerId:siteCustomer.id,planId:plan.id,planName:plan.name,memberName:siteCustomer.name,storeName:account.storeName,phone:siteCustomer.phone,city:account.city,activatedAt,expiresAt,status:"active",vip:true});
@@ -278,6 +285,7 @@ export default function Wholesale() {
             </div>
             <p className="mt-4 text-center text-[9.5px] leading-5 text-neutral-400">درگاه بانکی این محیط تنظیم نشده است؛ این دکمه چرخه پرداخت موفق و فعال‌سازی خودکار را برای تست شبیه‌سازی می‌کند.</p>
             {vipError&&<p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-center text-[10px] text-red-700">{vipError}</p>}
+            {vipPending&&!hasVip&&<p role="status" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2 text-center text-[10px] text-amber-800">درخواست عضویت VIP شما ثبت شده و در انتظار تأیید کارشناسان کلبه است.</p>}
             <button onClick={() => setShowVipPlans(false)} className="mt-4 block mx-auto text-[11px] text-neutral-400 underline">بستن</button>
           </div>
         </div>

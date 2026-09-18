@@ -1,7 +1,6 @@
 /**
- * لایه API پنل ساپلایر روی API یکپارچه Next.js.
+ * لایه API پنل ساپلایر روی API یکپارچه Next.js — فاز ۲: فقط HttpOnly Cookie.
  */
-const TOKEN_KEY = 'kv_supplier'
 
 export type SupplierContext = { supplierId: string; displayName: string; legalName: string }
 
@@ -12,12 +11,13 @@ export class ApiError extends Error {
   constructor(code: string, message?: string) { super(message ?? code); this.code = code }
 }
 
-async function api<T = unknown>(path: string, init?: { method?: string; body?: unknown; token?: string | null }): Promise<T> {
+async function api<T = unknown>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
   let response: Response
   try {
     response = await fetch(path, {
       method: init?.method ?? 'GET',
-      headers: { 'content-type': 'application/json', ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}) },
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     })
   } catch { throw new ApiError('NETWORK', 'اتصال به سرور برقرار نشد.') }
@@ -30,20 +30,14 @@ async function api<T = unknown>(path: string, init?: { method?: string; body?: u
   return data as T
 }
 
-function loadToken(): string | null {
-  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
-}
-
-function saveToken(token: string) {
-  try { localStorage.setItem(TOKEN_KEY, token) } catch { /* ignore */ }
-}
-
 export function clearSession() {
-  try { localStorage.removeItem(TOKEN_KEY) } catch { /* ignore */ }
+  // در فاز ۲ نشست فقط با کوکی HttpOnly است؛ پاک‌سازی محلی لازم نیست
+  // این تابع برای سازگاری باقی مانده و در صورت نیاز خروج از سرور را صدا می‌زند
+  void api('/store/kolbe/auth/logout', { method: 'POST' }).catch(() => {})
 }
 
 export async function signInSupplier(email: string, password: string): Promise<SupplierContext> {
-  const data = await api<{ token: string; supplier: SupplierContext }>('/store/kolbe/supplier/auth/login', {
+  const data = await api<{ supplier: SupplierContext }>('/store/kolbe/supplier/auth/login', {
     method: 'POST',
     body: { email: email.trim(), password },
   }).catch((error) => {
@@ -53,24 +47,22 @@ export async function signInSupplier(email: string, password: string): Promise<S
     }
     throw new Error('ایمیل یا رمز عبور درست نیست.')
   })
-  saveToken(data.token)
   return data.supplier
 }
 
 export async function restoreSupplierSession(): Promise<SupplierContext | null> {
-  const token = loadToken()
-  if (!token) return null
   try {
-    const data = await api<{ supplier: SupplierContext }>('/store/kolbe/supplier/session', { token })
+    const data = await api<{ supplier: SupplierContext }>('/store/kolbe/supplier/session')
     return data.supplier
   } catch (error) {
     if (error instanceof ApiError && error.code === 'NETWORK') return null
-    clearSession()
     return null
   }
 }
 
-export async function signOutSupplier() { clearSession() }
+export async function signOutSupplier() {
+  try { await api('/store/kolbe/auth/logout', { method: 'POST' }) } catch { /* ignore */ }
+}
 
 export async function submitSupplierApplication(input: { companyName: string; representativeName: string; phone: string; category: string; monthlyCapacity: number | null }) {
   const data = await api<{ id: string }>('/store/kolbe/supplier/apply', {
@@ -85,10 +77,10 @@ export async function submitSupplierApplication(input: { companyName: string; re
 
 export async function loadSupplierProducts(supplierId: string) {
   void supplierId
-  const token = loadToken()
-  if (!token) return []
-  const data = await api<{ products: Array<any> }>('/store/kolbe/supplier/products', { token })
-  return data.products ?? []
+  try {
+    const data = await api<{ products: Array<any> }>('/store/kolbe/supplier/products')
+    return data.products ?? []
+  } catch { return [] }
 }
 
 export type CreateSupplierProductInput = {
@@ -105,12 +97,9 @@ export type CreateSupplierProductInput = {
 }
 
 export async function createSupplierProduct(input: CreateSupplierProductInput) {
-  const token = loadToken()
-  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
   try {
     const data = await api<{ product: { id: string; name: string; sku: string; status: string } }>('/store/kolbe/supplier/products', {
       method: 'POST',
-      token,
       body: {
         name: input.name, sku: input.sku, category: input.category, description: input.description,
         wholesalePrice: input.wholesalePrice, imageUrl: input.imageUrl, color: input.color,
@@ -126,19 +115,16 @@ export async function createSupplierProduct(input: CreateSupplierProductInput) {
 
 export async function loadSupplierOrders(supplierId: string) {
   void supplierId
-  const token = loadToken()
-  if (!token) return []
-  const data = await api<{ orders: Array<any> }>('/store/kolbe/supplier/orders', { token })
-  return data.orders ?? []
+  try {
+    const data = await api<{ orders: Array<any> }>('/store/kolbe/supplier/orders')
+    return data.orders ?? []
+  } catch { return [] }
 }
 
 export async function updateSupplierPurchaseOrder(orderId: string, status: 'preparing' | 'shipped' | 'delivered', trackingCode?: string) {
-  const token = loadToken()
-  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
   try {
     return await api(`/store/kolbe/supplier/orders/${orderId}/status`, {
       method: 'POST',
-      token,
       body: { status, trackingCode: trackingCode?.trim() || null },
     })
   } catch (error) {
@@ -152,20 +138,16 @@ export async function updateSupplierPurchaseOrder(orderId: string, status: 'prep
 
 export async function loadSupplierRfqs(supplierId: string) {
   void supplierId
-  const token = loadToken()
-  if (!token) return []
-  const data = await api<{ rfqs: Array<any> }>('/store/kolbe/supplier/rfqs', { token })
-  return data.rfqs ?? []
+  try {
+    const data = await api<{ rfqs: Array<any> }>('/store/kolbe/supplier/rfqs')
+    return data.rfqs ?? []
+  } catch { return [] }
 }
 
-/** ارسال پیشنهاد قیمت برای یک RFQ. */
 export async function submitSupplierQuote(rfqId: string, quote: { unitPrice: number; leadTimeDays: number; notes?: string }) {
-  const token = loadToken()
-  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
-  await api(`/store/kolbe/supplier/rfqs/${rfqId}/quote`, { method: 'POST', token, body: quote })
+  await api(`/store/kolbe/supplier/rfqs/${rfqId}/quote`, { method: 'POST', body: quote })
 }
 
-/** آیا سرور در دسترس است؟ (برای نمایش مسیر دمو وقتی بک‌اند بالا نیست) */
 export async function backendHealth(): Promise<boolean> {
   try {
     await api('/store/kolbe/health')

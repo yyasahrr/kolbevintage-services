@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
 import { trackCommerceEvent } from "../lib/analytics";
@@ -17,11 +17,19 @@ const shippingMethods = [
   { id: "tipax", label: "تیپاکس", time: "۱ تا ۲ روز کاری", price: 145_000 },
 ];
 
+/**
+ * روش‌های پرداخت قابل انتخاب — هم‌تراز با `RETAIL_CHECKOUT_METHODS`.
+ *
+ * ⚠️ اصلاح D19a: گزینهٔ «کیف پول کلبه» حذف شد چون هیچ سیستم کیف پولی وجود ندارد
+ * (موجودی نمایش‌داده‌شده همیشه صفر بود و امکان شارژ وجود نداشت) — یک تعهد
+ * غیرقابل‌اجرا. درگاه/اقساط می‌مانند اما یادداشتشان صادق است: تا راه‌اندازی
+ * ارائه‌دهندهٔ پرداخت (فاز ۵) مبلغ در لحظهٔ ثبت سفارش وصول **نمی‌شود** و
+ * سفارش با وضعیت `unpaid` ثبت می‌گردد.
+ */
 const payMethods = [
-  { id: "gateway", label: "درگاه بانکی", note: "پرداخت آنلاین امن" },
-  { id: "installment", label: "پرداخت اقساطی", note: "۴ قسط بدون بهره" },
-  { id: "cod", label: "پرداخت در محل", note: "فقط تهران و کرج" },
-  { id: "wallet", label: "کیف پول کلبه", note: "موجودی: ۰ تومان" },
+  { id: "gateway", label: "درگاه بانکی", note: "پس از ثبت سفارش، همکاران ما برای هماهنگی پرداخت تماس می‌گیرند" },
+  { id: "installment", label: "پرداخت اقساطی", note: "۴ قسط بدون بهره — با هماهنگی پس از ثبت سفارش" },
+  { id: "cod", label: "پرداخت در محل", note: "فقط تهران و کرج • پرداخت هنگام تحویل" },
 ];
 
 function Step({
@@ -70,6 +78,9 @@ export default function Checkout() {
   const [orderCode, setOrderCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [orderError, setOrderError] = useState("");
+  const [orderNote, setOrderNote] = useState("");
+  /* گام ۰.۵: کلید عدم‌تکرار برای هر تلاش؛ دوبار کلیک نباید دو سفارش بسازد. */
+  const idempotencyKey = useRef<string>("");
   const [form, setForm] = useState({
     name: "", family: "", phone: "", email: "",
     province: "تهران", city: "", postal: "", address: "", plaque: "", unit: "", note: "",
@@ -92,6 +103,11 @@ export default function Checkout() {
           <br />
           جزئیات سفارش به شماره {form.phone || "ثبت‌شده"} پیامک شد.
         </p>
+        {orderNote ? (
+          <p className="rounded-[3px] border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800">
+            {orderNote}
+          </p>
+        ) : null}
         <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-8 py-3 text-[13px] font-medium text-white">
           ادامه خرید
         </Link>
@@ -203,9 +219,20 @@ export default function Checkout() {
                 }
                 setSubmitting(true);
                 setOrderError("");
+                setOrderNote("");
+                /* کلید تازه برای هر تلاش ثبت (اگر کاربر بعد از خطا دوباره تلاش کند). */
+                if (!idempotencyKey.current) {
+                  idempotencyKey.current = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+                }
                 trackCommerceEvent({ name: "begin_checkout", value: total, quantity: lines.reduce((sum, line) => sum + line.qty, 0) });
                 try {
-                  const result = await api<{ orderCode: string }>("/store/kolbe/retail/orders", {
+                  const result = await api<{
+                    orderCode: string;
+                    totals: { items: number; shipping: number; total: number };
+                    adjusted: boolean;
+                    /* D19a: وضعیت واقعی پرداخت از سرور — نه فرض مرورگر. */
+                    payment?: { method: string; status: string; collected: boolean; requiresManualSettlement: boolean };
+                  }>("/store/kolbe/retail/orders", {
                     method: "POST",
                     body: {
                       customer: { name: `${form.name} ${form.family}`.trim(), phone: form.phone, email: form.email },
@@ -218,9 +245,22 @@ export default function Checkout() {
                       payMethod: pay,
                       totals: { items: cartTotal, shipping: total - cartTotal, total },
                     },
+                    headers: { "idempotency-key": idempotencyKey.current },
                   });
                   setOrderCode(result.orderCode);
-                  trackCommerceEvent({ name: "purchase", value: total, quantity: lines.reduce((sum, line) => sum + line.qty, 0) });
+                  /* مبلغ نهایی همیشه مبلغ سرور است، نه محاسبهٔ مرورگر (اصلاح D3). */
+                  const priceNote = result.adjusted
+                    ? `مبلغ نهایی بر اساس قیمت روز کالا اصلاح شد: ${toman(result.totals.total)}`
+                    : "";
+                  /* D19a: اگر سرور گفته مبلغی وصول نشده، همان را به کاربر بگوییم. */
+                  const paymentNote =
+                    result.payment && !result.payment.collected
+                      ? result.payment.status === "pending_cod"
+                        ? "پرداخت هنگام تحویل انجام می‌شود."
+                        : "این سفارش «پرداخت‌نشده» ثبت شد؛ برای هماهنگی پرداخت با شما تماس می‌گیریم."
+                      : "";
+                  setOrderNote([priceNote, paymentNote].filter(Boolean).join(" • "));
+                  trackCommerceEvent({ name: "purchase", value: result.totals.total, quantity: lines.reduce((sum, line) => sum + line.qty, 0) });
                   clearCart();
                   setDone(true);
                 } catch (error) {

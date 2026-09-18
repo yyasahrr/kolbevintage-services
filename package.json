@@ -3,6 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "workspaces": [
+    "apps/*",
+    "packages/*",
     "frontend-kolbe",
     "frontend-supplier",
     "frontend-next"
@@ -17,12 +19,27 @@
     "build": "npm run build --workspace kolbe-next",
     "build:legacy": "npm run build --workspace kolbe-storefront",
     "build:supplier": "npm run build --workspace kolbe-supplier-portal",
-    "preview": "npm run preview --workspace kolbe-storefront"
+    "preview": "npm run preview --workspace kolbe-storefront",
+    "test": "npm run test --workspace kolbe-next",
+    "typecheck": "npm run typecheck --workspace kolbe-next",
+    "typecheck:all": "npm run build:packages && npm run typecheck --workspace @kolbe/shared && npm run typecheck --workspace @kolbe/database && npm run typecheck --workspace @kolbe/api && npm run typecheck --workspace kolbe-next",
+    "test:all": "npm run build:packages && npm test --workspace @kolbe/shared && npm test --workspace @kolbe/database && npm test --workspace @kolbe/api && npm test --workspace kolbe-next",
+    "build:packages": "npm run build --workspace @kolbe/shared && npm run build --workspace @kolbe/database",
+    "build:api": "npm run build --workspace @kolbe/api",
+    "dev:api": "npm run build:packages && npm run build:api && node apps/api/dist/main.js",
+    "db:migrate": "npm run build:packages && node packages/database/migrate.mjs",
+    "infra:dev": "docker compose -f infra/compose/docker-compose.dev.yml up -d",
+    "infra:verify": "node scripts/verify-infra.mjs",
+    "db:migrate:status": "npm run build:packages && node packages/database/migrate.mjs --status",
+    "db:migrate:verify": "npm run build:packages && node packages/database/migrate.mjs --verify-only",
+    "db:adopt-legacy": "npm run build:packages && node packages/database/migrate.mjs --adopt-legacy",
+    "infra:verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
     "pg": "8.23.0"
   },
   "devDependencies": {
-    "embedded-postgres": "17.5.0-beta.15"
+    "embedded-postgres": "17.5.0-beta.15",
+    "js-yaml": "^4.3.2"
   }
 }

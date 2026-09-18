@@ -8,8 +8,11 @@
  *   node scripts/pg.mjs status   → وضعیت پورت
  *
  * باینریهای postgres از پکیج npm  @embedded-postgres/linux-x64  میآیند و
- * دیتای دیتابیس در ویندوز داخل .postgres-data (و در لینوکس /home/user/pg)
- * نگهداری می‌شود و وارد git نمی‌شود. ساخت جداول و seed در اولین درخواست API انجام می‌شود.
+ * دیتای دیتابیس داخل `.postgres-data` در workspace نگهداری می‌شود. این مسیر
+ * هم در توسعه و هم در runner لینوکس writable است و وارد git نمی‌شود.
+ * ساخت جداول و (در صورت مجاز بودن) کاشت
+ * دادهٔ نمایشی در اولین درخواست API انجام می‌شود — کاشت فقط با
+ * `KOLBE_SEED_DEMO_DATA=true` و در محیط غیرِ تولید (اصلاح D18).
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -45,8 +48,7 @@ function readDatabaseUrl() {
 }
 
 const parsedDatabaseUrl = new URL(readDatabaseUrl() ?? "postgres://postgres:postgres@127.0.0.1:55432/kolbe");
-const DB_DIR = process.env.KOLBE_PG_DIR
-  ?? (process.platform === "win32" ? path.join(ROOT, ".postgres-data") : "/home/user/pg");
+const DB_DIR = process.env.KOLBE_PG_DIR ?? path.join(ROOT, ".postgres-data");
 const PORT = Number(process.env.KOLBE_PG_PORT ?? parsedDatabaseUrl.port ?? 5432);
 const HOST = parsedDatabaseUrl.hostname === "localhost" ? "127.0.0.1" : parsedDatabaseUrl.hostname;
 const USER = decodeURIComponent(parsedDatabaseUrl.username || "postgres");

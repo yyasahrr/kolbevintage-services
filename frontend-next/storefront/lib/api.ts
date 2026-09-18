@@ -1,15 +1,6 @@
-/** کلاینت API یکپارچه کلبه؛ همه درخواست‌ها روی همان origin اجرا می‌شوند. */
+/** کلاینت API یکپارچه کلبه — فاز ۲: فقط HttpOnly Cookie، بدون localStorage توکن. */
 import { KOLBE_API_BASE } from "../nextEnv";
 import { reportApiIssue } from "./clientLogger";
-
-export const TOKEN_KEYS = {
-  customer: "kv_customer",
-  vip: "kv_vip",
-  admin: "kv_admin",
-  supplier: "kv_supplier",
-} as const;
-
-export type Role = keyof typeof TOKEN_KEYS;
 
 export class ApiError extends Error {
   code: string;
@@ -19,30 +10,25 @@ export class ApiError extends Error {
   }
 }
 
-export function loadToken(role: Role): string | null {
-  try { return localStorage.getItem(TOKEN_KEYS[role]); } catch { return null; }
-}
-
-export function saveToken(role: Role, token: string) {
-  try { localStorage.setItem(TOKEN_KEYS[role], token); } catch { /* storage unavailable */ }
-}
-
-export function clearToken(role: Role) {
-  try { localStorage.removeItem(TOKEN_KEYS[role]); } catch { /* storage unavailable */ }
-}
-
 export async function api<T = unknown>(
   path: string,
-  init?: { method?: string; body?: unknown; token?: string | null; signal?: AbortSignal },
+  init?: {
+    method?: string;
+    body?: unknown;
+    signal?: AbortSignal;
+    headers?: Record<string, string>;
+  },
 ): Promise<T> {
   const method = init?.method ?? "GET";
   let result: Response;
   try {
     result = await fetch(`${KOLBE_API_BASE}${path}`, {
       method,
+      // کوکی HttpOnly نشست همراه درخواست‌های same-origin فرستاده می‌شود — تنها اعتبار
+      credentials: "include",
       headers: {
         "content-type": "application/json",
-        ...(init?.token ? { authorization: `Bearer ${init.token}` } : {}),
+        ...(init?.headers ?? {}),
       },
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
       signal: init?.signal,

@@ -1,0 +1,126 @@
+# ═════════════════════════════════════════════════════════════════════════════
+# CI کلبه وینتیج
+#
+# قاعدهٔ حاکم: «Do not claim production readiness unless tests actually pass.»
+# این workflow همان چیزی است که آن ادعا را قابل‌سنجش می‌کند: typecheck، تست و
+# بیلد هر سه بستهٔ فعلی (فروشگاه Next.js، بک‌اند NestJS، پکیج‌های مشترک).
+#
+# نکته: تست‌ها با PostgreSQL امبدد اجرا می‌شوند (پکیج `embedded-postgres` که
+# باینری پلتفرم را از npm می‌آورد)؛ پس نیازی به سرویس جانبی در CI نیست.
+# ═════════════════════════════════════════════════════════════════════════════
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # راز تست — هرگز در محیط واقعی استفاده نمی‌شود.
+  KOLBE_SESSION_SECRET: ci-test-session-secret-not-used-in-production
+  NODE_ENV: test
+  # هارنس تست به حساب‌های دمو (admin@kolbe.ir و…) و کاتالوگ نمونه وابسته است.
+  # از اصلاح D18 این کاشت پیش‌فرض خاموش است و فقط با همین فلگ انجام می‌شود؛
+  # در محیط تولید حتی با true هم اجرا نمی‌شود.
+  KOLBE_SEED_DEMO_DATA: "true"
+
+jobs:
+  infra:
+    name: infra (بازبینی ایستای Compose و Nginx)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # در این runner داکر در دسترس نیست؛ این گام خطاهای ساختاری (upstream بدون
+      # سرویس، YAML نامعتبر، متغیر مستندنشده) را می‌گیرد. ساخت واقعی image و
+      # `nginx -t` همچنان روی میزبان دارای Docker انجام می‌شود.
+      - name: بازبینی ایستای زیرساخت
+        run: npm run infra:verify
+
+  shared:
+    name: packages/shared (پول، ماشین حالت، خطا)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: typecheck
+        run: npm run typecheck --workspace @kolbe/shared
+      - name: build
+        run: npm run build --workspace @kolbe/shared
+      - name: test
+        run: npm test --workspace @kolbe/shared
+
+  database:
+    name: packages/database (هم‌ارزی اسکیما و مهاجرت)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Build shared dependency
+        run: npm run build --workspace @kolbe/shared
+      - name: typecheck
+        run: npm run typecheck --workspace @kolbe/database
+      - name: build
+        run: npm run build --workspace @kolbe/database
+      - name: تست هم‌ارزی اسکیما با DDL زنده
+        run: npm test --workspace @kolbe/database
+
+  api:
+    name: apps/api (NestJS، مرزهای ماژول، قرارداد API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # پکیج‌های مشترک باید اول ساخته شوند (API به dist آن‌ها import می‌کند).
+      - run: npm run build --workspace @kolbe/shared
+      - run: npm run build --workspace @kolbe/database
+      - name: typecheck بک‌اند
+        run: npm run typecheck --workspace @kolbe/api
+      - name: build بک‌اند
+        run: npm run build --workspace @kolbe/api
+      - name: تست بک‌اند
+        run: npm test --workspace @kolbe/api
+
+  storefront:
+    name: frontend-next (فروشگاه و API گذار)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # هر job فایل‌سیستم مستقل دارد؛ تست‌ها importهای workspace را از dist می‌خوانند.
+      - run: npm run build --workspace @kolbe/shared
+      - run: npm run build --workspace @kolbe/database
+      # ⚠️ بیلد Next.js خطاهای تایپ را نادیده می‌گیرد
+      # (`next.config.ts` → typescript.ignoreBuildErrors)، پس این مرحله اجباری است.
+      - name: typecheck
+        run: npm run typecheck --workspace kolbe-next
+      - name: تست رگرسیون (چک‌اوت، VIP، حسابرسی، نشست)
+        run: npm test --workspace kolbe-next
+      - name: build فروشگاه
+        run: npm run build --workspace kolbe-next

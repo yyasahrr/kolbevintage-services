@@ -6,7 +6,7 @@ import {
   type CategorySectionConfig,
   type DesignSystemConfig,
 } from "./designSystem";
-import { api, loadToken } from "./lib/api";
+import { api } from "./lib/api";
 
 export type HeroTemplate = "cover" | "split" | "mosaic" | "duo" | "minimal";
 
@@ -613,13 +613,10 @@ export function saveSiteSettings(settings: SiteSettings) {
   cacheRaw = raw;
   cacheValue = browserSettings;
   window.dispatchEvent(new Event(EVENT_NAME));
-  const token = loadToken("admin");
-  if (token) {
-    if (remoteSaveTimer) clearTimeout(remoteSaveTimer);
-    remoteSaveTimer = setTimeout(() => {
-      void api("/store/kolbe/admin/site-settings", { method: "PUT", token, body: { settings } }).catch(() => undefined);
-    }, 450);
-  }
+  if (remoteSaveTimer) clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = setTimeout(() => {
+    void api("/store/kolbe/admin/site-settings", { method: "PUT", body: { settings } }).catch(() => undefined);
+  }, 450);
 }
 
 /** دریافت نسخه مرکزی تنظیمات؛ روی هر بار ورود بازدیدکننده اجرا می‌شود. */

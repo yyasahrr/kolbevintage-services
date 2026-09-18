@@ -1,3 +1,22 @@
+> ## ⚠️ SUPERSEDED — do not use as a source of truth
+>
+> **Replaced by [`prompt-1-audit-and-migration-blueprint.md`](./prompt-1-audit-and-migration-blueprint.md)**,
+> which re-audited the repository on 2026-09-17 against the current branch.
+>
+> This document is kept for history. Three of its findings were fixed after it was written, and one of
+> its statements was simply wrong. The replacement document's §0.4 lists every divergence; the
+> important ones are:
+>
+> | This document says | Reality after re-audit |
+> |---|---|
+> | Retail checkout returns `500` (D1) | **Fixed** in `f564fdf`; 201 with server-computed totals, regression-tested |
+> | VIP membership self-approves (D2) | **Fixed** in `c224714`; always `pending`, admin-only approval, re-verified by probe |
+> | Client totals are trusted (D3) | **Fixed**; tampered prices are recomputed and flagged |
+> | `frontend-kolbe`/`frontend-supplier` are "dev-time shells proxying to Next" | **Wrong.** `frontend-kolbe/src` is a full divergent fork — 13,026 LOC, 48 files differ |
+>
+> The localStorage register, Supabase maps and debt IDs (D1–D17) remain useful as history, and the
+> replacement document continues that numbering rather than restarting it.
+
 # Kolbe Vintage — Architecture Audit & Migration Blueprint
 
 **Phase:** PROMPT 1 (Repository Audit & Migration Blueprint) · **Date:** 2026-09-17 ·

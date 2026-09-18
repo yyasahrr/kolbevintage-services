@@ -6,6 +6,7 @@ import { productById, products, type Product } from "../data/catalog";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
+import { isInstallmentAvailable, type PurchaseChannel } from "../lib/purchaseChannel";
 import Lightbox from "../components/Lightbox";
 import SizeAdvisor from "../components/SizeAdvisor";
 import ProductCard from "../components/ProductCard";
@@ -676,7 +677,23 @@ function Reviews({ product }: { product: Product }) {
 
 /* --------------------------------- صفحه ------------------------------------ */
 
-export default function ProductPage({ id }: { id: string }) {
+/**
+ * صفحهٔ محصول.
+ *
+ * ⚠️ `channel` (اصلاح D22): این کامپوننت در دو کانال سوار می‌شود — خرده‌فروشی
+ * (`/product/:id`) و پورتال عمده (`VIPPortal` → `/vip/product/:id`). پیش از این
+ * قید کانالی وجود نداشت و بخش «پرداخت اقساطی» (BNPL) به اعضای عمده هم نشان داده
+ * می‌شد، در حالی که قاعدهٔ حاکم می‌گوید **BNPL فقط خرده‌فروشی است**. اکنون بخش
+ * اقساط فقط با `channel === "retail"` رندر می‌شود. سرور هم مستقل از UI روش
+ * پرداخت را اعتبارسنجی می‌کند (`assertPaymentMethodAllowed`).
+ */
+export default function ProductPage({
+  id,
+  channel = "retail",
+}: {
+  id: string;
+  channel?: PurchaseChannel;
+}) {
   const { query } = useRouter();
   const wholesale = query.get("wholesale") === "1";
   const product = productById(id);
@@ -951,7 +968,7 @@ export default function ProductPage({ id }: { id: string }) {
                       ارسال رایگان بالای ۳ میلیون تومان
                     </p>
                   </div>
-                  {builder.components.installment.enabled && builder.components.installment.showOnProduct ? <section className="mt-2 border border-neutral-200 bg-white p-3" aria-label="پرداخت اقساطی"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-medium">{builder.components.installment.label}</p><p className="mt-1 text-[9.5px] text-neutral-500">از طریق {builder.components.installment.provider === "both" ? "اسنپ‌پی یا دیجی‌پی" : builder.components.installment.provider === "digipay" ? "دیجی‌پی" : "اسنپ‌پی"} · {builder.components.installment.installments.toLocaleString("fa-IR")} قسط</p></div><div className="text-left"><p className="text-[9px] text-neutral-400">قیمت اقساطی</p><p className="mt-1 text-[12px] font-medium num-fa">{toman(Math.round(salePrice*(1+builder.components.installment.markupPercent/100)))}</p></div></div></section> : null}
+                  {isInstallmentAvailable(channel) && builder.components.installment.enabled && builder.components.installment.showOnProduct ? <section className="mt-2 border border-neutral-200 bg-white p-3" aria-label="پرداخت اقساطی"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-medium">{builder.components.installment.label}</p><p className="mt-1 text-[9.5px] text-neutral-500">از طریق {builder.components.installment.provider === "both" ? "اسنپ‌پی یا دیجی‌پی" : builder.components.installment.provider === "digipay" ? "دیجی‌پی" : "اسنپ‌پی"} · {builder.components.installment.installments.toLocaleString("fa-IR")} قسط</p></div><div className="text-left"><p className="text-[9px] text-neutral-400">قیمت اقساطی</p><p className="mt-1 text-[12px] font-medium num-fa">{toman(Math.round(salePrice*(1+builder.components.installment.markupPercent/100)))}</p></div></div></section> : null}
 
                   {/* ۳ — انتخاب رنگ */}
                   <div className="mt-6">

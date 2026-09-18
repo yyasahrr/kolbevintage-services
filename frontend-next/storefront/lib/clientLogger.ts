@@ -43,8 +43,21 @@ export function reportClientIssue(issue: ClientIssue) {
     url: issue.url ?? window.location.href,
     release: RELEASE,
   };
+  /**
+   * ⚠️ پس از اصلاح D21، این endpoint نشست می‌خواهد.
+   *
+   * نخستین خط دفاع علیه «نوشتنِ آزاد در لاگ» همان احراز هویت است، پس تلمتری خطای
+   * سمت مرورگر فقط برای کاربرِ وارد‌شده ثبت می‌شود. چون API روی همان مبدأ سرو
+   * می‌شود (`/store/kolbe/...`)، کوکی HttpOnly نشست با `credentials: "same-origin"`
+   * همراه درخواست می‌رود؛ برای کاربر ناشناس درخواست ۴۰۱ می‌گیرد و بی‌صدا رد
+   * می‌شود (هیچ نویزی در کنسول ایجاد نمی‌کنیم).
+   *
+   * بازگرداندن تلمتری خطای کاربران ناشناس کار فاز ۶ است: با یک endpoint عمومیِ
+   * سهمیه‌دار و امضاشده (نه یک درج بی‌قید در دیتابیس).
+   */
   void fetch(ENDPOINT, {
     method: "POST",
+    credentials: "same-origin",
     headers: {
       "content-type": "application/json",
     },

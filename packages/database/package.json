@@ -1,0 +1,42 @@
+{
+  "name": "@kolbe/database",
+  "version": "0.1.0",
+  "private": true,
+  "description": "اسکیمای Drizzle، مهاجرت‌ها و دسترسی دیتابیس کلبه",
+  "type": "commonjs",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./schema": {
+      "types": "./dist/src/schema/index.d.ts",
+      "default": "./dist/src/schema/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "drizzle-kit generate",
+    "test": "vitest run",
+    "migrate": "node migrate.mjs",
+    "migrate:status": "node migrate.mjs --status"
+  },
+  "dependencies": {
+    "@kolbe/shared": "*",
+    "drizzle-orm": "^0.44.6",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "drizzle-kit": "^0.31.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

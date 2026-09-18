@@ -1,4 +1,4 @@
-import { api, ApiError, clearToken, loadToken, saveToken } from "./api";
+import { api, ApiError } from "./api";
 
 export type AdminSupplierApplication = {
   id: string;
@@ -46,12 +46,8 @@ export type AdminWholesaleOrder = {
   purchaseOrders: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null }>;
 };
 
-function adminToken(): string | null {
-  return loadToken("admin");
-}
-
 export async function signInAdmin(email: string, password: string) {
-  const data = await api<{ token: string; user: { role: string } }>("/store/kolbe/auth/login", {
+  const data = await api<{ user: { role: string } }>("/store/kolbe/auth/login", {
     method: "POST",
     body: { email: email.trim(), password, role: "admin" },
   }).catch((error) => {
@@ -59,118 +55,100 @@ export async function signInAdmin(email: string, password: string) {
     throw new Error("ایمیل یا رمز عبور درست نیست.");
   });
   if (data.user.role !== "admin") throw new Error("این حساب دسترسی مدیریت کلبه را ندارد.");
-  saveToken("admin", data.token);
 }
 
 export async function signOutAdmin() {
-  clearToken("admin");
+  try {
+    await api("/store/kolbe/auth/logout", { method: "POST" });
+  } catch { /* ignore */ }
 }
 
 export async function restoreAdminSession(): Promise<boolean> {
-  const token = adminToken();
-  if (!token) return false;
   try {
-    await api("/store/kolbe/me", { token: loadToken("customer") ?? undefined } as any);
-  } catch {
-    /* از توکن ادمین برای me استفاده نمیشود */
-  }
-  // اعتبار توکن ادمین را با یک درخواست سبک ادمین میسنجیم:
-  try {
-    await api("/store/kolbe/admin/tickets", { token });
+    await api("/store/kolbe/admin/tickets");
     return true;
   } catch (error) {
     if (error instanceof ApiError && error.code === "NETWORK") return false;
-    clearToken("admin");
     return false;
   }
 }
 
 export async function listSupplierApplications(): Promise<AdminSupplierApplication[]> {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ applications: Array<any> }>("/store/kolbe/admin/supplier-applications", { token });
-  return (data.applications ?? []).map((item) => ({
-    id: item.id, companyName: item.company_name, representativeName: item.representative_name,
-    phone: item.phone, category: item.category, monthlyCapacity: item.monthly_capacity,
-    status: item.status, createdAt: item.created_at,
-  }));
+  try {
+    const data = await api<{ applications: Array<any> }>("/store/kolbe/admin/supplier-applications");
+    return (data.applications ?? []).map((item) => ({
+      id: item.id, companyName: item.company_name, representativeName: item.representative_name,
+      phone: item.phone, category: item.category, monthlyCapacity: item.monthly_capacity,
+      status: item.status, createdAt: item.created_at,
+    }));
+  } catch { return []; }
 }
 
 export async function listSuppliers(): Promise<AdminSupplier[]> {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ suppliers: Array<any> }>("/store/kolbe/admin/suppliers", { token });
-  return (data.suppliers ?? []).map((item) => ({
-    id: item.id, displayName: item.display_name, legalName: item.legal_name, city: item.city,
-    phone: item.phone, status: item.status, monthlyCapacity: item.monthly_capacity,
-    capabilities: item.capabilities ?? [],
-  }));
+  try {
+    const data = await api<{ suppliers: Array<any> }>("/store/kolbe/admin/suppliers");
+    return (data.suppliers ?? []).map((item) => ({
+      id: item.id, displayName: item.display_name, legalName: item.legal_name, city: item.city,
+      phone: item.phone, status: item.status, monthlyCapacity: item.monthly_capacity,
+      capabilities: item.capabilities ?? [],
+    }));
+  } catch { return []; }
 }
 
 export async function updateSupplierApplication(id: string, status: AdminSupplierApplication["status"]) {
-  const token = adminToken();
-  if (!token) return;
-  await api(`/admin/kolbe/supplier-applications/${id}`, { method: "POST", token, body: { status } });
+  await api(`/admin/kolbe/supplier-applications/${id}`, { method: "POST", body: { status } });
 }
 
 export async function listSupplierCatalogProducts(): Promise<AdminSupplierProduct[]> {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ products: Array<any> }>("/store/kolbe/admin/catalog", { token });
-  return (data.products ?? []).map((item) => ({
-    id: item.id, name: item.name, sku: item.sku, category: item.category,
-    wholesalePrice: item.wholesale_price, imageUrl: item.image_url, status: item.status,
-    supplierName: item.supplier_name, stock: item.stock,
-  }));
+  try {
+    const data = await api<{ products: Array<any> }>("/store/kolbe/admin/catalog");
+    return (data.products ?? []).map((item) => ({
+      id: item.id, name: item.name, sku: item.sku, category: item.category,
+      wholesalePrice: item.wholesale_price, imageUrl: item.image_url, status: item.status,
+      supplierName: item.supplier_name, stock: item.stock,
+    }));
+  } catch { return []; }
 }
 
 export async function updateSupplierProductStatus(id: string, status: AdminSupplierProduct["status"]) {
-  const token = adminToken();
-  if (!token) return;
-  await api(`/admin/kolbe/catalog/${id}/status`, { method: "POST", token, body: { status } });
+  await api(`/admin/kolbe/catalog/${id}/status`, { method: "POST", body: { status } });
 }
 
 export async function listPurchaseOrders() {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ orders: Array<any> }>("/store/kolbe/admin/purchase-orders", { token });
-  return data.orders ?? [];
+  try {
+    const data = await api<{ orders: Array<any> }>("/store/kolbe/admin/purchase-orders");
+    return data.orders ?? [];
+  } catch { return []; }
 }
 
 export async function updatePurchaseOrder(id: string, status: string) {
-  const token = adminToken();
-  if (!token) return;
-  await api(`/admin/kolbe/purchase-orders/${id}/status`, { method: "POST", token, body: { status } });
+  await api(`/admin/kolbe/purchase-orders/${id}/status`, { method: "POST", body: { status } });
 }
 
 export async function listWholesaleFulfillmentOrders(): Promise<AdminWholesaleOrder[]> {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ orders: Array<any> }>("/store/kolbe/admin/orders", { token });
-  return (data.orders ?? []).map((order) => ({
-    id: order.id, orderCode: order.order_code, status: order.status, totalAmount: order.total_amount,
-    totalUnits: order.total_units, createdAt: order.created_at, storeName: order.store_name,
-    items: (order.wholesale_order_items ?? []).map((item: any) => ({
-      productName: item.product_name, sku: item.sku, quantity: item.quantity,
-    })),
-    purchaseOrders: (order.purchase_orders ?? []).map((po: any) => ({
-      id: po.id, orderCode: po.order_code, status: po.status, supplierName: po.supplier_name, trackingCode: po.tracking_code,
-    })),
-  }));
+  try {
+    const data = await api<{ orders: Array<any> }>("/store/kolbe/admin/orders");
+    return (data.orders ?? []).map((order) => ({
+      id: order.id, orderCode: order.order_code, status: order.status, totalAmount: order.total_amount,
+      totalUnits: order.total_units, createdAt: order.created_at, storeName: order.store_name,
+      items: (order.wholesale_order_items ?? []).map((item: any) => ({
+        productName: item.product_name, sku: item.sku, quantity: item.quantity,
+      })),
+      purchaseOrders: (order.purchase_orders ?? []).map((po: any) => ({
+        id: po.id, orderCode: po.order_code, status: po.status, supplierName: po.supplier_name, trackingCode: po.tracking_code,
+      })),
+    }));
+  } catch { return []; }
 }
 
 export async function approveWholesaleOrder(id: string, dueDate?: string) {
-  const token = adminToken();
-  if (!token) throw new Error("ورود ادمین انجام نشده است.");
   return api<{ order_id: string; purchase_orders: number }>(`/admin/kolbe/orders/${id}/approve`, {
-    method: "POST", token, body: { dueDate: dueDate || null },
+    method: "POST", body: { dueDate: dueDate || null },
   });
 }
 
 export async function cancelWholesaleOrder(id: string) {
-  const token = adminToken();
-  if (!token) throw new Error("ورود ادمین انجام نشده است.");
-  await api(`/admin/kolbe/orders/${id}/cancel`, { method: "POST", token });
+  await api(`/admin/kolbe/orders/${id}/cancel`, { method: "POST" });
 }
 
 export type AdminWholesaleAccount = {
@@ -188,41 +166,34 @@ export type AdminWholesaleAccount = {
 };
 
 export async function listWholesaleAccounts(): Promise<AdminWholesaleAccount[]> {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ accounts: Array<any> }>("/store/kolbe/admin/accounts", { token });
-  return (data.accounts ?? []).map((a) => ({
-    id: a.id, userId: a.user_id, memberName: a.member_name, storeName: a.store_name,
-    phone: a.phone, city: a.city, planName: a.plan_name,
-    status: a.status === "financial_blocked" ? "financial_blocked" : a.status,
-    activatedAt: a.activated_at, expiresAt: a.expires_at, createdAt: a.created_at,
-  }));
+  try {
+    const data = await api<{ accounts: Array<any> }>("/store/kolbe/admin/accounts");
+    return (data.accounts ?? []).map((a) => ({
+      id: a.id, userId: a.user_id, memberName: a.member_name, storeName: a.store_name,
+      phone: a.phone, city: a.city, planName: a.plan_name,
+      status: a.status === "financial_blocked" ? "financial_blocked" : a.status,
+      activatedAt: a.activated_at, expiresAt: a.expires_at, createdAt: a.created_at,
+    }));
+  } catch { return []; }
 }
 
 export async function updateWholesaleAccountStatus(id: string, status: AdminWholesaleAccount["status"], expiresAt?: string) {
-  const token = adminToken();
-  if (!token) return;
-  await api(`/store/kolbe/admin/accounts/${id}/status`, { method: "POST", token, body: { status, expiresAt } });
+  await api(`/store/kolbe/admin/accounts/${id}/status`, { method: "POST", body: { status, expiresAt } });
 }
 
-/** ویرایش گروهی قیمت عمده (درصدی/مبلغی) — نیازسنجی 9-d */
 export async function bulkUpdateWholesalePrice(ids: string[], mode: "percent" | "amount", value: number) {
-  const token = adminToken();
-  if (!token) throw new Error("ورود ادمین انجام نشده است.");
-  return api<{ updated: number }>("/store/kolbe/admin/catalog/bulk-price", { method: "POST", token, body: { ids, mode, value } });
+  return api<{ updated: number }>("/store/kolbe/admin/catalog/bulk-price", { method: "POST", body: { ids, mode, value } });
 }
 
 export async function listSupplierTickets() {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ tickets: Array<any> }>("/store/kolbe/admin/tickets", { token });
-  return data.tickets ?? [];
+  try {
+    const data = await api<{ tickets: Array<any> }>("/store/kolbe/admin/tickets");
+    return data.tickets ?? [];
+  } catch { return []; }
 }
 
 export async function answerSupplierTicket(id: string, status: string, adminReply?: string) {
-  const token = adminToken();
-  if (!token) return;
-  await api(`/admin/kolbe/tickets/${id}`, { method: "POST", token, body: { status, adminReply } });
+  await api(`/admin/kolbe/tickets/${id}`, { method: "POST", body: { status, adminReply } });
 }
 
 export type SystemLogLevel = "debug" | "info" | "warning" | "error" | "critical";
@@ -284,8 +255,6 @@ export type SystemLogsResponse = {
 };
 
 export async function loadSystemLogs(filters: SystemLogFilters, signal?: AbortSignal): Promise<SystemLogsResponse> {
-  const token = adminToken();
-  if (!token) throw new ApiError("UNAUTHORIZED", "ورود ادمین لازم است.");
   const params = new URLSearchParams({
     level: filters.level,
     source: filters.source,
@@ -295,15 +264,12 @@ export async function loadSystemLogs(filters: SystemLogFilters, signal?: AbortSi
     page: String(filters.page),
     limit: String(filters.limit),
   });
-  return api<SystemLogsResponse>(`/store/kolbe/admin/logs?${params.toString()}`, { token, signal });
+  return api<SystemLogsResponse>(`/store/kolbe/admin/logs?${params.toString()}`, { signal });
 }
 
 export async function updateSystemLogStatus(id: string, status: SystemLogStatus, note?: string) {
-  const token = adminToken();
-  if (!token) throw new ApiError("UNAUTHORIZED", "ورود ادمین لازم است.");
   return api<{ log: SystemLog }>(`/store/kolbe/admin/logs/${encodeURIComponent(id)}`, {
     method: "POST",
-    token,
     body: { status, note },
   });
 }

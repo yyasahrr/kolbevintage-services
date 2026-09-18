@@ -21,5 +21,11 @@ frontend-next/next-env.d.ts
 frontend-next/out/
 frontend-next/*.tsbuildinfo
 
+# آرتیفکت‌های build که هرگز نباید commit شوند
+*.tsbuildinfo
+
 # مارکر آماده بودن دیتابیس (بعد از هر بار init تازه ساخته میشود)
 backend/.kolbe-db-ready
+
+# لایه Drizzle
+packages/*/dist/

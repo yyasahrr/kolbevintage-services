@@ -1,7 +1,11 @@
-import { api, ApiError, clearToken, loadToken, saveToken } from "./api";
+import { api, ApiError } from "./api";
+
+/** وضعیت عضویت — تصمیم‌گیری دربارهٔ دسترسی عمده فقط بر عهدهٔ سرور است. */
+export type WholesaleVipStatus = "pending" | "approved" | "rejected" | "suspended" | "expired";
 
 export type WholesaleVipAccount = {
   id: string;
+  status: WholesaleVipStatus;
   memberName: string;
   storeName: string;
   phone: string;
@@ -24,64 +28,75 @@ export type WholesaleVipProduct = {
 
 export type WholesaleCustomerOrder = { id: string; code: string; status: string; totalAmount: number; totalUnits: number; createdAt: string };
 
-type ApiAccount = { id: string; member_name: string; store_name: string; phone: string; city: string; plan_name: string; activated_at: string | null; expires_at: string | null };
+type ApiAccount = { id: string; status?: WholesaleVipStatus; member_name: string; store_name: string; phone: string; city: string; plan_name: string; activated_at: string | null; expires_at: string | null };
 
 function toAccount(raw: ApiAccount): WholesaleVipAccount {
   return {
-    id: raw.id, memberName: raw.member_name, storeName: raw.store_name, phone: raw.phone,
-    city: raw.city, planName: raw.plan_name, activatedAt: raw.activated_at, expiresAt: raw.expires_at,
+    id: raw.id, status: raw.status ?? "pending", memberName: raw.member_name, storeName: raw.store_name,
+    phone: raw.phone, city: raw.city, planName: raw.plan_name,
+    activatedAt: raw.activated_at, expiresAt: raw.expires_at,
   };
 }
 
-async function getActiveAccount(token: string | null): Promise<WholesaleVipAccount | null> {
-  if (!token) return null;
+async function getActiveAccount(): Promise<WholesaleVipAccount | null> {
   try {
-    const data = await api<{ account: ApiAccount | null }>("/store/kolbe/wholesale/account", { token });
-    return data.account ? toAccount(data.account) : null;
+    const data = await api<{ account: ApiAccount | null; active?: boolean }>("/store/kolbe/wholesale/account");
+    if (!data.account || data.active === false) return null;
+    return toAccount(data.account);
   } catch (error) {
     if (error instanceof ApiError && error.code === "NETWORK") return null;
     return null;
   }
 }
 
+export async function loadWholesaleMembership(): Promise<WholesaleVipAccount | null> {
+  try {
+    const data = await api<{ account: ApiAccount | null }>("/store/kolbe/wholesale/account");
+    return data.account ? toAccount(data.account) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function signInWholesaleVip(email: string, password: string) {
-  const data = await api<{ token: string }>("/store/kolbe/auth/login", {
+  await api("/store/kolbe/auth/login", {
     method: "POST",
     body: { email, password },
   }).catch((error) => {
     if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY" || error.code.startsWith("HTTP_5"))) throw new Error("اتصال به بک‌اند برقرار نیست؛ از آخرین تب پیش‌نمایش استفاده کنید.");
     throw new Error("ایمیل یا رمز عبور درست نیست.");
   });
-  saveToken("vip", data.token);
-  const account = await getActiveAccount(data.token);
+  const account = await getActiveAccount();
   if (!account) {
-    clearToken("vip");
+    const membership = await loadWholesaleMembership();
+    try { await api("/store/kolbe/auth/logout", { method: "POST" }); } catch { /* ignore */ }
+    if (membership?.status === "pending") throw new Error("درخواست عضویت VIP شما در انتظار تأیید کارشناسان کلبه است.");
+    if (membership?.status === "rejected" || membership?.status === "suspended") {
+      throw new Error("عضویت VIP این حساب تأیید نشده یا معلق شده است.");
+    }
     throw new Error("عضویت VIP این حساب فعال نیست یا اعتبار آن تمام شده است.");
   }
   return account;
 }
 
 export async function restoreWholesaleVip() {
-  return getActiveAccount(loadToken("vip"));
+  return getActiveAccount();
 }
 
 export async function signOutWholesaleVip() {
-  clearToken("vip");
+  try { await api("/store/kolbe/auth/logout", { method: "POST" }); } catch { /* ignore */ }
 }
 
-/** درخواست عضویت عمده برای مشتری واردشده فروشگاه. */
 export async function applyWholesaleVip(input: { memberName: string; storeName: string; phone: string; city: string; planName: string; paymentReference: string }) {
-  const token = loadToken("customer");
-  if (!token) throw new Error("ابتدا وارد حساب کاربری فروشگاه شوید.");
-  const data = await api<{ account: ApiAccount }>("/store/kolbe/wholesale/apply", { method: "POST", token, body: input });
-  saveToken("vip", token);
+  const data = await api<{ account: ApiAccount; status: WholesaleVipStatus; message?: string }>(
+    "/store/kolbe/wholesale/apply",
+    { method: "POST", body: input },
+  );
   return toAccount(data.account);
 }
 
 export async function loadWholesaleVipProducts(): Promise<WholesaleVipProduct[]> {
-  const token = loadToken("vip");
-  if (!token) throw new Error("ورود VIP انجام نشده است.");
-  const data = await api<{ products: Array<any> }>("/store/kolbe/wholesale/products", { token });
+  const data = await api<{ products: Array<any> }>("/store/kolbe/wholesale/products");
   return (data.products ?? []).map((product) => ({
     id: product.id, name: product.name, sku: product.sku, category: product.category,
     description: product.description, wholesalePrice: product.wholesale_price, imageUrl: product.image_url,
@@ -94,13 +109,13 @@ export async function loadWholesaleVipProducts(): Promise<WholesaleVipProduct[]>
 
 export async function loadWholesaleCustomerOrders(accountId: string): Promise<WholesaleCustomerOrder[]> {
   void accountId;
-  const token = loadToken("vip");
-  if (!token) return [];
-  const data = await api<{ orders: Array<any> }>("/store/kolbe/wholesale/orders", { token });
-  return (data.orders ?? []).map((order) => ({
-    id: order.id, code: order.order_code, status: order.status,
-    totalAmount: order.total_amount, totalUnits: order.total_units, createdAt: order.created_at,
-  }));
+  try {
+    const data = await api<{ orders: Array<any> }>("/store/kolbe/wholesale/orders");
+    return (data.orders ?? []).map((order) => ({
+      id: order.id, code: order.order_code, status: order.status,
+      totalAmount: order.total_amount, totalUnits: order.total_units, createdAt: order.created_at,
+    }));
+  } catch { return []; }
 }
 
 export async function submitWholesaleCustomerOrder(
@@ -108,12 +123,9 @@ export async function submitWholesaleCustomerOrder(
   lines: Array<{ productId: string; variantId: string; productName: string; sku: string; quantity: number; unitPrice: number }>,
 ) {
   void accountId;
-  const token = loadToken("vip");
-  if (!token) throw new Error("ورود VIP انجام نشده است.");
   try {
     const data = await api<{ orderCode: string }>("/store/kolbe/wholesale/orders", {
       method: "POST",
-      token,
       body: { lines: lines.map((line) => ({ variantId: line.variantId, quantity: line.quantity })) },
     });
     return data.orderCode;

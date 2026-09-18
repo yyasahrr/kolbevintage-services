@@ -45,13 +45,84 @@ export function CommerceOperations() {
   return <div><PageHeader eyebrow="ORDER OPERATIONS" title="مرجوعی، ارسال و پرداخت" description="مرجوعی فقط برای کل سفارش ثبت می‌شود؛ پس از بررسی مدیر مبلغ به کیف پول مشتری برمی‌گردد. ارسال گروهی بر اساس شرکت حمل تفکیک می‌شود." action={<div className="flex border border-neutral-300 bg-white"><button onClick={()=>setView("table")} className={(view==="table"?"bg-[#011c3a] text-white":"")+" px-3 py-2 text-[10px]"}>جدولی</button><button onClick={()=>setView("board")} className={(view==="board"?"bg-[#011c3a] text-white":"")+" px-3 py-2 text-[10px]"}>کانبان</button></div>}/>{view==="table"?<div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[720px] text-right text-[10.5px]"><thead className="bg-neutral-50"><tr>{["پرونده","مشتری","علت","مبلغ","مرحله","عملیات"].map(x=><th key={x} className="border-b p-3 font-medium">{x}</th>)}</tr></thead><tbody>{cases.map(item=><tr key={item.code} className="border-b border-neutral-100"><td className="p-3 font-medium">{item.code}</td><td className="p-3">{item.customer}</td><td className="p-3">{item.reason}</td><td className="p-3 num-fa">{item.amount} تومان</td><td className="p-3"><select value={item.status} onChange={e=>update(item.code,e.target.value)} className="h-9 border border-neutral-300 bg-white px-2">{statuses.map(x=><option key={x}>{x}</option>)}</select></td><td className="p-3"><button className="underline">مشاهده پرونده</button></td></tr>)}</tbody></table></div>:<div className="grid gap-3 lg:grid-cols-4">{statuses.map(status=><section key={status} className="min-h-52 border-t-2 border-[#011c3a] bg-[#ececea] p-3"><h2 className="text-[11px] font-medium">{status} · {fa(cases.filter(x=>x.status===status).length)}</h2><div className="mt-3 space-y-2">{cases.filter(x=>x.status===status).map(item=><article key={item.code} className="bg-white p-3"><p className="text-[10.5px] font-medium">{item.code}</p><p className="mt-1 text-[9.5px] text-neutral-500">{item.customer} · {item.reason}</p></article>)}</div></section>)}</div>}<section className="mt-5 grid gap-3 sm:grid-cols-3">{[["سرویس ارسال هوشمند","انتخاب بر اساس مقصد، وزن و SLA"],["پرداخت دستی","ثبت رسید همراه تأیید مالی"],["اعلان وضعیت","قانون قابل تنظیم برای پیامک و ایمیل"]].map(([a,b])=><div key={a} className="border border-neutral-200 bg-white p-4"><p className="text-[11.5px] font-medium">{a}</p><p className="mt-2 text-[10px] leading-[1.8] text-neutral-500">{b}</p></div>)}</section></div>;
 }
 
-type Role = { name:string; users:number; publish:boolean; finance:boolean; branch:string };
-const initialRoles:Role[]=[{name:"مالک",users:1,publish:true,finance:true,branch:"همه شعب"},{name:"مدیر محتوا",users:2,publish:true,finance:false,branch:"فروشگاه آنلاین"},{name:"انباردار",users:3,publish:false,finance:false,branch:"انبار تخصیص‌یافته"}];
-export function AccessSecurity(){const [roles,setRoles]=useState(()=>load("kv_admin_roles",initialRoles));const [twoFactor,setTwoFactor]=useState(()=>load("kv_admin_2fa",true));const persist=(next:Role[])=>{setRoles(next);localStorage.setItem("kv_admin_roles",JSON.stringify(next));};return <div><PageHeader eyebrow="ACCESS & SECURITY" title="دسترسی و امنیت" description="نقش‌ساز با کنترل در سطح عملیات، فیلد و شعبه؛ ورود دومرحله‌ای، ثبت مقدار قبل و بعد و قوانین تأیید قابل تنظیم."/><section className="grid gap-5 xl:grid-cols-[1fr_320px]"><div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[620px] text-right text-[10.5px]"><thead className="bg-neutral-50"><tr>{["نقش","کاربر","انتشار محصول","دسترسی مالی","محدوده شعبه"].map(x=><th key={x} className="border-b p-3 font-medium">{x}</th>)}</tr></thead><tbody>{roles.map((role,index)=><tr key={role.name} className="border-b border-neutral-100"><td className="p-3 font-medium">{role.name}</td><td className="p-3 num-fa">{fa(role.users)}</td>{(["publish","finance"] as const).map(key=><td key={key} className="p-3"><input aria-label={`${key} ${role.name}`} type="checkbox" checked={role[key]} onChange={()=>persist(roles.map((x,i)=>i===index?{...x,[key]:!x[key]}:x))}/></td>)}<td className="p-3">{role.branch}</td></tr>)}</tbody></table></div><aside className="space-y-4"><label className="flex items-center justify-between border border-neutral-200 bg-white p-4 text-[11px]"><span><strong className="block font-medium">ورود دومرحله‌ای</strong><small className="mt-1 block text-[9.5px] text-neutral-400">رمز عبور + کد یک‌بارمصرف</small></span><input type="checkbox" checked={twoFactor} onChange={()=>{setTwoFactor(!twoFactor);localStorage.setItem("kv_admin_2fa",JSON.stringify(!twoFactor));}}/></label><div className="border border-neutral-200 bg-white p-4"><h2 className="text-[11.5px] font-medium">دستگاه‌های فعال</h2>{["Chrome · Windows · تهران","Safari · iPhone · تهران"].map((x,i)=><div key={x} className="mt-3 flex items-center justify-between border-t pt-3 text-[9.5px]"><span>{x}</span><button disabled={i===0} className="text-red-700 underline disabled:text-neutral-300">خروج</button></div>)}</div></aside></section><section className="mt-5 border border-neutral-200 bg-white p-5"><div className="flex items-center justify-between"><h2 className="text-[12px] font-medium">آخرین رویدادهای امنیتی</h2><button className="text-[10px] underline">خروجی گزارش</button></div><div className="mt-4 divide-y">{[["ویرایش قیمت بلیزر آکسفورد","مالک","۳٬۹۸۰٬۰۰۰ ← ۴٬۲۸۰٬۰۰۰"],["تغییر وضعیت سفارش KV-482885","مدیر فروش","پرداخت‌شده ← در حال ارسال"],["ورود موفق","مالک","Chrome · Windows"]].map(row=><div key={row[0]} className="grid gap-1 py-3 text-[10px] sm:grid-cols-[1fr_140px_1fr]"><strong className="font-medium">{row[0]}</strong><span className="text-neutral-500">{row[1]}</span><span className="text-neutral-500 num-fa">{row[2]}</span></div>)}</div></section></div>}
+/**
+ * اعلان «این بخش هنوز ساخته نشده» — جایگزین کنترل‌های قلابی.
+ *
+ * ── اصلاح D24/D38 (فاز ۱.۵) ─────────────────────────────────────────────────
+ * پنل مدیریت چند کنترل داشت که فقط در `localStorage` همین مرورگر ذخیره می‌شد و
+ * هیچ اثری بر دسترسی واقعی نداشت: ماتریس نقش‌ها (`kv_admin_roles`)، کلید ورود
+ * دومرحله‌ای (`kv_admin_2fa`) و روشن/خاموش کردن اتصال‌ها
+ * (`kv_admin_integrations`). خطر اصلی «فریب امنیتی» است: مدیر تیک ۲FA را می‌زند و
+ * باور می‌کند ورود دومرحله‌ای فعال شده، در حالی که هیچ احراز دومی وجود ندارد.
+ *
+ * قاعدهٔ حاکم: تا وقتی سرویس واقعی وجود ندارد، هیچ کنترل قابل‌تغییری نمایش داده
+ * نمی‌شود — فقط یک اعلان صریح. (حذف کد مرده پس از اثبات جایگزین، طبق روش کار.)
+ *
+ * گام درست بعدی: ماتریس نقش/دسترسی و ورود دومرحله‌ای با ماژول `auth` در **فاز ۲**
+ * و گزارش اتصال‌ها با ماژول‌های `payments`/`notifications` در فاز ۵–۶ می‌آید.
+ */
+function NotAvailableYet({ module, phase, capabilities }: { module: string; phase: string; capabilities: string[] }) {
+  return (
+    <section className="border border-amber-200 bg-amber-50 p-5">
+      <p className="text-[9px] tracking-[0.22em] text-amber-700">NOT IMPLEMENTED YET</p>
+      <h2 className="mt-2 text-[13px] font-medium text-amber-900">این بخش هنوز روی سرور وجود ندارد</h2>
+      <p className="mt-2 max-w-2xl text-[10.5px] leading-[1.9] text-amber-900">
+        کنترل‌های این صفحه پیش‌تر فقط در مرورگر ذخیره می‌شدند و هیچ اثری بر دسترسی، پرداخت یا اتصال‌های واقعی نداشتند؛ به
+        همین دلیل تا ساخته شدن سرویس واقعی حذف شده‌اند تا باعث باور نادرست نشوند. ماژول «{module}» در {phase} ساخته می‌شود.
+      </p>
+      <ul className="mt-4 grid gap-1.5 text-[10px] leading-6 text-amber-900">
+        {capabilities.map((item) => (
+          <li key={item} className="flex items-start gap-2">
+            <span className="mt-2 h-1 w-1 shrink-0 bg-amber-700" aria-hidden="true" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
-type Integration={name:string;kind:string;enabled:boolean;status:string};
-const initialIntegrations:Integration[]=[{name:"درگاه زرین‌پال",kind:"پرداخت",enabled:true,status:"متصل"},{name:"درگاه آیدی‌پی",kind:"پرداخت جایگزین",enabled:false,status:"آماده اتصال"},{name:"پیامک کاوه‌نگار",kind:"اعلان",enabled:true,status:"متصل"},{name:"وب‌هوک سفارش",kind:"API",enabled:true,status:"آخرین تحویل موفق"}];
-export function IntegrationsAutomation(){const [items,setItems]=useState(()=>load("kv_admin_integrations",initialIntegrations));const toggle=(index:number)=>{const next=items.map((x,i)=>i===index?{...x,enabled:!x.enabled,status:!x.enabled?"متصل":"غیرفعال"}:x);setItems(next);localStorage.setItem("kv_admin_integrations",JSON.stringify(next));};return <div><PageHeader eyebrow="INTEGRATIONS & AUTOMATION" title="اتصال و خودکارسازی" description="چند درگاه قابل انتخاب، همگام‌سازی دوطرفه، API و Webhook کامل، و گردش‌های کاری دارای تأیید و زمان‌بندی." action={<button className={button}>اتصال جدید</button>}/><section className="grid gap-3 md:grid-cols-2">{items.map((item,index)=><article key={item.name} className="border border-neutral-200 bg-white p-4"><div className="flex items-start justify-between"><div><p className="text-[11.5px] font-medium">{item.name}</p><p className="mt-1 text-[9.5px] text-neutral-400">{item.kind}</p></div><input aria-label={`فعال‌سازی ${item.name}`} type="checkbox" checked={item.enabled} onChange={()=>toggle(index)}/></div><div className="mt-5 flex items-center justify-between border-t pt-3 text-[9.5px]"><span className={item.enabled?"text-[#36563a]":"text-neutral-400"}>{item.status}</span><button className="underline">پیکربندی</button></div></article>)}</section><section className="mt-5 grid gap-4 xl:grid-cols-2"><div className="border border-neutral-200 bg-white p-5"><h2 className="text-[12px] font-medium">گردش‌های خودکار</h2>{[["سبد بالای ۸ میلیون","ارسال رایگان + پیامک"],["موجودی زیر آستانه","اعلان مدیر انبار"],["سفارش بدون پرداخت پس از ۲ ساعت","یادآوری پیامکی"]].map(([x,y])=><div key={x} className="mt-3 flex items-center justify-between border-t pt-3 text-[10px]"><span>{x}</span><span className="text-neutral-500">{y}</span></div>)}</div><div className="border border-neutral-200 bg-white p-5"><h2 className="text-[12px] font-medium">API فروشگاه</h2><label className="mt-4 block text-[10px] text-neutral-500">Webhook URL<input readOnly value="https://api.kolbevintage.ir/webhooks/orders" className={field+" mt-1.5 font-mono text-left"}/></label><div className="mt-3 flex gap-2"><button className={button}>ارسال رویداد آزمایشی</button><button className="h-10 border border-neutral-300 px-4 text-[10px]">مشاهده گزارش تحویل</button></div></div></section></div>}
+export function AccessSecurity() {
+  return (
+    <div>
+      <PageHeader
+        eyebrow="ACCESS & SECURITY"
+        title="دسترسی و امنیت"
+        description="نقش‌ها، سطح دسترسی و امنیت ورود مدیران."
+      />
+      <NotAvailableYet
+        module="auth"
+        phase="فاز ۲ (مهاجرت احراز هویت)"
+        capabilities={[
+          "ماتریس نقش و دسترسی در سطح عملیات/شعبه، با اعتبارسنجی سمت سرور و ثبت در audit_log",
+          "ورود دومرحله‌ای واقعی (TOTP/پیامک) همراه با مدیریت نشست‌ها و دستگاه‌های فعال",
+          "گزارش رخدادهای امنیتی از جدول واقعی رویدادها — نه دادهٔ نمونه",
+        ]}
+      />
+    </div>
+  );
+}
 
+
+export function IntegrationsAutomation() {
+  return (
+    <div>
+      <PageHeader
+        eyebrow="INTEGRATIONS & AUTOMATION"
+        title="اتصال و خودکارسازی"
+        description="درگاه‌های پرداخت، پیامک، API و Webhook."
+      />
+      <NotAvailableYet
+        module="payments / notifications"
+        phase="فازهای ۵ و ۶"
+        capabilities={[
+          "افزودن و پیکربندی درگاه پرداخت، با کلیدهای نگهداری‌شده در سرور (هرگز در مرورگر)",
+          "پیکربندی و آزمون واقعی Webhook سفارش‌ها با گزارش تحویل",
+          "اتصال سامانهٔ پیامک و گردش‌های خودکار، همراه با سقف مصرف و گزارش خطا",
+        ]}
+      />
+    </div>
+  );
+}
 type SystemSettings={commandPalette:boolean;notifications:boolean;pwa:boolean;approval:boolean;retention:string};
 export function SystemCenter(){const [settings,setSettings]=useState(()=>load<SystemSettings>("kv_admin_system",{commandPalette:true,notifications:true,pwa:true,approval:true,retention:"۱۸۰ روز"}));const [saved,setSaved]=useState(false);const persist=(next:SystemSettings)=>{setSettings(next);localStorage.setItem("kv_admin_system",JSON.stringify(next));setSaved(true);setTimeout(()=>setSaved(false),1800);};return <div><PageHeader eyebrow="SYSTEM CENTER" title="مرکز سیستم" description="تنظیمات فروشگاه فارسی، مرکز اعلان، فرمان سریع، نسخه نصب‌شونده و سیاست نگهداری اطلاعات." action={<button onClick={()=>persist(settings)} className={button}>ذخیره تنظیمات</button>}/><SavedNotice visible={saved}/><section className="mt-4 grid gap-4 lg:grid-cols-2">{[["commandPalette","فرمان سریع","دسترسی به همه بخش‌ها با جست‌وجوی عملیاتی"],["notifications","مرکز اعلان","تجمیع رویدادهای سفارش، انبار و امنیت"],["pwa","نسخه نصب‌شونده","پشتیبانی دسکتاپ، تبلت و موبایل"],["approval","تأیید تغییرات حساس","فعال برای انتشار، قیمت و عملیات مالی"]].map(([key,title,desc])=><label key={key} className="flex items-start justify-between gap-4 border border-neutral-200 bg-white p-5"><span><strong className="text-[11.5px] font-medium">{title}</strong><small className="mt-1.5 block text-[9.5px] leading-[1.8] text-neutral-500">{desc}</small></span><input type="checkbox" checked={Boolean(settings[key as keyof SystemSettings])} onChange={()=>persist({...settings,[key]:!settings[key as keyof SystemSettings]})}/></label>)}</section><section className="mt-5 grid gap-4 xl:grid-cols-[1fr_360px]"><div className="border border-neutral-200 bg-white p-5"><h2 className="text-[12px] font-medium">مرکز اعلان</h2><div className="mt-3 divide-y">{[["موجودی ۳ SKU به آستانه رسیده است","انبار · همین حالا"],["مرجوعی RT-1405-184 نیازمند بررسی است","سفارش · ۱۲ دقیقه قبل"],["تحویل Webhook سفارش موفق بود","اتصال · ۲۸ دقیقه قبل"]].map(([x,y],i)=><div key={x} className="flex items-start gap-3 py-3"><span className={(i===0?"bg-[#9e4b3c]":"bg-[#011c3a]")+" mt-1 h-1.5 w-1.5 shrink-0"}/><div><p className="text-[10.5px]">{x}</p><p className="mt-1 text-[9px] text-neutral-400">{y}</p></div></div>)}</div></div><div className="border border-neutral-200 bg-white p-5"><label className="text-[10px] text-neutral-500">سیاست نگهداری سطل زباله<select value={settings.retention} onChange={e=>persist({...settings,retention:e.target.value})} className={field+" mt-1.5"}><option>۳۰ روز</option><option>۹۰ روز</option><option>۱۸۰ روز</option><option>یک سال</option></select></label><p className="mt-4 text-[9.5px] leading-[1.8] text-neutral-400">نسخه‌های تاریخی به‌صورت پیوسته نگهداری می‌شوند و امکان مقایسه و بازگردانی دارند.</p></div></section></div>}

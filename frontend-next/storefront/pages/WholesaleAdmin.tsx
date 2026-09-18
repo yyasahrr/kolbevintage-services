@@ -5,7 +5,7 @@ import { products } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadWholesaleMembership } from "../wholesaleMembership";
-import { isBackendConfigured as isSupabaseConfigured } from "../lib/api";
+import { isBackendConfigured } from "../lib/api";
 import { answerSupplierTicket, approveWholesaleOrder, bulkUpdateWholesalePrice, cancelWholesaleOrder, listSupplierApplications, listSupplierCatalogProducts, listSupplierTickets, listSuppliers, listWholesaleAccounts, listWholesaleFulfillmentOrders, updateSupplierApplication, updateSupplierProductStatus, updateWholesaleAccountStatus, type AdminSupplier, type AdminSupplierProduct, type AdminWholesaleAccount } from "../lib/wholesaleApi";
 import WholesaleCatalogManager from "./WholesaleCatalogManager";
 
@@ -50,10 +50,10 @@ export default function WholesaleAdmin() {
   const membership = loadWholesaleMembership();
   const [notice, setNotice] = useState("");
   const [remoteError, setRemoteError] = useState("");
-  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [loading, setLoading] = useState(isBackendConfigured);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isBackendConfigured) return;
     Promise.all([listSupplierApplications(), listSuppliers(), listSupplierCatalogProducts(), listWholesaleFulfillmentOrders(), listSupplierTickets(), listWholesaleAccounts()]).then(([applications, remoteSuppliers, remoteProducts, remoteOrders, remoteTickets, remoteAccounts]) => {
       setAccounts(remoteAccounts);
       setSuppliers(remoteSuppliers);
@@ -64,9 +64,9 @@ export default function WholesaleAdmin() {
     }).catch(() => setRemoteError("خواندن داده‌های مشترک انجام نشد؛ دسترسی حساب ادمین یا RLS را بررسی کنید.")).finally(() => setLoading(false));
   }, []);
 
-  const persistLeads = (next: WholesaleLead[]) => { const changed = next.find((item, index) => item.status !== leads[index]?.status); setLeads(next); localStorage.setItem(leadKey, JSON.stringify(next)); setNotice("وضعیت درخواست همکاری ذخیره شد."); if (changed?.id && isSupabaseConfigured) updateSupplierApplication(changed.id, changed.status === "جدید" ? "pending" : changed.status === "در تماس" ? "reviewing" : changed.status === "تأیید شده" ? "approved" : "rejected").catch(() => setRemoteError("ثبت وضعیت درخواست در بک‌اند انجام نشد.")); };
+  const persistLeads = (next: WholesaleLead[]) => { const changed = next.find((item, index) => item.status !== leads[index]?.status); setLeads(next); localStorage.setItem(leadKey, JSON.stringify(next)); setNotice("وضعیت درخواست همکاری ذخیره شد."); if (changed?.id && isBackendConfigured) updateSupplierApplication(changed.id, changed.status === "جدید" ? "pending" : changed.status === "در تماس" ? "reviewing" : changed.status === "تأیید شده" ? "approved" : "rejected").catch(() => setRemoteError("ثبت وضعیت درخواست در بک‌اند انجام نشد.")); };
   const persistOrders = async (next: WholesaleOrder[]) => { const changed = next.find((item, index) => item.status !== orders[index]?.status); if (!changed?.id) return; setRemoteError(""); try { if (changed.status === "تأیید شده") await approveWholesaleOrder(changed.id); else if (changed.status === "لغو شده") await cancelWholesaleOrder(changed.id); else throw new Error("وضعیت‌های اجرا و ارسال فقط توسط ساپلایر تغییر می‌کنند."); setOrders(next); setNotice(changed.status === "تأیید شده" ? "سفارش تأیید و برای ساپلایرها تفکیک شد." : "سفارش لغو و موجودی رزروشده آزاد شد."); } catch (reason) { setRemoteError(reason instanceof Error ? reason.message : "تغییر وضعیت سفارش انجام نشد."); } };
-  const persistTickets = (next: SupportTicket[]) => { const changed = next.find((item, index) => item.status !== tickets[index]?.status); setTickets(next); saveTickets(next); setNotice("وضعیت تیکت ذخیره شد."); if (changed && isSupabaseConfigured) answerSupplierTicket(changed.id, changed.status === "باز" ? "open" : changed.status === "پاسخ داده شده" ? "answered" : "closed").catch(() => setRemoteError("ثبت وضعیت تیکت در Supabase انجام نشد.")); };
+  const persistTickets = (next: SupportTicket[]) => { const changed = next.find((item, index) => item.status !== tickets[index]?.status); setTickets(next); saveTickets(next); setNotice("وضعیت تیکت ذخیره شد."); if (changed && isBackendConfigured) answerSupplierTicket(changed.id, changed.status === "باز" ? "open" : changed.status === "پاسخ داده شده" ? "answered" : "closed").catch(() => setRemoteError("ثبت وضعیت تیکت در بک‌اند انجام نشد.")); };
   const pendingUnits = orders.filter((order) => !["تحویل شده", "لغو شده"].includes(order.status)).reduce((sum, order) => sum + order.totalQty, 0);
   const openTickets = tickets.filter((ticket) => ticket.status === "باز").length;
 
