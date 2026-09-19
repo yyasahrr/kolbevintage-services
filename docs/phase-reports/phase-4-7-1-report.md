@@ -140,7 +140,7 @@ tables. Finance no longer imports Shipping, and the Finance↔Shipping `forwardR
 ## PART C — Inventory exactness
 
 - A shipment **links a portion of the order reservation** (`inventory_reservation.consumed_quantity`, CHECK `0 ≤ consumed ≤ quantity`); no second reservation is created (C1/C2).
-- Handoff consumes exactly `pieceQuantity` per item, once (C5/C6); underflow throws `RESERVATION_NOT_AVAILABLE` and the whole handoff rolls back — shipment stays `ready`, no ledger row, no order event (C3/C4). No clamping anywhere.
+- Shipment creation refuses quantities the order reservation cannot back (`409 RESERVATION_NOT_AVAILABLE`, checked under the child row lock). Handoff consumes exactly `pieceQuantity` per item, once (C5/C6); if the reservation can no longer back it, `InventoryService` throws `RESERVATION_INSUFFICIENT` and the whole handoff rolls back — shipment stays `ready`, no ledger row, no order event (C3/C4). No clamping anywhere.
 - Delivery is an inventory no-op (C7). Cancelling a `ready` shipment frees only its own allocation and never touches the reservation (C8).
 - Legacy `dispatchChildOrder` after a partial shipment consumes only the remainder (5 = 3 via shipment + 2 via dispatch).
 - Two sellers on the same order operate on disjoint reservations, inventories and child states (C10).
@@ -194,6 +194,8 @@ All timestamps default to PostgreSQL `now()`; all money is `bigint` IRR.
 - **Manual carrier**: handoff requires a real tracking code (`400 TRACKING_CODE_REQUIRED`); no webhook channel (`403 PROVIDER_NOT_ALLOWED`).
 - **Duplicate webhook while the winner is still processing** returns the current status (`processing`) — the loser never waits on the lock and never reports `processed` for work it did not do.
 - **Fake providers** remain dev/test only and are refused in production at resolve time regardless of env flags.
+- **Quote / shipment-item immutability** is enforced at the application boundary: `ShippingService` is the single writer and exposes no path that modifies a quote's amount/provider/currency (only its status: `active → selected | voided | expired`) or a shipment item after creation. No DB trigger was added because no second writer exists (module-boundaries test).
+- **Stable error → HTTP status mapping** (verified in the domain error classes): `IDEMPOTENCY_KEY_REQUIRED` 400, `SUPPLIER_MEMBERSHIP_REQUIRED` 403, `SHIPMENT_ACCESS_DENIED` 403, `PROVIDER_NOT_ALLOWED` 403, `WEBHOOK_SIGNATURE_INVALID` 403, `SHIPMENT_ORDER_MISMATCH` 409, `SHIPMENT_RESPONSIBILITY_MISMATCH` 409, `INVALID_SHIPMENT_TRANSITION` 409, `SHIPMENT_QUANTITY_EXCEEDED` 409, `FINANCIAL_GATE_BLOCKED` 409, `PAYMENT_PROVIDER_REFERENCE_MISMATCH` / `PAYMENT_PROVIDER_AMOUNT_MISMATCH` / `PAYMENT_PROVIDER_CURRENCY_MISMATCH` 409, `SHIPMENT_ADDRESS_NOT_ALLOWED` 400, `TRACKING_CODE_REQUIRED` 400, `PROVIDER_ERROR` 502.
 - No `forwardRef` was added; the Finance↔Shipping one was removed. Module boundary allowlists were not widened (only the two new tables were registered to their owners).
 
 ## Out of scope (unchanged from 4.7)
