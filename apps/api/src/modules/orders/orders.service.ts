@@ -178,6 +178,41 @@ export class OrderDomainError extends DomainError {
   }
 }
 
+/** Phase 4.7.1 (B5) — the canonical shipping-facing view of a child order, served by Orders (single owner). */
+export type ChildOrderShippingContext = {
+  child: {
+    id: string;
+    status: ChildOrderStatus;
+    sellerId: string;
+    wholesaleOrderId: string;
+    shippingResponsibility: "SUPPLIER" | "KOLBE" | "EXTERNAL_CARRIER";
+    version: number;
+    trackingCode: string | null;
+  };
+  parent: {
+    id: string;
+    status: WholesaleOrderStatus;
+    buyerUserId: string;
+    paymentMode: string | null;
+    currency: string;
+    shippingAddressSnapshot: Record<string, unknown>;
+    financiallyReleased: boolean;
+  };
+  items: Array<{
+    wholesaleOrderItemId: string;
+    purchaseOrderItemId: string | null;
+    variantId: string | null;
+    packageId: string | null;
+    productName: string;
+    sku: string | null;
+    pieceQuantity: number;
+    quantity: number;
+    unitPrice: string;
+    lineTotal: string;
+    currency: string;
+  }>;
+};
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -845,14 +880,14 @@ export class OrdersService {
           orderItemToChildMap.set(parentItem.id, child.id);
         }
       }
+      // Phase 4.7.1 — Inventory stays the single writer of its reservations.
+      const reservationLinks: Array<{ reservationId: string; childOrderId: string }> = [];
       for (const reservation of reservations) {
         const childId = orderItemToChildMap.get(reservation.orderItemId);
-        if (childId) {
-          await tx
-            .update((await import("@kolbe/database")).inventoryReservation)
-            .set({ childOrderId: childId, updatedAt: new Date() } as any)
-            .where(eq((await import("@kolbe/database")).inventoryReservation.id, reservation.id));
-        }
+        if (childId) reservationLinks.push({ reservationId: reservation.id, childOrderId: childId });
+      }
+      if (reservationLinks.length > 0) {
+        await this.inventoryService.linkReservationsToChildOrders({ links: reservationLinks, executor: tx });
       }
 
       // Mark requests ordered with orderId for integrity check
@@ -1508,44 +1543,13 @@ export class OrdersService {
       });
 
       const now = new Date();
-      const [updated] = await tx
-        .update(purchaseOrder)
-        .set({
-          status: "shipped",
-          version: child.version + 1,
-          shippedAt: now,
-          trackingCode: input.trackingCode || child.tracking_code || null,
-          updatedAt: now,
-        })
-        .where(eq(purchaseOrder.id, input.childOrderId))
-        .returning();
-
-      await this.appendStatusHistory(
-        {
-          orderId: null,
-          childOrderId: input.childOrderId,
-          fromStatus: child.status,
-          toStatus: "shipped",
-          actorId: input.actorUserId,
-          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
-          orderVersion: updated.version,
-          metadata: { trackingCode: input.trackingCode },
-        },
-        tx,
-      );
-
-      await this.appendEvent(
-        {
-          aggregateType: "purchase_order",
-          aggregateId: input.childOrderId,
-          eventType: "child.shipped",
-          payload: { childOrderId: input.childOrderId, trackingCode: input.trackingCode, financialImpact: null },
-          actorId: input.actorUserId,
-          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
-          idempotencyKey: input.idempotencyKey,
-        },
-        tx,
-      );
+      const updated = await this.transitionChildToShipped(tx, child, {
+        actorId: input.actorUserId,
+        actorRole: input.actorRole,
+        trackingCode: input.trackingCode || null,
+        idempotencyKey: input.idempotencyKey,
+        trigger: "orders.child_dispatch",
+      });
 
       await this.appendEvent(
         {
@@ -1558,44 +1562,6 @@ export class OrdersService {
         },
         tx,
       );
-
-      // Parent aggregation: if one child shipped and others remain, parent NOT auto cancelled, status derives from remaining
-      if (child.wholesale_order_id) {
-        const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, child.wholesale_order_id));
-        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
-        const parent = parentResult.rows?.[0];
-        if (parent) {
-          const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === input.childOrderId ? "shipped" : c.status })) as any;
-          const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
-          if (newParentStatus !== parent.status) {
-            await tx.update(wholesaleOrder).set({ status: newParentStatus, version: parent.version + 1, updatedAt: now }).where(eq(wholesaleOrder.id, parent.id));
-            await this.appendStatusHistory(
-              {
-                orderId: parent.id,
-                childOrderId: null,
-                fromStatus: parent.status,
-                toStatus: newParentStatus,
-                actorId: input.actorUserId,
-                actorRole: "system",
-                orderVersion: parent.version + 1,
-                metadata: { trigger: "child.shipped", childOrderId: input.childOrderId },
-              },
-              tx,
-            );
-            await this.appendEvent(
-              {
-                aggregateType: "wholesale_order",
-                aggregateId: parent.id,
-                eventType: `order.${newParentStatus === "shipped" ? "shipped" : newParentStatus === "completed" ? "completed" : "fulfillment_started"}`,
-                payload: { parentStatus: newParentStatus, childOrderId: input.childOrderId },
-                actorId: input.actorUserId,
-                actorRole: "system",
-              },
-              tx,
-            );
-          }
-        }
-      }
 
       await tx
         .update(commandIdempotency)
@@ -1661,51 +1627,12 @@ export class OrdersService {
       }
 
       const now = new Date();
-      const [updated] = await tx
-        .update(purchaseOrder)
-        .set({ status: "delivered", version: child.version + 1, deliveredAt: now, updatedAt: now })
-        .where(eq(purchaseOrder.id, input.childOrderId))
-        .returning();
-
-      await this.appendStatusHistory(
-        {
-          orderId: null,
-          childOrderId: input.childOrderId,
-          fromStatus: child.status,
-          toStatus: "delivered",
-          actorId: input.actorUserId,
-          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
-          orderVersion: updated.version,
-        },
-        tx,
-      );
-
-      await this.appendEvent(
-        {
-          aggregateType: "purchase_order",
-          aggregateId: input.childOrderId,
-          eventType: "child.delivered",
-          payload: { childOrderId: input.childOrderId },
-          actorId: input.actorUserId,
-          actorRole: input.actorRole === "supplier" ? "supplier" : "admin",
-          idempotencyKey: input.idempotencyKey,
-        },
-        tx,
-      );
-
-      // Parent aggregation
-      if (child.wholesale_order_id) {
-        const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, child.wholesale_order_id));
-        const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id} FOR UPDATE`);
-        const parent = parentResult.rows?.[0];
-        if (parent) {
-          const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === input.childOrderId ? "delivered" : c.status })) as any;
-          const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
-          if (newParentStatus !== parent.status) {
-            await tx.update(wholesaleOrder).set({ status: newParentStatus, version: parent.version + 1, updatedAt: now }).where(eq(wholesaleOrder.id, parent.id));
-          }
-        }
-      }
+      const updated = await this.transitionChildToDelivered(tx, child, {
+        actorId: input.actorUserId,
+        actorRole: input.actorRole,
+        idempotencyKey: input.idempotencyKey,
+        trigger: "orders.child_deliver",
+      });
 
       await tx
         .update(commandIdempotency)
@@ -2051,6 +1978,359 @@ export class OrdersService {
   async listExceptionsForOrder(input: { orderId: string; buyerUserId: string }) {
     const detail = await this.getWholesaleOrderDetailForBuyer(input);
     return { exceptions: detail.exceptions, links: detail.replacementRequests };
+  }
+
+  // ── Phase 4.7.1 — Shipping contracts ─────────────────────────────────
+  // Orders stays the single writer of purchase_order / wholesale_order status,
+  // order_status_history and order_event. Shipping never reads order tables:
+  // it asks for this context and reports shipment facts back through the
+  // record* calls below, always inside the caller's transaction (B5/B15).
+
+  /**
+   * Everything Shipping needs about a child order, server-derived:
+   * parent/seller identity (B7), immutable address snapshot (B8), shipping
+   * responsibility (B9), financial gate (B10) and ordered quantities (B11).
+   * `lock: true` takes `purchase_order FOR UPDATE` so concurrent shipment
+   * commands on the same child serialize (deadlock-safe: child before shipment).
+   */
+  async getChildOrderShippingContext(input: { childOrderId: string; executor?: DbOrTx; lock?: boolean }): Promise<ChildOrderShippingContext> {
+    const run = async (tx: any): Promise<ChildOrderShippingContext> => {
+      const childResult = input.lock
+        ? await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`)
+        : await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId}`);
+      const child = childResult.rows?.[0];
+      if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+      const parentId = child.wholesale_order_id;
+      if (!parentId) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} has no parent wholesale order`);
+      const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${parentId}`);
+      const parent = parentResult.rows?.[0];
+      if (!parent) throw new OrderDomainError("ORDER_NOT_FOUND", `Parent order ${parentId} not found`);
+      const sellerId = child.seller_id;
+      const itemsResult = await tx.execute(
+        sql`SELECT id, variant_id, package_id, product_name, sku, piece_quantity, quantity, unit_price, line_total, currency
+            FROM wholesale_order_item WHERE order_id = ${parentId} AND seller_id = ${sellerId} ORDER BY id ASC`,
+      );
+      const childItemsResult = await tx.execute(
+        sql`SELECT id, wholesale_order_item_id, variant_id FROM purchase_order_item WHERE purchase_order_id = ${input.childOrderId}`,
+      );
+      const childItemByWholesale = new Map<string, any>();
+      for (const row of childItemsResult.rows || []) if (row.wholesale_order_item_id) childItemByWholesale.set(row.wholesale_order_item_id, row);
+      const financiallyReleased = ["processing", "fulfillment", "shipped", "completed"].includes(parent.status);
+      return {
+        child: {
+          id: child.id,
+          status: child.status as ChildOrderStatus,
+          sellerId,
+          wholesaleOrderId: parentId,
+          shippingResponsibility: (child.shipping_responsibility || "SUPPLIER") as "SUPPLIER" | "KOLBE" | "EXTERNAL_CARRIER",
+          version: child.version,
+          trackingCode: child.tracking_code || null,
+        },
+        parent: {
+          id: parent.id,
+          status: parent.status as WholesaleOrderStatus,
+          buyerUserId: parent.buyer_user_id,
+          paymentMode: parent.payment_mode || null,
+          currency: parent.currency,
+          shippingAddressSnapshot: (parent.shipping_address_snapshot || {}) as Record<string, unknown>,
+          financiallyReleased,
+        },
+        items: (itemsResult.rows || []).map((r: any) => ({
+          wholesaleOrderItemId: r.id,
+          purchaseOrderItemId: childItemByWholesale.get(r.id)?.id || null,
+          variantId: r.variant_id || childItemByWholesale.get(r.id)?.variant_id || null,
+          packageId: r.package_id || null,
+          productName: r.product_name,
+          sku: r.sku,
+          pieceQuantity: Number(r.piece_quantity),
+          quantity: Number(r.quantity),
+          unitPrice: (r.unit_price ?? 0).toString(),
+          lineTotal: (r.line_total ?? 0).toString(),
+          currency: r.currency,
+        })),
+      };
+    };
+    if (input.executor) return run(input.executor as any);
+    return this.db.transaction(async (tx: any) => run(tx));
+  }
+
+  async recordShippingQuoteCreated(input: { childOrderId: string; quoteId: string; provider: string; amount: string; actorId: string | null; actorRole: string; executor: DbOrTx }) {
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: "shipping.quote_created",
+        payload: { quoteId: input.quoteId, childOrderId: input.childOrderId, provider: input.provider, amount: input.amount, notQuoted: input.amount === "0" },
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+      },
+      input.executor,
+    );
+  }
+
+  async recordShippingShipmentCreated(input: {
+    orderId: string;
+    childOrderId: string;
+    shipmentId: string;
+    provider: string;
+    actorId: string | null;
+    actorRole: string;
+    executor: DbOrTx;
+  }) {
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: "shipping.shipment_created",
+        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, wholesaleOrderId: input.orderId, provider: input.provider },
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+      },
+      input.executor,
+    );
+  }
+
+  async recordShipmentStatusEvent(input: {
+    childOrderId: string;
+    shipmentId: string;
+    eventType: "shipping.shipment_ready" | "shipping.shipment_in_transit" | "shipping.shipment_cancelled" | "shipping.shipment_failed";
+    actorId: string | null;
+    actorRole: string;
+    payload?: Record<string, unknown>;
+    executor: DbOrTx;
+  }) {
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: input.eventType,
+        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, ...(input.payload || {}) },
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+      },
+      input.executor,
+    );
+  }
+
+  /**
+   * A shipment left the seller (goods physically gone). When Shipping reports
+   * that every ordered piece of the child is now handed over, the child moves
+   * `preparing → shipped` and the parent projection is recomputed — inventory
+   * was already consumed per shipment, so nothing is consumed here (C5).
+   */
+  async recordShipmentHandedOver(input: {
+    orderId: string;
+    childOrderId: string;
+    shipmentId: string;
+    trackingCode?: string | null;
+    fullyShipped: boolean;
+    actorId: string | null;
+    actorRole: "supplier" | "admin" | "system";
+    idempotencyKey: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+    const child = childResult.rows?.[0];
+    if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: "shipping.shipment_handed_over",
+        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, wholesaleOrderId: input.orderId, fullyShipped: input.fullyShipped },
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+      },
+      tx,
+    );
+    if (!input.fullyShipped) return { child, transitioned: false };
+    if (child.status === "shipped" || child.status === "delivered") return { child, transitioned: false };
+    if (child.status !== "preparing") {
+      throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Child ${input.childOrderId} cannot become shipped from ${child.status}`);
+    }
+    const updated = await this.transitionChildToShipped(tx, child, {
+      actorId: input.actorId,
+      actorRole: input.actorRole,
+      trackingCode: input.trackingCode || null,
+      idempotencyKey: input.idempotencyKey,
+      trigger: "shipping.shipment_handed_over",
+      shipmentId: input.shipmentId,
+    });
+    return { child: updated, transitioned: true };
+  }
+
+  /** Delivery changes fulfillment state only — inventory delta is zero (C7). */
+  async recordShipmentDelivered(input: {
+    orderId: string;
+    childOrderId: string;
+    shipmentId: string;
+    fullyDelivered: boolean;
+    actorId: string | null;
+    actorRole: "supplier" | "admin" | "system";
+    idempotencyKey: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+    const child = childResult.rows?.[0];
+    if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: "shipping.shipment_delivered",
+        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, wholesaleOrderId: input.orderId, fullyDelivered: input.fullyDelivered },
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+      },
+      tx,
+    );
+    if (!input.fullyDelivered) return { child, transitioned: false };
+    if (child.status === "delivered") return { child, transitioned: false };
+    if (child.status !== "shipped") {
+      throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Child ${input.childOrderId} cannot become delivered from ${child.status}`);
+    }
+    const updated = await this.transitionChildToDelivered(tx, child, {
+      actorId: input.actorId,
+      actorRole: input.actorRole,
+      idempotencyKey: input.idempotencyKey,
+      trigger: "shipping.shipment_delivered",
+      shipmentId: input.shipmentId,
+    });
+    return { child: updated, transitioned: true };
+  }
+
+  /** Shared with dispatchChildOrder: child → shipped + history + events + parent projection. Caller holds the child lock. */
+  private async transitionChildToShipped(
+    tx: any,
+    child: any,
+    opts: { actorId: string | null; actorRole: "supplier" | "admin" | "system"; trackingCode: string | null; idempotencyKey: string; trigger: string; shipmentId?: string },
+  ) {
+    const now = new Date();
+    const [updated] = await tx
+      .update(purchaseOrder)
+      .set({
+        status: "shipped",
+        version: child.version + 1,
+        shippedAt: now,
+        trackingCode: opts.trackingCode || child.tracking_code || null,
+        updatedAt: now,
+      })
+      .where(eq(purchaseOrder.id, child.id))
+      .returning();
+
+    await this.appendStatusHistory(
+      {
+        orderId: null,
+        childOrderId: child.id,
+        fromStatus: child.status,
+        toStatus: "shipped",
+        actorId: opts.actorId,
+        actorRole: opts.actorRole === "supplier" ? "supplier" : opts.actorRole === "system" ? "system" : "admin",
+        orderVersion: updated.version,
+        metadata: { trackingCode: opts.trackingCode, trigger: opts.trigger, shipmentId: opts.shipmentId || null },
+      },
+      tx,
+    );
+
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: child.id,
+        eventType: "child.shipped",
+        payload: { childOrderId: child.id, trackingCode: opts.trackingCode, financialImpact: null, trigger: opts.trigger, shipmentId: opts.shipmentId || null },
+        actorId: opts.actorId,
+        actorRole: opts.actorRole === "supplier" ? "supplier" : opts.actorRole === "system" ? "system" : "admin",
+        idempotencyKey: opts.idempotencyKey,
+      },
+      tx,
+    );
+
+    await this.projectParentAfterChildChange(tx, child.wholesale_order_id, child.id, "shipped", opts.actorId, now, "child.shipped");
+    return updated;
+  }
+
+  /** Shared with deliverChildOrder: child → delivered + history + event + parent projection. Caller holds the child lock. */
+  private async transitionChildToDelivered(
+    tx: any,
+    child: any,
+    opts: { actorId: string | null; actorRole: "supplier" | "admin" | "system"; idempotencyKey: string; trigger: string; shipmentId?: string },
+  ) {
+    const now = new Date();
+    const [updated] = await tx
+      .update(purchaseOrder)
+      .set({ status: "delivered", version: child.version + 1, deliveredAt: now, updatedAt: now })
+      .where(eq(purchaseOrder.id, child.id))
+      .returning();
+
+    await this.appendStatusHistory(
+      {
+        orderId: null,
+        childOrderId: child.id,
+        fromStatus: child.status,
+        toStatus: "delivered",
+        actorId: opts.actorId,
+        actorRole: opts.actorRole === "supplier" ? "supplier" : opts.actorRole === "system" ? "system" : "admin",
+        orderVersion: updated.version,
+        metadata: { trigger: opts.trigger, shipmentId: opts.shipmentId || null },
+      },
+      tx,
+    );
+
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: child.id,
+        eventType: "child.delivered",
+        payload: { childOrderId: child.id, trigger: opts.trigger, shipmentId: opts.shipmentId || null },
+        actorId: opts.actorId,
+        actorRole: opts.actorRole === "supplier" ? "supplier" : opts.actorRole === "system" ? "system" : "admin",
+        idempotencyKey: opts.idempotencyKey,
+      },
+      tx,
+    );
+
+    await this.projectParentAfterChildChange(tx, child.wholesale_order_id, child.id, "delivered", opts.actorId, now, "child.delivered");
+    return updated;
+  }
+
+  /** Parent projection after a child fulfillment change (never auto-cancels; derives from all children). */
+  private async projectParentAfterChildChange(tx: any, parentId: string | null, childId: string, childStatus: string, actorId: string | null, now: Date, trigger: string) {
+    if (!parentId) return null;
+    const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, parentId));
+    const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${parentId} FOR UPDATE`);
+    const parent = parentResult.rows?.[0];
+    if (!parent) return null;
+    const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === childId ? childStatus : c.status })) as any;
+    const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
+    if (newParentStatus === parent.status) return parent;
+    await tx.update(wholesaleOrder).set({ status: newParentStatus, version: parent.version + 1, updatedAt: now }).where(eq(wholesaleOrder.id, parent.id));
+    await this.appendStatusHistory(
+      {
+        orderId: parent.id,
+        childOrderId: null,
+        fromStatus: parent.status,
+        toStatus: newParentStatus,
+        actorId,
+        actorRole: "system",
+        orderVersion: parent.version + 1,
+        metadata: { trigger, childOrderId: childId },
+      },
+      tx,
+    );
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: parent.id,
+        eventType: `order.${newParentStatus === "shipped" ? "shipped" : newParentStatus === "completed" ? "completed" : "fulfillment_started"}`,
+        payload: { parentStatus: newParentStatus, childOrderId: childId },
+        actorId,
+        actorRole: "system",
+      },
+      tx,
+    );
+    return { ...parent, status: newParentStatus, version: parent.version + 1 };
   }
 
   async getOrderTimelineForBuyer(input: { orderId: string; buyerUserId: string }) {
@@ -3114,58 +3394,57 @@ export class OrdersService {
     childOrderId: string;
     quoteId: string;
     shippingAmount: string;
-    actorId: string;
+    previousShippingAmount?: string;
+    actorId: string | null;
+    actorRole?: string;
     idempotencyKey: string;
     executor: DbOrTx;
   }) {
     const tx = input.executor as any;
-    const targetId = input.orderId || input.childOrderId;
-    const aggregateType = input.orderId ? "wholesale_order" : "purchase_order";
+    const shippingAmount = BigInt(input.shippingAmount);
+    const previousShipping = BigInt(input.previousShippingAmount ?? "0");
+    if (shippingAmount < 0n) throw new OrderDomainError("INVALID_AMOUNT", "Shipping amount cannot be negative");
+
+    // Phase 4.7.1 (D1/D3) — Orders is the single writer of the order totals: the
+    // selected fee is projected absolutely (never accumulated) so a replay or a
+    // replacement quote can never double-count. `shipping_total = 0` keeps
+    // meaning NOT QUOTED. Item totals are immutable.
+    const childRes = await tx.execute(sql`SELECT id, wholesale_order_id, items_total, grand_total FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
+    const child = childRes.rows?.[0];
+    if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+    const childItems = BigInt(child.items_total ?? 0);
+    await tx.execute(sql`UPDATE purchase_order SET grand_total = ${(childItems + shippingAmount).toString()}::bigint, total_amount = ${(childItems + shippingAmount).toString()}::bigint, updated_at = NOW() WHERE id = ${input.childOrderId}`);
+    const parentId = input.orderId || child.wholesale_order_id;
+    if (parentId) {
+      await tx.execute(sql`
+        UPDATE wholesale_order wo
+        SET shipping_total = agg.shipping,
+            grand_total = wo.items_total + agg.shipping,
+            total_amount = wo.items_total + agg.shipping,
+            updated_at = NOW()
+        FROM (
+          SELECT COALESCE(SUM(GREATEST(po.grand_total - po.items_total, 0)), 0)::bigint AS shipping
+          FROM purchase_order po WHERE po.wholesale_order_id = ${parentId} AND po.status <> 'cancelled'
+        ) agg
+        WHERE wo.id = ${parentId}`);
+    }
+
     await this.appendEvent(
       {
-        aggregateType: aggregateType as any,
-        aggregateId: targetId,
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
         eventType: "shipping.quote_selected",
-        payload: { quoteId: input.quoteId, childOrderId: input.childOrderId, shippingAmount: input.shippingAmount, feeCause: "proforma_supersede" },
+        payload: {
+          quoteId: input.quoteId,
+          childOrderId: input.childOrderId,
+          shippingAmount: shippingAmount.toString(),
+          previousShippingAmount: input.previousShippingAmount ?? null,
+          shippingDelta: (shippingAmount - previousShipping).toString(),
+          feeCause: "proforma_supersede",
+        },
         actorId: input.actorId,
-        actorRole: "admin",
+        actorRole: input.actorRole || "admin",
         idempotencyKey: input.idempotencyKey,
-      },
-      tx,
-    );
-  }
-
-  async recordShippingShipmentCreated(input: {
-    orderId: string;
-    childOrderId: string;
-    shipmentId: string;
-    actorId: string;
-    executor: DbOrTx;
-  }) {
-    const tx = input.executor as any;
-    await this.appendEvent(
-      {
-        aggregateType: "purchase_order",
-        aggregateId: input.childOrderId,
-        eventType: "shipping.shipment_created",
-        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, wholesaleOrderId: input.orderId },
-        actorId: input.actorId,
-        actorRole: "supplier",
-      },
-      tx,
-    );
-  }
-
-  async recordShippingDelivered(input: { orderId: string; childOrderId: string; shipmentId: string; actorId: string; executor: DbOrTx }) {
-    const tx = input.executor as any;
-    await this.appendEvent(
-      {
-        aggregateType: "purchase_order",
-        aggregateId: input.childOrderId,
-        eventType: "shipping.shipment_delivered",
-        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId },
-        actorId: input.actorId,
-        actorRole: "system",
       },
       tx,
     );

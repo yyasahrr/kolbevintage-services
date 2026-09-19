@@ -349,3 +349,70 @@ export async function expectDomainError(promise: Promise<unknown>): Promise<any>
   }
   throw new Error("expected promise to reject");
 }
+
+// ── Stage B/C helpers (shipping + inventory) ─────────────────────────────
+
+/** Order paid through the canonical webhook path ⇒ parent `processing`, children still `pending`. */
+export async function paidOrder(h: Harness, ctx: SupplierContext, opts: { qtyA?: number; qtyB?: number } = {}) {
+  const { order, childA, childB } = await createOrder(h, ctx, opts);
+  await confirmToAwaitingPayment(h, order.id, ctx.userBuyer);
+  const intent = await createFakeIntent(h, order.id, ctx.userBuyer);
+  const res = await h.paymentProviderOrchestrator.ingestWebhook({
+    provider: "fake",
+    request: { headers: signedFakeHeaders(), body: fakeWebhookBody(intent.providerReference, { eventId: makeId("evt") }) },
+  });
+  if (res.outcome.status !== "processed") throw new Error(`payment webhook not processed: ${JSON.stringify(res.outcome)}`);
+  const parent = await one(h.pool, `SELECT status FROM wholesale_order WHERE id = $1`, [order.id]);
+  if (parent.status !== "processing") throw new Error(`expected processing, got ${parent.status}`);
+  return { order, childA, childB, paymentId: intent.paymentId, providerReference: intent.providerReference };
+}
+
+/** Supplier accepts + starts preparation ⇒ child `preparing` (the only shippable state). */
+export async function toPreparing(h: Harness, childOrderId: string, actorUserId: string) {
+  await h.ordersService.confirmChildOrder({ childOrderId, actorUserId, actorRole: "supplier", supplierRole: "owner", idempotencyKey: makeId("idem_confirm_child") });
+  await h.ordersService.startChildPreparation({ childOrderId, actorUserId, actorRole: "supplier", supplierRole: "owner", idempotencyKey: makeId("idem_prepare") });
+  return one(h.pool, `SELECT * FROM purchase_order WHERE id = $1`, [childOrderId]);
+}
+
+/** Paid order with child A (and B when qtyB > 0) in `preparing`. */
+export async function preparingOrder(h: Harness, ctx: SupplierContext, opts: { qtyA?: number; qtyB?: number } = {}) {
+  const paid = await paidOrder(h, ctx, opts);
+  await toPreparing(h, paid.childA.id, ctx.userAOwner);
+  if (paid.childB) await toPreparing(h, paid.childB.id, ctx.userBOwner);
+  return paid;
+}
+
+export const supplierA = (ctx: SupplierContext) => ({ userId: ctx.userAOwner, role: "supplier" as const });
+export const supplierB = (ctx: SupplierContext) => ({ userId: ctx.userBOwner, role: "supplier" as const });
+export const adminActor = (ctx: SupplierContext) => ({ userId: ctx.userAdmin, role: "admin" as const });
+
+export function signedFakeShippingHeaders(): Record<string, string> {
+  return { "x-fake-shipping-signature": process.env.FAKE_SHIPPING_WEBHOOK_SECRET || "fake-shipping-webhook-secret" };
+}
+
+export async function createReadyShipment(
+  h: Harness,
+  ctx: SupplierContext,
+  input: { childOrderId: string; items: Array<{ wholesaleOrderItemId: string; pieceQuantity: number }>; provider?: string; actor?: { userId: string; role: any }; idempotencyKey?: string; quoteId?: string },
+) {
+  return h.shippingOrchestrator.createShipment({
+    actor: input.actor || supplierA(ctx),
+    childOrderId: input.childOrderId,
+    items: input.items,
+    providerName: input.provider || "fake",
+    quoteId: input.quoteId,
+    idempotencyKey: input.idempotencyKey || makeId("idem_shp"),
+  });
+}
+
+export async function orderItemsForChild(h: Harness, childOrderId: string) {
+  return q(h.pool, `SELECT woi.id, woi.piece_quantity, woi.seller_id FROM wholesale_order_item woi JOIN purchase_order po ON po.wholesale_order_id = woi.order_id AND po.seller_id = woi.seller_id WHERE po.id = $1 ORDER BY woi.id`, [childOrderId]);
+}
+
+export async function inventoryFor(h: Harness, variantId: string, sellerId: string) {
+  return one<{ on_hand: number; reserved: number }>(h.pool, `SELECT on_hand, reserved FROM product_variant_inventory WHERE variant_id = $1 AND seller_id = $2`, [variantId, sellerId]);
+}
+
+export async function reservationsFor(h: Harness, childOrderId: string) {
+  return q(h.pool, `SELECT id, quantity, consumed_quantity, status, order_item_id FROM inventory_reservation WHERE child_order_id = $1 ORDER BY id`, [childOrderId]);
+}

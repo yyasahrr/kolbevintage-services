@@ -1,10 +1,9 @@
-import { Injectable, Inject, Logger, forwardRef } from "@nestjs/common";
+import { Injectable, Inject, Logger } from "@nestjs/common";
 import { eq, and } from "drizzle-orm";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
 import { PaymentsService } from "../payments/payments.service";
 import { OrdersService } from "../orders/orders.service";
-import { ShippingService } from "../shipping/shipping.service";
 import { PaymentProviderRegistry } from "../payments/payment-provider.registry";
 import { DomainError } from "@kolbe/shared";
 import { createHash, randomUUID } from "node:crypto";
@@ -44,7 +43,6 @@ export class WholesaleFinanceOrchestrator {
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
     @Inject(OrdersService) private readonly ordersService: OrdersService,
-    @Inject(forwardRef(() => ShippingService)) private readonly shippingService: ShippingService,
     @Inject(PaymentProviderRegistry) private readonly paymentProviderRegistry: PaymentProviderRegistry,
     @Inject(AuditService) private readonly auditService: AuditService,
   ) {}
@@ -704,129 +702,73 @@ export class WholesaleFinanceOrchestrator {
     return { ...failed, outcome: "failed" as const, provider: providerName };
   }
 
-  // ── Phase 4.7: Shipping quote selection triggers proforma supersede ────
-  async selectShippingQuote(input: {
-    quoteId: string;
-    actorId: string;
-    actorRole?: string;
-    idempotencyKey: string;
-  }) {
-    return this.db.transaction(async (tx: any) => {
-      const { commandIdempotency } = await import("@kolbe/database");
-      const requestHash = hashRequest({ quoteId: input.quoteId, action: "select_quote" });
-      const [existingIdem] = await tx
-        .select()
-        .from(commandIdempotency)
-        .where(
-          and(
-            eq(commandIdempotency.scopeType, "shipping_quote"),
-            eq(commandIdempotency.scopeId, input.quoteId),
-            eq(commandIdempotency.commandType, "shipping.quote_select"),
-            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
-          ),
-        )
-        .for("update")
-        .limit(1);
-      if (existingIdem) {
-        if (existingIdem.requestHash !== requestHash) throw new FinanceOrchestratorError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
-        if (existingIdem.state === "completed") {
-          return { replayed: true };
-        }
-      } else {
-        await tx.insert(commandIdempotency).values({
-          id: `cid_${randomUUID().replaceAll("-", "")}`,
-          scopeType: "shipping_quote",
-          scopeId: input.quoteId,
-          commandType: "shipping.quote_select",
-          idempotencyKey: input.idempotencyKey,
-          requestHash,
-          state: "pending",
-          createdAt: await this.ordersService.getDbNow(tx),
-          updatedAt: await this.ordersService.getDbNow(tx),
-        });
-      }
-
-      const selectedQuote = await this.shippingService.selectQuote({
-        quoteId: input.quoteId,
-        actorId: input.actorId,
-        actorRole: input.actorRole,
-        executor: tx,
-      });
-
-      // Fee triggers Finance via Proforma supersede not Order rewrite
-      // If shipping_total = 0 means NOT QUOTED per spec, so skip supersede
-      const shippingAmount = BigInt(selectedQuote.amount || 0);
-      if (shippingAmount > 0n) {
-        // Supersede proforma for child order
-        const childOrderId = selectedQuote.childOrderId || selectedQuote.child_order_id;
-        const existingProforma = await this.paymentsService.getIssuedProformaForChild(childOrderId, tx);
-        if (existingProforma) {
-          await this.paymentsService.supersedeProformaForShipping({
-            proformaId: existingProforma.id,
-            childOrderId,
-            shippingAmount: shippingAmount.toString(),
-            quoteId: input.quoteId,
-            actorId: input.actorId,
-            executor: tx,
-          });
-          await this.ordersService.recordShippingQuoteSelected({
-            orderId: (selectedQuote as any).wholesaleOrderId || undefined,
-            childOrderId,
-            quoteId: input.quoteId,
-            shippingAmount: shippingAmount.toString(),
-            actorId: input.actorId,
-            idempotencyKey: input.idempotencyKey,
-            executor: tx,
-          });
-        }
-      }
-
-      const now = await this.ordersService.getDbNow(tx);
-      await tx
-        .update(commandIdempotency)
-        .set({ state: "completed", resultResourceId: input.quoteId, resultPayload: { quoteId: input.quoteId } as any, completedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(commandIdempotency.scopeType, "shipping_quote"),
-            eq(commandIdempotency.scopeId, input.quoteId),
-            eq(commandIdempotency.commandType, "shipping.quote_select"),
-            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
-          ),
-        );
-
-      return { quote: selectedQuote, replayed: false };
-    });
-  }
-
-  async createShipmentWithInventory(input: {
+  // ── Phase 4.7.1 (B4) — Finance performs ONLY the financial effect of shipping ──
+  /**
+   * A selected shipping quote becomes a financial fact through a proforma
+   * supersede (never an order-total rewrite). Called by the tableless
+   * ShippingOrchestrator inside ITS transaction after `ShippingService.selectQuote`.
+   *
+   * • `shippingAmount = 0` means NOT QUOTED (D1) → no financial change.
+   * • The old proforma stays immutable/historical, allocations stay put (D4);
+   *   lineage coverage means only the delta becomes payable (D2), and a lower
+   *   replacement quote surfaces as an explicit refund obligation (D3).
+   */
+  async applyShippingFeeForChild(input: {
     wholesaleOrderId: string;
     childOrderId: string;
-    sellerId: string;
-    shippingResponsibility?: string;
-    providerName?: string;
-    addressSnapshot?: any;
-    quoteId?: string;
-    items: Array<{ wholesaleOrderItemId: string; purchaseOrderItemId?: string; variantId?: string; pieceQuantity: number }>;
-    idempotencyKey: string;
-    actorId: string;
+    quoteId: string;
+    shippingAmount: string;
+    actorId: string | null;
     actorRole?: string;
+    idempotencyKey: string;
+    executor: any;
   }) {
-    // Finance orchestrator delegates to ShippingService; Shipping owns inventory coordination via its own service
-    return this.db.transaction(async (tx: any) => {
-      return this.shippingService.createShipment({
-        wholesaleOrderId: input.wholesaleOrderId,
-        childOrderId: input.childOrderId,
-        sellerId: input.sellerId,
-        shippingResponsibility: input.shippingResponsibility,
-        providerName: input.providerName,
-        addressSnapshot: input.addressSnapshot,
-        quoteId: input.quoteId,
-        items: input.items,
-        idempotencyKey: input.idempotencyKey,
-        actorId: input.actorId,
-        actorRole: input.actorRole,
-        executor: tx,
-      });
+    const tx = input.executor;
+    const shippingAmount = BigInt(input.shippingAmount || "0");
+    if (shippingAmount <= 0n) {
+      return { superseded: false, reason: "not_quoted" as const, proforma: null, summary: await this.paymentsService.getOrderFinancialSummary(input.wholesaleOrderId, tx) };
+    }
+    const existingProforma = await this.paymentsService.getIssuedProformaForChild(input.childOrderId, tx);
+    if (!existingProforma) {
+      return { superseded: false, reason: "no_issued_proforma" as const, proforma: null, summary: await this.paymentsService.getOrderFinancialSummary(input.wholesaleOrderId, tx) };
+    }
+    const previousShipping = BigInt(existingProforma.shippingTotal || 0);
+    if (previousShipping === shippingAmount) {
+      return { superseded: false, reason: "unchanged" as const, proforma: existingProforma, summary: await this.paymentsService.getOrderFinancialSummary(input.wholesaleOrderId, tx) };
+    }
+    const newProforma = await this.paymentsService.supersedeProformaForShipping({
+      proformaId: existingProforma.id,
+      childOrderId: input.childOrderId,
+      shippingAmount: shippingAmount.toString(),
+      quoteId: input.quoteId,
+      actorId: input.actorId,
+      executor: tx,
     });
+    await this.ordersService.recordShippingQuoteSelected({
+      orderId: input.wholesaleOrderId,
+      childOrderId: input.childOrderId,
+      quoteId: input.quoteId,
+      shippingAmount: shippingAmount.toString(),
+      previousShippingAmount: previousShipping.toString(),
+      actorId: input.actorId,
+      actorRole: input.actorRole || "admin",
+      idempotencyKey: input.idempotencyKey,
+      executor: tx,
+    });
+    const summary = await this.paymentsService.getOrderFinancialSummary(input.wholesaleOrderId, tx);
+    return {
+      superseded: true,
+      reason: "superseded" as const,
+      proforma: newProforma,
+      previousProformaId: existingProforma.id,
+      shippingDelta: (shippingAmount - previousShipping).toString(),
+      summary,
+    };
+  }
+
+  /** B10 — read-only financial gate for Shipping (release rows are the only thing that opens it). */
+  async getFinancialGateStatus(orderId: string, executor?: any) {
+    const releases = await this.paymentsService.listFinancialReleases(orderId, executor);
+    return { released: releases.length > 0, releases: releases.map((r: any) => ({ id: r.id, releaseType: r.release_type || r.releaseType, createdAt: r.created_at || r.createdAt })) };
   }
 }

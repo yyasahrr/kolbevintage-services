@@ -390,6 +390,12 @@ export class PaymentsService {
       throw new FinanceDomainError("PROFORMA_INCONSISTENT_SNAPSHOT", "New proforma totals inconsistent", 400);
     }
 
+    // Phase 4.7.1 (D2) — `wholesale_proforma_child_issued_unique` allows exactly one
+    // issued proforma per child, so the old one must leave `issued` BEFORE the
+    // replacement is inserted (all inside the caller's transaction; the old row is
+    // already locked FOR UPDATE above). Its amounts stay untouched — historical.
+    await tx.update(wholesaleProforma).set({ status: "superseded", updatedAt: now }).where(eq(wholesaleProforma.id, old.id));
+
     let newProforma: any = null;
     let attempts = 0;
     while (attempts < 5) {
@@ -449,7 +455,7 @@ export class PaymentsService {
       });
     }
 
-    await tx.update(wholesaleProforma).set({ status: "superseded", supersededBy: newProforma.id, updatedAt: now }).where(eq(wholesaleProforma.id, oldProformaId));
+    await tx.update(wholesaleProforma).set({ supersededBy: newProforma.id, updatedAt: now }).where(eq(wholesaleProforma.id, oldProformaId));
 
     await this.auditService.record(
       {
@@ -668,7 +674,7 @@ export class PaymentsService {
   }
 
   // Phase 4.7 — Supersede proforma for shipping fee (fee triggers Finance via Proforma supersede not Order rewrite)
-  async supersedeProformaForShipping(input: { proformaId: string; childOrderId: string; shippingAmount: string; quoteId: string; actorId: string; executor: DbOrTx }) {
+  async supersedeProformaForShipping(input: { proformaId: string; childOrderId: string; shippingAmount: string; quoteId: string; actorId: string | null; executor: DbOrTx }) {
     const tx = input.executor as any;
     const shippingAmt = BigInt(input.shippingAmount);
     if (shippingAmt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Shipping amount must be >0 for supersede");
@@ -714,6 +720,11 @@ export class PaymentsService {
         lineTotal: (l.lineTotal || 0).toString(),
       })),
     };
+
+    // Phase 4.7.1 (D2) — same rule as supersedeProforma: leave `issued` before the
+    // replacement is inserted (`wholesale_proforma_child_issued_unique`); amounts of
+    // the superseded proforma are never modified.
+    await tx.update(wholesaleProforma).set({ status: "superseded", updatedAt: now }).where(eq(wholesaleProforma.id, old.id));
 
     let newProforma: any = null;
     let attempts = 0;
@@ -774,7 +785,7 @@ export class PaymentsService {
       });
     }
 
-    await tx.update(wholesaleProforma).set({ status: "superseded", supersededBy: newProforma.id, updatedAt: now }).where(eq(wholesaleProforma.id, old.id));
+    await tx.update(wholesaleProforma).set({ supersededBy: newProforma.id, updatedAt: now }).where(eq(wholesaleProforma.id, old.id));
 
     await this.auditService.record(
       {
@@ -1155,10 +1166,13 @@ export class PaymentsService {
     input: { paymentId: string; orderId: string; amount: bigint; currency: string },
     tx: any,
   ) {
+    // Phase 4.7.1 (D5) — deterministic per-proforma cap allocation: smallest issued
+    // proforma first (maximises fully covered children for a partial payment), ties
+    // by issue time then id. Random child ids never decide who gets covered.
     const proformasResult = await tx.execute(sql`
       SELECT * FROM wholesale_proforma
       WHERE wholesale_order_id = ${input.orderId} AND status = 'issued'
-      ORDER BY child_order_id ASC, id ASC
+      ORDER BY total_amount ASC, issued_at ASC, id ASC
       FOR UPDATE
     `);
     const proformas = proformasResult.rows;
@@ -1536,6 +1550,9 @@ export class PaymentsService {
       // Outstanding obligation = active proformas minus what verified payments already cover.
       const outstanding = activeProformaTotal - allocated;
       const currentPayable = outstanding > 0n ? outstanding : 0n;
+      // Phase 4.7.1 (D3): a replacement quote lower than what verified payments already
+      // cover surfaces as an explicit refund obligation — never a silent remap or fake refund.
+      const refundObligation = outstanding < 0n ? -outstanding : 0n;
       const netCollected = verifiedPaid - refundCompleted;
       const currencyResult = await dbTx.execute(sql`SELECT currency FROM wholesale_proforma WHERE wholesale_order_id = ${orderId} LIMIT 1`);
       const currency = currencyResult.rows?.[0]?.currency || "IRR";
@@ -1550,6 +1567,7 @@ export class PaymentsService {
         refundRequested: refundRequested.toString(),
         refundCompleted: refundCompleted.toString(),
         currentPayable: currentPayable.toString(),
+        refundObligation: refundObligation.toString(),
         netCollected: netCollected.toString(),
         currency,
       };
@@ -2295,6 +2313,14 @@ export class PaymentsService {
     const tx = executor as any;
     const [proforma] = await tx.select().from(wholesaleProforma).where(and(eq(wholesaleProforma.childOrderId, childOrderId), eq(wholesaleProforma.status, "issued"))).limit(1).for("update");
     return proforma || null;
+  }
+
+  /** Phase 4.7.1 (B10) — the trusted gate authorizations of an order (payment_verified / credit / cod / manual). */
+  async listFinancialReleases(orderId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const result = await (tx as any).execute(sql`SELECT * FROM order_financial_release WHERE order_id = ${orderId} ORDER BY created_at ASC`);
+      return (result.rows || []) as any[];
+    });
   }
 
   async getVerifiedAllocationSumForChild(childOrderId: string, executor: DbOrTx): Promise<bigint> {

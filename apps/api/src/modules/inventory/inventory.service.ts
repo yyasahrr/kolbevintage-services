@@ -1576,13 +1576,19 @@ export class InventoryService {
         }
       }
 
+      // Phase 4.7.1 (C6): shipments may already have consumed part of a reservation
+      // (`consumed_quantity`) — a child-level dispatch consumes only the remainder.
+      const remainingOf = (r: any) => Number(r.quantity) - Number(r.consumedQuantity ?? 0);
       const agg = new Map<string, { sellerId: string; variantId: string; totalQty: number }>();
       for (const r of filtered) {
         if (r.status !== "active") continue;
+        const remaining = remainingOf(r);
+        if (remaining < 0) throw new CatalogDomainError("RESERVATION_OVERCONSUMED", `Reservation ${r.id} consumed more than reserved`);
+        if (remaining === 0) continue;
         const key = `${r.sellerId}::${r.variantId}`;
         const ex = agg.get(key);
-        if (ex) ex.totalQty += r.quantity;
-        else agg.set(key, { sellerId: r.sellerId, variantId: r.variantId, totalQty: r.quantity });
+        if (ex) ex.totalQty += remaining;
+        else agg.set(key, { sellerId: r.sellerId, variantId: r.variantId, totalQty: remaining });
       }
 
       const sortedKeys = Array.from(agg.keys()).sort();
@@ -1644,7 +1650,7 @@ export class InventoryService {
         if (r.status !== "active") continue;
         const [updated] = await tx
           .update(inventoryReservation)
-          .set({ status: "confirmed", updatedAt: new Date() })
+          .set({ status: "confirmed", consumedQuantity: Number(r.quantity), updatedAt: new Date() } as any)
           .where(eq(inventoryReservation.id, r.id))
           .returning();
         confirmedReservations.push(updated);
@@ -1748,6 +1754,14 @@ export class InventoryService {
         throw new CatalogDomainError(
           "RESERVATION_ALREADY_CONFIRMED",
           `Cannot release confirmed reservations for child ${input.childOrderId} — dispatch already occurred`,
+        );
+      }
+      // Phase 4.7.1 (C8): goods already handed over through a shipment cannot be "released".
+      const partiallyConsumed = activeReservations.filter((r: any) => Number(r.consumedQuantity ?? 0) > 0);
+      if (partiallyConsumed.length > 0) {
+        throw new CatalogDomainError(
+          "RESERVATION_PARTIALLY_CONSUMED",
+          `Cannot release reservations for child ${input.childOrderId} — ${partiallyConsumed.length} reservation(s) already partially handed over`,
         );
       }
 
@@ -1859,69 +1873,222 @@ export class InventoryService {
     }
   }
 
-  // ── Phase 4.7 — Shipping inventory hooks (MUST NOT directly mutate; call via InventoryService) ──
-  async reserveForShipment(input: { sellerId: string; variantId: string; quantity: number; shipmentId: string; actorId: string; executor?: DbOrTx }) {
-    return this.createReservation({
-      variantId: input.variantId,
+  // ── Phase 4.7.1 — Shipping ↔ Inventory contracts (C1–C8) ─────────────
+  //
+  // Order creation is the ONLY place stock gets reserved. A shipment never
+  // creates a second reservation: it claims a portion of the order-item
+  // reservation (exact identity = order + child + order item + seller +
+  // variant), handoff consumes exactly that portion (`consumed_quantity`), and
+  // delivery touches nothing. Underflow is an error, never a clamp.
+
+  /** Read contract used by Shipping before allocating a shipment (C1/C2). */
+  async getReservationsForOrderItems(input: { orderId: string; childOrderId: string; sellerId: string; orderItemIds: string[]; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    if (input.orderItemIds.length === 0) return [];
+    const { inArray } = await import("drizzle-orm");
+    const rows = await tx
+      .select()
+      .from(inventoryReservation)
+      .where(
+        and(
+          eq(inventoryReservation.orderId, input.orderId),
+          eq(inventoryReservation.childOrderId, input.childOrderId),
+          eq(inventoryReservation.sellerId, input.sellerId),
+          inArray(inventoryReservation.orderItemId, input.orderItemIds),
+        ),
+      )
+      .orderBy(inventoryReservation.orderItemId, inventoryReservation.variantId);
+    return rows.map((r: any) => ({
+      id: r.id,
+      orderItemId: r.orderItemId,
+      variantId: r.variantId,
+      sellerId: r.sellerId,
+      quantity: Number(r.quantity),
+      consumedQuantity: Number(r.consumedQuantity ?? 0),
+      remainingQuantity: Number(r.quantity) - Number(r.consumedQuantity ?? 0),
+      status: r.status,
+    }));
+  }
+
+  /**
+   * Handoff consumption (C2–C6). For every shipment line the EXACT reservation
+   * rows of that order item are locked (deterministic order) and consumed
+   * proportionally (one variant per simple item; component ratio for packages).
+   * Persistent idempotency per shipment guarantees exactly-once even if the
+   * caller retries with a new transaction (C5). Any shortfall throws and the
+   * caller's transaction rolls back — a shipment can never claim "handed over"
+   * while stock stayed put (C4).
+   */
+  async consumeShipmentAllocation(input: {
+    orderId: string;
+    childOrderId: string;
+    sellerId: string;
+    shipmentId: string;
+    lines: Array<{ orderItemId: string; orderedPieceQuantity: number; pieceQuantity: number }>;
+    requester: Requester;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    if (!input.shipmentId) throw new CatalogDomainError("SHIPMENT_ID_REQUIRED", "shipmentId required");
+    if (!input.lines || input.lines.length === 0) throw new CatalogDomainError("INVALID_ALLOCATIONS", "lines must not be empty");
+    for (const line of input.lines) {
+      if (!Number.isSafeInteger(line.pieceQuantity) || line.pieceQuantity <= 0) {
+        throw new CatalogDomainError("INVALID_ALLOCATION_QUANTITY", `pieceQuantity must be a positive integer (item ${line.orderItemId})`);
+      }
+      if (!Number.isSafeInteger(line.orderedPieceQuantity) || line.orderedPieceQuantity <= 0) {
+        throw new CatalogDomainError("INVALID_ALLOCATION_QUANTITY", `orderedPieceQuantity must be a positive integer (item ${line.orderItemId})`);
+      }
+    }
+
+    const scopeType = "shipment";
+    const scopeId = input.shipmentId;
+    const commandType = "inventory.confirm";
+    const idempotencyKey = `shipment_consume:${input.shipmentId}`;
+    const requestHash = hashRequest({
+      orderId: input.orderId,
+      childOrderId: input.childOrderId,
       sellerId: input.sellerId,
-      quantity: input.quantity,
-      requester: { userId: input.actorId, role: "supplier", sellerId: input.sellerId } as any,
-      idempotencyKey: `ship_${input.shipmentId}:${input.variantId}:${input.quantity}`,
-      reason: `reserve for shipment ${input.shipmentId}`,
-      allocationId: `ship_${input.shipmentId}_${input.variantId}`,
-      executor: input.executor,
+      shipmentId: input.shipmentId,
+      lines: input.lines.slice().sort((a, b) => a.orderItemId.localeCompare(b.orderItemId)),
     });
-  }
+    const claim = await this.claimIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, requestHash);
+    if (claim.isReplay && claim.existing?.resultPayload) {
+      return { ...(claim.existing.resultPayload as any), replayed: true };
+    }
 
-  async consumeForShipment(input: { sellerId: string; variantId: string; quantity: number; shipmentId: string; actorId: string; executor?: DbOrTx }) {
-    return this.withExecutor(input.executor, async (tx) => {
-      const reservations = await (tx as any)
-        .select()
-        .from(inventoryReservation)
-        .where(and(eq(inventoryReservation.sellerId, input.sellerId), eq(inventoryReservation.variantId, input.variantId), eq(inventoryReservation.status, "active")))
-        .limit(10);
-      const [inventory] = await (tx as any)
-        .select()
-        .from(productVariantInventory)
-        .where(and(eq(productVariantInventory.variantId, input.variantId), eq(productVariantInventory.sellerId, input.sellerId)))
-        .for("update")
-        .limit(1);
-      if (!inventory) throw new NotFoundError("موجودی یافت نشد");
-      if (inventory.onHand < input.quantity) {
-        throw new CatalogDomainError("INSUFFICIENT_ON_HAND", `Insufficient onHand for consume`);
+    try {
+      const sortedLines = input.lines.slice().sort((a, b) => a.orderItemId.localeCompare(b.orderItemId));
+      const plan: Array<{ reservation: any; consume: number }> = [];
+      for (const line of sortedLines) {
+        const reservations = await tx
+          .select()
+          .from(inventoryReservation)
+          .where(
+            and(
+              eq(inventoryReservation.orderId, input.orderId),
+              eq(inventoryReservation.childOrderId, input.childOrderId),
+              eq(inventoryReservation.orderItemId, line.orderItemId),
+              eq(inventoryReservation.sellerId, input.sellerId),
+              eq(inventoryReservation.status, "active"),
+            ),
+          )
+          .orderBy(inventoryReservation.variantId)
+          .for("update");
+        if (reservations.length === 0) {
+          throw new CatalogDomainError("RESERVATION_NOT_FOUND", `No active reservation for order item ${line.orderItemId} of child ${input.childOrderId}`);
+        }
+        for (const r of reservations) {
+          // Exact proportional consumption: reservation.quantity covers orderedPieceQuantity pieces.
+          if (Number(r.quantity) % line.orderedPieceQuantity !== 0) {
+            throw new CatalogDomainError("RESERVATION_RATIO_NOT_INTEGRAL", `Reservation ${r.id} quantity ${r.quantity} is not a multiple of ordered pieces ${line.orderedPieceQuantity}`);
+          }
+          const perPiece = Number(r.quantity) / line.orderedPieceQuantity;
+          const consume = perPiece * line.pieceQuantity;
+          const remaining = Number(r.quantity) - Number(r.consumedQuantity ?? 0);
+          if (consume > remaining) {
+            throw new CatalogDomainError("RESERVATION_INSUFFICIENT", `Reservation ${r.id} has ${remaining} left, shipment ${input.shipmentId} needs ${consume}`);
+          }
+          plan.push({ reservation: r, consume });
+        }
       }
-      const before = { onHand: inventory.onHand, reserved: inventory.reserved };
-      const afterOnHand = inventory.onHand - input.quantity;
-      let afterReserved = inventory.reserved;
-      const matchingRes = reservations.find((r: any) => r.quantity >= input.quantity);
-      if (matchingRes) {
-        afterReserved = Math.max(0, inventory.reserved - input.quantity);
-        await (tx as any)
+
+      // Lock balances in stable (seller, variant) order and aggregate per variant.
+      const agg = new Map<string, number>();
+      for (const { reservation, consume } of plan) {
+        const key = `${reservation.sellerId}::${reservation.variantId}`;
+        agg.set(key, (agg.get(key) || 0) + consume);
+      }
+      const sortedKeys = Array.from(agg.keys()).sort();
+      const inventoryMap = new Map<string, any>();
+      for (const key of sortedKeys) {
+        const [sellerId, variantId] = key.split("::");
+        const [inv] = await tx
+          .select()
+          .from(productVariantInventory)
+          .where(and(eq(productVariantInventory.variantId, variantId), eq(productVariantInventory.sellerId, sellerId)))
+          .for("update")
+          .limit(1);
+        if (!inv) throw new NotFoundError(`موجودی برای واریانت ${variantId} یافت نشد`);
+        inventoryMap.set(key, inv);
+      }
+      for (const key of sortedKeys) {
+        const totalQty = agg.get(key)!;
+        const inv = inventoryMap.get(key)!;
+        if (inv.onHand < totalQty) throw new CatalogDomainError("ON_HAND_UNDERFLOW", `on_hand ${inv.onHand} < consume ${totalQty}`);
+        if (inv.reserved < totalQty) throw new CatalogDomainError("RESERVED_UNDERFLOW", `reserved ${inv.reserved} < consume ${totalQty}`);
+      }
+
+      const ledgerIds: string[] = [];
+      for (const key of sortedKeys) {
+        const totalQty = agg.get(key)!;
+        const inv = inventoryMap.get(key)!;
+        const afterOnHand = inv.onHand - totalQty;
+        const afterReserved = inv.reserved - totalQty;
+        await tx
+          .update(productVariantInventory)
+          .set({ onHand: afterOnHand, reserved: afterReserved, updatedAt: new Date() })
+          .where(eq(productVariantInventory.id, inv.id));
+        const lid = ledgerId();
+        await tx.insert(inventoryLedger).values({
+          id: lid,
+          variantId: inv.variantId,
+          sellerId: inv.sellerId,
+          changeType: "DECREASE",
+          quantityDelta: -totalQty,
+          beforeOnHand: inv.onHand,
+          afterOnHand,
+          beforeReserved: inv.reserved,
+          afterReserved,
+          reason: `consume shipment ${input.shipmentId} child ${input.childOrderId} order ${input.orderId}`,
+          actorId: input.requester.userId === "system" ? null : input.requester.userId,
+        });
+        ledgerIds.push(lid);
+      }
+
+      const consumed: Array<{ reservationId: string; orderItemId: string; variantId: string; consumed: number; consumedQuantity: number; status: string }> = [];
+      for (const { reservation, consume } of plan) {
+        const newConsumed = Number(reservation.consumedQuantity ?? 0) + consume;
+        const fullyConsumed = newConsumed === Number(reservation.quantity);
+        const [updated] = await tx
           .update(inventoryReservation)
-          .set({ status: "confirmed", updatedAt: new Date() })
-          .where(eq(inventoryReservation.id, matchingRes.id));
+          .set({ consumedQuantity: newConsumed, status: fullyConsumed ? "confirmed" : "active", updatedAt: new Date() } as any)
+          .where(eq(inventoryReservation.id, reservation.id))
+          .returning();
+        consumed.push({ reservationId: reservation.id, orderItemId: reservation.orderItemId, variantId: reservation.variantId, consumed: consume, consumedQuantity: newConsumed, status: updated.status });
+        await this.auditService.record(
+          {
+            actorId: input.requester.userId === "system" ? null : input.requester.userId,
+            actorRole: input.requester.role,
+            action: "inventory.consumed",
+            entityType: "inventory_reservation",
+            entityId: reservation.id,
+            before: { status: reservation.status, quantity: reservation.quantity, consumedQuantity: reservation.consumedQuantity ?? 0 },
+            after: { status: updated.status, quantity: reservation.quantity, consumedQuantity: newConsumed },
+            metadata: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, orderId: input.orderId, sellerId: input.sellerId, variantId: reservation.variantId },
+            requestId: reservation.requestId || null,
+          },
+          tx,
+        );
       }
-      await (tx as any)
-        .update(productVariantInventory)
-        .set({ onHand: afterOnHand, reserved: afterReserved, updatedAt: new Date() })
-        .where(eq(productVariantInventory.id, inventory.id));
 
-      await (tx as any).insert(inventoryLedger).values({
-        id: ledgerId(),
-        variantId: input.variantId,
-        sellerId: input.sellerId,
-        changeType: "DECREASE",
-        quantityDelta: -input.quantity,
-        beforeOnHand: before.onHand,
-        afterOnHand,
-        beforeReserved: before.reserved,
-        afterReserved,
-        reason: `consume for shipment ${input.shipmentId}`,
-        actorId: input.actorId === "system" ? null : input.actorId,
-      });
-
-      return { consumed: input.quantity, shipmentId: input.shipmentId };
-    });
+      const result = { shipmentId: input.shipmentId, childOrderId: input.childOrderId, orderId: input.orderId, consumed, ledgerIds };
+      await this.completeIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey, input.shipmentId, result);
+      return { ...result, replayed: false };
+    } catch (e) {
+      await this.failIdempotency(tx, scopeType, scopeId, commandType, idempotencyKey);
+      throw e;
+    }
   }
 
+  /** Orders → Inventory: attach child identity to freshly created order reservations (Inventory stays the single writer). */
+  async linkReservationsToChildOrders(input: { links: Array<{ reservationId: string; childOrderId: string }>; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    for (const link of input.links) {
+      await tx
+        .update(inventoryReservation)
+        .set({ childOrderId: link.childOrderId, updatedAt: new Date() } as any)
+        .where(and(eq(inventoryReservation.id, link.reservationId), sql`${inventoryReservation.childOrderId} IS NULL`));
+    }
+    return { linked: input.links.length };
+  }
 }

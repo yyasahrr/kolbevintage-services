@@ -1,77 +1,82 @@
-import { Body, Controller, Get, Param, Post, Query, Headers, Inject, forwardRef } from "@nestjs/common";
-import { CurrentUser, Roles } from "../../common/guards/session.guard";
+import { Body, Controller, Get, Param, Post, Query, Headers, Inject, HttpCode } from "@nestjs/common";
+import { CurrentUser, Roles, Public } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
-import { ShippingService } from "./shipping.service";
-import { WholesaleFinanceOrchestrator } from "../finance/wholesale-finance.orchestrator";
+import { ShippingOrchestrator, type ShippingActor } from "./shipping.orchestrator";
 
+/** Admin + carrier-facing shipping surface (B12 idempotency, B16 webhook inbox, B18 reconciliation). */
 @Controller("admin/shipping")
 export class ShippingAdminController {
-  constructor(
-    @Inject(ShippingService) private readonly shippingService: ShippingService,
-    @Inject(forwardRef(() => WholesaleFinanceOrchestrator)) private readonly orchestrator: WholesaleFinanceOrchestrator,
-  ) {}
+  constructor(@Inject(ShippingOrchestrator) private readonly orchestrator: ShippingOrchestrator) {}
+
+  private actor(claims: Claims): ShippingActor {
+    return { userId: claims.sub, role: claims.role as ShippingActor["role"] };
+  }
 
   @Get("shipments")
-  @Roles("admin")
-  async listShipments(@Query() query: any) {
-    // Admin list/inspect failures/manual tracking/reconciliation KOLBE shipping
-    // Simplified: list by orderId if provided
-    if (query.wholesaleOrderId) {
-      const shipments = await this.shippingService.getShipmentsForOrder(query.wholesaleOrderId);
-      return { shipments };
-    }
-    if (query.childOrderId) {
-      const shipments = await this.shippingService.getShipmentsForChild(query.childOrderId);
-      return { shipments };
-    }
-    return { shipments: [], message: "Provide wholesaleOrderId or childOrderId" };
+  @Roles("admin", "finance")
+  async listShipments(@CurrentUser() claims: Claims, @Query() query: { wholesaleOrderId?: string; childOrderId?: string }) {
+    return this.orchestrator.listShipmentsForOrderForAdmin({ actor: this.actor(claims), wholesaleOrderId: query?.wholesaleOrderId, childOrderId: query?.childOrderId });
   }
 
   @Get("shipments/:id")
-  @Roles("admin")
-  async getShipment(@Param("id") id: string) {
-    const result = await this.shippingService.getShipmentById(id);
-    return result;
+  @Roles("admin", "finance")
+  async getShipment(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    return this.orchestrator.getShipmentForActor({ actor: this.actor(claims), shipmentId: id });
   }
 
   @Post("quotes/:id/select")
-  @Roles("admin")
-  async selectQuote(
-    @CurrentUser() claims: Claims,
-    @Param("id") id: string,
-    @Headers("idempotency-key") idemHeader: string,
-    @Headers("Idempotency-Key") idemHeader2: string,
-    @Body() body?: any,
-  ) {
-    const idempotencyKey = idemHeader || idemHeader2 || body?.idempotencyKey;
-    if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.orchestrator.selectShippingQuote({
-      quoteId: id,
-      actorId: claims.sub,
-      actorRole: claims.role,
-      idempotencyKey,
-    });
-    return result;
+  @Roles("admin", "finance")
+  async selectQuote(@CurrentUser() claims: Claims, @Param("id") id: string, @Headers("idempotency-key") idemHeader?: string) {
+    return this.orchestrator.selectQuote({ actor: this.actor(claims), quoteId: id, idempotencyKey: idemHeader });
   }
 
   @Post("shipments/:id/delivered")
   @Roles("admin")
-  async markDelivered(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    const result = await this.shippingService.markDelivered({ shipmentId: id, actorId: claims.sub, actorRole: claims.role });
-    return result;
+  async markDelivered(@CurrentUser() claims: Claims, @Param("id") id: string, @Headers("idempotency-key") idemHeader?: string) {
+    return this.orchestrator.markDelivered({ actor: this.actor(claims), shipmentId: id, idempotencyKey: idemHeader, trigger: "admin" });
   }
 
   @Post("shipments/:id/cancel")
   @Roles("admin")
-  async cancelShipment(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body?: { reason?: string }) {
-    const result = await this.shippingService.cancelShipment({ shipmentId: id, actorId: claims.sub, actorRole: claims.role, reason: body?.reason });
-    return { shipment: result };
+  async cancelShipment(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body?: { reason?: string }, @Headers("idempotency-key") idemHeader?: string) {
+    return this.orchestrator.cancelShipment({ actor: this.actor(claims), shipmentId: id, reason: body?.reason, idempotencyKey: idemHeader });
   }
 
   @Post("shipments/:id/tracking")
   @Roles("admin")
-  async adminUpdateTracking(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { trackingCode?: string; trackingUrl?: string }) {
-    const updated = await this.shippingService.updateTracking({ shipmentId: id, trackingCode: body.trackingCode, trackingUrl: body.trackingUrl, actorId: claims.sub, actorRole: claims.role });
-    return { shipment: updated };
+  async adminUpdateTracking(
+    @CurrentUser() claims: Claims,
+    @Param("id") id: string,
+    @Body() body: { trackingCode?: string; trackingUrl?: string },
+    @Headers("idempotency-key") idemHeader?: string,
+  ) {
+    return this.orchestrator.updateTracking({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader });
+  }
+
+  /** B18 — operator-triggered reconciliation (scheduler-compatible). */
+  @Post("reconcile")
+  @Roles("admin")
+  @HttpCode(200)
+  async reconcile(@Body() body: { provider?: string; limit?: number; staleProcessingMinutes?: number; pendingOlderThanSeconds?: number } = {}) {
+    return this.orchestrator.reconcile(body || {});
+  }
+}
+
+/**
+ * B16 — carrier webhook. `@Public()` because the caller is the carrier, not a
+ * session; authenticity is established by the adapter's `parseWebhook`
+ * (shared secret / signature). An unauthenticated payload is rejected and NOT
+ * persisted. Nothing is echoed back.
+ */
+@Controller("shipping/providers")
+export class ShippingProviderWebhookController {
+  constructor(@Inject(ShippingOrchestrator) private readonly orchestrator: ShippingOrchestrator) {}
+
+  @Public()
+  @Post(":provider/webhook")
+  @HttpCode(200)
+  async webhook(@Param("provider") provider: string, @Body() body: unknown, @Headers() headers: Record<string, string | string[] | undefined>) {
+    const result = await this.orchestrator.ingestWebhook({ provider, request: { headers: headers || {}, body } });
+    return { received: true, duplicate: result.duplicate, eventId: result.outcome.eventId, status: result.outcome.status };
   }
 }

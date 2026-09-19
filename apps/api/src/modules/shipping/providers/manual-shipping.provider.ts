@@ -1,57 +1,50 @@
 import { Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type {
+  ShipmentCreateRequest,
+  ShipmentCreateResult,
   ShippingProvider,
   ShippingQuoteRequest,
   ShippingQuoteResult,
-  ShipmentCreateRequest,
-  ShipmentCreateResult,
   TrackingQuery,
   TrackingResult,
 } from "../shipping-provider.interface";
 
 /**
- * ManualShippingProvider — operational manual shipping, no external carrier.
- * Supplier/Admin enters trusted carrier name, tracking code, handoff evidence.
+ * ManualShippingProvider — operational manual shipping without an external carrier.
+ *
+ * • Quotes are `amount = 0` which means NOT QUOTED (D1) — never "free".
+ * • `createShipment` performs no external call and returns no external
+ *   reference; tracking is entered by the supplier at handoff.
+ * • `getTracking` is never authoritative (`unknown`), so reconciliation never
+ *   moves a manual shipment on its own: humans do (handoff / delivered).
+ * • No webhook channel (`supportsWebhooks = false`).
  */
-
 @Injectable()
 export class ManualShippingProvider implements ShippingProvider {
   readonly name = "manual";
+  readonly supportsWebhooks = false;
 
   async getQuote(input: ShippingQuoteRequest): Promise<ShippingQuoteResult> {
-    // Manual quotes are 0 = NOT QUOTED per spec, but we can return 0 amount as not quoted
-    // For manual, we treat shipping_total = 0 as not quoted, so quote not authoritative
-    // To create authoritative quote, use fake or future carrier
-    const ref = `Q-MANUAL-${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`;
+    const digest = createHash("sha256").update(`${input.childOrderId}:${input.idempotencyKey}`).digest("hex");
     return {
-      quoteId: `quote_${randomUUID().replaceAll("-", "").slice(0, 16)}`,
-      quoteReference: ref,
+      quoteReference: `Q-MANUAL-${digest.slice(0, 12).toUpperCase()}`,
       provider: this.name,
       amount: 0n,
       currency: input.currency || "IRR",
-      snapshot: { manual: true, childOrderId: input.childOrderId, serviceLevel: input.serviceLevel || "standard" },
+      snapshot: { manual: true, notQuoted: true, childOrderId: input.childOrderId, serviceLevel: input.serviceLevel || "standard" },
     };
   }
 
-  async createShipment(input: ShipmentCreateRequest): Promise<ShipmentCreateResult> {
-    const code = `SHP-MANUAL-${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`;
-    return {
-      shipmentId: `ship_${randomUUID().replaceAll("-", "").slice(0, 16)}`,
-      shipmentCode: code,
-      provider: this.name,
-      externalReference: null as any,
-    };
+  async createShipment(_input: ShipmentCreateRequest): Promise<ShipmentCreateResult> {
+    return { provider: this.name, externalReference: null, trackingCode: null, trackingUrl: null, replayed: false };
   }
 
-  async cancelShipment(_input: { shipmentId: string; reason?: string }): Promise<{ success: boolean; failureReason?: string }> {
+  async cancelShipment(_input: { shipmentId: string; externalReference?: string | null; reason?: string }): Promise<{ success: boolean; failureReason?: string }> {
     return { success: true };
   }
 
   async getTracking(input: TrackingQuery): Promise<TrackingResult> {
-    return {
-      status: "pending",
-      trackingCode: input.trackingCode,
-    };
+    return { state: "unknown", trackingCode: input.trackingCode ?? null };
   }
 }

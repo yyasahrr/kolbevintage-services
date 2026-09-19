@@ -475,8 +475,10 @@ describe("Phase 4.7.1 — A. Refund correctness (A11–A14)", () => {
       h.financeOrchestrator.executeRefundViaProvider({ refundId: r.refund.id, actorUserId: ctx.userAdmin, actorRole: "admin", idempotencyKey: makeId("idem_exec") }),
       h.financeOrchestrator.executeRefundViaProvider({ refundId: r.refund.id, actorUserId: ctx.userAdmin, actorRole: "admin", idempotencyKey: makeId("idem_exec") }),
     ]);
-    const outcomes = [x1.outcome, x2.outcome].sort();
-    expect(outcomes).toEqual(["completed", "in_progress"]);
+    // Exactly one execution: the loser observes either the in-flight claim or the already committed completion.
+    const outcomes = [x1.outcome, x2.outcome];
+    expect(outcomes.filter((o) => o === "completed")).toHaveLength(1);
+    expect(outcomes.filter((o) => o === "in_progress" || o === "already_completed")).toHaveLength(1);
     const row = await one(h.pool, `SELECT status, external_reference FROM refund WHERE id = $1`, [r.refund.id]);
     expect(row.status).toBe("completed");
     expect(row.external_reference.startsWith("FAKE-REF-")).toBe(true);

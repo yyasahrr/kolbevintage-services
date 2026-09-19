@@ -1,33 +1,74 @@
-import { Injectable, Inject, Logger } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
-import { randomUUID, createHash } from "node:crypto";
+import { Injectable, Inject } from "@nestjs/common";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import type { DbOrTx } from "../inventory/inventory.service";
-import { InventoryService } from "../inventory/inventory.service";
-import {
-  shippingQuote,
-  shipment,
-  shipmentItem,
-  purchaseOrder,
-  wholesaleOrderItem,
-} from "@kolbe/database";
+import { commandIdempotency, shipment, shipmentEvent, shipmentItem, shippingQuote } from "@kolbe/database";
 import { AuditService } from "../audit/audit.service";
 import { DomainError } from "@kolbe/shared";
-import { ShippingProviderRegistry } from "./shipping-provider.registry";
 
-function quoteId(): string { return `sq_${randomUUID().replaceAll("-", "")}`; }
-function shipmentId(): string { return `shp_${randomUUID().replaceAll("-", "")}`; }
-function shipmentItemId(): string { return `shpi_${randomUUID().replaceAll("-", "")}`; }
-function shipmentEventId(): string { return `shpe_${randomUUID().replaceAll("-", "")}`; }
-function generateQuoteReference(): string { return `SQ-${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`; }
-function generateShipmentCode(): string { return `SHP-${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`; }
+/**
+ * Phase 4.7.1 — ShippingService is the SINGLE WRITER of the shipping tables
+ * (`shipping_quote`, `shipment`, `shipment_item`, `shipment_event`).
+ *
+ * It knows nothing about orders, sellers, inventory or providers: every
+ * cross-domain fact (ordered quantities, financial gate, address, seller
+ * membership) is resolved by the tableless `ShippingOrchestrator` through the
+ * owning module's public contract and handed in as plain data (B4/B5).
+ *
+ * Nothing in here performs network I/O, so every method can safely run under
+ * row locks (B1). Status changes go through ONE transition function that
+ * enforces the formal state machine (B13) — there is no raw status overwrite.
+ */
 
-function hashRequest(input: unknown): string {
-  const canonical = JSON.stringify(input, (key, val) => {
+export const SHIPMENT_TRANSITIONS: Record<string, readonly string[]> = {
+  pending: ["ready", "cancelled", "failed"],
+  ready: ["handed_over", "cancelled", "failed"],
+  handed_over: ["in_transit", "delivered", "failed"],
+  in_transit: ["delivered", "failed"],
+  delivered: [],
+  cancelled: [],
+  failed: [],
+};
+
+/** Allocations that still count against the ordered quantity (B11/C8). */
+export const ACTIVE_ALLOCATION_STATUSES = ["pending", "ready", "handed_over", "in_transit", "delivered"] as const;
+/** Goods physically gone (C5/C6). */
+export const HANDED_OVER_STATUSES = ["handed_over", "in_transit", "delivered"] as const;
+
+export class ShippingDomainError extends DomainError {
+  constructor(code: string, message: string, status = 400) {
+    if (["QUOTE_NOT_FOUND", "SHIPMENT_NOT_FOUND", "ORDER_NOT_FOUND", "SHIPMENT_EVENT_NOT_FOUND"].includes(code)) status = 404;
+    else if (["SHIPMENT_ACCESS_DENIED", "SUPPLIER_MEMBERSHIP_REQUIRED", "ROLE_NOT_ALLOWED", "PROVIDER_NOT_ALLOWED", "WEBHOOK_SIGNATURE_INVALID"].includes(code)) status = 403;
+    else if (
+      [
+        "IDEMPOTENCY_KEY_REUSED",
+        "QUOTE_EXPIRED",
+        "QUOTE_ALREADY_SELECTED",
+        "QUOTE_NOT_SELECTABLE",
+        "SHIPMENT_QUANTITY_EXCEEDED",
+        "SHIPMENT_ALREADY_DELIVERED",
+        "INVALID_SHIPMENT_TRANSITION",
+        "SHIPMENT_ORDER_MISMATCH",
+        "SHIPMENT_RESPONSIBILITY_MISMATCH",
+        "FINANCIAL_GATE_BLOCKED",
+        "CHILD_ORDER_NOT_SHIPPABLE",
+        "SHIPMENT_COMMAND_IN_PROGRESS",
+        "RESERVATION_NOT_AVAILABLE",
+      ].includes(code)
+    ) status = 409;
+    else if (code === "PROVIDER_ERROR") status = 502;
+    super(status, code, message);
+    this.name = "ShippingDomainError";
+  }
+}
+
+export function hashShippingRequest(input: unknown): string {
+  const canonical = JSON.stringify(input, (_key, val) => {
     if (typeof val === "bigint") return val.toString();
     if (val && typeof val === "object" && !Array.isArray(val)) {
-      const sorted: any = {};
-      Object.keys(val).sort().forEach((k) => (sorted[k] = (val as any)[k]));
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(val).sort()) sorted[k] = (val as any)[k];
       return sorted;
     }
     return val;
@@ -35,334 +76,528 @@ function hashRequest(input: unknown): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-export class ShippingDomainError extends DomainError {
-  constructor(code: string, message: string, status = 400) {
-    if (code === "QUOTE_NOT_FOUND" || code === "SHIPMENT_NOT_FOUND" || code === "ORDER_NOT_FOUND") status = 404;
-    else if (code === "IDEMPOTENCY_KEY_REUSED") status = 409;
-    else if (code === "SHIPMENT_ACCESS_DENIED") status = 403;
-    else if (code === "QUOTE_EXPIRED" || code === "QUOTE_ALREADY_SELECTED" || code === "SHIPMENT_QUANTITY_EXCEEDED" || code === "SHIPMENT_ALREADY_DELIVERED") status = 409;
-    super(status, code, message);
-    this.name = "ShippingDomainError";
-  }
+/** Deterministic ids derived from the business command → a retried command re-creates the SAME row (B3). */
+export function deterministicId(prefix: string, ...parts: string[]): string {
+  return `${prefix}_${createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 32)}`;
 }
+
+function shipmentEventId(): string { return `shpe_${randomUUID().replaceAll("-", "")}`; }
+
+export type IdempotencyClaim =
+  | { state: "new" }
+  | { state: "pending"; resourceId: string | null }
+  | { state: "completed"; resourceId: string | null; payload: any };
 
 @Injectable()
 export class ShippingService {
-  private readonly logger = new Logger(ShippingService.name);
   constructor(
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
-    @Inject(ShippingProviderRegistry) private readonly providerRegistry: ShippingProviderRegistry,
     @Inject(AuditService) private readonly auditService: AuditService,
-    @Inject(InventoryService) private readonly inventoryService: InventoryService,
   ) {}
 
-  private async withExecutor<T>(executor: DbOrTx | undefined, work: (tx: DbOrTx) => Promise<T>): Promise<T> {
+  private async withExecutor<T>(executor: DbOrTx | undefined, work: (tx: any) => Promise<T>): Promise<T> {
     if (executor) return work(executor as any);
     return this.db.transaction(async (tx) => work(tx as any));
   }
 
-  private async getDbNow(tx: any): Promise<Date> {
+  async getDbNow(tx: any): Promise<Date> {
     const result = await tx.execute(sql`SELECT NOW() as now`);
-    const nowVal = (result as any).rows?.[0]?.now || (result as any)[0]?.now;
-    return new Date(nowVal);
+    return new Date((result as any).rows?.[0]?.now || (result as any)[0]?.now);
   }
 
-  async createQuote(input: {
+  // ── command idempotency (persistent, keyed by the caller's Idempotency-Key) ──
+  async claimCommand(
+    tx: any,
+    scope: { scopeType: string; scopeId: string; commandType: string; idempotencyKey: string; requestHash: string },
+  ): Promise<IdempotencyClaim> {
+    const [existing] = await tx
+      .select()
+      .from(commandIdempotency)
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scope.scopeType),
+          eq(commandIdempotency.scopeId, scope.scopeId),
+          eq(commandIdempotency.commandType, scope.commandType),
+          eq(commandIdempotency.idempotencyKey, scope.idempotencyKey),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (existing) {
+      if (existing.requestHash !== scope.requestHash) {
+        throw new ShippingDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with a different payload");
+      }
+      if (existing.state === "completed") return { state: "completed", resourceId: existing.resultResourceId, payload: existing.resultPayload };
+      return { state: "pending", resourceId: existing.resultResourceId };
+    }
+    const now = await this.getDbNow(tx);
+    await tx.insert(commandIdempotency).values({
+      id: `cid_${randomUUID().replaceAll("-", "")}`,
+      scopeType: scope.scopeType,
+      scopeId: scope.scopeId,
+      commandType: scope.commandType,
+      idempotencyKey: scope.idempotencyKey,
+      requestHash: scope.requestHash,
+      state: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { state: "new" };
+  }
+
+  async attachCommandResource(tx: any, scope: { scopeType: string; scopeId: string; commandType: string; idempotencyKey: string }, resourceId: string) {
+    const now = await this.getDbNow(tx);
+    await tx
+      .update(commandIdempotency)
+      .set({ resultResourceId: resourceId, updatedAt: now })
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scope.scopeType),
+          eq(commandIdempotency.scopeId, scope.scopeId),
+          eq(commandIdempotency.commandType, scope.commandType),
+          eq(commandIdempotency.idempotencyKey, scope.idempotencyKey),
+        ),
+      );
+  }
+
+  async completeCommand(tx: any, scope: { scopeType: string; scopeId: string; commandType: string; idempotencyKey: string }, resourceId: string, payload: unknown) {
+    const now = await this.getDbNow(tx);
+    await tx
+      .update(commandIdempotency)
+      .set({ state: "completed", resultResourceId: resourceId, resultPayload: payload as any, completedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scope.scopeType),
+          eq(commandIdempotency.scopeId, scope.scopeId),
+          eq(commandIdempotency.commandType, scope.commandType),
+          eq(commandIdempotency.idempotencyKey, scope.idempotencyKey),
+        ),
+      );
+  }
+
+  async failCommand(tx: any, scope: { scopeType: string; scopeId: string; commandType: string; idempotencyKey: string }) {
+    const now = await this.getDbNow(tx);
+    await tx
+      .update(commandIdempotency)
+      .set({ state: "failed", updatedAt: now })
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scope.scopeType),
+          eq(commandIdempotency.scopeId, scope.scopeId),
+          eq(commandIdempotency.commandType, scope.commandType),
+          eq(commandIdempotency.idempotencyKey, scope.idempotencyKey),
+        ),
+      );
+  }
+
+  // ── quotes ────────────────────────────────────────────────────────────
+  /**
+   * TxB of the quote flow: persist the immutable provider quote. The row id is
+   * deterministic per command, so a retry after a failed TxB re-creates the
+   * same quote instead of a second one (B3).
+   */
+  async persistQuote(input: {
+    quoteId: string;
+    childOrderId: string;
+    provider: string;
+    serviceLevel: string;
+    providerResult: { quoteReference: string; amount: bigint; currency: string; estimatedFrom?: Date; estimatedTo?: Date; expiresAt?: Date; snapshot: Record<string, unknown> };
+    actorId: string | null;
+    actorRole: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const [existing] = await tx.select().from(shippingQuote).where(eq(shippingQuote.id, input.quoteId)).limit(1);
+    if (existing) return { quote: existing, created: false };
+    const now = await this.getDbNow(tx);
+    const [inserted] = await tx
+      .insert(shippingQuote)
+      .values({
+        id: input.quoteId,
+        quoteReference: input.providerResult.quoteReference,
+        provider: input.provider,
+        childOrderId: input.childOrderId,
+        serviceLevel: input.serviceLevel,
+        amount: input.providerResult.amount as any,
+        currency: input.providerResult.currency,
+        estimatedFrom: input.providerResult.estimatedFrom || null,
+        estimatedTo: input.providerResult.estimatedTo || null,
+        expiresAt: input.providerResult.expiresAt || null,
+        snapshot: { childOrderId: input.childOrderId, serviceLevel: input.serviceLevel, provider: input.provider, providerSnapshot: input.providerResult.snapshot } as any,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        action: "shipping.quote_created",
+        entityType: "shipping_quote",
+        entityId: input.quoteId,
+        after: { childOrderId: input.childOrderId, amount: input.providerResult.amount.toString(), provider: input.provider },
+        metadata: { quoteReference: input.providerResult.quoteReference, provider: input.provider },
+      },
+      tx,
+    );
+    return { quote: inserted, created: true };
+  }
+
+  async getQuoteById(quoteId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const [quote] = await tx.select().from(shippingQuote).where(eq(shippingQuote.id, quoteId)).limit(1);
+      if (!quote) throw new ShippingDomainError("QUOTE_NOT_FOUND", `Quote ${quoteId} not found`);
+      return quote;
+    });
+  }
+
+  async listQuotesForChild(childOrderId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) =>
+      tx.select().from(shippingQuote).where(eq(shippingQuote.childOrderId, childOrderId)).orderBy(desc(shippingQuote.createdAt)),
+    );
+  }
+
+  /** Lock + select. Quote content is immutable — only `status`/`updated_at` change. */
+  async selectQuote(input: { quoteId: string; actorId: string | null; actorRole: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const [quote] = await tx.select().from(shippingQuote).where(eq(shippingQuote.id, input.quoteId)).for("update").limit(1);
+    if (!quote) throw new ShippingDomainError("QUOTE_NOT_FOUND", `Quote ${input.quoteId} not found`);
+    if (quote.status === "selected") throw new ShippingDomainError("QUOTE_ALREADY_SELECTED", `Quote ${input.quoteId} is already selected`);
+    if (quote.status !== "active") throw new ShippingDomainError("QUOTE_NOT_SELECTABLE", `Quote status ${quote.status} is not selectable`);
+    const now = await this.getDbNow(tx);
+    if (quote.expiresAt && new Date(quote.expiresAt).getTime() < now.getTime()) {
+      await tx.update(shippingQuote).set({ status: "expired", updatedAt: now }).where(eq(shippingQuote.id, input.quoteId));
+      throw new ShippingDomainError("QUOTE_EXPIRED", `Quote ${input.quoteId} expired at ${new Date(quote.expiresAt).toISOString()}`);
+    }
+    // Only one selected quote per child: previously selected quotes become historical (`voided`).
+    const previouslySelected = await tx
+      .select()
+      .from(shippingQuote)
+      .where(and(eq(shippingQuote.childOrderId, quote.childOrderId), eq(shippingQuote.status, "selected")))
+      .for("update");
+    for (const prev of previouslySelected) {
+      await tx.update(shippingQuote).set({ status: "voided", updatedAt: now }).where(eq(shippingQuote.id, prev.id));
+    }
+    const [updated] = await tx.update(shippingQuote).set({ status: "selected", updatedAt: now }).where(eq(shippingQuote.id, input.quoteId)).returning();
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        action: "shipping.quote_selected",
+        entityType: "shipping_quote",
+        entityId: input.quoteId,
+        before: { status: quote.status },
+        after: { status: "selected", amount: (quote.amount ?? 0n).toString(), replaced: previouslySelected.map((p: any) => p.id) },
+        metadata: { childOrderId: quote.childOrderId },
+      },
+      tx,
+    );
+    return { quote: updated, previouslySelected };
+  }
+
+  // ── shipments ─────────────────────────────────────────────────────────
+  /** SUM(piece_quantity) per wholesale item over allocations that still count (B11). */
+  async getAllocatedQuantitiesForChild(childOrderId: string, executor: DbOrTx, statuses: readonly string[] = ACTIVE_ALLOCATION_STATUSES) {
+    const tx = executor as any;
+    const rows = await tx
+      .select({ wholesaleOrderItemId: shipmentItem.wholesaleOrderItemId, qty: sql<string>`COALESCE(SUM(${shipmentItem.pieceQuantity}), 0)` })
+      .from(shipmentItem)
+      .innerJoin(shipment, eq(shipment.id, shipmentItem.shipmentId))
+      .where(and(eq(shipment.childOrderId, childOrderId), inArray(shipment.status, [...statuses])))
+      .groupBy(shipmentItem.wholesaleOrderItemId);
+    const map = new Map<string, number>();
+    for (const r of rows as any[]) map.set(r.wholesaleOrderItemId, Number(r.qty));
+    return map;
+  }
+
+  /** TxA of the shipment flow: canonical `pending` shipment + immutable items. */
+  async createPendingShipment(input: {
+    shipmentId: string;
+    wholesaleOrderId: string;
     childOrderId: string;
     sellerId: string;
-    wholesaleOrderId: string;
-    serviceLevel?: string;
-    providerName?: string;
-    idempotencyKey: string;
-    actorId: string;
-    actorRole?: string;
-    executor?: DbOrTx;
+    provider: string;
+    shippingResponsibility: string;
+    addressSnapshot: Record<string, unknown>;
+    quoteSnapshot: Record<string, unknown>;
+    items: Array<{ wholesaleOrderItemId: string; purchaseOrderItemId: string | null; variantId: string | null; pieceQuantity: number }>;
+    actorId: string | null;
+    actorRole: string;
+    executor: DbOrTx;
   }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const { commandIdempotency } = await import("@kolbe/database");
-      const providerName = (input.providerName || process.env.WHOLESALE_SHIPPING_PROVIDER || "manual").toLowerCase();
-      const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase();
-      const mode = (process.env.SHIPPING_PROVIDER_MODE || "disabled").toLowerCase();
-      if (nodeEnv === "production" && (providerName === "fake" || mode === "fake")) {
-        throw new ShippingDomainError("PROVIDER_NOT_ALLOWED", "Fake shipping provider prohibited in production", 403);
-      }
-      const requestHash = hashRequest({ childOrderId: input.childOrderId, serviceLevel: input.serviceLevel, provider: providerName });
-      const [existingIdem] = await tx.select().from(commandIdempotency).where(and(eq(commandIdempotency.scopeType, "purchase_order"), eq(commandIdempotency.scopeId, input.childOrderId), eq(commandIdempotency.commandType, "shipping.quote_create"), eq(commandIdempotency.idempotencyKey, input.idempotencyKey))).for("update").limit(1);
-      if (existingIdem) {
-        if (existingIdem.requestHash !== requestHash) throw new ShippingDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
-        if (existingIdem.state === "completed") {
-          const [existingQuote] = await tx.select().from(shippingQuote).where(eq(shippingQuote.id, existingIdem.resultResourceId)).limit(1);
-          return { quote: existingQuote, replayed: true };
-        }
-      } else {
-        await tx.insert(commandIdempotency).values({ id: `cid_${randomUUID().replaceAll("-", "")}`, scopeType: "purchase_order", scopeId: input.childOrderId, commandType: "shipping.quote_create", idempotencyKey: input.idempotencyKey, requestHash, state: "pending", createdAt: await this.getDbNow(tx), updatedAt: await this.getDbNow(tx) });
-      }
-      const [childRow] = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.id, input.childOrderId)).for("update").limit(1);
-      if (!childRow) throw new ShippingDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
-      const now = await this.getDbNow(tx);
-      const qId = quoteId();
-      let qRef = generateQuoteReference();
-      let attempts = 0;
-      let quoteRow: any = null;
-      while (attempts < 5) {
-        try {
-          const [inserted] = await tx.insert(shippingQuote).values({ id: qId, quoteReference: qRef, provider: providerName, childOrderId: input.childOrderId, serviceLevel: input.serviceLevel || "standard", amount: 0 as any, currency: "IRR", snapshot: { childOrderId: input.childOrderId, serviceLevel: input.serviceLevel, provider: providerName } as any, status: "active", createdAt: now, updatedAt: now }).returning();
-          quoteRow = inserted;
-          break;
-        } catch (e: any) {
-          if (e?.code === "23505" && e?.message?.includes("quote_reference")) { attempts++; qRef = generateQuoteReference(); continue; }
-          throw e;
-        }
-      }
-      if (!quoteRow) throw new ShippingDomainError("QUOTE_CREATION_FAILED", "Failed to create quote");
-      let providerResult: any = null;
-      try {
-        const provider = this.providerRegistry.resolve(providerName);
-        providerResult = await provider.getQuote({ childOrderId: input.childOrderId, sellerId: input.sellerId, wholesaleOrderId: input.wholesaleOrderId, serviceLevel: input.serviceLevel, currency: "IRR", idempotencyKey: input.idempotencyKey });
-      } catch (e: any) {
-        this.logger.warn(`Shipping quote provider ${providerName} failed: ${e.message}`);
-        throw new ShippingDomainError("PROVIDER_ERROR", `Quote provider failed: ${e.message}`, 502);
-      }
-      const [updated] = await tx.update(shippingQuote).set({ amount: providerResult.amount as any, currency: providerResult.currency, estimatedFrom: providerResult.estimatedFrom || null, estimatedTo: providerResult.estimatedTo || null, expiresAt: providerResult.expiresAt || null, snapshot: { ...quoteRow.snapshot, providerResult: { amount: providerResult.amount.toString(), currency: providerResult.currency, reference: providerResult.quoteReference, snapshot: providerResult.snapshot } } as any, updatedAt: now }).where(eq(shippingQuote.id, qId)).returning();
-      await this.auditService.record({ actorId: input.actorId, actorRole: input.actorRole || "supplier", action: "shipping.quote_created", entityType: "shipping_quote", entityId: qId, after: { childOrderId: input.childOrderId, amount: providerResult.amount.toString(), provider: providerName }, metadata: { quoteReference: qRef, provider: providerName } }, tx);
-      await tx.update(commandIdempotency).set({ state: "completed", resultResourceId: qId, resultPayload: { quoteId: qId, reference: qRef } as any, completedAt: now, updatedAt: now }).where(and(eq(commandIdempotency.scopeType, "purchase_order"), eq(commandIdempotency.scopeId, input.childOrderId), eq(commandIdempotency.commandType, "shipping.quote_create"), eq(commandIdempotency.idempotencyKey, input.idempotencyKey)));
-      return { quote: updated, replayed: false, providerResult };
-    });
+    const tx = input.executor as any;
+    const now = await this.getDbNow(tx);
+    const shipmentCode = `SHP-${createHash("sha256").update(input.shipmentId).digest("hex").slice(0, 12).toUpperCase()}`;
+    const [inserted] = await tx
+      .insert(shipment)
+      .values({
+        id: input.shipmentId,
+        shipmentCode,
+        wholesaleOrderId: input.wholesaleOrderId,
+        childOrderId: input.childOrderId,
+        sellerId: input.sellerId,
+        provider: input.provider,
+        shippingResponsibility: input.shippingResponsibility as any,
+        status: "pending",
+        addressSnapshot: input.addressSnapshot as any,
+        quoteSnapshot: input.quoteSnapshot as any,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    const items: any[] = [];
+    for (const item of input.items) {
+      const [row] = await tx
+        .insert(shipmentItem)
+        .values({
+          id: deterministicId("shpi", input.shipmentId, item.wholesaleOrderItemId),
+          shipmentId: input.shipmentId,
+          wholesaleOrderItemId: item.wholesaleOrderItemId,
+          purchaseOrderItemId: item.purchaseOrderItemId,
+          variantId: item.variantId,
+          pieceQuantity: item.pieceQuantity,
+          createdAt: now,
+        })
+        .returning();
+      items.push(row);
+    }
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        action: "shipping.shipment_created",
+        entityType: "shipment",
+        entityId: input.shipmentId,
+        after: { childOrderId: input.childOrderId, shipmentCode, provider: input.provider, itemCount: items.length, status: "pending" },
+        metadata: { wholesaleOrderId: input.wholesaleOrderId, provider: input.provider },
+      },
+      tx,
+    );
+    return { shipment: inserted, items };
   }
 
-  async selectQuote(input: { quoteId: string; actorId: string; actorRole?: string; executor?: DbOrTx }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const [quote] = await tx.select().from(shippingQuote).where(eq(shippingQuote.id, input.quoteId)).limit(1).for("update");
-      if (!quote) throw new ShippingDomainError("QUOTE_NOT_FOUND", `Quote ${input.quoteId} not found`);
-      if (quote.status !== "active") throw new ShippingDomainError("QUOTE_ALREADY_SELECTED", `Quote status ${quote.status} not selectable`);
-      const now = await this.getDbNow(tx);
-      if (quote.expiresAt && new Date(quote.expiresAt) < now) {
-        await tx.update(shippingQuote).set({ status: "expired", updatedAt: now }).where(eq(shippingQuote.id, input.quoteId));
-        throw new ShippingDomainError("QUOTE_EXPIRED", `Quote ${input.quoteId} expired at ${quote.expiresAt}`);
-      }
-      const [updated] = await tx.update(shippingQuote).set({ status: "selected", updatedAt: now }).where(eq(shippingQuote.id, input.quoteId)).returning();
-      await this.auditService.record({ actorId: input.actorId, actorRole: input.actorRole || "admin", action: "shipping.quote_selected", entityType: "shipping_quote", entityId: input.quoteId, after: { status: "selected", amount: (quote.amount || 0).toString() }, metadata: { childOrderId: quote.childOrderId } }, tx);
-      return updated;
-    });
+  async lockShipment(shipmentId: string, executor: DbOrTx) {
+    const tx = executor as any;
+    const [row] = await tx.select().from(shipment).where(eq(shipment.id, shipmentId)).for("update").limit(1);
+    if (!row) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${shipmentId} not found`);
+    return row;
   }
 
-  async createShipment(input: {
-    wholesaleOrderId: string;
-    childOrderId: string;
-    sellerId: string;
-    shippingResponsibility?: string;
-    providerName?: string;
-    addressSnapshot?: any;
-    quoteId?: string;
-    items: Array<{ wholesaleOrderItemId: string; purchaseOrderItemId?: string; variantId?: string; pieceQuantity: number }>;
-    idempotencyKey: string;
-    actorId: string;
-    actorRole?: string;
-    executor?: DbOrTx;
+  async getShipmentItems(shipmentId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => tx.select().from(shipmentItem).where(eq(shipmentItem.shipmentId, shipmentId)).orderBy(asc(shipmentItem.wholesaleOrderItemId)));
+  }
+
+  /**
+   * The ONLY way a shipment changes status (B13). Caller holds the row lock.
+   * `patch` may carry provider/tracking/timestamp columns; `status` itself is
+   * never accepted from the outside.
+   */
+  async transitionShipment(input: {
+    shipmentId: string;
+    from: string;
+    to: string;
+    patch?: Partial<{ externalReference: string | null; trackingCode: string | null; trackingUrl: string | null; failureReason: string | null }>;
+    actorId: string | null;
+    actorRole: string;
+    reason?: string;
+    executor: DbOrTx;
   }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const { commandIdempotency } = await import("@kolbe/database");
-      const providerName = (input.providerName || process.env.WHOLESALE_SHIPPING_PROVIDER || "manual").toLowerCase();
-      const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase();
-      const mode = (process.env.SHIPPING_PROVIDER_MODE || "disabled").toLowerCase();
-      if (nodeEnv === "production" && (providerName === "fake" || mode === "fake")) {
-        throw new ShippingDomainError("PROVIDER_NOT_ALLOWED", "Fake shipping provider prohibited in production", 403);
-      }
-      const requestHash = hashRequest({ wholesaleOrderId: input.wholesaleOrderId, childOrderId: input.childOrderId, items: input.items, provider: providerName });
-      const [existingIdem] = await tx.select().from(commandIdempotency).where(and(eq(commandIdempotency.scopeType, "purchase_order"), eq(commandIdempotency.scopeId, input.childOrderId), eq(commandIdempotency.commandType, "shipping.shipment_create"), eq(commandIdempotency.idempotencyKey, input.idempotencyKey))).for("update").limit(1);
-      if (existingIdem) {
-        if (existingIdem.requestHash !== requestHash) throw new ShippingDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
-        if (existingIdem.state === "completed") {
-          const [existingShipment] = await tx.select().from(shipment).where(eq(shipment.id, existingIdem.resultResourceId)).limit(1);
-          return { shipment: existingShipment, replayed: true };
-        }
-      } else {
-        await tx.insert(commandIdempotency).values({ id: `cid_${randomUUID().replaceAll("-", "")}`, scopeType: "purchase_order", scopeId: input.childOrderId, commandType: "shipping.shipment_create", idempotencyKey: input.idempotencyKey, requestHash, state: "pending", createdAt: await this.getDbNow(tx), updatedAt: await this.getDbNow(tx) });
-      }
-      const [childRow] = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.id, input.childOrderId)).for("update").limit(1);
-      if (!childRow) throw new ShippingDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+    const tx = input.executor as any;
+    const allowed = SHIPMENT_TRANSITIONS[input.from] || [];
+    if (!allowed.includes(input.to)) {
+      throw new ShippingDomainError("INVALID_SHIPMENT_TRANSITION", `Shipment ${input.shipmentId}: ${input.from} → ${input.to} is not allowed`);
+    }
+    const now = await this.getDbNow(tx);
+    const set: Record<string, unknown> = { status: input.to, updatedAt: now, ...(input.patch || {}) };
+    if (input.to === "handed_over") { set.handedOverAt = now; set.shippedAt = now; }
+    if (input.to === "delivered") set.deliveredAt = now;
+    if (input.to === "cancelled") set.cancelledAt = now;
+    const [updated] = await tx
+      .update(shipment)
+      .set(set as any)
+      .where(and(eq(shipment.id, input.shipmentId), eq(shipment.status, input.from)))
+      .returning();
+    if (!updated) {
+      throw new ShippingDomainError("INVALID_SHIPMENT_TRANSITION", `Shipment ${input.shipmentId} is no longer in ${input.from}`);
+    }
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        action: `shipping.shipment_${input.to}`,
+        entityType: "shipment",
+        entityId: input.shipmentId,
+        before: { status: input.from },
+        after: { status: input.to, trackingCodePresent: Boolean(updated.trackingCode) },
+        metadata: { reason: input.reason || null, childOrderId: updated.childOrderId },
+      },
+      tx,
+    );
+    return updated;
+  }
 
-      // Use ORM to avoid raw table name detection in module-boundaries test — still enforces quantity invariant
-      const orderedRows = await tx.select({ id: wholesaleOrderItem.id, qty: wholesaleOrderItem.pieceQuantity }).from(wholesaleOrderItem).where(and(eq(wholesaleOrderItem.orderId, input.wholesaleOrderId), eq(wholesaleOrderItem.sellerId, input.sellerId)));
-      const orderedMap = new Map<string, number>();
-      for (const r of orderedRows) orderedMap.set(r.id, Number(r.qty));
+  /** Tracking data only — no status change. */
+  async updateTracking(input: { shipmentId: string; trackingCode?: string | null; trackingUrl?: string | null; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const now = await this.getDbNow(tx);
+    const [updated] = await tx
+      .update(shipment)
+      .set({ trackingCode: input.trackingCode ?? undefined, trackingUrl: input.trackingUrl ?? undefined, updatedAt: now } as any)
+      .where(eq(shipment.id, input.shipmentId))
+      .returning();
+    return updated;
+  }
 
-      // Shipped quantities from own tables — allowed
-      const shippedRows = await tx.select({ wholesaleItemId: shipmentItem.wholesaleOrderItemId, qty: sql`COALESCE(SUM(${shipmentItem.pieceQuantity}),0)`.as("shipped_qty") }).from(shipmentItem).innerJoin(shipment, eq(shipment.id, shipmentItem.shipmentId)).where(and(eq(shipment.childOrderId, input.childOrderId), sql`${shipment.status} != 'cancelled'`)).groupBy(shipmentItem.wholesaleOrderItemId);
-      const shippedMap = new Map<string, number>();
-      for (const r of shippedRows as any[]) shippedMap.set(r.wholesaleItemId, parseInt(r.qty, 10));
-
-      for (const item of input.items) {
-        const orderedQty = orderedMap.get(item.wholesaleOrderItemId);
-        if (orderedQty === undefined) throw new ShippingDomainError("SHIPMENT_QUANTITY_EXCEEDED", `Wholesale item ${item.wholesaleOrderItemId} not found in order`);
-        const alreadyShipped = shippedMap.get(item.wholesaleOrderItemId) || 0;
-        if (alreadyShipped + item.pieceQuantity > orderedQty) throw new ShippingDomainError("SHIPMENT_QUANTITY_EXCEEDED", `Item ${item.wholesaleOrderItemId} ordered ${orderedQty} already shipped ${alreadyShipped} trying ${item.pieceQuantity}`);
-        if (item.pieceQuantity <= 0) throw new ShippingDomainError("INVALID_QUANTITY", `pieceQuantity must be >0`);
-      }
-      let quoteSnapshot: any = {};
-      if (input.quoteId) {
-        const [quote] = await tx.select().from(shippingQuote).where(eq(shippingQuote.id, input.quoteId)).limit(1);
-        if (!quote) throw new ShippingDomainError("QUOTE_NOT_FOUND", `Quote ${input.quoteId} not found`);
-        if (quote.status === "expired") throw new ShippingDomainError("QUOTE_EXPIRED", `Quote expired`);
-        if (quote.childOrderId !== input.childOrderId) throw new ShippingDomainError("QUOTE_MISMATCH", `Quote child mismatch`);
-        quoteSnapshot = quote.snapshot;
-      }
-      const now = await this.getDbNow(tx);
-      const sId = shipmentId();
-      let sCode = generateShipmentCode();
-      let attempts = 0;
-      let shipmentRow: any = null;
-      while (attempts < 5) {
-        try {
-          const [inserted] = await tx.insert(shipment).values({ id: sId, shipmentCode: sCode, wholesaleOrderId: input.wholesaleOrderId, childOrderId: input.childOrderId, sellerId: input.sellerId, provider: providerName, shippingResponsibility: (input.shippingResponsibility as any) || "SUPPLIER", status: "pending", addressSnapshot: (input.addressSnapshot || {}) as any, quoteSnapshot: quoteSnapshot as any, createdAt: now, updatedAt: now }).returning();
-          shipmentRow = inserted;
-          break;
-        } catch (e: any) {
-          if (e?.code === "23505" && e?.message?.includes("shipment_code")) { attempts++; sCode = generateShipmentCode(); continue; }
-          throw e;
-        }
-      }
-      if (!shipmentRow) throw new ShippingDomainError("SHIPMENT_CREATION_FAILED", "Failed to create shipment");
-      for (const item of input.items) {
-        const siId = shipmentItemId();
-        await tx.insert(shipmentItem).values({ id: siId, shipmentId: sId, wholesaleOrderItemId: item.wholesaleOrderItemId, purchaseOrderItemId: item.purchaseOrderItemId || null, variantId: item.variantId || null, pieceQuantity: item.pieceQuantity, createdAt: now });
-      }
-      let providerResult: any = null;
-      try {
-        const provider = this.providerRegistry.resolve(providerName);
-        providerResult = await provider.createShipment({ wholesaleOrderId: input.wholesaleOrderId, childOrderId: input.childOrderId, sellerId: input.sellerId, shippingResponsibility: (input.shippingResponsibility as any) || "SUPPLIER", provider: providerName, addressSnapshot: input.addressSnapshot || {}, quoteSnapshot, items: input.items, idempotencyKey: input.idempotencyKey });
-      } catch (e: any) {
-        this.logger.warn(`Shipment provider ${providerName} failed: ${e.message}`);
-        await tx.update(shipment).set({ status: "failed", updatedAt: now }).where(eq(shipment.id, sId));
-        throw new ShippingDomainError("PROVIDER_ERROR", `Shipment provider failed: ${e.message}`, 502);
-      }
-      const [updated] = await tx.update(shipment).set({ externalReference: providerResult.externalReference || null, trackingCode: providerResult.trackingCode || null, trackingUrl: providerResult.trackingUrl || null, status: "ready", updatedAt: now }).where(eq(shipment.id, sId)).returning();
-      try {
-        for (const item of input.items) {
-          if (item.variantId) {
-            await (this.inventoryService as any).reserveForShipment?.({ sellerId: input.sellerId, variantId: item.variantId, quantity: item.pieceQuantity, shipmentId: sId, actorId: input.actorId, executor: tx });
-          }
-        }
-      } catch (e: any) {
-        this.logger.warn(`Inventory reserve for shipment ${sId} failed (non-blocking for phase 4.7): ${e.message}`);
-      }
-      await this.auditService.record({ actorId: input.actorId, actorRole: input.actorRole || "supplier", action: "shipping.shipment_created", entityType: "shipment", entityId: sId, after: { childOrderId: input.childOrderId, shipmentCode: sCode, provider: providerName, itemCount: input.items.length }, metadata: { wholesaleOrderId: input.wholesaleOrderId, provider: providerName } }, tx);
-      await tx.update(commandIdempotency).set({ state: "completed", resultResourceId: sId, resultPayload: { shipmentId: sId, code: sCode } as any, completedAt: now, updatedAt: now }).where(and(eq(commandIdempotency.scopeType, "purchase_order"), eq(commandIdempotency.scopeId, input.childOrderId), eq(commandIdempotency.commandType, "shipping.shipment_create"), eq(commandIdempotency.idempotencyKey, input.idempotencyKey)));
-      return { shipment: updated, replayed: false, providerResult };
+  async getShipmentById(shipmentId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const [row] = await tx.select().from(shipment).where(eq(shipment.id, shipmentId)).limit(1);
+      if (!row) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${shipmentId} not found`);
+      const items = await tx.select().from(shipmentItem).where(eq(shipmentItem.shipmentId, shipmentId)).orderBy(asc(shipmentItem.wholesaleOrderItemId));
+      return { shipment: row, items };
     });
   }
 
-  async handoffShipment(input: { shipmentId: string; actorId: string; actorRole?: string; trackingCode?: string; trackingUrl?: string; evidence?: string; executor?: DbOrTx }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const [ship] = await tx.select().from(shipment).where(eq(shipment.id, input.shipmentId)).limit(1).for("update");
-      if (!ship) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${input.shipmentId} not found`);
-      if (["delivered", "cancelled"].includes(ship.status)) throw new ShippingDomainError("INVALID_STATUS", `Cannot handoff from ${ship.status}`);
-      const now = await this.getDbNow(tx);
-      const [updated] = await tx.update(shipment).set({ status: "handed_over", handedOverAt: now, trackingCode: input.trackingCode || ship.trackingCode, trackingUrl: input.trackingUrl || ship.trackingUrl, updatedAt: now }).where(eq(shipment.id, input.shipmentId)).returning();
-      try {
-        const items = await tx.select().from(shipmentItem).where(eq(shipmentItem.shipmentId, input.shipmentId));
-        for (const row of items) {
-          if ((row as any).variantId) {
-            await (this.inventoryService as any).consumeForShipment?.({ sellerId: ship.sellerId, variantId: (row as any).variantId, quantity: (row as any).pieceQuantity, shipmentId: input.shipmentId, actorId: input.actorId, executor: tx });
-          }
-        }
-      } catch (e: any) {
-        this.logger.warn(`Inventory consume for shipment ${input.shipmentId} failed: ${e.message}`);
+  async listShipmentsForOrder(wholesaleOrderId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => tx.select().from(shipment).where(eq(shipment.wholesaleOrderId, wholesaleOrderId)).orderBy(asc(shipment.createdAt)));
+  }
+
+  async listShipmentsForChild(childOrderId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => tx.select().from(shipment).where(eq(shipment.childOrderId, childOrderId)).orderBy(asc(shipment.createdAt)));
+  }
+
+  async listShipmentsForSeller(sellerId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => tx.select().from(shipment).where(eq(shipment.sellerId, sellerId)).orderBy(desc(shipment.createdAt)).limit(200));
+  }
+
+  async findShipmentByProviderReference(input: { provider: string; externalReference?: string | null; trackingCode?: string | null }, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      if (input.externalReference) {
+        const [row] = await tx.select().from(shipment).where(and(eq(shipment.provider, input.provider), eq(shipment.externalReference, input.externalReference))).limit(1);
+        if (row) return row;
       }
-      await this.auditService.record({ actorId: input.actorId, actorRole: input.actorRole || "supplier", action: "shipping.shipment_handed_over", entityType: "shipment", entityId: input.shipmentId, after: { status: "handed_over", trackingCodePresent: !!input.trackingCode }, metadata: { shipmentId: input.shipmentId } }, tx);
-      return updated;
+      if (input.trackingCode) {
+        const [row] = await tx.select().from(shipment).where(and(eq(shipment.provider, input.provider), eq(shipment.trackingCode, input.trackingCode))).limit(1);
+        if (row) return row;
+      }
+      return null;
     });
   }
 
-  async updateTracking(input: { shipmentId: string; trackingCode?: string; trackingUrl?: string; actorId: string; actorRole?: string; executor?: DbOrTx }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const [ship] = await tx.select().from(shipment).where(eq(shipment.id, input.shipmentId)).limit(1).for("update");
-      if (!ship) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${input.shipmentId} not found`);
-      const now = await this.getDbNow(tx);
-      const [updated] = await tx.update(shipment).set({ trackingCode: input.trackingCode || ship.trackingCode, trackingUrl: input.trackingUrl || ship.trackingUrl, updatedAt: now }).where(eq(shipment.id, input.shipmentId)).returning();
-      return updated;
-    });
-  }
-
-  async markDelivered(input: { shipmentId: string; actorId: string; actorRole?: string; executor?: DbOrTx }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const [ship] = await tx.select().from(shipment).where(eq(shipment.id, input.shipmentId)).limit(1).for("update");
-      if (!ship) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${input.shipmentId} not found`);
-      if (ship.status === "delivered") return { shipment: ship, replayed: true };
-      const now = await this.getDbNow(tx);
-      const [updated] = await tx.update(shipment).set({ status: "delivered", deliveredAt: now, updatedAt: now }).where(eq(shipment.id, input.shipmentId)).returning();
-      await this.auditService.record({ actorId: input.actorId, actorRole: input.actorRole || "system", action: "shipping.shipment_delivered", entityType: "shipment", entityId: input.shipmentId, after: { status: "delivered" }, metadata: { shipmentId: input.shipmentId } }, tx);
-      return { shipment: updated, replayed: false };
-    });
-  }
-
-  async cancelShipment(input: { shipmentId: string; actorId: string; actorRole?: string; reason?: string; executor?: DbOrTx }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const [ship] = await tx.select().from(shipment).where(eq(shipment.id, input.shipmentId)).limit(1).for("update");
-      if (!ship) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${input.shipmentId} not found`);
-      if (ship.status === "delivered") throw new ShippingDomainError("SHIPMENT_ALREADY_DELIVERED", "Cannot cancel delivered shipment");
-      const now = await this.getDbNow(tx);
-      const [updated] = await tx.update(shipment).set({ status: "cancelled", cancelledAt: now, updatedAt: now }).where(eq(shipment.id, input.shipmentId)).returning();
-      return updated;
-    });
-  }
-
-  async getShipmentsForOrder(orderId: string, executor?: DbOrTx) {
-    return this.withExecutor(executor, async (tx: any) => {
-      const rows = await tx.select().from(shipment).where(eq(shipment.wholesaleOrderId, orderId));
+  /** Provider-backed shipments whose external state may have moved without us noticing (B18). */
+  async findShipmentsNeedingReconciliation(input: { provider: string; limit: number; pendingOlderThanSeconds: number }, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(shipment)
+        .where(
+          and(
+            eq(shipment.provider, input.provider),
+            sql`(
+              (${shipment.status} = 'pending' AND ${shipment.createdAt} < NOW() - make_interval(secs => ${input.pendingOlderThanSeconds}))
+              OR ${shipment.status} IN ('handed_over', 'in_transit')
+            )`,
+          ),
+        )
+        .orderBy(asc(shipment.createdAt))
+        .limit(input.limit);
       return rows;
     });
   }
 
-  async getShipmentsForChild(childOrderId: string, sellerId?: string, executor?: DbOrTx) {
-    return this.withExecutor(executor, async (tx: any) => {
-      if (sellerId) return tx.select().from(shipment).where(and(eq(shipment.childOrderId, childOrderId), eq(shipment.sellerId, sellerId)));
-      return tx.select().from(shipment).where(eq(shipment.childOrderId, childOrderId));
-    });
-  }
-
-  async getShipmentById(shipmentId: string, sellerId?: string, executor?: DbOrTx) {
-    return this.withExecutor(executor, async (tx: any) => {
-      const [ship] = await tx.select().from(shipment).where(eq(shipment.id, shipmentId)).limit(1);
-      if (!ship) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Shipment ${shipmentId} not found`);
-      if (sellerId && ship.sellerId !== sellerId) throw new ShippingDomainError("SHIPMENT_ACCESS_DENIED", "Access denied to shipment", 403);
-      const items = await tx.select().from(shipmentItem).where(eq(shipmentItem.shipmentId, shipmentId));
-      return { shipment: ship, items };
-    });
-  }
-
-  async recordShipmentEvent(input: { shipmentId: string; provider: string; externalEventId: string; eventType: string; safeMetadata?: any; payloadHash?: string; executor?: DbOrTx; }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const id = shipmentEventId();
-      const payloadHash = input.payloadHash || hashRequest(input.safeMetadata);
-      const sanitized = this.sanitizeMetadata(input.safeMetadata);
-      try {
-        const result = await tx.execute(sql`INSERT INTO shipment_event (id, shipment_id, provider, external_event_id, event_type, payload_hash, safe_metadata, status, received_at, created_at, updated_at) VALUES (${id}, ${input.shipmentId}, ${input.provider}, ${input.externalEventId}, ${input.eventType}, ${payloadHash}, ${JSON.stringify(sanitized)}::jsonb, 'received', NOW(), NOW(), NOW()) ON CONFLICT (provider, external_event_id) DO NOTHING RETURNING id, status`);
-        const rows = (result as any).rows || [];
-        if (rows.length === 0) {
-          const existing = await tx.execute(sql`SELECT id, status FROM shipment_event WHERE provider = ${input.provider} AND external_event_id = ${input.externalEventId} LIMIT 1`);
-          const existingRows = (existing as any).rows || [];
-          return { id: existingRows[0]?.id || id, isDuplicate: true, existingStatus: existingRows[0]?.status };
-        }
-        return { id: rows[0]?.id || id, isDuplicate: false };
-      } catch (e: any) {
-        if (e.code === "23505") {
-          const existing = await tx.execute(sql`SELECT id, status FROM shipment_event WHERE provider = ${input.provider} AND external_event_id = ${input.externalEventId} LIMIT 1`);
-          const existingRows = (existing as any).rows || [];
-          return { id: existingRows[0]?.id || id, isDuplicate: true, existingStatus: existingRows[0]?.status };
-        }
-        throw e;
-      }
-    });
-  }
-
-  private sanitizeMetadata(metadata: any): any {
+  // ── carrier event inbox (B16/B17) ─────────────────────────────────────
+  private sanitizeMetadata(metadata: unknown): Record<string, unknown> {
     if (!metadata || typeof metadata !== "object") return {};
-    const allowed = ["shipmentId", "status", "trackingCode", "provider", "eventType", "externalReference", "amount", "currency", "childOrderId", "orderId"];
-    const sanitized: any = {};
-    for (const key of allowed) if (metadata[key] !== undefined) sanitized[key] = metadata[key];
-    const forbidden = ["pan", "card", "cvv", "secret", "apiKey", "api_key", "session", "cookie", "address", "password", "iban"];
-    for (const f of forbidden) if (f in sanitized) delete sanitized[f];
-    return sanitized;
+    const allowed = ["shipmentId", "status", "state", "reportedState", "trackingCode", "provider", "eventType", "externalReference", "childOrderId", "orderId", "trigger", "reason"];
+    const out: Record<string, unknown> = {};
+    for (const key of allowed) if ((metadata as any)[key] !== undefined) out[key] = (metadata as any)[key];
+    return out;
+  }
+
+  /** Persist a normalised carrier event exactly once (provider + external id). */
+  async persistShipmentEvent(input: {
+    shipmentId: string | null;
+    provider: string;
+    externalEventId: string;
+    eventType: string;
+    safeMetadata?: Record<string, unknown>;
+    payloadHash?: string;
+    executor?: DbOrTx;
+  }) {
+    return this.withExecutor(input.executor, async (tx) => {
+      const id = shipmentEventId();
+      const sanitized = this.sanitizeMetadata(input.safeMetadata);
+      const payloadHash = input.payloadHash || hashShippingRequest(sanitized);
+      const inserted = await tx.execute(sql`
+        INSERT INTO shipment_event (id, shipment_id, provider, external_event_id, event_type, payload_hash, safe_metadata, status, received_at, created_at, updated_at)
+        VALUES (${id}, ${input.shipmentId}, ${input.provider}, ${input.externalEventId}, ${input.eventType}, ${payloadHash}, ${JSON.stringify(sanitized)}::jsonb, 'received', NOW(), NOW(), NOW())
+        ON CONFLICT (provider, external_event_id) DO NOTHING
+        RETURNING id, status`);
+      const rows = (inserted as any).rows || [];
+      if (rows.length > 0) return { id: rows[0].id as string, status: "received" as string, duplicate: false };
+      const existing = await tx.execute(sql`SELECT id, status FROM shipment_event WHERE provider = ${input.provider} AND external_event_id = ${input.externalEventId} LIMIT 1`);
+      const row = ((existing as any).rows || [])[0];
+      return { id: row.id as string, status: row.status as string, duplicate: true };
+    });
+  }
+
+  /** Atomic claim: received|failed → processing. Exactly one worker wins. */
+  async claimShipmentEvent(eventId: string, executor?: DbOrTx): Promise<{ claimed: boolean; status: string }> {
+    return this.withExecutor(executor, async (tx) => {
+      const result = await tx.execute(sql`
+        UPDATE shipment_event SET status = 'processing', updated_at = NOW()
+        WHERE id = ${eventId} AND status IN ('received', 'failed')
+        RETURNING id`);
+      if (((result as any).rows || []).length > 0) return { claimed: true, status: "processing" };
+      const current = await tx.execute(sql`SELECT status FROM shipment_event WHERE id = ${eventId} LIMIT 1`);
+      const row = ((current as any).rows || [])[0];
+      if (!row) throw new ShippingDomainError("SHIPMENT_EVENT_NOT_FOUND", `Shipment event ${eventId} not found`);
+      return { claimed: false, status: row.status as string };
+    });
+  }
+
+  async finishShipmentEvent(input: { eventId: string; status: "processed" | "ignored" | "failed"; shipmentId?: string | null; failureReason?: string | null; executor?: DbOrTx }) {
+    return this.withExecutor(input.executor, async (tx) => {
+      const result = await tx.execute(sql`
+        UPDATE shipment_event
+        SET status = ${input.status},
+            shipment_id = COALESCE(${input.shipmentId ?? null}, shipment_id),
+            failure_reason = ${input.failureReason ?? null},
+            processed_at = CASE WHEN ${input.status} = 'processed' THEN NOW() ELSE processed_at END,
+            updated_at = NOW()
+        WHERE id = ${input.eventId} AND status = 'processing'
+        RETURNING id`);
+      return ((result as any).rows || []).length > 0;
+    });
+  }
+
+  async getShipmentEventById(eventId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const [row] = await tx.select().from(shipmentEvent).where(eq(shipmentEvent.id, eventId)).limit(1);
+      return row || null;
+    });
+  }
+
+  async findUnresolvedShipmentEvents(input: { provider?: string; limit: number }, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const conditions = [inArray(shipmentEvent.status, ["received", "failed"])];
+      if (input.provider) conditions.push(eq(shipmentEvent.provider, input.provider));
+      return tx.select().from(shipmentEvent).where(and(...conditions)).orderBy(asc(shipmentEvent.receivedAt)).limit(input.limit);
+    });
+  }
+
+  /** Events stuck in `processing` (worker died) become claimable again. */
+  async reclaimStaleProcessingEvents(minutes: number, executor?: DbOrTx): Promise<number> {
+    return this.withExecutor(executor, async (tx) => {
+      const result = await tx.execute(sql`
+        UPDATE shipment_event SET status = 'failed', failure_reason = 'stale_processing_reclaimed', updated_at = NOW()
+        WHERE status = 'processing' AND updated_at < NOW() - make_interval(mins => ${minutes})
+        RETURNING id`);
+      return ((result as any).rows || []).length;
+    });
+  }
+
+  async listShipmentEvents(shipmentId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => tx.select().from(shipmentEvent).where(eq(shipmentEvent.shipmentId, shipmentId)).orderBy(asc(shipmentEvent.receivedAt)));
   }
 }
