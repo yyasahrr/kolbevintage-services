@@ -1,10 +1,10 @@
 # Phase 4.5 — VIP/Admin Order Management & Single-Writer Legacy Cutover — Report
 
 **Starting SHA**: 87da03e76ded2dd2ea35f164a9563d103cee7567  
-**Ending SHA**: 27e082075d69b72ba9e7ef7da0ea4b4c6de9c41d  
+**Ending SHA**: 70d70b5a928ed797fa27da3b7d6b96606a99ab9b  
 **Branch**: arena/01a0ad1f-kolbevintage-services  
 **Date**: 2026-09-19  
-**CI**: 35423062888 SUCCESS (GREEN)
+**CI**: 35423129657 SUCCESS (GREEN) — final after report finalization (previous 35423062888 also GREEN)
 
 ## Exit Gate Proofs (Phase 4.4)
 
@@ -153,6 +153,6 @@
 - build: PASS — `npm run build` exit 0 (Next.js static 4 pages)
 - infra:verify: PASS — `npm run infra:verify` exit 0 (12 env vars, 9 Compose services)
 
-**Remote CI:** 35423062888 SUCCESS GREEN on branch `arena/01a0ad1f-kolbevintage-services` — all 5 jobs passed (frontend-next 1m10s, apps/api 1m8s, infra 30s, packages/database 44s, packages/shared 25s), push 27e0820
+**Remote CI:** 35423129657 SUCCESS GREEN on branch `arena/01a0ad1f-kolbevintage-services` — all 5 jobs passed (frontend-next 1m10s, apps/api 1m8s, infra 30s, packages/database 44s, packages/shared 25s), push 70d70b5 — previous 35423062888 also GREEN for 27e0820
 
 Phase 4.6 ... has NOT started
