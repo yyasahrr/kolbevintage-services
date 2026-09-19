@@ -1,10 +1,10 @@
 # Phase 4.5 — VIP/Admin Order Management & Single-Writer Legacy Cutover — Report
 
 **Starting SHA**: 87da03e76ded2dd2ea35f164a9563d103cee7567  
-**Ending SHA**: 70d70b5a928ed797fa27da3b7d6b96606a99ab9b  
+**Ending SHA**: 639919c838d1ffcd250aa3dc8a7dff5e1122f383
 **Branch**: arena/01a0ad1f-kolbevintage-services  
 **Date**: 2026-09-19  
-**CI**: 35423129657 SUCCESS (GREEN) — final after report finalization (previous 35423062888 also GREEN)
+**CI**: 35423192629 SUCCESS (GREEN) — final, previous 35423129657 and 35423062888 also GREEN
 
 ## Exit Gate Proofs (Phase 4.4)
 
@@ -131,7 +131,7 @@
 ### Remote CI
 - Push ONLY to `arena/01a0ad1f-kolbevintage-services`, wait for remote CI GREEN
 - Starting SHA: 87da03e76ded2dd2ea35f164a9563d103cee7567
-- Ending SHA: (after final commit)
+- Ending SHA**: 639919c838d1ffcd250aa3dc8a7dff5e1122f383
 
 ### Remaining Blockers
 - None for Phase 4.5 scope. Payment gateway, fake capture, actual refund, wallet refund, supplier payout, settlement engine, real carrier API, external shipping quote, CRM, major UI redesign, Style Builder/Try-On changes explicitly NOT implemented per constraints.
@@ -153,6 +153,6 @@
 - build: PASS — `npm run build` exit 0 (Next.js static 4 pages)
 - infra:verify: PASS — `npm run infra:verify` exit 0 (12 env vars, 9 Compose services)
 
-**Remote CI:** 35423129657 SUCCESS GREEN on branch `arena/01a0ad1f-kolbevintage-services` — all 5 jobs passed (frontend-next 1m10s, apps/api 1m8s, infra 30s, packages/database 44s, packages/shared 25s), push 70d70b5 — previous 35423062888 also GREEN for 27e0820
+**Remote CI:** 35423192629 SUCCESS GREEN on branch `arena/01a0ad1f-kolbevintage-services` — all 5 jobs passed, push ef72b52 — previous 35423129657 (70d70b5) and 35423062888 (27e0820) also GREEN
 
 Phase 4.6 ... has NOT started
