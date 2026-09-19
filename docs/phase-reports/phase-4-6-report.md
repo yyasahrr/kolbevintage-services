@@ -1,15 +1,17 @@
 # Phase 4.6 — Wholesale Finance Foundation — Report
 
 **Branch:** `arena/01a0ad1f-kolbevintage-services`  
-**Starting SHA:** `5e3f9eb46d2da8d349c4074d7623219bc1bcbf09` (verified HEAD from PROMPT 0/1 baseline, includes prior phase work up to 4.5)  
-**Intermediate reference from memory:** `18178dc28a3505a42a88e173908c06e6a3224969` (phase-4-6 code complete dirty state before module-boundaries fix)  
-**Ending SHA:** `72281dab94888b0f1ad511fc49ad701ac7086eb2`  
+**Starting SHA:** `18178dc28a3505a42a88e173908c06e6a3224969` (phase-4.5 GREEN, verified HEAD at start of 4.6 task)  
+**Baseline SHA:** `5e3f9eb46d2da8d349c4074d7623219bc1bcbf09` (PROMPT 0/1 baseline)  
+**Intermediate:** `72281dab94888b0f1ad511fc49ad701ac7086eb2` (phase-4-6 code complete dirty before rebase)  
+**Ending SHA:** `87660693ec6398d415db30d77babc6c5dfd504d4` (after rebase onto 18178dc)  
 **Date:** 2026-09-19  
 **Migration:** `packages/database/migrations/0018_phase_4_6_wholesale_finance.sql` forward-only, 19 migrations total, 56 tables, 131 FKs, 163 CHECKs
 
 ## Commits in this phase
-- `72281da` feat(phase-4-6): wholesale finance foundation - proforma, payment gate, ledger, partial refund
-  - Includes all prior uncommitted phase work (1.2-4.5) consolidated from working tree
+- `18178dc` docs: phase 4.5 final report (starting point, remote)
+- `8766069` feat(phase-4-6): wholesale finance foundation - proforma, payment gate, ledger, partial refund
+  - Rebased from `72281da` which included all prior uncommitted phase work consolidated
   - Module-boundaries fix: expanded READ_EXCEPTIONS for orders/payments/finance/fulfillment, updated schemaTables list 49→56, extended single-writer guard for finance tables
   - KOLBE singleton fix: reuse existing `seller_kolbe` in `phase-4-6.test.ts`
   - Finance static tests hardening against comment false positives
@@ -121,8 +123,9 @@ Previous baseline 513 tests preserved and expanded (580→583 after single-write
 
 ## CI
 - Local `test:all` GREEN, `typecheck:all` GREEN, `build` GREEN, `infra:verify` GREEN
-- Remote CI not yet run in this session (requires push), but workflow `.github/workflows/ci.yml` exists and will run on push to `arena/01a0ad1f-kolbevintage-services`
-- Push pending: branch `arena/01a0ad1f-kolbevintage-services` at `72281da` dirty? Actually committed, need push
+- Remote CI workflow `.github/workflows/ci.yml` exists, will run on push to `arena/01a0ad1f-kolbevintage-services`
+- Push done: branch `arena/01a0ad1f-kolbevintage-services` at `8766069` pushed after rebase, remote previously at `18178dc`
+- Previous CI runs: 35423192629 GREEN, 35423129657 GREEN, 35423062888 SUCCESS GREEN (phase 4.5)
 
 ## What is explicitly NOT implemented (per Phase 4.6 constraints)
 - No supplier wallet, commission, supplier payable balance, settlement batches, payout bank transfer, supplier withdrawal
