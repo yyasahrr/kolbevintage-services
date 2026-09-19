@@ -4,6 +4,7 @@ import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import { toApiJson } from "../../common/api-json";
 import type { Claims } from "../../common/session";
 import { CatalogDomainError } from "../catalog/catalog.logic";
+import { DomainError } from "@kolbe/shared";
 import { SuppliersService } from "../suppliers/suppliers.service";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { eq, and } from "drizzle-orm";
@@ -23,12 +24,13 @@ export class SupplierOrdersController {
       .from(purchaseOrder)
       .where(eq(purchaseOrder.id, childOrderId))
       .limit(1);
-    if (!child) throw new CatalogDomainError("ORDER_NOT_FOUND", "Child order not found");
+    // Phase 4.7.6 — ownership failures are HTTP 404/403 (DomainError), never a 500 that hides the boundary.
+    if (!child) throw new DomainError(404, "ORDER_NOT_FOUND", "Child order not found");
 
     const [sellerRow] = await (this.db as any).select().from(seller).where(eq(seller.id, child.sellerId)).limit(1);
-    if (!sellerRow) throw new CatalogDomainError("SELLER_NOT_FOUND", "Seller not found");
+    if (!sellerRow) throw new DomainError(404, "SELLER_NOT_FOUND", "Seller not found");
     if (!sellerRow.supplierId) {
-      throw new CatalogDomainError("SELLER_MISMATCH", "Child belongs to KOLBE, not supplier");
+      throw new DomainError(403, "SELLER_MISMATCH", "Child belongs to KOLBE, not supplier");
     }
     const [member] = await (this.db as any)
       .select()
@@ -36,10 +38,10 @@ export class SupplierOrdersController {
       .where(and(eq(supplierMember.supplierId, sellerRow.supplierId), eq(supplierMember.userId, userId)))
       .limit(1);
     if (!member) {
-      throw new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "Not member of supplier");
+      throw new DomainError(403, "SUPPLIER_OWNERSHIP_VIOLATION", "Not member of supplier");
     }
     if (requiredRoles && !requiredRoles.includes(member.role)) {
-      throw new CatalogDomainError("ROLE_NOT_ALLOWED", `Role ${member.role} not allowed, requires ${requiredRoles.join(",")}`);
+      throw new DomainError(403, "ROLE_NOT_ALLOWED", `Role ${member.role} not allowed, requires ${requiredRoles.join(",")}`);
     }
     return { child, sellerRow, member };
   }
@@ -83,11 +85,12 @@ export class SupplierOrdersController {
   async getChildOrder(@CurrentUser() claims: Claims, @Param("id") id: string) {
     if (claims.role === "admin") {
       const data = await (this.db as any).select().from(purchaseOrder).where(eq(purchaseOrder.id, id)).limit(1);
-      if (!data[0]) throw new CatalogDomainError("ORDER_NOT_FOUND", "Child not found");
-      return { child: data[0] };
+      if (!data[0]) throw new DomainError(404, "ORDER_NOT_FOUND", "Child not found");
+      return toApiJson({ child: data[0] });
     }
     const { child } = await this.assertSupplierOwnership(claims.sub, id);
-    return { child };
+    // Phase 4.7.6 — BigInt money columns must be emitted as decimal strings (this path returned 500 before).
+    return toApiJson({ child });
   }
 
   @Post(":id/confirm")
