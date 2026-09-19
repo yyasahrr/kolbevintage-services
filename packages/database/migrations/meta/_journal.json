@@ -162,6 +162,13 @@
       "when": 1789781400000,
       "tag": "0022_phase_4_7_5_iran_compliance_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789850000000,
+      "tag": "0023_phase_4_8_supplier_settlement_foundation",
+      "breakpoints": true
     }
   ]
 }

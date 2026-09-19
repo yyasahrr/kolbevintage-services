@@ -579,3 +579,133 @@ export const FISCAL_EVENT_TYPES = ["prepare", "validate", "submit", "status_quer
 export const FISCAL_EVENT_OUTCOMES = ["ok", "rejected", "failed", "replayed"] as const;
 export const TAX_CONFIG_REVIEW_STATUSES = ["NEEDS_TAX_ACCOUNTANT_REVIEW", "VERIFIED"] as const;
 export const TAX_CONFIG_STATUSES = ["draft", "active", "retired"] as const;
+
+// Phase 4.8 — Supplier Financial Account, Settlement & Payout
+export const SETTLEMENT_ACCOUNT_TYPES = [
+  "PLATFORM_COLLECTION_CLEARING",
+  "SUPPLIER_PENDING_PAYABLE",
+  "SUPPLIER_AVAILABLE_PAYABLE",
+  "SUPPLIER_HOLD",
+  "PAYOUT_CLEARING",
+  "PLATFORM_FEE",
+  "SUPPLIER_RECOVERY",
+  "REFUND_CLEARING",
+  "ROUNDING_RESIDUE",
+  "ADJUSTMENT_CLEARING",
+] as const;
+export const SETTLEMENT_ACCOUNT_STATUSES = ["active", "suspended", "closed"] as const;
+
+export const SETTLEMENT_JOURNAL_TYPES = [
+  "FUNDS_HELD",
+  "ENTITLEMENT",
+  "COMMISSION",
+  "AVAILABILITY",
+  "HOLD_PLACED",
+  "HOLD_RELEASED",
+  "REFUND_ADJUSTMENT",
+  "POST_SETTLEMENT_ADJUSTMENT",
+  "WITHDRAWAL_RESERVED",
+  "PAYOUT_SETTLED",
+  "PAYOUT_REVERSED",
+  "MANUAL_ADJUSTMENT",
+  "RECOVERY_OFFSET",
+] as const;
+
+export const SETTLEMENT_SOURCE_EVENT_TYPES = [
+  "ChildPaymentCovered",
+  "ChildQuantityDelivered",
+  "ChildQuantityRefunded",
+  "SettlementBatchRelease",
+  "FinancialHoldPlaced",
+  "FinancialHoldReleased",
+  "WithdrawalAccepted",
+  "PayoutProviderResult",
+  "AdminAdjustment",
+] as const;
+
+export const SETTLEMENT_POSTING_DIRECTIONS = ["DEBIT", "CREDIT"] as const;
+
+export const COMMISSION_BASIS_TYPES = [
+  "MERCHANDISE_ENTITLED_NET",
+  "GROSS_ORDERED",
+] as const;
+export const COMMISSION_ROUNDING_MODES = ["HALF_UP", "DOWN"] as const;
+export const COMMISSION_POLICY_STATUSES = ["active", "retired"] as const;
+
+export const SHIPPING_ECONOMIC_RECIPIENTS = [
+  "SUPPLIER",
+  "KOLBE",
+  "CARRIER_PASS_THROUGH",
+  "NONE",
+  "UNDEFINED",
+] as const;
+export const SHIPPING_COST_BEARERS = [
+  "SUPPLIER",
+  "KOLBE",
+  "BUYER",
+  "UNDEFINED",
+] as const;
+export const SHIPPING_ECONOMICS_STATUSES = ["draft", "finalized"] as const;
+
+export const SETTLEMENT_HOLD_SCOPES = ["SUPPLIER", "CHILD_ORDER", "PAYOUT"] as const;
+export const SETTLEMENT_HOLD_REASONS = [
+  "RETURN_WINDOW",
+  "REFUND_PENDING",
+  "DISPUTE",
+  "CHARGEBACK_RISK",
+  "PROVIDER_UNCERTAINTY",
+  "MANUAL_FINANCE_HOLD",
+] as const;
+export const SETTLEMENT_HOLD_STATUSES = ["active", "released"] as const;
+export const SETTLEMENT_HOLD_POLICY_STATUSES = ["active", "retired"] as const;
+
+export const SETTLEMENT_BATCH_STATUSES = [
+  "draft",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+export const SETTLEMENT_BATCH_ITEM_STATUSES = ["released"] as const;
+
+export const WITHDRAWAL_REQUEST_STATUSES = [
+  "requested",
+  "approved",
+  "rejected",
+  "cancelled",
+  "converted_to_payout",
+] as const;
+
+export const PAYOUT_STATUSES = [
+  "pending",
+  "processing",
+  "provider_pending",
+  "succeeded",
+  "failed",
+  "reconciliation_required",
+] as const;
+export const PAYOUT_PROVIDERS = ["fake", "manual"] as const;
+export const PAYOUT_PROVIDER_EVENT_TYPES = [
+  "PAYOUT_COMPLETED",
+  "PAYOUT_FAILED",
+  "PAYOUT_REVERSED",
+] as const;
+export const PAYOUT_PROVIDER_EVENT_STATUSES = [
+  "received",
+  "processing",
+  "processed",
+  "ignored",
+  "failed",
+] as const;
+
+export const SETTLEMENT_RECONCILIATION_TYPES = [
+  "SETTLEMENT_PROJECTION",
+  "PAYOUT_STATUS",
+] as const;
+export const SETTLEMENT_RECONCILIATION_STATUSES = [
+  "running",
+  "completed",
+  "failed",
+  "mismatch_detected",
+] as const;
+

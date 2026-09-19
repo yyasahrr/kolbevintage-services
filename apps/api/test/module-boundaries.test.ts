@@ -159,6 +159,22 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "fiscal_document",
       "fiscal_submission_event",
       "tax_configuration",
+      // Phase 4.8
+      "settlement_account",
+      "settlement_journal",
+      "settlement_posting",
+      "commission_policy",
+      "commission_snapshot",
+      "shipping_economics_policy",
+      "settlement_hold_policy",
+      "settlement_hold",
+      "settlement_batch",
+      "settlement_batch_item",
+      "withdrawal_request",
+      "payout",
+      "payout_provider_event",
+      "settlement_reconciliation_run",
+      "settlement_adjustment",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);

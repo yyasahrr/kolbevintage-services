@@ -35,6 +35,7 @@ import { ShippingModule } from "./modules/shipping/shipping.module";
 import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { InvoicingModule } from "./modules/invoicing/invoicing.module";
 import { SettlementReadinessModule } from "./modules/settlement-readiness/settlement-readiness.module";
+import { SettlementModule } from "./modules/settlement/settlement.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
 
@@ -60,6 +61,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     InvoicingModule,
     FinanceModule,
     SettlementReadinessModule,
+    SettlementModule,
     RatingsModule,
     AdminModule,
   ],
