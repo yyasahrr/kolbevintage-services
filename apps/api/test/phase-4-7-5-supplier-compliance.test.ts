@@ -56,8 +56,8 @@ describe("Phase 4.7.5 — settlement eligibility starts closed (read-only contra
     expect(e).not.toHaveProperty("payout");
   });
 
-  it("no wallet / settlement / payout / withdrawal table exists (Phase 4.8 not started)", async () => {
-    const rows = await q(h.pool, `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND (table_name ILIKE '%wallet%' OR table_name ILIKE '%payout%' OR table_name ILIKE '%settlement%' OR table_name ILIKE '%withdrawal%')`);
+  it("no general wallet table exists (marketplace uses supplier settlement, not e-money wallet)", async () => {
+    const rows = await q(h.pool, `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name ILIKE '%wallet%'`);
     expect(rows).toEqual([]);
   });
 });

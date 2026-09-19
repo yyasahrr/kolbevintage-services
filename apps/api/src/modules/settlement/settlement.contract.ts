@@ -48,6 +48,30 @@ export interface SettlementHistoryItem {
   createdAt: string;
 }
 
+export interface CreateCommissionPolicyInput {
+  policyVersion: number;
+  name: string;
+  basis: "MERCHANDISE_ENTITLED_NET" | "GROSS_ORDERED";
+  rateBps: number;
+  fixedAmount?: bigint;
+  roundingMode?: "HALF_UP" | "DOWN";
+  status?: "active" | "retired";
+  effectiveAt?: Date;
+}
+
+export interface CommissionPolicyView {
+  id: string;
+  policyVersion: number;
+  name: string;
+  basis: string;
+  rateBps: number;
+  fixedAmount: string;
+  roundingMode: string;
+  status: string;
+  effectiveAt: string;
+  createdAt: string;
+}
+
 export interface CommissionPolicySnapshot {
   policyId: string;
   policyVersion: number;
@@ -57,12 +81,130 @@ export interface CommissionPolicySnapshot {
   roundingMode: "HALF_UP" | "DOWN";
 }
 
+export interface UpsertShippingEconomicsInput {
+  childOrderId: string;
+  shippingChargeToBuyer?: bigint;
+  shippingEconomicRecipient: "SUPPLIER" | "KOLBE" | "CARRIER_PASS_THROUGH" | "NONE" | "UNDEFINED";
+  shippingCostBearer: "SUPPLIER" | "KOLBE" | "BUYER" | "UNDEFINED";
+  shippingProvider?: string | null;
+  currency?: string;
+  status?: "draft" | "finalized";
+}
+
+export interface ShippingEconomicsView {
+  id: string;
+  childOrderId: string;
+  shippingChargeToBuyer: string;
+  shippingEconomicRecipient: string;
+  shippingCostBearer: string;
+  shippingProvider: string | null;
+  currency: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface ShippingEconomicsSnapshot {
   shippingChargeToBuyer: bigint;
   shippingEconomicRecipient: string;
   shippingCostBearer: string;
   shippingProvider?: string | null;
   currency: string;
+}
+
+export interface CreateHoldPolicyInput {
+  policyVersion: number;
+  name: string;
+  holdDurationDays: number;
+  status?: "active" | "retired";
+  effectiveAt?: Date;
+}
+
+export interface SettlementHoldPolicyView {
+  id: string;
+  policyVersion: number;
+  name: string;
+  holdDurationDays: number;
+  status: string;
+  effectiveAt: string;
+  createdAt: string;
+}
+
+export interface PlaceHoldInput {
+  supplierId: string;
+  childOrderId?: string | null;
+  scope: "SUPPLIER" | "CHILD_ORDER" | "PAYOUT";
+  reason: "RETURN_WINDOW" | "REFUND_PENDING" | "DISPUTE" | "CHARGEBACK_RISK" | "PROVIDER_UNCERTAINTY" | "MANUAL_FINANCE_HOLD";
+  amount?: bigint | null;
+  placedBy: string;
+  notes?: string | null;
+  idempotencyKey: string;
+}
+
+export interface ReleaseHoldInput {
+  holdId: string;
+  releasedBy: string;
+  notes?: string | null;
+  idempotencyKey?: string;
+}
+
+export interface SettlementHoldView {
+  id: string;
+  supplierId: string;
+  childOrderId: string | null;
+  scope: string;
+  reason: string;
+  status: string;
+  amount: string | null;
+  currency: string;
+  placedBy: string;
+  releasedBy: string | null;
+  notes: string | null;
+  idempotencyKey: string;
+  createdAt: string;
+  releasedAt: string | null;
+}
+
+export interface BatchReleaseInput {
+  asOfDate?: Date;
+  supplierId?: string;
+  dryRun?: boolean;
+  idempotencyKey: string;
+  executedBy: string;
+}
+
+export interface SettlementBatchView {
+  id: string;
+  batchCode: string;
+  status: string;
+  totalReleasedAmount: string;
+  totalItemsCount: number;
+  currency: string;
+  executedBy: string;
+  idempotencyKey: string;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SettlementBatchItemView {
+  id: string;
+  batchId: string;
+  supplierId: string;
+  childOrderId: string | null;
+  amount: string;
+  status: string;
+  journalId: string;
+  createdAt: string;
+}
+
+export interface ProcessEarningsResult {
+  childOrderId: string;
+  candidate: boolean;
+  cashCovered?: boolean;
+  reason?: string;
+  entitledAmount?: string;
+  commissionAmount?: string;
+  shippingAmount?: string;
+  postedJournals: string[];
 }
 
 export interface ChildPaymentCoveredFact {

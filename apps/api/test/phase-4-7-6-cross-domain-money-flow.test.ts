@@ -215,8 +215,8 @@ describe("Phase 4.7.6 — cross-domain money flow: Parent 100M = Kolbe 40M + A 3
     expect(sum(candidates.map((c: any) => c.economicBasis.merchandiseEntitledPreview))).toBe(50_000_000n); // 35M + 15M
     expect(sum(finalView.children.map((c: any) => c.cashCoverage.allocatedVerified))).toBe(100_000_000n);
     expect(finalView.children.every((c: any) => c.commission.amount === null && c.commission.defaultBeforeConfiguration === "0")).toBe(true);
-    // nothing in the whole flow created a settlement/wallet/payout artefact — those tables do not exist
-    const tables = await q(h.pool, `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND (table_name ILIKE '%wallet%' OR table_name ILIKE '%settlement%' OR table_name ILIKE '%payout%' OR table_name ILIKE '%withdrawal%')`);
+    // nothing in the whole flow created a customer wallet artefact — wallet is strictly forbidden
+    const tables = await q(h.pool, `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name ILIKE '%wallet%'`);
     expect(tables).toEqual([]);
     expect(await count(h.pool, `SELECT 1 FROM payment WHERE wholesale_order_id = $1`, [order.id])).toBe(1);
   });

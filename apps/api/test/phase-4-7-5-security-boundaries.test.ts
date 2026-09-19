@@ -97,9 +97,9 @@ describe("Phase 4.7.5 — ownership & dependency direction (static)", () => {
     }
   });
 
-  it("no wallet / settlement / payout / withdrawal / balance structures exist anywhere in the schema", () => {
+  it("no general wallet or customer wallet structure exists anywhere in the schema", () => {
     const names = Object.keys(schema.tables);
-    expect(names.filter((n) => /wallet|payout|settlement|withdrawal|balance/i.test(n))).toEqual([]);
+    expect(names.filter((n) => /wallet/i.test(n))).toEqual([]);
     const sql = fs.readFileSync(path.join(ROOT, "packages/database/migrations/0022_phase_4_7_5_iran_compliance_foundation.sql"), "utf8");
     const statementsOnly = sql.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n");
     expect(statementsOnly).not.toMatch(/wallet|payout|settlement_|withdrawal/i);
@@ -108,7 +108,7 @@ describe("Phase 4.7.5 — ownership & dependency direction (static)", () => {
   it("migration hygiene — 0022 forward-only, chained to 0021, 0020/0021 unchanged in the journal", () => {
     const journal = JSON.parse(fs.readFileSync(path.join(ROOT, "packages/database/migrations/meta/_journal.json"), "utf8"));
     const entries = journal.entries as Array<{ idx: number; tag: string }>;
-    expect(entries.at(-1)).toMatchObject({ idx: 22, tag: "0022_phase_4_7_5_iran_compliance_foundation" });
+    expect(entries.find((e) => e.idx === 22)).toMatchObject({ idx: 22, tag: "0022_phase_4_7_5_iran_compliance_foundation" });
     expect(entries.find((e) => e.idx === 21)?.tag).toBe("0021_phase_4_7_1_provider_shipping_hardening");
     expect(entries.find((e) => e.idx === 20)?.tag).toMatch(/^0020_/);
     const sql = fs.readFileSync(path.join(ROOT, "packages/database/migrations/0022_phase_4_7_5_iran_compliance_foundation.sql"), "utf8");
