@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { ComplianceModule } from "../compliance/compliance.module";
 import { WholesaleFinanceOrchestrator } from "./wholesale-finance.orchestrator";
 import { PaymentsModule } from "../payments/payments.module";
 import { OrdersModule } from "../orders/orders.module";
@@ -13,7 +14,7 @@ import { PaymentProviderController } from "./payment-provider.controller";
 import { PaymentProviderOrchestrator } from "./payment-provider.orchestrator";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, PaymentsModule, OrdersModule, SuppliersModule, SupplierTeamModule],
+  imports: [DatabaseModule, AuditModule, PaymentsModule, OrdersModule, SuppliersModule, SupplierTeamModule, ComplianceModule],
   controllers: [WholesaleFinanceController, AdminFinanceController, SupplierFinanceController, PaymentProviderController],
   providers: [WholesaleFinanceOrchestrator, PaymentProviderOrchestrator],
   exports: [WholesaleFinanceOrchestrator, PaymentProviderOrchestrator],

@@ -105,6 +105,12 @@ export class OffersService {
     return this.db.select().from(sellerOffer).where(eq(sellerOffer.sellerId, sellerId)).limit(100);
   }
 
+  /** Phase 4.7.5 — owner read used by the supplier provenance routes. */
+  async getOfferById(offerId: string) {
+    const [offer] = await this.db.select().from(sellerOffer).where(eq(sellerOffer.id, offerId)).limit(1);
+    return offer ?? null;
+  }
+
   async listOffersForProduct(productId: string) {
     return this.db.select().from(sellerOffer).where(eq(sellerOffer.productId, productId)).limit(100);
   }

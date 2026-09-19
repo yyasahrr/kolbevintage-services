@@ -155,6 +155,13 @@
       "when": 1789695000000,
       "tag": "0021_phase_4_7_1_provider_shipping_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789781400000,
+      "tag": "0022_phase_4_7_5_iran_compliance_foundation",
+      "breakpoints": true
     }
   ]
 }

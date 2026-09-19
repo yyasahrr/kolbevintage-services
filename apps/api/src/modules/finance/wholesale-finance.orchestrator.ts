@@ -5,6 +5,7 @@ import { AuditService } from "../audit/audit.service";
 import { PaymentsService } from "../payments/payments.service";
 import { OrdersService } from "../orders/orders.service";
 import { PaymentProviderRegistry } from "../payments/payment-provider.registry";
+import { ComplianceService } from "../compliance/compliance.service";
 import { DomainError } from "@kolbe/shared";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -45,6 +46,7 @@ export class WholesaleFinanceOrchestrator {
     @Inject(OrdersService) private readonly ordersService: OrdersService,
     @Inject(PaymentProviderRegistry) private readonly paymentProviderRegistry: PaymentProviderRegistry,
     @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(ComplianceService) private readonly complianceService: ComplianceService,
   ) {}
 
   async confirmOrder(input: {
@@ -92,6 +94,11 @@ export class WholesaleFinanceOrchestrator {
         });
       }
 
+      // Phase 4.7.5 — legal gate: the buyer must have accepted the CURRENT wholesale requirement
+      // bundle (WHOLESALE_VIP scope only — retail policies never substitute). Fails closed with
+      // LEGAL_POLICY_(RE)ACCEPTANCE_REQUIRED before any binding transition.
+      await this.complianceService.assertScopeRequirementsSatisfied("WHOLESALE_VIP", { userId: input.buyerUserId }, tx);
+
       const confirmResult = await this.ordersService.transitionToConfirmed({
         orderId: input.orderId,
         buyerUserId: input.buyerUserId,
@@ -117,6 +124,9 @@ export class WholesaleFinanceOrchestrator {
           executor: tx,
         });
       }
+
+      // Phase 4.7.5 — immutable transaction compliance snapshot (policy bundle + commercial snapshot hash).
+      await this.complianceService.recordWholesaleConfirmSnapshot({ orderId: input.orderId, buyerUserId: input.buyerUserId, commercialSnapshot: snapshot }, tx);
 
       const payable = proformas.reduce((s: bigint, p: any) => s + BigInt(p.totalAmount || 0), 0n).toString();
       const gated = await this.ordersService.markAwaitingPayment({

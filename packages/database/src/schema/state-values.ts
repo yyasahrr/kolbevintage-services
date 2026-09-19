@@ -506,3 +506,76 @@ export const ORDER_EVENT_TYPES_44 = [
   "inventory.released",
   "inventory.consumed",
 ] as const;
+
+/* ───────────────────────── Phase 4.7.5 — Legal, compliance, privacy & tax readiness ───────────────────────── */
+
+/** Versioned legal/policy document types. Not every type is mandatory for every actor. */
+export const LEGAL_POLICY_TYPES = [
+  "TERMS_OF_SERVICE",
+  "PRIVACY_POLICY",
+  "RETAIL_RETURN_POLICY",
+  "WHOLESALE_TERMS",
+  "SUPPLIER_AGREEMENT",
+  "MARKETING_NOTICE",
+  "COOKIE_NOTICE",
+] as const;
+export const LEGAL_POLICY_SCOPES = ["RETAIL", "WHOLESALE_VIP", "SUPPLIER", "PUBLIC"] as const;
+export const LEGAL_POLICY_STATUSES = ["draft", "published", "retired"] as const;
+export const LEGAL_ACCEPTANCE_SUBJECT_TYPES = ["user", "guest", "supplier_member"] as const;
+export const LEGAL_ACCEPTANCE_CONTEXTS = ["registration", "portal", "checkout", "wholesale_confirm", "supplier_onboarding", "api"] as const;
+export const CONSENT_PURPOSES = ["MARKETING_EMAIL", "MARKETING_SMS", "MARKETING_PUSH", "PERSONALIZATION"] as const;
+export const CONSENT_EVENT_TYPES = ["granted", "withdrawn"] as const;
+export const CONSENT_SOURCES = ["portal", "checkout", "account_settings", "admin", "api"] as const;
+export const BUSINESS_ENTITY_TYPES = ["individual", "company", "cooperative", "other"] as const;
+export const BUSINESS_CREDENTIAL_TYPES = ["ENAMAD", "BUSINESS_LICENSE", "TAX_REGISTRATION", "INDUSTRY_LICENSE", "OTHER"] as const;
+export const BUSINESS_CREDENTIAL_STATUSES = ["unverified", "verified", "expired", "revoked"] as const;
+export const SUPPLIER_COMPLIANCE_STATUSES = ["draft", "submitted", "under_review", "approved", "rejected", "suspended", "expired"] as const;
+export const SUPPLIER_COMPLIANCE_REVIEW_DECISIONS = ["under_review", "needs_information", "approved", "rejected", "suspended", "reinstated", "expired"] as const;
+export const REPRESENTATIVE_AUTHORITY_STATUSES = ["unverified", "declared", "verified"] as const;
+export const COMPLIANCE_DOCUMENT_TYPES = [
+  "business_license",
+  "tax_certificate",
+  "registration_certificate",
+  "representative_authorization",
+  "identity_document",
+  "bank_document",
+  "purchase_invoice",
+  "import_document",
+  "conformity_certificate",
+  "authenticity_proof",
+  "other",
+] as const;
+export const COMPLIANCE_DOCUMENT_REVIEW_STATUSES = ["pending", "approved", "rejected"] as const;
+export const COMPLIANCE_DOCUMENT_SCAN_STATUSES = ["pending", "clean", "rejected", "unavailable"] as const;
+export const COMPLIANCE_STORAGE_PROVIDERS = ["local_private", "s3_private"] as const;
+export const COMPLIANCE_HOLD_REASON_CODES = ["kyb_incomplete", "document_rejected", "fraud_suspected", "legal_request", "manual_review", "other"] as const;
+export const HOLD_STATUSES = ["active", "released"] as const;
+export const BANK_DESTINATION_KINDS = ["iban", "card", "account"] as const;
+export const BANK_VERIFICATION_STATUSES = ["unverified", "pending", "verified", "rejected"] as const;
+export const HOLDER_MATCH_STATUSES = ["unknown", "matched", "mismatched"] as const;
+export const PRODUCT_ORIGIN_TYPES = ["domestic", "imported", "mixed", "unknown"] as const;
+export const PRODUCT_CONDITION_CLASSES = ["new", "used", "vintage", "refurbished", "unknown"] as const;
+export const PRODUCT_COMPLIANCE_STATUSES = ["unknown", "pending_review", "verified", "rejected", "restricted"] as const;
+export const RETENTION_ACTIONS = ["review", "anonymize", "delete", "retain"] as const;
+export const RETENTION_POLICY_STATUSES = ["draft", "active", "retired"] as const;
+export const LEGAL_VERIFICATION_STATUSES = ["NEEDS_LEGAL_VERIFICATION", "VERIFIED"] as const;
+export const DATA_SUBJECT_REQUEST_TYPES = ["access", "correction", "deletion", "restriction"] as const;
+export const DATA_SUBJECT_REQUEST_STATUSES = [
+  "submitted",
+  "identity_verification_required",
+  "under_review",
+  "approved",
+  "rejected",
+  "processing",
+  "completed",
+] as const;
+export const LEGAL_HOLD_SCOPE_TYPES = ["user", "supplier", "wholesale_order", "retail_order", "payment", "product", "other"] as const;
+export const TRANSACTION_SNAPSHOT_SCOPES = ["RETAIL", "WHOLESALE", "SUPPLIER"] as const;
+export const COMMERCIAL_INVOICE_SCOPES = ["retail", "wholesale"] as const;
+export const COMMERCIAL_INVOICE_STATUSES = ["draft", "issued", "voided"] as const;
+export const INVOICE_TAX_STATUSES = ["not_assessed", "exempt", "assessed"] as const;
+export const FISCAL_DOCUMENT_STATUSES = ["draft", "ready", "submission_pending", "submitted", "accepted", "rejected", "cancelled"] as const;
+export const FISCAL_EVENT_TYPES = ["prepare", "validate", "submit", "status_query", "cancel"] as const;
+export const FISCAL_EVENT_OUTCOMES = ["ok", "rejected", "failed", "replayed"] as const;
+export const TAX_CONFIG_REVIEW_STATUSES = ["NEEDS_TAX_ACCOUNTANT_REVIEW", "VERIFIED"] as const;
+export const TAX_CONFIG_STATUSES = ["draft", "active", "retired"] as const;

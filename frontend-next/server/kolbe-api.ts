@@ -672,6 +672,7 @@ async function forwardToNest(
   method: string,
   nestPath: string,
   body?: any,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; data: any }> {
   const base =
     process.env.KOLBE_API_INTERNAL_URL ||
@@ -691,6 +692,7 @@ async function forwardToNest(
   if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
   const requestId = req.headers.get("x-request-id") || req.headers.get("x-correlation-id");
   if (requestId) headers["x-request-id"] = requestId;
+  Object.assign(headers, extraHeaders);
 
   const res = await fetch(url, {
     method,
@@ -705,6 +707,71 @@ async function forwardToNest(
     data = { raw: text };
   }
   return { status: res.status, data };
+}
+
+/**
+ * Phase 4.7.5 — retail legal binding gate (E-Commerce Law art. 33/34/37 evidence — see
+ * docs/compliance/iran-legal-source-register.md S-01).
+ *
+ * `KOLBE_RETAIL_LEGAL_GATE`:
+ *   - "off" (default until launch): legacy behaviour, no evidence written.
+ *   - "enforce": the order is bound ONLY if Nest Compliance confirms the required RETAIL
+ *     policy versions were presented/accepted and records acceptance + disclosure snapshot.
+ *     Any non-2xx / network failure fails CLOSED (transaction rolled back, no order).
+ * The gate is server-to-server; the browser can only claim document ids that Nest
+ * itself published — it can never set "accepted = true".
+ */
+export function retailLegalGateMode(): "off" | "enforce" {
+  return (process.env.KOLBE_RETAIL_LEGAL_GATE || "off").trim().toLowerCase() === "enforce" ? "enforce" : "off";
+}
+
+async function bindRetailLegalEvidence(
+  req: import("next/server").NextRequest,
+  input: {
+    orderCode: string;
+    userId: string | null;
+    customer: { phone: string; email: string | null };
+    acceptedPolicyDocumentIds: unknown;
+    facts: {
+      currency: string;
+      lines: Array<{ ref: string; name: string; quantity: number; unitPrice: string; lineTotal: string }>;
+      shipping: { method: string; label: string; price: string } | null;
+      totals: { items: string; shipping: string; grand: string };
+      paymentMethod: string;
+    };
+  },
+): Promise<{ mode: "off" } | { mode: "enforce"; snapshotId: string; policyBundleHash: string; disclosureHash: string | null }> {
+  if (retailLegalGateMode() === "off") return { mode: "off" };
+  const acceptedPolicyDocumentIds = Array.isArray(input.acceptedPolicyDocumentIds)
+    ? input.acceptedPolicyDocumentIds.filter((id) => typeof id === "string").slice(0, 20)
+    : [];
+  const extra: Record<string, string> = {};
+  const internalToken = process.env.KOLBE_INTERNAL_API_TOKEN?.trim();
+  if (internalToken) extra["x-kolbe-internal-token"] = internalToken;
+  let result: { status: number; data: any };
+  try {
+    result = await forwardToNest(
+      req,
+      "POST",
+      "legal/retail/checkout-binding",
+      {
+        subject: { userId: input.userId, phone: input.customer.phone, email: input.customer.email },
+        acceptedPolicyDocumentIds,
+        facts: { orderRef: input.orderCode, ...input.facts },
+      },
+      extra,
+    );
+  } catch {
+    throw new HttpError(503, "LEGAL_GATE_UNAVAILABLE", "سرویس انطباق حقوقی در دسترس نیست؛ سفارش ثبت نشد");
+  }
+  if (result.status < 200 || result.status >= 300) {
+    const code = typeof result.data?.error === "string" ? result.data.error : "LEGAL_GATE_REJECTED";
+    const status = result.status === 409 || result.status === 400 || result.status === 403 ? result.status : 502;
+    throw new HttpError(status, code, typeof result.data?.message === "string" ? result.data.message : code);
+  }
+  const snapshotId = String(result.data?.snapshotId ?? "");
+  if (!snapshotId) throw new HttpError(502, "LEGAL_GATE_INVALID_RESPONSE", "پاسخ سرویس انطباق نامعتبر است");
+  return { mode: "enforce", snapshotId, policyBundleHash: String(result.data?.policyBundleHash ?? ""), disclosureHash: result.data?.disclosureHash ?? null };
 }
 
 function mapLegacySupplierStatusToNest(status: string): string | null {
@@ -1857,6 +1924,22 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
         );
       }
 
+      // Phase 4.7.5 — legal binding gate (inside the transaction: a rejected/unavailable
+      // gate rolls the order back; evidence is written by Nest Compliance, never by the browser).
+      const legal = await bindRetailLegalEvidence(req, {
+        orderCode,
+        userId: claims?.sub ?? null,
+        customer: { phone: customer.phone, email: customer.email ?? null },
+        acceptedPolicyDocumentIds: body.acceptedPolicyDocumentIds,
+        facts: {
+          currency: "IRR",
+          lines: priced.lines.map((line) => ({ ref: line.sku || line.productId, name: line.productName, quantity: line.quantity, unitPrice: line.unitPrice.toString(), lineTotal: line.lineTotal.toString() })),
+          shipping: { method: priced.shippingMethod, label: priced.shippingMethod, price: priced.shippingTotal.toString() },
+          totals: { items: priced.itemsTotal.toString(), shipping: priced.shippingTotal.toString(), grand: priced.grandTotal.toString() },
+          paymentMethod: priced.paymentMethod,
+        },
+      });
+
       // رکورد حسابرسی چرخهٔ سفارش (append-only) — پایهٔ گزارش‌های مالی و پشتیبانی.
       await appendAudit(client, {
         actorId: claims?.sub ?? "guest",
@@ -1871,11 +1954,13 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
           grand_total: priced.grandTotal.toString(),
           price_book_version: priced.priceBookVersion,
           lines: priced.lines.length,
+          legal_gate: legal.mode,
+          legal_snapshot_id: legal.mode === "enforce" ? legal.snapshotId : null,
         },
         metadata: { ip: clientIp(req), adjusted: priced.adjusted },
       });
 
-      return { order, replayed: false as const };
+      return { order, replayed: false as const, legal };
     });
 
     return response(req, 

@@ -251,8 +251,9 @@ describe("Phase 4.7.1 — D: scope guards (supplementary static checks)", () => 
   it("migration hygiene — 0021 is forward-only, 0020 untouched in the journal, snapshot chained", () => {
     const journal = JSON.parse(fs.readFileSync(path.join(ROOT, "packages/database/migrations/meta/_journal.json"), "utf8"));
     const entries = journal.entries as Array<{ idx: number; tag: string }>;
-    expect(entries.at(-1)?.idx).toBe(21);
-    expect(entries.at(-1)?.tag).toBe("0021_phase_4_7_1_provider_shipping_hardening");
+    // 0021 stays in the chain untouched; later phases may append (0022+), never rewrite.
+    expect(entries.find((e) => e.idx === 21)?.tag).toBe("0021_phase_4_7_1_provider_shipping_hardening");
+    expect(entries.at(-1)!.idx).toBeGreaterThanOrEqual(21);
     expect(entries.find((e) => e.idx === 20)?.tag).toMatch(/^0020_/);
     const sql = fs.readFileSync(path.join(ROOT, "packages/database/migrations/0021_phase_4_7_1_provider_shipping_hardening.sql"), "utf8");
     expect(sql).not.toMatch(/DROP TABLE|DROP COLUMN/i);

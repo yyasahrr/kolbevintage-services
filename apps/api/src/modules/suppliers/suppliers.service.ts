@@ -73,6 +73,13 @@ export class SuppliersService {
     return new Date(nowVal);
   }
 
+  /** Phase 4.7.5 — owner-service read used by Compliance (never a direct table read from another module). */
+  async getSupplierById(supplierId: string, executor?: any) {
+    const db = (executor as any) || this.db;
+    const [row] = await db.select().from(supplier).where(eq(supplier.id, supplierId)).limit(1);
+    return row ?? null;
+  }
+
   async getUserMemberships(userId: string, executor?: any) {
     const db = (executor as any) || this.db;
     const members = await db.select().from(supplierMember).where(eq(supplierMember.userId, userId));

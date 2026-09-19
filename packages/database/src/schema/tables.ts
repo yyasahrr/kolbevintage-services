@@ -58,6 +58,47 @@ import {
   FULFILLMENT_EXCEPTION_TYPES,
   INVENTORY_LEDGER_CHANGE_TYPES,
   INVENTORY_RESERVATION_STATUSES,
+  LEGAL_POLICY_TYPES,
+  LEGAL_POLICY_SCOPES,
+  LEGAL_POLICY_STATUSES,
+  LEGAL_ACCEPTANCE_SUBJECT_TYPES,
+  LEGAL_ACCEPTANCE_CONTEXTS,
+  CONSENT_PURPOSES,
+  CONSENT_EVENT_TYPES,
+  CONSENT_SOURCES,
+  BUSINESS_ENTITY_TYPES,
+  BUSINESS_CREDENTIAL_TYPES,
+  BUSINESS_CREDENTIAL_STATUSES,
+  SUPPLIER_COMPLIANCE_STATUSES,
+  SUPPLIER_COMPLIANCE_REVIEW_DECISIONS,
+  REPRESENTATIVE_AUTHORITY_STATUSES,
+  COMPLIANCE_DOCUMENT_TYPES,
+  COMPLIANCE_DOCUMENT_REVIEW_STATUSES,
+  COMPLIANCE_DOCUMENT_SCAN_STATUSES,
+  COMPLIANCE_STORAGE_PROVIDERS,
+  COMPLIANCE_HOLD_REASON_CODES,
+  HOLD_STATUSES,
+  BANK_DESTINATION_KINDS,
+  BANK_VERIFICATION_STATUSES,
+  HOLDER_MATCH_STATUSES,
+  PRODUCT_ORIGIN_TYPES,
+  PRODUCT_CONDITION_CLASSES,
+  PRODUCT_COMPLIANCE_STATUSES,
+  RETENTION_ACTIONS,
+  RETENTION_POLICY_STATUSES,
+  LEGAL_VERIFICATION_STATUSES,
+  DATA_SUBJECT_REQUEST_TYPES,
+  DATA_SUBJECT_REQUEST_STATUSES,
+  LEGAL_HOLD_SCOPE_TYPES,
+  TRANSACTION_SNAPSHOT_SCOPES,
+  COMMERCIAL_INVOICE_SCOPES,
+  COMMERCIAL_INVOICE_STATUSES,
+  INVOICE_TAX_STATUSES,
+  FISCAL_DOCUMENT_STATUSES,
+  FISCAL_EVENT_TYPES,
+  FISCAL_EVENT_OUTCOMES,
+  TAX_CONFIG_REVIEW_STATUSES,
+  TAX_CONFIG_STATUSES,
   MAX_MONEY_RIAL,
   MOQ_UNITS,
   OFFER_STATUSES,
@@ -2560,5 +2601,699 @@ export const shipmentEvent = pgTable(
       columns: [table.shipmentId],
       foreignColumns: [shipment.id],
     }).onDelete("restrict"),
+  ],
+);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Phase 4.7.5 — Iran legal, compliance, privacy & tax-readiness foundation.
+ *
+ * Owner: `compliance` module (legal_*, consent_event, business_*, supplier_compliance_*,
+ * supplier_contract_acceptance, supplier_bank_verification, product_compliance_*,
+ * data_retention_policy, data_subject_request, legal_hold, transaction_compliance_snapshot)
+ * and `invoicing` module (commercial_invoice*, fiscal_*, tax_configuration).
+ *
+ * Evidence tables are append-only and legal text is immutable once published —
+ * enforced by triggers in migration 0022, not only by TypeScript.
+ * No wallet / settlement / payout table exists here (Phase 4.8).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+export const legalPolicyDocument = pgTable(
+  "legal_policy_document",
+  {
+    id: text("id").primaryKey(),
+    policyType: text("policy_type").notNull(),
+    scope: text("scope").notNull(),
+    locale: text("locale").notNull().default("fa-IR"),
+    version: integer("version").notNull(),
+    status: text("status").notNull().default("draft"),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    /** Canonical legal text (immutable after publish). */
+    contentText: text("content_text").notNull(),
+    /** sha256 of the canonical content; proves exactly what was accepted. */
+    contentHash: text("content_hash").notNull(),
+    /** Optional external immutable artifact reference (object key / URI). */
+    contentLocation: text("content_location"),
+    /** Structured, versioned business rules carried by this version (e.g. return window). Frozen after publish. */
+    ruleParameters: jsonb("rule_parameters").notNull().default({}),
+    /** Business policy (not statute): does this document require explicit acceptance in its scope? */
+    acceptanceRequired: boolean("acceptance_required").notNull().default(false),
+    /** When a new version is published, do older acceptances stop satisfying the requirement? */
+    reacceptanceRequired: boolean("reacceptance_required").notNull().default(true),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    publishedBy: text("published_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("legal_policy_document_type_allowed", "policy_type", LEGAL_POLICY_TYPES),
+    stateCheck("legal_policy_document_scope_allowed", "scope", LEGAL_POLICY_SCOPES),
+    stateCheck("legal_policy_document_status_allowed", "status", LEGAL_POLICY_STATUSES),
+    check("legal_policy_document_version_positive", sql.raw(`"version" > 0`)),
+    check("legal_policy_document_hash_format", sql.raw(`length("content_hash") = 64`)),
+    check(
+      "legal_policy_document_published_consistency",
+      sql.raw(`("status" <> 'published') OR ("published_at" IS NOT NULL AND "effective_at" IS NOT NULL)`),
+    ),
+    uniqueIndex("legal_policy_document_type_scope_locale_version_unique").on(table.policyType, table.scope, table.locale, table.version),
+    uniqueIndex("legal_policy_document_single_published")
+      .on(table.policyType, table.scope, table.locale)
+      .where(sql`"status" = 'published'`),
+    index("legal_policy_document_scope_status").on(table.scope, table.status),
+    foreignKey({ name: "legal_policy_document_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "legal_policy_document_published_by_fk", columns: [table.publishedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const legalPolicyAcceptance = pgTable(
+  "legal_policy_acceptance",
+  {
+    id: text("id").primaryKey(),
+    policyDocumentId: text("policy_document_id").notNull(),
+    subjectType: text("subject_type").notNull(),
+    userId: text("user_id"),
+    /** HMAC of the subject identity (user id or guest contact) — never the raw contact. */
+    subjectHash: text("subject_hash").notNull(),
+    supplierId: text("supplier_id"),
+    /** Transaction reference when the acceptance is transaction-specific (order code / wholesale order id). */
+    orderRef: text("order_ref"),
+    context: text("context").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+    /** sha256(subject_hash | policy id | content_hash | context | accepted_at). */
+    evidenceHash: text("evidence_hash").notNull(),
+    /** sha256 of sanitized request metadata (no raw IP / UA persisted). */
+    requestMetadataHash: text("request_metadata_hash"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("legal_policy_acceptance_subject_type_allowed", "subject_type", LEGAL_ACCEPTANCE_SUBJECT_TYPES),
+    stateCheck("legal_policy_acceptance_context_allowed", "context", LEGAL_ACCEPTANCE_CONTEXTS),
+    check("legal_policy_acceptance_hash_format", sql.raw(`length("evidence_hash") = 64`)),
+    check("legal_policy_acceptance_user_subject", sql.raw(`("subject_type" <> 'user') OR ("user_id" IS NOT NULL)`)),
+    index("legal_policy_acceptance_subject").on(table.subjectHash, table.policyDocumentId),
+    index("legal_policy_acceptance_user").on(table.userId),
+    foreignKey({ name: "legal_policy_acceptance_document_fk", columns: [table.policyDocumentId], foreignColumns: [legalPolicyDocument.id] }).onDelete("restrict"),
+    foreignKey({ name: "legal_policy_acceptance_user_fk", columns: [table.userId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "legal_policy_acceptance_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+  ],
+);
+
+export const consentEvent = pgTable(
+  "consent_event",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    purpose: text("purpose").notNull(),
+    eventType: text("event_type").notNull(),
+    source: text("source").notNull(),
+    /** MARKETING_NOTICE version shown when consent was collected (optional). */
+    noticeDocumentId: text("notice_document_id"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    evidenceHash: text("evidence_hash").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("consent_event_purpose_allowed", "purpose", CONSENT_PURPOSES),
+    stateCheck("consent_event_type_allowed", "event_type", CONSENT_EVENT_TYPES),
+    stateCheck("consent_event_source_allowed", "source", CONSENT_SOURCES),
+    index("consent_event_user_purpose").on(table.userId, table.purpose, table.occurredAt),
+    foreignKey({ name: "consent_event_user_fk", columns: [table.userId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "consent_event_notice_fk", columns: [table.noticeDocumentId], foreignColumns: [legalPolicyDocument.id] }).onDelete("restrict"),
+  ],
+);
+
+export const businessLegalProfile = pgTable(
+  "business_legal_profile",
+  {
+    id: text("id").primaryKey(),
+    /** Single canonical operator profile: 'kolbe'. */
+    profileKey: text("profile_key").notNull().unique(),
+    legalName: text("legal_name"),
+    tradeName: text("trade_name"),
+    entityType: text("entity_type"),
+    registrationIdentifier: text("registration_identifier"),
+    taxIdentifier: text("tax_identifier"),
+    businessAddress: jsonb("business_address"),
+    supportEmail: text("support_email"),
+    supportPhone: text("support_phone"),
+    complaintContact: text("complaint_contact"),
+    /** Admin-only; never exposed publicly. */
+    internalNotes: text("internal_notes"),
+    lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
+    updatedBy: text("updated_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    check("business_legal_profile_entity_type_allowed", sql.raw(`"entity_type" IS NULL OR "entity_type" IN (${BUSINESS_ENTITY_TYPES.map((v) => `'${v}'`).join(", ")})`)),
+    foreignKey({ name: "business_legal_profile_updated_by_fk", columns: [table.updatedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const businessComplianceCredential = pgTable(
+  "business_compliance_credential",
+  {
+    id: text("id").primaryKey(),
+    credentialType: text("credential_type").notNull(),
+    issuer: text("issuer").notNull(),
+    publicReference: text("public_reference"),
+    verificationUrl: text("verification_url"),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    status: text("status").notNull().default("unverified"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verifiedBy: text("verified_by"),
+    verificationSource: text("verification_source"),
+    /** Admin-only notes. */
+    notes: text("notes"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("business_compliance_credential_type_allowed", "credential_type", BUSINESS_CREDENTIAL_TYPES),
+    stateCheck("business_compliance_credential_status_allowed", "status", BUSINESS_CREDENTIAL_STATUSES),
+    check("business_compliance_credential_verified_consistency", sql.raw(`("status" <> 'verified') OR ("verified_at" IS NOT NULL AND "verified_by" IS NOT NULL)`)),
+    foreignKey({ name: "business_compliance_credential_verified_by_fk", columns: [table.verifiedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "business_compliance_credential_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const supplierComplianceProfile = pgTable(
+  "supplier_compliance_profile",
+  {
+    id: text("id").primaryKey(),
+    supplierId: text("supplier_id").notNull().unique(),
+    status: text("status").notNull().default("draft"),
+    entityType: text("entity_type"),
+    legalName: text("legal_name"),
+    registrationIdentifier: text("registration_identifier"),
+    taxIdentifier: text("tax_identifier"),
+    representativeName: text("representative_name"),
+    representativeAuthorityStatus: text("representative_authority_status").notNull().default("unverified"),
+    /** Non-sensitive flags set by admin review (e.g. ["high_value_goods"]). */
+    riskFlags: jsonb("risk_flags").notNull().default([]),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("supplier_compliance_profile_status_allowed", "status", SUPPLIER_COMPLIANCE_STATUSES),
+    stateCheck("supplier_compliance_profile_rep_status_allowed", "representative_authority_status", REPRESENTATIVE_AUTHORITY_STATUSES),
+    check("supplier_compliance_profile_entity_type_allowed", sql.raw(`"entity_type" IS NULL OR "entity_type" IN (${BUSINESS_ENTITY_TYPES.map((v) => `'${v}'`).join(", ")})`)),
+    check("supplier_compliance_profile_version_positive", sql.raw(`"version" > 0`)),
+    foreignKey({ name: "supplier_compliance_profile_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_profile_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const supplierComplianceReview = pgTable(
+  "supplier_compliance_review",
+  {
+    id: text("id").primaryKey(),
+    supplierId: text("supplier_id").notNull(),
+    profileId: text("profile_id").notNull(),
+    profileVersion: integer("profile_version").notNull(),
+    decision: text("decision").notNull(),
+    /** Internal reviewer notes — admin only. */
+    notes: text("notes"),
+    reviewedBy: text("reviewed_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("supplier_compliance_review_decision_allowed", "decision", SUPPLIER_COMPLIANCE_REVIEW_DECISIONS),
+    index("supplier_compliance_review_supplier").on(table.supplierId, table.createdAt),
+    foreignKey({ name: "supplier_compliance_review_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_review_profile_fk", columns: [table.profileId], foreignColumns: [supplierComplianceProfile.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_review_reviewer_fk", columns: [table.reviewedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const supplierComplianceDocument = pgTable(
+  "supplier_compliance_document",
+  {
+    id: text("id").primaryKey(),
+    supplierId: text("supplier_id").notNull(),
+    documentType: text("document_type").notNull(),
+    storageProvider: text("storage_provider").notNull().default("local_private"),
+    /** Private object key — never returned by any API. */
+    objectKey: text("object_key").notNull().unique(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    originalFilename: text("original_filename"),
+    uploadedBy: text("uploaded_by").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewStatus: text("review_status").notNull().default("pending"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    rejectionReason: text("rejection_reason"),
+    scanStatus: text("scan_status").notNull().default("unavailable"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("supplier_compliance_document_type_allowed", "document_type", COMPLIANCE_DOCUMENT_TYPES),
+    stateCheck("supplier_compliance_document_storage_allowed", "storage_provider", COMPLIANCE_STORAGE_PROVIDERS),
+    stateCheck("supplier_compliance_document_review_status_allowed", "review_status", COMPLIANCE_DOCUMENT_REVIEW_STATUSES),
+    stateCheck("supplier_compliance_document_scan_status_allowed", "scan_status", COMPLIANCE_DOCUMENT_SCAN_STATUSES),
+    check("supplier_compliance_document_size_positive", sql.raw(`"size_bytes" > 0`)),
+    check("supplier_compliance_document_checksum_format", sql.raw(`length("checksum_sha256") = 64`)),
+    index("supplier_compliance_document_supplier").on(table.supplierId, table.uploadedAt),
+    foreignKey({ name: "supplier_compliance_document_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_document_uploader_fk", columns: [table.uploadedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_document_reviewer_fk", columns: [table.reviewedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const supplierContractAcceptance = pgTable(
+  "supplier_contract_acceptance",
+  {
+    id: text("id").primaryKey(),
+    supplierId: text("supplier_id").notNull(),
+    policyDocumentId: text("policy_document_id").notNull(),
+    acceptedByUserId: text("accepted_by_user_id").notNull(),
+    memberRole: text("member_role").notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+    evidenceHash: text("evidence_hash").notNull(),
+    requestMetadataHash: text("request_metadata_hash"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    check("supplier_contract_acceptance_hash_format", sql.raw(`length("evidence_hash") = 64`)),
+    uniqueIndex("supplier_contract_acceptance_unique").on(table.supplierId, table.policyDocumentId),
+    foreignKey({ name: "supplier_contract_acceptance_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_contract_acceptance_document_fk", columns: [table.policyDocumentId], foreignColumns: [legalPolicyDocument.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_contract_acceptance_user_fk", columns: [table.acceptedByUserId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const supplierComplianceHold = pgTable(
+  "supplier_compliance_hold",
+  {
+    id: text("id").primaryKey(),
+    supplierId: text("supplier_id").notNull(),
+    reasonCode: text("reason_code").notNull(),
+    notes: text("notes"),
+    status: text("status").notNull().default("active"),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    releasedBy: text("released_by"),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releaseNotes: text("release_notes"),
+  },
+  (table) => [
+    stateCheck("supplier_compliance_hold_reason_allowed", "reason_code", COMPLIANCE_HOLD_REASON_CODES),
+    stateCheck("supplier_compliance_hold_status_allowed", "status", HOLD_STATUSES),
+    check("supplier_compliance_hold_release_consistency", sql.raw(`("status" = 'active' AND "released_at" IS NULL AND "released_by" IS NULL) OR ("status" = 'released' AND "released_at" IS NOT NULL AND "released_by" IS NOT NULL)`)),
+    index("supplier_compliance_hold_supplier_status").on(table.supplierId, table.status),
+    foreignKey({ name: "supplier_compliance_hold_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_hold_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_compliance_hold_released_by_fk", columns: [table.releasedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const supplierBankVerification = pgTable(
+  "supplier_bank_verification",
+  {
+    id: text("id").primaryKey(),
+    supplierId: text("supplier_id").notNull(),
+    destinationKind: text("destination_kind").notNull(),
+    /** Masked display value only (e.g. IR** **** **** **** **** 1234). */
+    maskedValue: text("masked_value").notNull(),
+    /** Keyed hash of the normalized destination — no plaintext IBAN/card persisted. */
+    normalizedHash: text("normalized_hash").notNull(),
+    holderNameDeclared: text("holder_name_declared"),
+    status: text("status").notNull().default("pending"),
+    holderMatchStatus: text("holder_match_status").notNull().default("unknown"),
+    isCurrent: boolean("is_current").notNull().default(true),
+    submittedBy: text("submitted_by").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verifiedBy: text("verified_by"),
+    verificationSource: text("verification_source"),
+    providerReference: text("provider_reference"),
+    rejectionReason: text("rejection_reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("supplier_bank_verification_kind_allowed", "destination_kind", BANK_DESTINATION_KINDS),
+    stateCheck("supplier_bank_verification_status_allowed", "status", BANK_VERIFICATION_STATUSES),
+    stateCheck("supplier_bank_verification_holder_match_allowed", "holder_match_status", HOLDER_MATCH_STATUSES),
+    check("supplier_bank_verification_hash_format", sql.raw(`length("normalized_hash") = 64`)),
+    check("supplier_bank_verification_verified_consistency", sql.raw(`("status" <> 'verified') OR ("verified_at" IS NOT NULL AND "verified_by" IS NOT NULL)`)),
+    uniqueIndex("supplier_bank_verification_current_unique").on(table.supplierId).where(sql`"is_current" = true`),
+    foreignKey({ name: "supplier_bank_verification_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_bank_verification_submitted_by_fk", columns: [table.submittedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "supplier_bank_verification_verified_by_fk", columns: [table.verifiedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const productComplianceRecord = pgTable(
+  "product_compliance_record",
+  {
+    id: text("id").primaryKey(),
+    productId: text("product_id").notNull().unique(),
+    sellerId: text("seller_id"),
+    originType: text("origin_type").notNull().default("unknown"),
+    originCountry: text("origin_country"),
+    conditionClass: text("condition_class").notNull().default("unknown"),
+    manufacturerOrImporter: text("manufacturer_or_importer"),
+    /** e.g. {"goodsId": "...", "importDeclaration": "..."} — only when applicable. */
+    regulatoryIdentifiers: jsonb("regulatory_identifiers").notNull().default({}),
+    /** Source-register ids that make a field mandatory (empty = business policy only). */
+    sourceRegisterRefs: jsonb("source_register_refs").notNull().default([]),
+    status: text("status").notNull().default("unknown"),
+    declaredBy: text("declared_by"),
+    declaredAt: timestamp("declared_at", { withTimezone: true }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: text("reviewed_by"),
+    /** Internal reviewer notes — admin only. */
+    reviewNotes: text("review_notes"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("product_compliance_record_origin_allowed", "origin_type", PRODUCT_ORIGIN_TYPES),
+    stateCheck("product_compliance_record_condition_allowed", "condition_class", PRODUCT_CONDITION_CLASSES),
+    stateCheck("product_compliance_record_status_allowed", "status", PRODUCT_COMPLIANCE_STATUSES),
+    check("product_compliance_record_country_format", sql.raw(`"origin_country" IS NULL OR length("origin_country") = 2`)),
+    check("product_compliance_record_verified_consistency", sql.raw(`("status" NOT IN ('verified', 'rejected', 'restricted')) OR ("reviewed_by" IS NOT NULL AND "reviewed_at" IS NOT NULL)`)),
+    foreignKey({ name: "product_compliance_record_product_fk", columns: [table.productId], foreignColumns: [product.id] }).onDelete("restrict"),
+    foreignKey({ name: "product_compliance_record_seller_fk", columns: [table.sellerId], foreignColumns: [seller.id] }).onDelete("restrict"),
+    foreignKey({ name: "product_compliance_record_declared_by_fk", columns: [table.declaredBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "product_compliance_record_reviewed_by_fk", columns: [table.reviewedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const productComplianceDocument = pgTable(
+  "product_compliance_document",
+  {
+    id: text("id").primaryKey(),
+    recordId: text("record_id").notNull(),
+    documentType: text("document_type").notNull(),
+    storageProvider: text("storage_provider").notNull().default("local_private"),
+    objectKey: text("object_key").notNull().unique(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    originalFilename: text("original_filename"),
+    uploadedBy: text("uploaded_by").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewStatus: text("review_status").notNull().default("pending"),
+    reviewedBy: text("reviewed_by"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    rejectionReason: text("rejection_reason"),
+    scanStatus: text("scan_status").notNull().default("unavailable"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("product_compliance_document_type_allowed", "document_type", COMPLIANCE_DOCUMENT_TYPES),
+    stateCheck("product_compliance_document_storage_allowed", "storage_provider", COMPLIANCE_STORAGE_PROVIDERS),
+    stateCheck("product_compliance_document_review_status_allowed", "review_status", COMPLIANCE_DOCUMENT_REVIEW_STATUSES),
+    stateCheck("product_compliance_document_scan_status_allowed", "scan_status", COMPLIANCE_DOCUMENT_SCAN_STATUSES),
+    check("product_compliance_document_size_positive", sql.raw(`"size_bytes" > 0`)),
+    check("product_compliance_document_checksum_format", sql.raw(`length("checksum_sha256") = 64`)),
+    index("product_compliance_document_record").on(table.recordId),
+    foreignKey({ name: "product_compliance_document_record_fk", columns: [table.recordId], foreignColumns: [productComplianceRecord.id] }).onDelete("restrict"),
+    foreignKey({ name: "product_compliance_document_uploader_fk", columns: [table.uploadedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "product_compliance_document_reviewer_fk", columns: [table.reviewedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const dataRetentionPolicy = pgTable(
+  "data_retention_policy",
+  {
+    id: text("id").primaryKey(),
+    dataCategory: text("data_category").notNull(),
+    scope: text("scope").notNull().default("platform"),
+    /** NULL = not yet determined (never a guessed statutory duration). */
+    retentionDays: integer("retention_days"),
+    retentionBasis: text("retention_basis").notNull(),
+    action: text("action").notNull().default("review"),
+    legalSourceReference: text("legal_source_reference"),
+    verificationStatus: text("verification_status").notNull().default("NEEDS_LEGAL_VERIFICATION"),
+    status: text("status").notNull().default("draft"),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("data_retention_policy_action_allowed", "action", RETENTION_ACTIONS),
+    stateCheck("data_retention_policy_status_allowed", "status", RETENTION_POLICY_STATUSES),
+    stateCheck("data_retention_policy_verification_allowed", "verification_status", LEGAL_VERIFICATION_STATUSES),
+    check("data_retention_policy_days_positive", sql.raw(`"retention_days" IS NULL OR "retention_days" > 0`)),
+    check("data_retention_policy_destructive_requires_verification", sql.raw(`("action" NOT IN ('delete', 'anonymize')) OR ("status" <> 'active') OR ("verification_status" = 'VERIFIED' AND "retention_days" IS NOT NULL)`)),
+    uniqueIndex("data_retention_policy_category_scope_active").on(table.dataCategory, table.scope).where(sql`"status" = 'active'`),
+    foreignKey({ name: "data_retention_policy_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const dataSubjectRequest = pgTable(
+  "data_subject_request",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    requestType: text("request_type").notNull(),
+    status: text("status").notNull().default("submitted"),
+    /** Free text supplied by the subject (sanitized, length-limited). */
+    subjectNote: text("subject_note"),
+    /** Admin-only decision rationale. */
+    decisionReason: text("decision_reason"),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** What was retained (and why) when a deletion completes — e.g. [{"category":"financial_ledger","basis":"..."}]. */
+    retainedCategories: jsonb("retained_categories").notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("data_subject_request_type_allowed", "request_type", DATA_SUBJECT_REQUEST_TYPES),
+    stateCheck("data_subject_request_status_allowed", "status", DATA_SUBJECT_REQUEST_STATUSES),
+    check("data_subject_request_decision_consistency", sql.raw(`("status" NOT IN ('approved', 'rejected', 'processing', 'completed')) OR ("decided_by" IS NOT NULL AND "decided_at" IS NOT NULL)`)),
+    index("data_subject_request_user").on(table.userId, table.createdAt),
+    index("data_subject_request_status").on(table.status),
+    foreignKey({ name: "data_subject_request_user_fk", columns: [table.userId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "data_subject_request_decided_by_fk", columns: [table.decidedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const legalHold = pgTable(
+  "legal_hold",
+  {
+    id: text("id").primaryKey(),
+    scopeType: text("scope_type").notNull(),
+    scopeId: text("scope_id").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("active"),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    releasedBy: text("released_by"),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releaseNotes: text("release_notes"),
+  },
+  (table) => [
+    stateCheck("legal_hold_scope_type_allowed", "scope_type", LEGAL_HOLD_SCOPE_TYPES),
+    stateCheck("legal_hold_status_allowed", "status", HOLD_STATUSES),
+    check("legal_hold_release_consistency", sql.raw(`("status" = 'active' AND "released_at" IS NULL AND "released_by" IS NULL) OR ("status" = 'released' AND "released_at" IS NOT NULL AND "released_by" IS NOT NULL)`)),
+    index("legal_hold_scope").on(table.scopeType, table.scopeId, table.status),
+    foreignKey({ name: "legal_hold_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "legal_hold_released_by_fk", columns: [table.releasedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const transactionComplianceSnapshot = pgTable(
+  "transaction_compliance_snapshot",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(),
+    wholesaleOrderId: text("wholesale_order_id"),
+    /** Retail order code (retail checkout still lives in the legacy Next handler). */
+    retailOrderRef: text("retail_order_ref"),
+    supplierId: text("supplier_id"),
+    userId: text("user_id"),
+    subjectHash: text("subject_hash").notNull(),
+    /** [{policyType, documentId, version, contentHash}] — exact legal bundle in force. */
+    policyBundle: jsonb("policy_bundle").notNull().default([]),
+    policyBundleHash: text("policy_bundle_hash").notNull(),
+    /** Server-derived pre-contract disclosure (retail) — never client supplied. */
+    disclosure: jsonb("disclosure"),
+    disclosureHash: text("disclosure_hash"),
+    /** Hash of the commercial snapshot the transaction was bound to (order financial snapshot). */
+    commercialSnapshotHash: text("commercial_snapshot_hash"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("transaction_compliance_snapshot_scope_allowed", "scope", TRANSACTION_SNAPSHOT_SCOPES),
+    check("transaction_compliance_snapshot_hash_format", sql.raw(`length("policy_bundle_hash") = 64`)),
+    check("transaction_compliance_snapshot_reference_present", sql.raw(`"wholesale_order_id" IS NOT NULL OR "retail_order_ref" IS NOT NULL OR "supplier_id" IS NOT NULL`)),
+    uniqueIndex("transaction_compliance_snapshot_wholesale_unique").on(table.wholesaleOrderId).where(sql`"wholesale_order_id" IS NOT NULL`),
+    uniqueIndex("transaction_compliance_snapshot_retail_unique").on(table.retailOrderRef).where(sql`"retail_order_ref" IS NOT NULL`),
+    foreignKey({ name: "transaction_compliance_snapshot_wholesale_order_fk", columns: [table.wholesaleOrderId], foreignColumns: [wholesaleOrder.id] }).onDelete("restrict"),
+    foreignKey({ name: "transaction_compliance_snapshot_supplier_fk", columns: [table.supplierId], foreignColumns: [supplier.id] }).onDelete("restrict"),
+    foreignKey({ name: "transaction_compliance_snapshot_user_fk", columns: [table.userId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+/* ───────────── Invoicing: proforma ≠ commercial invoice ≠ fiscal (tax) document ───────────── */
+
+export const commercialInvoice = pgTable(
+  "commercial_invoice",
+  {
+    id: text("id").primaryKey(),
+    invoiceNumber: text("invoice_number").notNull().unique(),
+    scope: text("scope").notNull(),
+    wholesaleOrderId: text("wholesale_order_id"),
+    childOrderId: text("child_order_id"),
+    retailOrderRef: text("retail_order_ref"),
+    sellerId: text("seller_id"),
+    sellerSnapshot: jsonb("seller_snapshot").notNull(),
+    buyerSnapshot: jsonb("buyer_snapshot").notNull(),
+    currency: text("currency").notNull().default("IRR"),
+    subtotal: bigint("subtotal", { mode: "bigint" }).notNull().default(sql`0`),
+    shippingTotal: bigint("shipping_total", { mode: "bigint" }).notNull().default(sql`0`),
+    taxTotal: bigint("tax_total", { mode: "bigint" }).notNull().default(sql`0`),
+    taxStatus: text("tax_status").notNull().default("not_assessed"),
+    /** tax_configuration key/version that produced tax_total (NULL = not assessed). */
+    taxBasisReference: text("tax_basis_reference"),
+    grandTotal: bigint("grand_total", { mode: "bigint" }).notNull().default(sql`0`),
+    status: text("status").notNull().default("draft"),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    issuedBy: text("issued_by"),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidReason: text("void_reason"),
+    /** sha256 of the canonical invoice document (header + lines). */
+    documentHash: text("document_hash"),
+    /** Hash of the immutable order snapshot the invoice was derived from. */
+    sourceSnapshotHash: text("source_snapshot_hash").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("commercial_invoice_scope_allowed", "scope", COMMERCIAL_INVOICE_SCOPES),
+    stateCheck("commercial_invoice_status_allowed", "status", COMMERCIAL_INVOICE_STATUSES),
+    stateCheck("commercial_invoice_tax_status_allowed", "tax_status", INVOICE_TAX_STATUSES),
+    stateCheck("commercial_invoice_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("commercial_invoice_subtotal_range", "subtotal"),
+    moneyCheck("commercial_invoice_shipping_total_range", "shipping_total"),
+    moneyCheck("commercial_invoice_tax_total_range", "tax_total"),
+    moneyCheck("commercial_invoice_grand_total_range", "grand_total"),
+    check("commercial_invoice_grand_total_matches", sql.raw(`"grand_total" = "subtotal" + "shipping_total" + "tax_total"`)),
+    check("commercial_invoice_issued_consistency", sql.raw(`("status" = 'draft') OR ("issued_at" IS NOT NULL AND "document_hash" IS NOT NULL)`)),
+    check("commercial_invoice_reference_present", sql.raw(`"wholesale_order_id" IS NOT NULL OR "retail_order_ref" IS NOT NULL`)),
+    uniqueIndex("commercial_invoice_child_issued_unique").on(table.childOrderId).where(sql`"child_order_id" IS NOT NULL AND "status" = 'issued'`),
+    index("commercial_invoice_wholesale_order").on(table.wholesaleOrderId),
+    foreignKey({ name: "commercial_invoice_wholesale_order_fk", columns: [table.wholesaleOrderId], foreignColumns: [wholesaleOrder.id] }).onDelete("restrict"),
+    foreignKey({ name: "commercial_invoice_child_order_fk", columns: [table.childOrderId], foreignColumns: [purchaseOrder.id] }).onDelete("restrict"),
+    foreignKey({ name: "commercial_invoice_seller_fk", columns: [table.sellerId], foreignColumns: [seller.id] }).onDelete("restrict"),
+    foreignKey({ name: "commercial_invoice_issued_by_fk", columns: [table.issuedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const commercialInvoiceLine = pgTable(
+  "commercial_invoice_line",
+  {
+    id: text("id").primaryKey(),
+    invoiceId: text("invoice_id").notNull(),
+    lineNo: integer("line_no").notNull(),
+    orderItemRef: text("order_item_ref"),
+    description: text("description").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPrice: bigint("unit_price", { mode: "bigint" }).notNull(),
+    lineTotal: bigint("line_total", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull().default("IRR"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    check("commercial_invoice_line_quantity_positive", sql.raw(`"quantity" > 0`)),
+    moneyCheck("commercial_invoice_line_unit_price_range", "unit_price"),
+    moneyCheck("commercial_invoice_line_line_total_range", "line_total"),
+    check("commercial_invoice_line_total_matches", sql.raw(`"line_total" = "unit_price" * "quantity"`)),
+    stateCheck("commercial_invoice_line_currency_allowed", "currency", CURRENCIES),
+    uniqueIndex("commercial_invoice_line_no_unique").on(table.invoiceId, table.lineNo),
+    foreignKey({ name: "commercial_invoice_line_invoice_fk", columns: [table.invoiceId], foreignColumns: [commercialInvoice.id] }).onDelete("restrict"),
+  ],
+);
+
+export const fiscalDocument = pgTable(
+  "fiscal_document",
+  {
+    id: text("id").primaryKey(),
+    invoiceId: text("invoice_id").notNull(),
+    provider: text("provider").notNull(),
+    status: text("status").notNull().default("draft"),
+    payloadHash: text("payload_hash"),
+    providerReference: text("provider_reference"),
+    lastError: text("last_error"),
+    preparedAt: timestamp("prepared_at", { withTimezone: true }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("fiscal_document_status_allowed", "status", FISCAL_DOCUMENT_STATUSES),
+    uniqueIndex("fiscal_document_provider_reference_unique").on(table.provider, table.providerReference).where(sql`"provider_reference" IS NOT NULL`),
+    uniqueIndex("fiscal_document_invoice_open_unique").on(table.invoiceId).where(sql`"status" NOT IN ('rejected', 'cancelled')`),
+    foreignKey({ name: "fiscal_document_invoice_fk", columns: [table.invoiceId], foreignColumns: [commercialInvoice.id] }).onDelete("restrict"),
+  ],
+);
+
+export const fiscalSubmissionEvent = pgTable(
+  "fiscal_submission_event",
+  {
+    id: text("id").primaryKey(),
+    fiscalDocumentId: text("fiscal_document_id").notNull(),
+    eventType: text("event_type").notNull(),
+    provider: text("provider").notNull(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    outcome: text("outcome").notNull(),
+    providerReference: text("provider_reference"),
+    safeMetadata: jsonb("safe_metadata").notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("fiscal_submission_event_type_allowed", "event_type", FISCAL_EVENT_TYPES),
+    stateCheck("fiscal_submission_event_outcome_allowed", "outcome", FISCAL_EVENT_OUTCOMES),
+    index("fiscal_submission_event_document").on(table.fiscalDocumentId, table.createdAt),
+    foreignKey({ name: "fiscal_submission_event_document_fk", columns: [table.fiscalDocumentId], foreignColumns: [fiscalDocument.id] }).onDelete("restrict"),
+  ],
+);
+
+export const taxConfiguration = pgTable(
+  "tax_configuration",
+  {
+    id: text("id").primaryKey(),
+    configKey: text("config_key").notNull(),
+    configValue: jsonb("config_value").notNull(),
+    sourceReference: text("source_reference"),
+    effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+    version: integer("version").notNull(),
+    reviewStatus: text("review_status").notNull().default("NEEDS_TAX_ACCOUNTANT_REVIEW"),
+    status: text("status").notNull().default("draft"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("tax_configuration_review_status_allowed", "review_status", TAX_CONFIG_REVIEW_STATUSES),
+    stateCheck("tax_configuration_status_allowed", "status", TAX_CONFIG_STATUSES),
+    check("tax_configuration_version_positive", sql.raw(`"version" > 0`)),
+    check("tax_configuration_active_requires_review", sql.raw(`("status" <> 'active') OR ("review_status" = 'VERIFIED')`)),
+    uniqueIndex("tax_configuration_key_version_unique").on(table.configKey, table.version),
+    uniqueIndex("tax_configuration_key_active_unique").on(table.configKey).where(sql`"status" = 'active'`),
+    foreignKey({ name: "tax_configuration_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
   ],
 );

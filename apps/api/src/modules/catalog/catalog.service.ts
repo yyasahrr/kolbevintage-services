@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq, and } from "drizzle-orm";
 import { product, productVariant, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
+import { DomainError } from "@kolbe/shared";
+import { ProductComplianceService } from "../compliance/product-compliance.service";
 import { ForbiddenError, NotFoundError } from "@kolbe/shared";
 import {
   assertProductOwnership,
@@ -14,7 +16,10 @@ import {
 
 @Injectable()
 export class CatalogService {
-  constructor(@Inject(KOLBE_DB) private readonly db: KolbeDatabase) {}
+  constructor(
+    @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
+    @Inject(ProductComplianceService) private readonly productCompliance: ProductComplianceService,
+  ) {}
 
   // ── Brand ────────────────────────────────────────────────────────────────
   async createBrand(input: { name: string; slug: string; logoUrl?: string; creatorId: string; role: string }) {
@@ -232,6 +237,14 @@ export class CatalogService {
     if (!existing) throw new NotFoundError("محصول یافت نشد");
 
     assertProductStatusTransition(existing.status as any, nextStatus as any, role as any);
+
+    // Phase 4.7.5 — publication gate owned by Compliance (catalog stays the owner of the transition).
+    if (nextStatus === "published") {
+      const decision = await this.productCompliance.canPublishProduct({ productId, ownerType: existing.ownerType });
+      if (!decision.allowed) {
+        throw new DomainError(409, decision.reasonCode ?? "PRODUCT_COMPLIANCE_BLOCKED", `انتشار محصول مسدود است (وضعیت انطباق: ${decision.complianceStatus}, حالت: ${decision.mode})`);
+      }
+    }
 
     const [updated] = await this.db
       .update(product)

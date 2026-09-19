@@ -32,6 +32,8 @@ import { FulfillmentModule } from "./modules/fulfillment/fulfillment.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { FinanceModule } from "./modules/finance/finance.module";
 import { ShippingModule } from "./modules/shipping/shipping.module";
+import { ComplianceModule } from "./modules/compliance/compliance.module";
+import { InvoicingModule } from "./modules/invoicing/invoicing.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
 
@@ -53,6 +55,8 @@ import { AdminModule } from "./modules/admin/admin.module";
     FulfillmentModule,
     PaymentsModule,
     ShippingModule,
+    ComplianceModule,
+    InvoicingModule,
     FinanceModule,
     RatingsModule,
     AdminModule,
