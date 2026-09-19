@@ -19,7 +19,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { UnauthorizedError } from "@kolbe/shared";
 
-export type Role = "customer" | "vip" | "supplier" | "admin";
+export type Role = "customer" | "vip" | "supplier" | "admin" | "finance";
 
 export type Claims = {
   sub: string;

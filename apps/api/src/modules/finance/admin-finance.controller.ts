@@ -11,51 +11,41 @@ export class AdminFinanceController {
     @Inject(WholesaleFinanceOrchestrator) private readonly orchestrator: WholesaleFinanceOrchestrator,
   ) {}
 
-  // Payments
   @Get("payments")
-  @Roles("admin")
-  async listPayments(@Query("orderId") orderId?: string, @Query("status") status?: string, @Query("limit") limitRaw?: string) {
-    // Simplified: list via repository would need filter; for now if orderId provided, return payments for order
+  @Roles("admin", "finance")
+  async listPayments(@Query("orderId") orderId?: string) {
     if (!orderId) return { payments: [] };
-    const payments = await this.paymentsService.getPaymentsForBuyer(orderId, "admin"); // bypass ownership for admin? Use direct repository would be better
-    // For admin, we need to allow any order, so we call repository directly via service method that doesn't check ownership
-    // We'll use paymentsService with admin override: getOrderFinancialSummary already allows admin, but getPaymentsForBuyer checks ownership.
-    // For now, we will fetch via DB directly in service if role admin — implement quick bypass
+    const payments = await this.paymentsService.getPaymentsForAdmin(orderId);
     return { payments };
   }
 
   @Get("payments/:id")
-  @Roles("admin")
-  async getPayment(@Param("id") id: string) {
-    // Use repository via service? We'll fetch via transaction
-    // For simplicity, direct DB query
-    const { payment } = await import("@kolbe/database");
-    const { KOLBE_DB } = await import("../../database/database.module");
-    // This is not ideal, but we can use service's db
-    // We'll just call paymentsService repository method
-    const pay = await (this.paymentsService as any).repository.findPaymentById(id);
-    if (!pay) throw new Error("Payment not found");
+  @Roles("admin", "finance")
+  async getPayment(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    const repo = (this.paymentsService as any).repository;
+    const p = await repo.findPaymentById(id);
+    if (!p) throw new Error("Payment not found");
     return {
       payment: {
-        id: pay.id,
-        paymentReference: pay.paymentReference,
-        wholesaleOrderId: pay.wholesaleOrderId,
-        method: pay.method,
-        status: pay.status,
-        amount: (pay.amount || 0).toString(),
-        currency: pay.currency,
-        externalReference: pay.externalReference,
-        submittedBy: pay.submittedBy,
-        submittedAt: pay.submittedAt,
-        verifiedBy: pay.verifiedBy,
-        verifiedAt: pay.verifiedAt,
-        version: pay.version,
+        id: p.id,
+        paymentReference: p.paymentReference,
+        wholesaleOrderId: p.wholesaleOrderId,
+        method: p.method,
+        status: p.status,
+        amount: (p.amount || 0).toString(),
+        currency: p.currency,
+        externalReference: p.externalReference,
+        submittedBy: p.submittedBy,
+        submittedAt: p.submittedAt,
+        verifiedBy: p.verifiedBy,
+        verifiedAt: p.verifiedAt,
+        version: p.version,
       },
     };
   }
 
   @Post("payments/:id/verify")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async verifyPayment(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -67,13 +57,17 @@ export class AdminFinanceController {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
     const expectedVersion = expectedVersionHeader ? parseInt(expectedVersionHeader, 10) : body?.expectedVersion;
-    const result = await this.paymentsService.verifyPayment({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) {
+      throw new Error("Only admin/finance may verify");
+    }
+    const result: any = await this.orchestrator.verifyPayment({
       paymentId: id,
       adminUserId: claims.sub,
       expectedVersion,
       externalReference: body.externalReference,
       idempotencyKey,
-      actorRole: claims.role,
+      actorRole,
       reason: body.reason,
     });
     return {
@@ -89,12 +83,19 @@ export class AdminFinanceController {
         amount: (a.amount || 0).toString(),
       })),
       release: result.release,
+      coverage: result.coverage
+        ? {
+            payable: result.coverage.payable.toString(),
+            allocated: result.coverage.allocated.toString(),
+            isFullyCovered: result.coverage.isFullyCovered,
+          }
+        : undefined,
       replayed: result.replayed,
     };
   }
 
   @Post("payments/:id/reject")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async rejectPayment(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -106,13 +107,15 @@ export class AdminFinanceController {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
     const expectedVersion = expectedVersionHeader ? parseInt(expectedVersionHeader, 10) : body?.expectedVersion;
-    const result = await this.paymentsService.rejectPayment({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may reject");
+    const result = await this.orchestrator.rejectPayment({
       paymentId: id,
       adminUserId: claims.sub,
       reason: body.reason,
       idempotencyKey,
       expectedVersion,
-      actorRole: claims.role,
+      actorRole,
     });
     return {
       payment: {
@@ -124,29 +127,16 @@ export class AdminFinanceController {
     };
   }
 
-  // Refunds
   @Get("refunds")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async listRefunds(@Query("orderId") orderId?: string) {
     if (!orderId) return { refunds: [] };
-    const refunds = await (this.paymentsService as any).repository.findRefundsByOrderId(orderId);
-    return {
-      refunds: refunds.map((r: any) => ({
-        id: r.id,
-        refundReference: r.refundReference,
-        wholesaleOrderId: r.wholesaleOrderId,
-        childOrderId: r.childOrderId,
-        amount: (r.amount || 0).toString(),
-        currency: r.currency,
-        status: r.status,
-        reasonCode: r.reasonCode,
-        requestedAt: r.requestedAt,
-      })),
-    };
+    const refunds = await this.paymentsService.getRefundsForAdmin(orderId);
+    return { refunds };
   }
 
   @Post("refunds")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async createRefund(
     @CurrentUser() claims: Claims,
     @Headers("idempotency-key") idempotencyKeyHeader: string,
@@ -165,7 +155,9 @@ export class AdminFinanceController {
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.paymentsService.createRefund({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may create refunds");
+    const result = await this.orchestrator.createRefund({
       orderId: body.orderId,
       childOrderId: body.childOrderId,
       exceptionId: body.exceptionId,
@@ -175,7 +167,7 @@ export class AdminFinanceController {
       reasonCode: body.reasonCode,
       reason: body.reason,
       actorUserId: claims.sub,
-      actorRole: claims.role,
+      actorRole,
       idempotencyKey,
     });
     return {
@@ -190,7 +182,7 @@ export class AdminFinanceController {
   }
 
   @Post("refunds/:id/approve")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async approveRefund(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -200,12 +192,14 @@ export class AdminFinanceController {
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.paymentsService.approveRefund({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may approve");
+    const result = await this.orchestrator.approveRefund({
       refundId: id,
       adminUserId: claims.sub,
       idempotencyKey,
       reason: body.reason,
-      actorRole: claims.role,
+      actorRole,
     });
     return {
       refund: {
@@ -218,7 +212,7 @@ export class AdminFinanceController {
   }
 
   @Post("refunds/:id/complete")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async completeRefund(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -228,12 +222,14 @@ export class AdminFinanceController {
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.paymentsService.completeRefund({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may complete");
+    const result = await this.orchestrator.completeRefund({
       refundId: id,
       adminUserId: claims.sub,
       externalReference: body.externalReference,
       idempotencyKey,
-      actorRole: claims.role,
+      actorRole,
     });
     return {
       refund: {
@@ -247,7 +243,7 @@ export class AdminFinanceController {
   }
 
   @Post("refunds/:id/fail")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async failRefund(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -257,25 +253,26 @@ export class AdminFinanceController {
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.paymentsService.failRefund({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may fail");
+    const failResult = await this.paymentsService.failRefund({
       refundId: id,
       adminUserId: claims.sub,
       reason: body.reason,
       idempotencyKey,
-      actorRole: claims.role,
+      actorRole,
     });
     return {
       refund: {
-        id: result.refund.id,
-        status: result.refund.status,
+        id: failResult.refund.id,
+        status: failResult.refund.status,
       },
-      replayed: result.replayed,
+      replayed: failResult.replayed,
     };
   }
 
-  // Credit / COD release
   @Post("orders/:id/credit-approve")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async creditApprove(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -285,7 +282,9 @@ export class AdminFinanceController {
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.paymentsService.releaseWithCredit({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may credit approve");
+    const result: any = await this.orchestrator.creditApprove({
       orderId: id,
       adminUserId: claims.sub,
       evidenceReference: body.evidenceReference,
@@ -293,13 +292,13 @@ export class AdminFinanceController {
       currency: body.currency,
       reason: body.reason,
       idempotencyKey,
-      actorRole: claims.role,
+      actorRole,
     });
-    return { order: { id: result.order.id, status: result.order.status }, releaseId: result.releaseId, replayed: result.replayed };
+    return { order: { id: result.order?.id || id, status: result.order?.status || "processing" }, releaseId: result.releaseId, replayed: result.replayed };
   }
 
   @Post("orders/:id/cod-approve")
-  @Roles("admin")
+  @Roles("admin", "finance")
   async codApprove(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -309,14 +308,16 @@ export class AdminFinanceController {
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
-    const result = await this.paymentsService.releaseWithCod({
+    const actorRole = claims.role;
+    if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may COD approve");
+    const result: any = await this.orchestrator.codApprove({
       orderId: id,
       adminUserId: claims.sub,
       evidenceReference: body.evidenceReference,
       reason: body.reason,
       idempotencyKey,
-      actorRole: claims.role,
+      actorRole,
     });
-    return { order: { id: result.order.id, status: result.order.status }, releaseId: result.releaseId, replayed: result.replayed };
+    return { order: { id: result.order?.id || id, status: result.order?.status || "processing" }, releaseId: result.releaseId, replayed: result.replayed };
   }
 }

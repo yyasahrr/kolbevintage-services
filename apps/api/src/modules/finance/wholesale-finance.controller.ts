@@ -3,12 +3,14 @@ import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { WholesaleFinanceOrchestrator } from "./wholesale-finance.orchestrator";
 import { PaymentsService } from "../payments/payments.service";
+import { OrdersService } from "../orders/orders.service";
 
 @Controller("wholesale/orders")
 export class WholesaleFinanceController {
   constructor(
     @Inject(WholesaleFinanceOrchestrator) private readonly orchestrator: WholesaleFinanceOrchestrator,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(OrdersService) private readonly ordersService: OrdersService,
   ) {}
 
   @Post(":id/confirm")
@@ -21,7 +23,7 @@ export class WholesaleFinanceController {
     @Headers("x-expected-version") expectedVersionHeader?: string,
     @Body() body?: any,
   ) {
-    const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
+    const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2 || body?.idempotencyKey;
     if (!idempotencyKey) {
       throw new Error("Idempotency-Key required");
     }
@@ -54,17 +56,17 @@ export class WholesaleFinanceController {
   @Get(":id/proformas")
   @Roles("vip", "customer")
   async getProformas(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    const proformas = await this.paymentsService.getProformasForBuyer(id, claims.sub);
+    // Ownership verified via OrdersService (Orders owns wOrder)
+    await this.ordersService.getWholesaleOrderDetailForBuyer({ orderId: id, buyerUserId: claims.sub });
+    const proformas = await this.paymentsService.getProformasForBuyer(id);
     return { proformas };
   }
 
   @Get(":id/financial-summary")
   @Roles("vip", "customer", "admin")
   async getFinancialSummary(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    // Buyer can only see own, admin can see any
     if (claims.role !== "admin") {
-      // Verify ownership via proformas method (which checks ownership)
-      await this.paymentsService.getProformasForBuyer(id, claims.sub);
+      await this.ordersService.getWholesaleOrderDetailForBuyer({ orderId: id, buyerUserId: claims.sub });
     }
     const summary = await this.paymentsService.getOrderFinancialSummary(id);
     return summary;
@@ -73,14 +75,16 @@ export class WholesaleFinanceController {
   @Get(":id/payments")
   @Roles("vip", "customer")
   async getPayments(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    const payments = await this.paymentsService.getPaymentsForBuyer(id, claims.sub);
+    await this.ordersService.getWholesaleOrderDetailForBuyer({ orderId: id, buyerUserId: claims.sub });
+    const payments = await this.paymentsService.getPaymentsForBuyer(id);
     return { payments };
   }
 
   @Get(":id/refunds")
   @Roles("vip", "customer")
   async getRefunds(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    const refunds = await this.paymentsService.getRefundsForBuyer(id, claims.sub);
+    await this.ordersService.getWholesaleOrderDetailForBuyer({ orderId: id, buyerUserId: claims.sub });
+    const refunds = await this.paymentsService.getRefundsForBuyer(id);
     return { refunds };
   }
 
@@ -96,10 +100,7 @@ export class WholesaleFinanceController {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
     if (!body?.amount) throw new Error("amount required");
-    // Reject BNPL retail methods
-    const forbidden = ["snapppay", "digipay", "snapp_pay", "digi_pay"];
-    // Transfer only
-    const result = await this.paymentsService.submitTransferPayment({
+    const result = await this.orchestrator.submitTransfer({
       orderId: id,
       buyerUserId: claims.sub,
       amount: body.amount,
@@ -115,7 +116,7 @@ export class WholesaleFinanceController {
         amount: (result.payment.amount || 0).toString(),
         currency: result.payment.currency,
         status: result.payment.status,
-        externalReference: result.payment.externalReference || result.payment.external_reference,
+        referencePresent: !!result.payment.externalReference || !!result.payment.external_reference,
       },
       replayed: result.replayed,
     };

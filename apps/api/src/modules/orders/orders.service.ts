@@ -2545,4 +2545,516 @@ export class OrdersService {
   async adminGetTimeline(orderId: string) {
     return this.getOrderTimelineInternal(orderId, null, true);
   }
+
+  // ── Phase 4.6.1 — Finance Ownership Contracts ──────────────────────────
+
+  /**
+   * Lock parent order FOR UPDATE for finance operations. Uses DB NOW() for time consistency.
+   * Returns raw order row.
+   */
+  async lockOrderForFinance(orderId: string, executor: DbOrTx) {
+    const tx = executor as any;
+    const result = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${orderId} FOR UPDATE`);
+    const order = result.rows?.[0];
+    if (!order) throw new OrderDomainError("ORDER_NOT_FOUND", `Order ${orderId} not found`);
+    return order;
+  }
+
+  async getDbNow(executor: DbOrTx): Promise<Date> {
+    const tx = executor as any;
+    const result = await tx.execute(sql`SELECT NOW() as now`);
+    const nowVal = (result as any).rows?.[0]?.now || (result as any)[0]?.now;
+    return new Date(nowVal);
+  }
+
+  /**
+   * Immutable financial snapshot DTO — Orders owns wholesale_order, wholesale_order_item, purchase_order, purchase_order_item.
+   * Payments creates Proformas from this canonical DTO, not by freely querying foreign tables.
+   */
+  async getOrderFinancialSnapshot(orderId: string, executor: DbOrTx) {
+    const tx = executor as any;
+    // Parent already locked by caller ideally, but we lock again for safety
+    const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${orderId} FOR UPDATE`);
+    const parent = parentResult.rows?.[0];
+    if (!parent) throw new OrderDomainError("ORDER_NOT_FOUND", `Order ${orderId} not found`);
+
+    const childrenResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE wholesale_order_id = ${orderId} ORDER BY id ASC FOR UPDATE`);
+    const children = childrenResult.rows;
+
+    const orderItemsResult = await tx.execute(sql`SELECT * FROM wholesale_order_item WHERE order_id = ${orderId} ORDER BY id ASC`);
+    const orderItems = orderItemsResult.rows;
+
+    const childIds = children.map((c: any) => c.id);
+    let childItems: any[] = [];
+    if (childIds.length > 0) {
+      const childItemsResult = await tx.execute(sql`SELECT * FROM purchase_order_item WHERE purchase_order_id IN (${sql.join(childIds.map((id: string) => sql`${id}`), sql`, `)}) ORDER BY id ASC`);
+      childItems = childItemsResult.rows;
+    }
+
+    if (children.length === 0) {
+      throw new OrderDomainError("NO_CHILD_ORDERS", "Order has no child orders");
+    }
+
+    // Validate no empty child without financial lines
+    for (const child of children) {
+      const childId = child.id;
+      const itemsForChild = childItems.filter((ci: any) => (ci.purchase_order_id || ci.purchaseOrderId) === childId);
+      if (itemsForChild.length === 0) {
+        // Check if child has grand_total? If child total is 0 and no items, it's malformed
+        const childTotal = BigInt(child.grand_total || child.total_amount || child.items_total || 0);
+        if (childTotal === 0n) {
+          throw new OrderDomainError("PROFORMA_LINES_MISSING", `Child ${childId} has no financial line snapshot`);
+        }
+        // If child has total but no line items, we still allow fallback but warn — however spec says fail atomically if expected billable has no lines
+        // For KOLBE + suppliers with valid totals, we allow but will create lines from child totals? No, we require lines.
+        // To enforce, we throw if no itemsForChild and child is expected billable
+        // For backward compat, we allow if child total >0 but we will still create proforma from child total in PaymentsService? But spec says fail.
+        // We'll enforce strict: if no child items, fail
+        throw new OrderDomainError("PROFORMA_LINES_MISSING", `Child ${childId} has no financial line snapshot`);
+      }
+    }
+
+    const snapshot = {
+      orderId: parent.id,
+      orderCode: parent.order_code || parent.orderCode,
+      currency: parent.currency || "IRR",
+      paymentMode: parent.payment_mode || parent.paymentMode,
+      buyerUserId: parent.buyer_user_id || parent.buyerUserId,
+      version: parent.version,
+      status: parent.status,
+      grandTotal: (parent.grand_total || parent.grandTotal || 0).toString(),
+      children: children.map((child: any) => {
+        const childId = child.id;
+        const childItemsForThisChild = childItems.filter((ci: any) => (ci.purchase_order_id || ci.purchaseOrderId) === childId);
+        const items = childItemsForThisChild.map((ci: any) => {
+          const woItemId = ci.wholesale_order_item_id || ci.wholesaleOrderItemId;
+          const woItem = orderItems.find((oi: any) => oi.id === woItemId);
+          const quantity = woItem ? woItem.quantity || woItem.piece_quantity || 1 : ci.quantity || 1;
+          const unitPrice = woItem ? BigInt(woItem.unit_price || woItem.unitPrice || 0) : BigInt(ci.unit_price || ci.unitPrice || 0);
+          const lineTotal = woItem ? BigInt(woItem.line_total || woItem.lineTotal || 0) : BigInt(ci.total_amount || ci.totalAmount || 0);
+          const descriptionSnapshot = woItem ? woItem.product_name_snapshot || woItem.productNameSnapshot || woItem.product_name || "" : ci.product_name || "";
+          const skuSnapshot = woItem ? woItem.sku_snapshot || woItem.skuSnapshot || woItem.sku || "" : ci.sku || "";
+          const pricingUnit = woItem ? woItem.pricing_unit || woItem.pricingUnit || "PIECE" : "PIECE";
+          return {
+            wholesaleOrderItemId: woItemId,
+            purchaseOrderItemId: ci.id,
+            descriptionSnapshot,
+            skuSnapshot,
+            quantity,
+            pricingUnit,
+            unitPrice: unitPrice.toString(),
+            lineTotal: lineTotal.toString(),
+          };
+        });
+        return {
+          childOrderId: childId,
+          childOrderCode: child.order_code || child.orderCode,
+          sellerId: child.seller_id || child.sellerId,
+          supplierId: child.supplier_id || child.supplierId || null,
+          currency: child.currency || parent.currency || "IRR",
+          items,
+        };
+      }),
+    };
+
+    return snapshot;
+  }
+
+  async validateAndLockForPaymentSubmission(input: { orderId: string; buyerUserId: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const result = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
+    const order = result.rows?.[0];
+    if (!order) throw new OrderDomainError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
+    const owner = order.buyer_user_id || order.buyerUserId;
+    if (owner !== input.buyerUserId) throw new OrderDomainError("ORDER_OWNERSHIP_VIOLATION", "Not owner");
+    // Strict: only awaiting_payment for normal buyer path
+    if (order.status !== "awaiting_payment") {
+      throw new OrderDomainError("PAYMENT_GATE_BLOCKED", `Cannot submit payment from ${order.status}, expected awaiting_payment`);
+    }
+    return order;
+  }
+
+  async transitionToConfirmed(input: { orderId: string; buyerUserId: string; expectedVersion?: number; idempotencyKey: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
+    const parent = parentResult.rows?.[0];
+    if (!parent) throw new OrderDomainError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
+    const owner = parent.buyer_user_id || parent.buyerUserId;
+    if (owner !== input.buyerUserId) throw new OrderDomainError("ORDER_OWNERSHIP_VIOLATION", "Not owner");
+    if (input.expectedVersion !== undefined && parent.version !== input.expectedVersion) {
+      throw new OrderDomainError("REQUEST_VERSION_CONFLICT", `Version conflict expected ${input.expectedVersion} got ${parent.version}`);
+    }
+    if (parent.status === "confirmed" || parent.status === "awaiting_payment" || parent.status === "processing") {
+      return { order: parent, replayed: true };
+    }
+    if (parent.status !== "draft") {
+      throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Cannot confirm from ${parent.status}`);
+    }
+
+    const dbNow = await this.getDbNow(tx);
+    const [confirmed] = await tx
+      .update(wholesaleOrder)
+      .set({ status: "confirmed", version: parent.version + 1, confirmedAt: dbNow, updatedAt: dbNow })
+      .where(eq(wholesaleOrder.id, input.orderId))
+      .returning();
+
+    await this.appendStatusHistory(
+      {
+        orderId: input.orderId,
+        fromStatus: parent.status,
+        toStatus: "confirmed",
+        actorId: input.buyerUserId,
+        actorRole: "buyer",
+        metadata: { frozenTerms: true },
+        orderVersion: confirmed.version,
+      },
+      tx,
+    );
+
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "order.confirmed",
+        payload: { orderId: input.orderId, previousStatus: parent.status },
+        actorId: input.buyerUserId,
+        actorRole: "buyer",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+
+    return { order: confirmed, previousStatus: parent.status, replayed: false };
+  }
+
+  async markAwaitingPayment(input: { orderId: string; buyerUserId: string; proformaCount: number; payable: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
+    const parent = parentResult.rows?.[0];
+    if (!parent) throw new OrderDomainError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
+    if (parent.status !== "confirmed") {
+      throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Cannot mark awaiting_payment from ${parent.status}`);
+    }
+
+    const dbNow = await this.getDbNow(tx);
+    const [gated] = await tx
+      .update(wholesaleOrder)
+      .set({ status: "awaiting_payment", version: parent.version + 1, updatedAt: dbNow })
+      .where(eq(wholesaleOrder.id, input.orderId))
+      .returning();
+
+    await this.appendStatusHistory(
+      {
+        orderId: input.orderId,
+        fromStatus: "confirmed",
+        toStatus: "awaiting_payment",
+        actorId: input.buyerUserId,
+        actorRole: "system",
+        metadata: { proformaCount: input.proformaCount },
+        orderVersion: gated.version,
+      },
+      tx,
+    );
+
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "order.payment_gated",
+        payload: { orderId: input.orderId, proformaCount: input.proformaCount, payable: input.payable },
+        actorId: input.buyerUserId,
+        actorRole: "system",
+      },
+      tx,
+    );
+
+    return gated;
+  }
+
+  async releaseFinancialGate(input: {
+    orderId: string;
+    releaseId: string;
+    releaseType: string;
+    amount: string;
+    currency: string;
+    actorId: string;
+    actorRole: string;
+    reason: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const orderResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
+    const order = orderResult.rows?.[0];
+    if (!order) throw new OrderDomainError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
+    if (order.status !== "awaiting_payment") {
+      // Idempotent: if already processing, return replayed
+      if (order.status === "processing") {
+        return { order, replayed: true };
+      }
+      throw new OrderDomainError("INVALID_STATUS_TRANSITION", `Cannot release from ${order.status}`);
+    }
+
+    const dbNow = await this.getDbNow(tx);
+    const [updated] = await tx
+      .update(wholesaleOrder)
+      .set({ status: "processing", version: order.version + 1, updatedAt: dbNow })
+      .where(eq(wholesaleOrder.id, input.orderId))
+      .returning();
+
+    await this.appendStatusHistory(
+      {
+        orderId: input.orderId,
+        fromStatus: order.status,
+        toStatus: "processing",
+        actorId: input.actorId,
+        actorRole: "system",
+        reason: input.releaseType,
+        metadata: { releaseId: input.releaseId, releaseType: input.releaseType, payable: input.amount },
+        orderVersion: updated.version,
+      },
+      tx,
+    );
+
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "order.processing_started",
+        payload: { releaseId: input.releaseId, releaseType: input.releaseType, payable: input.amount },
+        actorId: input.actorId,
+        actorRole: "system",
+      },
+      tx,
+    );
+
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "financial.release_created",
+        payload: { releaseId: input.releaseId, releaseType: input.releaseType, amount: input.amount },
+        actorId: input.actorId,
+        actorRole: "system",
+      },
+      tx,
+    );
+
+    return { order: updated, replayed: false };
+  }
+
+  async recordPaymentEvidenceSubmitted(input: { orderId: string; paymentId: string; amount: string; currency: string; actorId: string; idempotencyKey: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const dbNow = await this.getDbNow(tx);
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "payment.evidence_submitted",
+        // Privacy: do NOT place full externalReference, use referencePresent flag
+        payload: { paymentId: input.paymentId, amount: input.amount, currency: input.currency, referencePresent: true },
+        actorId: input.actorId,
+        actorRole: "buyer",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+    return { recordedAt: dbNow };
+  }
+
+  async recordPaymentVerified(input: {
+    orderId: string;
+    paymentId: string;
+    amount: string;
+    currency: string;
+    allocations: Array<{ proformaId: string; amount: string }>;
+    actorId: string;
+    idempotencyKey: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const dbNow = await this.getDbNow(tx);
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "payment.verified",
+        // Privacy: no full externalReference, only paymentId/status/amount/currency/referencePresent
+        payload: {
+          paymentId: input.paymentId,
+          amount: input.amount,
+          currency: input.currency,
+          allocations: input.allocations.map((a) => ({ proformaId: a.proformaId, amount: a.amount })),
+          referencePresent: true,
+        },
+        actorId: input.actorId,
+        actorRole: "admin",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+
+    for (const alloc of input.allocations) {
+      await this.appendEvent(
+        {
+          aggregateType: "wholesale_order",
+          aggregateId: input.orderId,
+          eventType: "payment.allocated",
+          payload: { paymentId: input.paymentId, proformaId: alloc.proformaId, amount: alloc.amount },
+          actorId: input.actorId,
+          actorRole: "admin",
+        },
+        tx,
+      );
+    }
+
+    // Overpaid check - unallocated money
+    const allocatedSum = input.allocations.reduce((s, a) => s + BigInt(a.amount), 0n);
+    const overpaid = BigInt(input.amount) - allocatedSum;
+    if (overpaid > 0n) {
+      await this.appendEvent(
+        {
+          aggregateType: "wholesale_order",
+          aggregateId: input.orderId,
+          eventType: "payment.overpaid",
+          payload: { paymentId: input.paymentId, overpaid: overpaid.toString(), total: input.amount },
+          actorId: input.actorId,
+          actorRole: "admin",
+        },
+        tx,
+      );
+    }
+
+    return { recordedAt: dbNow };
+  }
+
+  async recordPaymentFailed(input: { orderId: string; paymentId: string; reason: string; actorId: string; idempotencyKey: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "payment.failed",
+        payload: { paymentId: input.paymentId, reason: input.reason },
+        actorId: input.actorId,
+        actorRole: "admin",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+  }
+
+  async recordRefundRequested(input: { orderId: string; refundId: string; childOrderId?: string; amount: string; reasonCode?: string; actorId: string; idempotencyKey: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "refund.requested",
+        payload: { refundId: input.refundId, childOrderId: input.childOrderId, amount: input.amount, reasonCode: input.reasonCode },
+        actorId: input.actorId,
+        actorRole: "admin",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+  }
+
+  async recordRefundApproved(input: { orderId: string; refundId: string; amount: string; actorId: string; idempotencyKey: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "refund.approved",
+        payload: { refundId: input.refundId, amount: input.amount },
+        actorId: input.actorId,
+        actorRole: "admin",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+  }
+
+  async recordRefundCompleted(input: { orderId: string; refundId: string; amount: string; childOrderId?: string; actorId: string; idempotencyKey: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "refund.completed",
+        // Privacy: no full externalReference
+        payload: { refundId: input.refundId, amount: input.amount, childOrderId: input.childOrderId, referencePresent: true },
+        actorId: input.actorId,
+        actorRole: "admin",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+  }
+
+  async recordRefundFailed(input: { orderId: string; refundId: string; reason: string; actorId: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "refund.failed",
+        payload: { refundId: input.refundId, reason: input.reason },
+        actorId: input.actorId,
+        actorRole: "admin",
+      },
+      tx,
+    );
+  }
+
+  async recordProformaIssued(input: { orderId: string; proformaId: string; childOrderId: string; totalAmount: string; actorId: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "proforma.issued",
+        payload: { proformaId: input.proformaId, childOrderId: input.childOrderId, totalAmount: input.totalAmount },
+        actorId: input.actorId,
+        actorRole: "buyer",
+      },
+      tx,
+    );
+  }
+
+  async recordProformaVoided(input: { orderId: string; proformaId: string; childOrderId: string; reason: string; actorId: string; actorRole: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "proforma.voided",
+        payload: { proformaId: input.proformaId, childOrderId: input.childOrderId, reason: input.reason },
+        actorId: input.actorId,
+        actorRole: input.actorRole as any,
+      },
+      tx,
+    );
+  }
+
+  async recordParentCancelled(input: { orderId: string; reason: string; refundObligations: Array<{ childOrderId: string; amount: string }>; actorId: string; actorRole: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: "order.parent_cancelled",
+        payload: { orderId: input.orderId, reason: input.reason, refundObligations: input.refundObligations },
+        actorId: input.actorId,
+        actorRole: input.actorRole as any,
+      },
+      tx,
+    );
+  }
+
+  async getChildOrdersForFinance(orderId: string, executor: DbOrTx) {
+    const tx = executor as any;
+    const result = await tx.execute(sql`SELECT * FROM purchase_order WHERE wholesale_order_id = ${orderId} ORDER BY id ASC FOR UPDATE`);
+    return result.rows;
+  }
 }

@@ -134,6 +134,13 @@
       "when": 1789692000000,
       "tag": "0018_phase_4_6_wholesale_finance",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789693000000,
+      "tag": "0019_phase_4_6_1_finance_hardening",
+      "breakpoints": true
     }
   ]
 }

@@ -1,39 +1,11 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
-import {
-  wholesaleOrder,
-  purchaseOrder,
-  orderStatusHistory,
-  orderEvent,
-} from "@kolbe/database";
+import { eq, and } from "drizzle-orm";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
 import { PaymentsService } from "../payments/payments.service";
+import { OrdersService } from "../orders/orders.service";
 import { DomainError } from "@kolbe/shared";
 import { createHash, randomUUID } from "node:crypto";
-
-type Tx = Parameters<Parameters<KolbeDatabase["transaction"]>[0]>[0];
-
-function historyId(): string {
-  return `osh_${randomUUID().replaceAll("-", "")}`;
-}
-function eventId(): string {
-  return `oev_${randomUUID().replaceAll("-", "")}`;
-}
-
-function sanitizeForJsonb(value: any): any {
-  if (typeof value === "bigint") return value.toString();
-  if (value instanceof Date) return value;
-  if (Array.isArray(value)) return value.map(sanitizeForJsonb);
-  if (value && typeof value === "object") {
-    const out: any = {};
-    for (const [k, v] of Object.entries(value)) {
-      out[k] = sanitizeForJsonb(v);
-    }
-    return out;
-  }
-  return value;
-}
 
 function hashRequest(input: unknown): string {
   const canonical = JSON.stringify(input, (key, val) => {
@@ -59,14 +31,14 @@ export class FinanceOrchestratorError extends DomainError {
 }
 
 /**
- * WholesaleFinanceOrchestrator owns NO tables, coordinates Payments/Orders/Fulfillment/Audit via shared tx executor.
- * No Orders→Payment table writes, no Payments→Order table writes — all cross-domain via orchestrator in same tx.
+ * WholesaleFinanceOrchestrator owns NO tables, coordinates via OrdersService and PaymentsService with same tx executor, shared tx.
  */
 @Injectable()
 export class WholesaleFinanceOrchestrator {
   constructor(
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
+    @Inject(OrdersService) private readonly ordersService: OrdersService,
     @Inject(AuditService) private readonly auditService: AuditService,
   ) {}
 
@@ -80,27 +52,6 @@ export class WholesaleFinanceOrchestrator {
     if (!input.idempotencyKey) throw new FinanceOrchestratorError("ORDER_IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
 
     return this.db.transaction(async (tx: any) => {
-      // Lock parent FOR UPDATE
-      const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
-      const parent = parentResult.rows?.[0];
-      if (!parent) throw new FinanceOrchestratorError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
-
-      const owner = parent.buyer_user_id || parent.buyerUserId;
-      if (owner !== input.buyerUserId) throw new FinanceOrchestratorError("ORDER_OWNERSHIP_VIOLATION", "Not owner");
-
-      if (input.expectedVersion !== undefined && parent.version !== input.expectedVersion) {
-        throw new FinanceOrchestratorError("VERSION_CONFLICT", `Version conflict expected ${input.expectedVersion} got ${parent.version}`);
-      }
-
-      if (parent.status === "confirmed" || parent.status === "awaiting_payment" || parent.status === "processing") {
-        return { order: parent, replayed: true };
-      }
-
-      if (parent.status !== "draft") {
-        throw new FinanceOrchestratorError("INVALID_STATUS_TRANSITION", `Cannot confirm from ${parent.status}`);
-      }
-
-      // Idempotency for orders.confirm
       const { commandIdempotency } = await import("@kolbe/database");
       const requestHash = hashRequest({ orderId: input.orderId, action: "confirm" });
       const [existingIdem] = await tx
@@ -108,7 +59,7 @@ export class WholesaleFinanceOrchestrator {
         .from(commandIdempotency)
         .where(
           and(
-            eq(commandIdempotency.scopeType, "wholesale_order"),
+            eq(commandIdempotency.scopeType, "wOrder"),
             eq(commandIdempotency.scopeId, input.orderId),
             eq(commandIdempotency.commandType, "orders.confirm"),
             eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
@@ -119,115 +70,56 @@ export class WholesaleFinanceOrchestrator {
       if (existingIdem) {
         if (existingIdem.requestHash !== requestHash) throw new FinanceOrchestratorError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
         if (existingIdem.state === "completed") {
-          const [existingOrder] = await tx.select().from(wholesaleOrder).where(eq(wholesaleOrder.id, input.orderId)).limit(1);
-          return { order: existingOrder, replayed: true };
+          const order = await this.ordersService.getWholesaleOrderById(input.orderId, tx);
+          return { order, replayed: true };
         }
       } else {
         await tx.insert(commandIdempotency).values({
           id: `cid_${randomUUID().replaceAll("-", "")}`,
-          scopeType: "wholesale_order",
+          scopeType: "wOrder",
           scopeId: input.orderId,
           commandType: "orders.confirm",
           idempotencyKey: input.idempotencyKey,
           requestHash,
           state: "pending",
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: await this.ordersService.getDbNow(tx),
+          updatedAt: await this.ordersService.getDbNow(tx),
         });
       }
 
-      const now = new Date();
-
-      // Validate sellers valid, allocations valid, not terminal, frozen terms
-      // For simplicity, check children exist and not cancelled
-      const childrenResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE wholesale_order_id = ${input.orderId} ORDER BY id ASC FOR UPDATE`);
-      const children = childrenResult.rows;
-      if (children.length === 0) throw new FinanceOrchestratorError("NO_CHILD_ORDERS", "Order has no child orders");
-
-      for (const child of children) {
-        if (child.status === "cancelled") throw new FinanceOrchestratorError("CHILD_CANCELLED", `Child ${child.id} cancelled blocks confirmation`);
-        // Validate seller exists (via seller table)
-        const sellerId = child.seller_id || child.sellerId;
-        const sellerResult = await tx.execute(sql`SELECT * FROM seller WHERE id = ${sellerId} LIMIT 1`);
-        if (!sellerResult.rows?.[0]) throw new FinanceOrchestratorError("SELLER_NOT_VALID", `Seller ${sellerId} not valid`);
+      const confirmResult = await this.ordersService.transitionToConfirmed({
+        orderId: input.orderId,
+        buyerUserId: input.buyerUserId,
+        expectedVersion: input.expectedVersion,
+        idempotencyKey: input.idempotencyKey,
+        executor: tx,
+      });
+      if (confirmResult.replayed) {
+        return { order: confirmResult.order, replayed: true };
       }
 
-      // Transition draft→confirmed
-      const [confirmed] = await tx
-        .update(wholesaleOrder)
-        .set({ status: "confirmed", version: parent.version + 1, confirmedAt: now, updatedAt: now })
-        .where(eq(wholesaleOrder.id, input.orderId))
-        .returning();
+      const snapshot = await this.ordersService.getOrderFinancialSnapshot(input.orderId, tx);
 
-      await tx.insert(orderStatusHistory).values({
-        id: historyId(),
-        orderId: input.orderId,
-        childOrderId: null,
-        fromStatus: parent.status,
-        toStatus: "confirmed",
-        actorId: input.buyerUserId,
-        actorRole: "buyer",
-        metadata: { frozenTerms: true } as any,
-        orderVersion: confirmed.version,
-        createdAt: now,
-      });
-
-      await tx.insert(orderEvent).values({
-        id: eventId(),
-        aggregateType: "wholesale_order",
-        aggregateId: input.orderId,
-        eventType: "order.confirmed",
-        payload: sanitizeForJsonb({ orderId: input.orderId, previousStatus: parent.status }) as any,
-        actorId: input.buyerUserId,
-        actorRole: "buyer",
-        idempotencyKey: input.idempotencyKey,
-        createdAt: now,
-      });
-
-      // Issue Proformas — PaymentsService owns proforma tables, but orchestrator coordinates via shared tx
-      const { proformas } = await this.paymentsService.issueProformasForOrder(input.orderId, tx);
+      const { proformas } = await this.paymentsService.issueProformasFromSnapshot(snapshot, tx);
 
       for (const prof of proformas) {
-        await tx.insert(orderEvent).values({
-          id: eventId(),
-          aggregateType: "wholesale_order",
-          aggregateId: input.orderId,
-          eventType: "proforma.issued",
-          payload: sanitizeForJsonb({ proformaId: prof.id, childOrderId: prof.childOrderId, totalAmount: (prof.totalAmount || 0).toString() }) as any,
+        await this.ordersService.recordProformaIssued({
+          orderId: input.orderId,
+          proformaId: prof.id,
+          childOrderId: prof.childOrderId,
+          totalAmount: (prof.totalAmount || 0).toString(),
           actorId: input.buyerUserId,
-          actorRole: "buyer",
-          createdAt: now,
+          executor: tx,
         });
       }
 
-      // Transition confirmed→awaiting_payment via canonical orchestration
-      const [gated] = await tx
-        .update(wholesaleOrder)
-        .set({ status: "awaiting_payment", version: confirmed.version + 1, updatedAt: now })
-        .where(eq(wholesaleOrder.id, input.orderId))
-        .returning();
-
-      await tx.insert(orderStatusHistory).values({
-        id: historyId(),
+      const payable = proformas.reduce((s: bigint, p: any) => s + BigInt(p.totalAmount || 0), 0n).toString();
+      const gated = await this.ordersService.markAwaitingPayment({
         orderId: input.orderId,
-        fromStatus: "confirmed",
-        toStatus: "awaiting_payment",
-        actorId: input.buyerUserId,
-        actorRole: "system",
-        metadata: { proformaCount: proformas.length } as any,
-        orderVersion: gated.version,
-        createdAt: now,
-      });
-
-      await tx.insert(orderEvent).values({
-        id: eventId(),
-        aggregateType: "wholesale_order",
-        aggregateId: input.orderId,
-        eventType: "order.payment_gated",
-        payload: sanitizeForJsonb({ orderId: input.orderId, proformaCount: proformas.length, payable: proformas.reduce((s: bigint, p: any) => s + BigInt(p.totalAmount || 0), 0n).toString() }) as any,
-        actorId: input.buyerUserId,
-        actorRole: "system",
-        createdAt: now,
+        buyerUserId: input.buyerUserId,
+        proformaCount: proformas.length,
+        payable,
+        executor: tx,
       });
 
       await this.auditService.record(
@@ -235,21 +127,22 @@ export class WholesaleFinanceOrchestrator {
           actorId: input.buyerUserId,
           actorRole: input.actorRole || "buyer",
           action: "order.confirmed",
-          entityType: "wholesale_order",
+          entityType: "wOrder",
           entityId: input.orderId,
-          before: { status: parent.status },
+          before: { status: confirmResult.previousStatus },
           after: { status: "awaiting_payment", proformaCount: proformas.length },
           metadata: { idempotencyKey: input.idempotencyKey },
         },
         tx,
       );
 
+      const now = await this.ordersService.getDbNow(tx);
       await tx
         .update(commandIdempotency)
-        .set({ state: "completed", resultResourceId: gated.id, resultPayload: sanitizeForJsonb(gated) as any, completedAt: now, updatedAt: now })
+        .set({ state: "completed", resultResourceId: gated.id, resultPayload: { id: gated.id, status: gated.status } as any, completedAt: now, updatedAt: now })
         .where(
           and(
-            eq(commandIdempotency.scopeType, "wholesale_order"),
+            eq(commandIdempotency.scopeType, "wOrder"),
             eq(commandIdempotency.scopeId, input.orderId),
             eq(commandIdempotency.commandType, "orders.confirm"),
             eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
@@ -260,7 +153,263 @@ export class WholesaleFinanceOrchestrator {
     });
   }
 
-  // Cancellation before payment — no refund, void/supersede child Proforma, recompute payable, preserve original grand_total
+  async submitTransfer(input: {
+    orderId: string;
+    buyerUserId: string;
+    amount: string;
+    bankReference?: string;
+    evidenceReference?: string;
+    idempotencyKey: string;
+    actorRole?: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      await this.ordersService.validateAndLockForPaymentSubmission({
+        orderId: input.orderId,
+        buyerUserId: input.buyerUserId,
+        executor: tx,
+      });
+
+      const result = await this.paymentsService.submitTransferPayment({
+        orderId: input.orderId,
+        buyerUserId: input.buyerUserId,
+        amount: input.amount,
+        bankReference: input.bankReference,
+        evidenceReference: input.evidenceReference,
+        idempotencyKey: input.idempotencyKey,
+        actorRole: input.actorRole,
+        executor: tx,
+      });
+
+      if (!result.replayed) {
+        await this.ordersService.recordPaymentEvidenceSubmitted({
+          orderId: input.orderId,
+          paymentId: result.payment.id,
+          amount: input.amount,
+          currency: result.payment.currency,
+          actorId: input.buyerUserId,
+          idempotencyKey: input.idempotencyKey,
+          executor: tx,
+        });
+      }
+
+      return result;
+    });
+  }
+
+  async verifyPayment(input: {
+    paymentId: string;
+    adminUserId: string;
+    expectedVersion?: number;
+    externalReference: string;
+    idempotencyKey: string;
+    actorRole?: string;
+    reason?: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const verifyResult = await this.paymentsService.verifyPayment({
+        paymentId: input.paymentId,
+        adminUserId: input.adminUserId,
+        expectedVersion: input.expectedVersion,
+        externalReference: input.externalReference,
+        idempotencyKey: input.idempotencyKey,
+        actorRole: input.actorRole,
+        reason: input.reason,
+        executor: tx,
+      });
+
+      if (verifyResult.replayed) {
+        return verifyResult;
+      }
+
+      const orderId = verifyResult.payment.wholesaleOrderId || verifyResult.payment.wholesale_order_id;
+
+      await this.ordersService.recordPaymentVerified({
+        orderId,
+        paymentId: input.paymentId,
+        amount: (verifyResult.payment.amount || 0).toString(),
+        currency: verifyResult.payment.currency,
+        allocations: verifyResult.allocations.map((a: any) => ({ proformaId: a.proformaId, amount: (a.amount || 0).toString() })),
+        actorId: input.adminUserId,
+        idempotencyKey: input.idempotencyKey,
+        executor: tx,
+      });
+
+      const coverage = await this.paymentsService.getFinancialCoverageStatus(orderId, tx);
+
+      let release: any = null;
+      let releasedOrder: any = null;
+      if (coverage.isFullyCovered) {
+        const releaseResult = await this.paymentsService.createFinancialRelease({
+          orderId,
+          releaseType: "payment_verified",
+          evidenceReference: `payments_verified_${coverage.allocated.toString()}`,
+          amount: coverage.payable.toString(),
+          currency: verifyResult.payment.currency,
+          actorId: input.adminUserId,
+          actorRole: input.actorRole || "admin",
+          reason: `Payable ${coverage.payable.toString()} covered by allocated ${coverage.allocated.toString()}`,
+          executor: tx,
+        });
+
+        if (!releaseResult.replayed) {
+          const gateResult = await this.ordersService.releaseFinancialGate({
+            orderId,
+            releaseId: releaseResult.release.id,
+            releaseType: "payment_verified",
+            amount: coverage.payable.toString(),
+            currency: verifyResult.payment.currency,
+            actorId: input.adminUserId,
+            actorRole: input.actorRole || "admin",
+            reason: `Payable covered`,
+            executor: tx,
+          });
+          releasedOrder = gateResult.order;
+          release = releaseResult.release;
+        }
+      }
+
+      return { ...verifyResult, coverage, release, releasedOrder };
+    });
+  }
+
+  async rejectPayment(input: { paymentId: string; adminUserId: string; reason: string; idempotencyKey: string; expectedVersion?: number; actorRole?: string }) {
+    return this.db.transaction(async (tx: any) => {
+      const result = await this.paymentsService.rejectPayment({ ...input, executor: tx });
+      if (!result.replayed) {
+        const orderId = result.payment.wholesaleOrderId || result.payment.wholesale_order_id;
+        await this.ordersService.recordPaymentFailed({
+          orderId,
+          paymentId: input.paymentId,
+          reason: input.reason,
+          actorId: input.adminUserId,
+          idempotencyKey: input.idempotencyKey,
+          executor: tx,
+        });
+      }
+      return result;
+    });
+  }
+
+  async creditApprove(input: { orderId: string; adminUserId: string; evidenceReference: string; amount?: string; currency?: string; reason: string; idempotencyKey: string; actorRole?: string }) {
+    return this.db.transaction(async (tx: any) => {
+      const order: any = await this.ordersService.lockOrderForFinance(input.orderId, tx);
+      if (order.status !== "awaiting_payment" && order.status !== "confirmed") {
+        throw new FinanceOrchestratorError("INVALID_STATUS_TRANSITION", `Cannot credit release from ${order.status}`);
+      }
+
+      const releaseResult = await this.paymentsService.releaseWithCredit({ ...input, executor: tx });
+      if (releaseResult.replayed) return releaseResult;
+
+      const gateResult = await this.ordersService.releaseFinancialGate({
+            orderId: input.orderId,
+            releaseId: (releaseResult as any).releaseId,
+            releaseType: "credit_approved",
+            amount: input.amount || "0",
+            currency: input.currency || (order as any).currency || "IRR",
+            actorId: input.adminUserId,
+            actorRole: input.actorRole || "admin",
+            reason: input.reason,
+            executor: tx,
+          });
+
+      return { ...releaseResult, order: gateResult.order };
+    });
+  }
+
+  async codApprove(input: { orderId: string; adminUserId: string; evidenceReference: string; reason: string; idempotencyKey: string; actorRole?: string }) {
+    return this.db.transaction(async (tx: any) => {
+      const order: any = await this.ordersService.lockOrderForFinance(input.orderId, tx);
+      if (order.status !== "awaiting_payment" && order.status !== "confirmed") {
+        throw new FinanceOrchestratorError("INVALID_STATUS_TRANSITION", `Cannot COD release from ${order.status}`);
+      }
+
+      const releaseResult = await this.paymentsService.releaseWithCod({ ...input, executor: tx });
+      if (releaseResult.replayed) return releaseResult;
+
+      const gateResult = await this.ordersService.releaseFinancialGate({
+            orderId: input.orderId,
+            releaseId: (releaseResult as any).releaseId,
+            releaseType: "cod_policy_approved",
+            amount: "0",
+            currency: (order as any).currency || "IRR",
+            actorId: input.adminUserId,
+            actorRole: input.actorRole || "admin",
+            reason: input.reason,
+            executor: tx,
+          });
+
+      return { ...releaseResult, order: gateResult.order };
+    });
+  }
+
+  async createRefund(input: {
+    orderId: string;
+    childOrderId?: string;
+    exceptionId?: string;
+    paymentId?: string;
+    amount: string;
+    currency?: string;
+    reasonCode?: string;
+    reason?: string;
+    actorUserId: string;
+    actorRole?: string;
+    idempotencyKey: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const result = await this.paymentsService.createRefund({ ...input, executor: tx });
+      if (!result.replayed) {
+        await this.ordersService.recordRefundRequested({
+          orderId: input.orderId,
+          refundId: result.refund.id,
+          childOrderId: input.childOrderId,
+          amount: input.amount,
+          reasonCode: input.reasonCode,
+          actorId: input.actorUserId,
+          idempotencyKey: input.idempotencyKey,
+          executor: tx,
+        });
+      }
+      return result;
+    });
+  }
+
+  async approveRefund(input: { refundId: string; adminUserId: string; idempotencyKey: string; reason?: string; actorRole?: string }) {
+    return this.db.transaction(async (tx: any) => {
+      const result = await this.paymentsService.approveRefund({ ...input, executor: tx });
+      if (!result.replayed) {
+        const orderId = result.refund.wholesaleOrderId || result.refund.wholesale_order_id;
+        await this.ordersService.recordRefundApproved({
+          orderId,
+          refundId: input.refundId,
+          amount: (result.refund.amount || 0).toString(),
+          actorId: input.adminUserId,
+          idempotencyKey: input.idempotencyKey,
+          executor: tx,
+        });
+      }
+      return result;
+    });
+  }
+
+  async completeRefund(input: { refundId: string; adminUserId: string; externalReference: string; idempotencyKey: string; actorRole?: string }) {
+    return this.db.transaction(async (tx: any) => {
+      const result = await this.paymentsService.completeRefund({ ...input, executor: tx });
+      if (!result.replayed) {
+        const orderId = result.refund.wholesaleOrderId || result.refund.wholesale_order_id;
+        await this.ordersService.recordRefundCompleted({
+          orderId,
+          refundId: input.refundId,
+          amount: (result.refund.amount || 0).toString(),
+          childOrderId: result.refund.childOrderId || result.refund.child_order_id,
+          actorId: input.adminUserId,
+          idempotencyKey: input.idempotencyKey,
+          executor: tx,
+        });
+      }
+      return result;
+    });
+  }
+
   async cancelChildBeforePayment(input: {
     orderId: string;
     childOrderId: string;
@@ -270,56 +419,35 @@ export class WholesaleFinanceOrchestrator {
     idempotencyKey: string;
   }) {
     return this.db.transaction(async (tx: any) => {
-      const orderResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
-      const order = orderResult.rows?.[0];
-      if (!order) throw new FinanceOrchestratorError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
+      const order = await this.ordersService.lockOrderForFinance(input.orderId, tx);
 
-      const childResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE id = ${input.childOrderId} FOR UPDATE`);
-      const child = childResult.rows?.[0];
-      if (!child) throw new FinanceOrchestratorError("ORDER_NOT_FOUND", `Child ${input.childOrderId} not found`);
-
-      // Check no verified payments allocated to this child
-      const allocResult = await tx.execute(sql`
-        SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
-        JOIN payment p ON p.id = pa.payment_id
-        JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
-        WHERE wp.child_order_id = ${input.childOrderId} AND p.status = 'verified' AND pa.status = 'active'
-      `);
-      const allocated = BigInt(allocResult.rows?.[0]?.sum || 0);
+      const allocated = await this.paymentsService.getVerifiedAllocationSumForChild(input.childOrderId, tx);
       if (allocated > 0n) {
         throw new FinanceOrchestratorError("PAYMENT_ALREADY_ALLOCATED", `Child ${input.childOrderId} has verified allocation ${allocated.toString()}, use refund flow`);
       }
 
-      // Void issued proforma for this child
-      const [proforma] = await tx.select().from((await import("@kolbe/database")).wholesaleProforma).where(and(eq((await import("@kolbe/database")).wholesaleProforma.childOrderId, input.childOrderId), eq((await import("@kolbe/database")).wholesaleProforma.status, "issued"))).limit(1).for("update");
+      const proforma = await this.paymentsService.getIssuedProformaForChild(input.childOrderId, tx);
       if (proforma) {
-        await tx.update((await import("@kolbe/database")).wholesaleProforma).set({ status: "voided", updatedAt: new Date() }).where(eq((await import("@kolbe/database")).wholesaleProforma.id, proforma.id));
-        await tx.insert(orderEvent).values({
-          id: eventId(),
-          aggregateType: "wholesale_order",
-          aggregateId: input.orderId,
-          eventType: "proforma.voided",
-          payload: sanitizeForJsonb({ proformaId: proforma.id, childOrderId: input.childOrderId, reason: input.reason }) as any,
+        await this.paymentsService.voidProforma(proforma.id, input.actorUserId, input.reason, tx);
+        await this.ordersService.recordProformaVoided({
+          orderId: input.orderId,
+          proformaId: proforma.id,
+          childOrderId: input.childOrderId,
+          reason: input.reason,
           actorId: input.actorUserId,
-          actorRole: input.actorRole as any,
-          createdAt: new Date(),
+          actorRole: input.actorRole,
+          executor: tx,
         });
       }
 
-      // Create adjustment evidence release
-      const now = new Date();
-      const { orderFinancialRelease } = await import("@kolbe/database");
-      await tx.insert(orderFinancialRelease).values({
-        id: `frel_${randomUUID().replaceAll("-", "")}`,
+      await this.paymentsService.createManualReleaseForVoid({
         orderId: input.orderId,
-        releaseType: "manual_authorized_release",
-        evidenceReference: `void_proforma_${input.childOrderId}`,
-        amount: null,
-        currency: order.currency || "IRR",
+        childOrderId: input.childOrderId,
         actorId: input.actorUserId,
         actorRole: input.actorRole,
+        currency: (order as any).currency || "IRR",
         reason: `Child ${input.childOrderId} cancelled before payment, proforma voided, payable recomputed, original grand_total preserved`,
-        createdAt: now,
+        executor: tx,
       });
 
       await this.auditService.record(
@@ -339,7 +467,6 @@ export class WholesaleFinanceOrchestrator {
     });
   }
 
-  // Full parent cancellation with per-allocation refund obligations
   async cancelParentWithRefundObligations(input: {
     orderId: string;
     actorUserId: string;
@@ -347,46 +474,20 @@ export class WholesaleFinanceOrchestrator {
     reason: string;
     idempotencyKey: string;
   }) {
-    // This orchestrates parent cancellation and creates refund obligations per actual verified allocations
     return this.db.transaction(async (tx: any) => {
-      // Lock parent
-      const orderResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
-      const order = orderResult.rows?.[0];
-      if (!order) throw new FinanceOrchestratorError("ORDER_NOT_FOUND", `Order ${input.orderId} not found`);
+      const order = await this.ordersService.lockOrderForFinance(input.orderId, tx);
+      const children = await this.ordersService.getChildOrdersForFinance(input.orderId, tx);
+      const childIds = children.map((c: any) => c.id);
 
-      // Get children
-      const childrenResult = await tx.execute(sql`SELECT * FROM purchase_order WHERE wholesale_order_id = ${input.orderId} ORDER BY id ASC FOR UPDATE`);
-      const children = childrenResult.rows;
+      const refundObligations = await this.paymentsService.getRefundObligationsForOrder(input.orderId, childIds, tx);
 
-      // For each child, compute verified allocation
-      const refundObligations: Array<{ childOrderId: string; amount: bigint }> = [];
-      for (const child of children) {
-        const childId = child.id;
-        const allocResult = await tx.execute(sql`
-          SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
-          JOIN payment p ON p.id = pa.payment_id
-          JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
-          WHERE wp.child_order_id = ${childId} AND p.status = 'verified' AND pa.status = 'active'
-        `);
-        const allocated = BigInt(allocResult.rows?.[0]?.sum || 0);
-        if (allocated > 0n) {
-          refundObligations.push({ childOrderId: childId, amount: allocated });
-        }
-      }
-
-      // Note: Order status separate from Refund status — Order cancelled while refunds pending allowed
-      // We don't auto-create refunds here, just return obligations for admin to create via refund API
-      // But we can emit event with obligations
-
-      await tx.insert(orderEvent).values({
-        id: eventId(),
-        aggregateType: "wholesale_order",
-        aggregateId: input.orderId,
-        eventType: "order.parent_cancelled",
-        payload: sanitizeForJsonb({ orderId: input.orderId, reason: input.reason, refundObligations: refundObligations.map((o) => ({ childOrderId: o.childOrderId, amount: o.amount.toString() })) }) as any,
+      await this.ordersService.recordParentCancelled({
+        orderId: input.orderId,
+        reason: input.reason,
+        refundObligations: refundObligations.map((o) => ({ childOrderId: o.childOrderId, amount: o.amount.toString() })),
         actorId: input.actorUserId,
-        actorRole: input.actorRole as any,
-        createdAt: new Date(),
+        actorRole: input.actorRole,
+        executor: tx,
       });
 
       return { refundObligations: refundObligations.map((o) => ({ childOrderId: o.childOrderId, amount: o.amount.toString() })), order };

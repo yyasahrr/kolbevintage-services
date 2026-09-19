@@ -2117,6 +2117,7 @@ export const paymentAllocation = pgTable(
     stateCheck("payment_allocation_currency_allowed", "currency", CURRENCIES),
     stateCheck("payment_allocation_status_allowed", "status", PAYMENT_ALLOCATION_STATUS),
     moneyCheck("payment_allocation_amount_range", "amount"),
+    check("payment_allocation_amount_positive", sql.raw(`"amount" > 0`)),
     uniqueIndex("payment_allocation_payment_proforma_unique").on(table.paymentId, table.proformaId),
     index("payment_allocation_payment_created").on(table.paymentId, table.createdAt),
     index("payment_allocation_proforma_created").on(table.proformaId, table.createdAt),
@@ -2152,6 +2153,8 @@ export const orderFinancialRelease = pgTable(
     stateCheck("order_financial_release_currency_allowed", "currency", CURRENCIES),
     index("order_financial_release_order_created").on(table.orderId, table.createdAt),
     index("order_financial_release_type_created").on(table.releaseType, table.createdAt),
+    // Phase 4.6.1 — one payment_verified release per order gate transition
+    uniqueIndex("order_financial_release_payment_verified_once").on(table.orderId).where(sql`${table.releaseType} = 'payment_verified'`),
     foreignKey({
       name: "order_financial_release_order_fk",
       columns: [table.orderId],
@@ -2206,6 +2209,11 @@ export const financialLedgerEntry = pgTable(
       name: "financial_ledger_payment_fk",
       columns: [table.paymentId],
       foreignColumns: [payment.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "financial_ledger_refund_fk",
+      columns: [table.refundId],
+      foreignColumns: [refund.id],
     }).onDelete("restrict"),
   ],
 );
