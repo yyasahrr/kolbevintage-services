@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Headers, Inject, HttpCode } 
 import { CurrentUser, Roles, Public } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { ShippingOrchestrator, type ShippingActor } from "./shipping.orchestrator";
+import { toApiJson } from "../../common/api-json";
 
 /** Admin + carrier-facing shipping surface (B12 idempotency, B16 webhook inbox, B18 reconciliation). */
 @Controller("admin/shipping")
@@ -15,31 +16,31 @@ export class ShippingAdminController {
   @Get("shipments")
   @Roles("admin", "finance")
   async listShipments(@CurrentUser() claims: Claims, @Query() query: { wholesaleOrderId?: string; childOrderId?: string }) {
-    return this.orchestrator.listShipmentsForOrderForAdmin({ actor: this.actor(claims), wholesaleOrderId: query?.wholesaleOrderId, childOrderId: query?.childOrderId });
+    return toApiJson(await this.orchestrator.listShipmentsForOrderForAdmin({ actor: this.actor(claims), wholesaleOrderId: query?.wholesaleOrderId, childOrderId: query?.childOrderId }));
   }
 
   @Get("shipments/:id")
   @Roles("admin", "finance")
   async getShipment(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    return this.orchestrator.getShipmentForActor({ actor: this.actor(claims), shipmentId: id });
+    return toApiJson(await this.orchestrator.getShipmentForActor({ actor: this.actor(claims), shipmentId: id }));
   }
 
   @Post("quotes/:id/select")
   @Roles("admin", "finance")
   async selectQuote(@CurrentUser() claims: Claims, @Param("id") id: string, @Headers("idempotency-key") idemHeader?: string) {
-    return this.orchestrator.selectQuote({ actor: this.actor(claims), quoteId: id, idempotencyKey: idemHeader });
+    return toApiJson(await this.orchestrator.selectQuote({ actor: this.actor(claims), quoteId: id, idempotencyKey: idemHeader }));
   }
 
   @Post("shipments/:id/delivered")
   @Roles("admin")
   async markDelivered(@CurrentUser() claims: Claims, @Param("id") id: string, @Headers("idempotency-key") idemHeader?: string) {
-    return this.orchestrator.markDelivered({ actor: this.actor(claims), shipmentId: id, idempotencyKey: idemHeader, trigger: "admin" });
+    return toApiJson(await this.orchestrator.markDelivered({ actor: this.actor(claims), shipmentId: id, idempotencyKey: idemHeader, trigger: "admin" }));
   }
 
   @Post("shipments/:id/cancel")
   @Roles("admin")
   async cancelShipment(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body?: { reason?: string }, @Headers("idempotency-key") idemHeader?: string) {
-    return this.orchestrator.cancelShipment({ actor: this.actor(claims), shipmentId: id, reason: body?.reason, idempotencyKey: idemHeader });
+    return toApiJson(await this.orchestrator.cancelShipment({ actor: this.actor(claims), shipmentId: id, reason: body?.reason, idempotencyKey: idemHeader }));
   }
 
   @Post("shipments/:id/tracking")
@@ -50,7 +51,7 @@ export class ShippingAdminController {
     @Body() body: { trackingCode?: string; trackingUrl?: string },
     @Headers("idempotency-key") idemHeader?: string,
   ) {
-    return this.orchestrator.updateTracking({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader });
+    return toApiJson(await this.orchestrator.updateTracking({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader }));
   }
 
   /** B18 — operator-triggered reconciliation (scheduler-compatible). */
@@ -58,7 +59,7 @@ export class ShippingAdminController {
   @Roles("admin")
   @HttpCode(200)
   async reconcile(@Body() body: { provider?: string; limit?: number; staleProcessingMinutes?: number; pendingOlderThanSeconds?: number } = {}) {
-    return this.orchestrator.reconcile(body || {});
+    return toApiJson(await this.orchestrator.reconcile(body || {}));
   }
 }
 
@@ -77,6 +78,6 @@ export class ShippingProviderWebhookController {
   @HttpCode(200)
   async webhook(@Param("provider") provider: string, @Body() body: unknown, @Headers() headers: Record<string, string | string[] | undefined>) {
     const result = await this.orchestrator.ingestWebhook({ provider, request: { headers: headers || {}, body } });
-    return { received: true, duplicate: result.duplicate, eventId: result.outcome.eventId, status: result.outcome.status };
+    return toApiJson({ received: true, duplicate: result.duplicate, eventId: result.outcome.eventId, status: result.outcome.status });
   }
 }

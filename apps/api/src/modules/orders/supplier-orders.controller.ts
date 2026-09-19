@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, Inject } from "@nestjs/common";
 import { OrdersService } from "./orders.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
+import { toApiJson } from "../../common/api-json";
 import type { Claims } from "../../common/session";
 import { CatalogDomainError } from "../catalog/catalog.logic";
 import { SuppliersService } from "../suppliers/suppliers.service";
@@ -115,7 +116,7 @@ export class SupplierOrdersController {
       expectedVersion: body?.expectedVersion,
       idempotencyKey,
     });
-    return { child: result.child, replayed: result.replayed };
+    return toApiJson({ child: result.child, replayed: result.replayed });
   }
 
   @Post(":id/start-preparation")
@@ -143,7 +144,7 @@ export class SupplierOrdersController {
       expectedVersion: body?.expectedVersion,
       idempotencyKey,
     });
-    return { child: result.child, replayed: result.replayed };
+    return toApiJson({ child: result.child, replayed: result.replayed });
   }
 
   @Post(":id/ready")
@@ -168,7 +169,7 @@ export class SupplierOrdersController {
       supplierRole,
       idempotencyKey,
     });
-    return { child: result.child, replayed: result.replayed };
+    return toApiJson({ child: result.child, replayed: result.replayed });
   }
 
   @Post(":id/dispatch")
@@ -192,7 +193,7 @@ export class SupplierOrdersController {
       trackingCode: body?.trackingCode,
       idempotencyKey,
     });
-    return { child: result.child, replayed: result.replayed };
+    return toApiJson({ child: result.child, replayed: result.replayed });
   }
 
   @Post(":id/deliver")
@@ -214,7 +215,7 @@ export class SupplierOrdersController {
       actorRole: claims.role === "admin" ? "admin" : "supplier",
       idempotencyKey,
     });
-    return { child: result.child, replayed: result.replayed };
+    return toApiJson({ child: result.child, replayed: result.replayed });
   }
 
   @Post(":id/cancel")
@@ -238,6 +239,6 @@ export class SupplierOrdersController {
       reason: body?.reason,
       idempotencyKey,
     });
-    return { child: result.child, replayed: result.replayed };
+    return toApiJson({ child: result.child, replayed: result.replayed });
   }
 }

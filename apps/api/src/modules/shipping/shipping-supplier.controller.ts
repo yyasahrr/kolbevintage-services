@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Headers, Inject } from "@nestjs/com
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { ShippingOrchestrator, type ShippingActor } from "./shipping.orchestrator";
+import { toApiJson } from "../../common/api-json";
 
 /**
  * Phase 4.7.1 — supplier shipping surface.
@@ -22,13 +23,13 @@ export class ShippingSupplierController {
   @Get("child/:childOrderId")
   @Roles("supplier")
   async getShipmentsForChild(@CurrentUser() claims: Claims, @Param("childOrderId") childOrderId: string) {
-    return this.orchestrator.listShipmentsForChildForActor({ actor: this.actor(claims), childOrderId });
+    return toApiJson(await this.orchestrator.listShipmentsForChildForActor({ actor: this.actor(claims), childOrderId }));
   }
 
   @Get(":id")
   @Roles("supplier")
   async getShipment(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    return this.orchestrator.getShipmentForActor({ actor: this.actor(claims), shipmentId: id });
+    return toApiJson(await this.orchestrator.getShipmentForActor({ actor: this.actor(claims), shipmentId: id }));
   }
 
   @Post("quote")
@@ -45,7 +46,7 @@ export class ShippingSupplierController {
       providerName: body?.provider,
       idempotencyKey: idemHeader,
     });
-    return { quote: result.quote, replayed: result.replayed, notQuoted: (result as any).notQuoted ?? undefined };
+    return toApiJson({ quote: result.quote, replayed: result.replayed, notQuoted: (result as any).notQuoted ?? undefined });
   }
 
   @Post()
@@ -75,7 +76,7 @@ export class ShippingSupplierController {
       claimedShippingResponsibility: body?.shippingResponsibility,
       claimedAddressSnapshot: body?.addressSnapshot,
     });
-    return { shipment: result.shipment, items: result.items, replayed: result.replayed };
+    return toApiJson({ shipment: result.shipment, items: result.items, replayed: result.replayed });
   }
 
   @Post(":id/handoff")
@@ -86,13 +87,13 @@ export class ShippingSupplierController {
     @Body() body: { trackingCode?: string; trackingUrl?: string },
     @Headers("idempotency-key") idemHeader?: string,
   ) {
-    return this.orchestrator.handoff({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader });
+    return toApiJson(await this.orchestrator.handoff({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader }));
   }
 
   @Post(":id/cancel")
   @Roles("supplier")
   async cancel(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason?: string }, @Headers("idempotency-key") idemHeader?: string) {
-    return this.orchestrator.cancelShipment({ actor: this.actor(claims), shipmentId: id, reason: body?.reason, idempotencyKey: idemHeader });
+    return toApiJson(await this.orchestrator.cancelShipment({ actor: this.actor(claims), shipmentId: id, reason: body?.reason, idempotencyKey: idemHeader }));
   }
 
   @Post(":id/tracking")
@@ -103,6 +104,6 @@ export class ShippingSupplierController {
     @Body() body: { trackingCode?: string; trackingUrl?: string },
     @Headers("idempotency-key") idemHeader?: string,
   ) {
-    return this.orchestrator.updateTracking({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader });
+    return toApiJson(await this.orchestrator.updateTracking({ actor: this.actor(claims), shipmentId: id, trackingCode: body?.trackingCode, trackingUrl: body?.trackingUrl, idempotencyKey: idemHeader }));
   }
 }
