@@ -1,11 +1,11 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Inject } from "@nestjs/common";
 import { CatalogService } from "./catalog.service";
 import { Public, CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 
 @Controller("catalog")
 export class CatalogController {
-  constructor(private readonly catalog: CatalogService) {}
+  constructor(@Inject(CatalogService) private readonly catalog: CatalogService) {}
 
   @Public()
   @Get("products")
