@@ -1,7 +1,7 @@
 # Phase 4.5 — VIP/Admin Order Management & Single-Writer Legacy Cutover — Report
 
 **Starting SHA**: 87da03e76ded2dd2ea35f164a9563d103cee7567  
-**Ending SHA**: 639919c838d1ffcd250aa3dc8a7dff5e1122f383
+**Ending SHA**: 16f9d6c7926af209ee9275e23e819de246c35a3f
 **Branch**: arena/01a0ad1f-kolbevintage-services  
 **Date**: 2026-09-19  
 **CI**: 35423192629 SUCCESS (GREEN) — final, previous 35423129657 and 35423062888 also GREEN
@@ -131,7 +131,7 @@
 ### Remote CI
 - Push ONLY to `arena/01a0ad1f-kolbevintage-services`, wait for remote CI GREEN
 - Starting SHA: 87da03e76ded2dd2ea35f164a9563d103cee7567
-- Ending SHA**: 639919c838d1ffcd250aa3dc8a7dff5e1122f383
+- Ending SHA**: 16f9d6c7926af209ee9275e23e819de246c35a3f
 
 ### Remaining Blockers
 - None for Phase 4.5 scope. Payment gateway, fake capture, actual refund, wallet refund, supplier payout, settlement engine, real carrier API, external shipping quote, CRM, major UI redesign, Style Builder/Try-On changes explicitly NOT implemented per constraints.
