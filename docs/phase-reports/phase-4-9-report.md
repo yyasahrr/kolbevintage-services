@@ -22,6 +22,7 @@
 | B (Jobs & Durability) | `ed13402` | `feat(phase-4-9-b): add recovery-safe jobs and data durability controls` | 35468872299 | success |
 | C (Observability) | `53fce91` | `feat(phase-4-9-c): add production observability and infrastructure hardening` | 35469617644 | success |
 | D (Adversarial Suite) | `5c742fc` | `test(phase-4-9-d): verify adversarial production readiness` | 35470177258 | success |
+| Report | `7be64eb` | `docs: phase 4.9 comprehensive report` | 35470365182 | success |
 
 ---
 
