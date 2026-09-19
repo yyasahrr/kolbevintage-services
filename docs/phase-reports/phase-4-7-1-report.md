@@ -1,7 +1,7 @@
 # Phase 4.7.1 — Payment & Shipping Correctness, Concurrency & Verification Hardening — Report
 
 **Requested branch:** `arena/01a0ad1f-kolbevintage-services` (HEAD `a870bce4c92fc7a18c8ef7e69c482c1e87fbe783`, CI 35431312317 SUCCESS)
-**Actual branch:** `arena/01a0b926-kolbevintage-services` — this Arena session is pinned to that branch name; it was created from the very same HEAD `a870bce4…` and every 4.7.1 commit was pushed there. The remote has **no** `arena/01a0ad1f-kolbevintage-services` branch (it was never pushed), so nothing on it was bypassed. No `main` interaction, no history rewrite, no force push, no PR.
+**Actual branch:** `arena/01a0b926-kolbevintage-services` — this Arena session is pinned to that branch name; it was created from the very same HEAD `a870bce4…` and every 4.7.1 commit was pushed there. The older branch `arena/01a0ad1f-kolbevintage-services` **does exist remotely** (verified with `git ls-remote`) and remains on the Phase 4.7 lineage at `a870bce4…`; it received no 4.7.1 commits. The active source-of-truth branch from 4.7.1 onwards is `arena/01a0b926-kolbevintage-services`. No `main` interaction, no history rewrite, no force push, no PR.
 **Starting SHA:** `a870bce4c92fc7a18c8ef7e69c482c1e87fbe783` (phase 4.7 GREEN: 21 migrations, 61 tables, 140 FKs, 174 CHECKs, 608 tests)
 **Ending SHA (code):** `09fe78da65d11c28a6209451bc6384792a373383` (+ this report commit)
 **Date:** 2026-09-19
@@ -209,5 +209,22 @@ All timestamps default to PostgreSQL `now()`; all money is `bigint` IRR.
 - `npm run typecheck:all` — exit 0
 - `npm run db:migrate` from an empty database — 22/22, 63 tables, 144 FKs, 181 CHECKs
 - `npm run test:all` — shared 21 / database 84 / api 450 / next 120 = **675 passed, 0 skipped, 0 failed** (baseline 608)
-- CI conclusions for every 4.7.1 commit are recorded in the commit table above; the run for the
-  final HEAD (this report commit) is recorded in the closing message of the session.
+- CI conclusions for every 4.7.1 commit are recorded in the commit table above.
+
+## Final Phase 4.7.1 verification record
+
+```text
+Final Phase 4.7.1 HEAD:
+39213a7d697185309dd6f7269236b7d5a0a1f1db
+
+Final CI:
+35444618745
+
+Conclusion:
+SUCCESS
+```
+
+Commits after the Stage D implementation on this branch are documentation only
+(`cd07adb` report, `39213a7` report corrections); both passed CI (35443078982, 35444618745).
+
+Phase 4.7.5 Iran Legal & Compliance Foundation has NOT started.
