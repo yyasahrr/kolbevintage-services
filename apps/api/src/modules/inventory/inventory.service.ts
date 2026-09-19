@@ -1858,5 +1858,70 @@ export class InventoryService {
       throw e;
     }
   }
-}
 
+  // ── Phase 4.7 — Shipping inventory hooks (MUST NOT directly mutate; call via InventoryService) ──
+  async reserveForShipment(input: { sellerId: string; variantId: string; quantity: number; shipmentId: string; actorId: string; executor?: DbOrTx }) {
+    return this.createReservation({
+      variantId: input.variantId,
+      sellerId: input.sellerId,
+      quantity: input.quantity,
+      requester: { userId: input.actorId, role: "supplier", sellerId: input.sellerId } as any,
+      idempotencyKey: `ship_${input.shipmentId}:${input.variantId}:${input.quantity}`,
+      reason: `reserve for shipment ${input.shipmentId}`,
+      allocationId: `ship_${input.shipmentId}_${input.variantId}`,
+      executor: input.executor,
+    });
+  }
+
+  async consumeForShipment(input: { sellerId: string; variantId: string; quantity: number; shipmentId: string; actorId: string; executor?: DbOrTx }) {
+    return this.withExecutor(input.executor, async (tx) => {
+      const reservations = await (tx as any)
+        .select()
+        .from(inventoryReservation)
+        .where(and(eq(inventoryReservation.sellerId, input.sellerId), eq(inventoryReservation.variantId, input.variantId), eq(inventoryReservation.status, "active")))
+        .limit(10);
+      const [inventory] = await (tx as any)
+        .select()
+        .from(productVariantInventory)
+        .where(and(eq(productVariantInventory.variantId, input.variantId), eq(productVariantInventory.sellerId, input.sellerId)))
+        .for("update")
+        .limit(1);
+      if (!inventory) throw new NotFoundError("موجودی یافت نشد");
+      if (inventory.onHand < input.quantity) {
+        throw new CatalogDomainError("INSUFFICIENT_ON_HAND", `Insufficient onHand for consume`);
+      }
+      const before = { onHand: inventory.onHand, reserved: inventory.reserved };
+      const afterOnHand = inventory.onHand - input.quantity;
+      let afterReserved = inventory.reserved;
+      const matchingRes = reservations.find((r: any) => r.quantity >= input.quantity);
+      if (matchingRes) {
+        afterReserved = Math.max(0, inventory.reserved - input.quantity);
+        await (tx as any)
+          .update(inventoryReservation)
+          .set({ status: "confirmed", updatedAt: new Date() })
+          .where(eq(inventoryReservation.id, matchingRes.id));
+      }
+      await (tx as any)
+        .update(productVariantInventory)
+        .set({ onHand: afterOnHand, reserved: afterReserved, updatedAt: new Date() })
+        .where(eq(productVariantInventory.id, inventory.id));
+
+      await (tx as any).insert(inventoryLedger).values({
+        id: ledgerId(),
+        variantId: input.variantId,
+        sellerId: input.sellerId,
+        changeType: "DECREASE",
+        quantityDelta: -input.quantity,
+        beforeOnHand: before.onHand,
+        afterOnHand,
+        beforeReserved: before.reserved,
+        afterReserved,
+        reason: `consume for shipment ${input.shipmentId}`,
+        actorId: input.actorId === "system" ? null : input.actorId,
+      });
+
+      return { consumed: input.quantity, shipmentId: input.shipmentId };
+    });
+  }
+
+}

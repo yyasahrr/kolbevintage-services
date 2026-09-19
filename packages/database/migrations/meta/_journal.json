@@ -141,6 +141,13 @@
       "when": 1789693000000,
       "tag": "0019_phase_4_6_1_finance_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789694000000,
+      "tag": "0020_phase_4_7_provider_shipping_foundation",
+      "breakpoints": true
     }
   ]
 }

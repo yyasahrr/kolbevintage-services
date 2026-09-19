@@ -231,6 +231,19 @@ export const COMMAND_TYPES = [
   "refunds.complete",
   "refunds.fail",
   "refunds.cancel",
+  "payments.create_online_intent",
+  "payments.provider_callback",
+  "payments.provider_webhook",
+  "payments.reconcile",
+  "payments.refund_provider",
+  "shipping.quote_create",
+  "shipping.quote_select",
+  "shipping.shipment_create",
+  "shipping.shipment_handoff",
+  "shipping.shipment_tracking",
+  "shipping.shipment_deliver",
+  "shipping.shipment_cancel",
+  "shipping.reconcile",
 ] as const;
 
 /** Phase 4.6 — Wholesale Finance */
@@ -242,6 +255,40 @@ export const FINANCIAL_RELEASE_TYPES = ["payment_verified", "credit_approved", "
 export const FINANCIAL_LEDGER_ENTRY_TYPES = ["payment_verified", "refund_completed", "adjustment", "credit_release", "cod_release"] as const;
 export const FINANCIAL_LEDGER_DIRECTIONS = ["IN", "OUT"] as const;
 export const PAYMENT_ALLOCATION_STATUS = ["active", "voided"] as const;
+
+/** Phase 4.7 — Provider-ready Payment & Shipping */
+export const PAYMENT_PROVIDER_NAMES = ["manual", "fake"] as const;
+export const PAYMENT_PROVIDER_MODES = ["disabled", "fake", "sandbox", "live"] as const;
+export const PAYMENT_PROVIDER_EVENT_STATUSES = ["received", "processing", "processed", "ignored", "failed"] as const;
+export const PAYMENT_PROVIDER_EVENT_TYPES = [
+  "payment.created",
+  "payment.pending",
+  "payment.success",
+  "payment.failed",
+  "payment.cancelled",
+  "refund.created",
+  "refund.success",
+  "refund.failed",
+  "unknown",
+] as const;
+export const SHIPPING_PROVIDER_NAMES = ["manual", "fake"] as const;
+export const SHIPPING_QUOTE_STATUSES = ["active", "selected", "expired", "voided"] as const;
+export const SHIPMENT_STATUSES = ["pending", "ready", "handed_over", "in_transit", "delivered", "cancelled", "failed"] as const;
+export const SHIPMENT_EVENT_STATUSES = ["received", "processing", "processed", "ignored", "failed"] as const;
+export const SHIPMENT_EVENT_TYPES = [
+  "quote.created",
+  "quote.expired",
+  "shipment.created",
+  "shipment.ready",
+  "shipment.handed_over",
+  "shipment.in_transit",
+  "shipment.delivered",
+  "shipment.cancelled",
+  "shipment.failed",
+  "unknown",
+] as const;
+
+export const PAYMENT_PROVIDER_REFUND_SUPPORT = ["supported", "unsupported", "pending", "completed", "failed"] as const;
 
 /**
  * وضعیت تأمین‌کننده و درخواست تأمین‌کننده.
@@ -377,6 +424,21 @@ export const ORDER_EVENT_TYPES = [
   "refund.completed",
   "refund.failed",
   "refund.cancelled",
+  "payment.provider_intent_created",
+  "payment.provider_callback_received",
+  "payment.provider_webhook_received",
+  "payment.provider_verified",
+  "payment.reconciled",
+  "shipping.quote_created",
+  "shipping.quote_selected",
+  "shipping.quote_expired",
+  "shipping.shipment_created",
+  "shipping.shipment_ready",
+  "shipping.shipment_handed_over",
+  "shipping.shipment_in_transit",
+  "shipping.shipment_delivered",
+  "shipping.shipment_cancelled",
+  "shipping.shipment_failed",
 ] as const;
 
 /** Phase 4.2 — نقش عامل در تاریخچه/رویداد */

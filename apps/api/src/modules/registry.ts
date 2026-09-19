@@ -110,7 +110,13 @@ export const MODULES: readonly ModuleDefinition[] = [
   },
   { name: "fulfillment", tables: ["fulfillment_exception", "fulfillment_replacement_request"], dependsOn: ["orders", "inventory", "suppliers", "supplier-team", "audit"], status: "scaffolded", phase: 4 },
   { name: "shipments", tables: [], dependsOn: ["orders", "shipping"], status: "planned", phase: 4 },
-  { name: "shipping", tables: [], dependsOn: ["warehouses"], status: "planned", phase: 4 },
+  {
+    name: "shipping",
+    tables: ["shipping_quote", "shipment", "shipment_item", "shipment_event"],
+    dependsOn: ["orders", "inventory", "suppliers", "audit"],
+    status: "scaffolded",
+    phase: 4,
+  },
   {
     name: "payments",
     tables: [
@@ -121,6 +127,7 @@ export const MODULES: readonly ModuleDefinition[] = [
       "order_financial_release",
       "financial_ledger_entry",
       "refund",
+      "payment_provider_event",
     ],
     dependsOn: ["orders", "fulfillment", "audit"],
     status: "scaffolded",

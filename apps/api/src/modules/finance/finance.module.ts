@@ -1,7 +1,8 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { WholesaleFinanceOrchestrator } from "./wholesale-finance.orchestrator";
 import { PaymentsModule } from "../payments/payments.module";
 import { OrdersModule } from "../orders/orders.module";
+import { ShippingModule } from "../shipping/shipping.module";
 import { DatabaseModule } from "../../database/database.module";
 import { AuditModule } from "../audit/audit.module";
 import { SuppliersModule } from "../suppliers/suppliers.module";
@@ -11,7 +12,7 @@ import { AdminFinanceController } from "./admin-finance.controller";
 import { SupplierFinanceController } from "./supplier-finance.controller";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, PaymentsModule, OrdersModule, SuppliersModule, SupplierTeamModule],
+  imports: [DatabaseModule, AuditModule, forwardRef(() => PaymentsModule), OrdersModule, forwardRef(() => ShippingModule), SuppliersModule, SupplierTeamModule],
   controllers: [WholesaleFinanceController, AdminFinanceController, SupplierFinanceController],
   providers: [WholesaleFinanceOrchestrator],
   exports: [WholesaleFinanceOrchestrator],

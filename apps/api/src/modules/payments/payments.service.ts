@@ -429,6 +429,331 @@ export class PaymentsService {
     return newProforma;
   }
 
+  // Phase 4.7 — Online payment intent with no network under lock pattern
+  async createOnlinePaymentIntent(input: {
+    orderId: string;
+    buyerUserId: string;
+    providerName?: string;
+    idempotencyKey: string;
+    callbackUrl?: string;
+    actorRole?: string;
+    executor?: DbOrTx;
+  }): Promise<{ payment: any; isNew: boolean; replayed: boolean }> {
+    // Amount authority: server derives from canonical financial summary currentPayable
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const { commandIdempotency } = await import("@kolbe/database");
+      const providerName = (input.providerName || process.env.WHOLESALE_PAYMENT_PROVIDER || "manual").toLowerCase();
+
+      // Reject fake in production guard (also in registry, but double-check here)
+      const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase();
+      const mode = (process.env.PAYMENT_PROVIDER_MODE || "disabled").toLowerCase();
+      if (nodeEnv === "production" && (providerName === "fake" || mode === "fake")) {
+        throw new FinanceDomainError("PROVIDER_NOT_ALLOWED", "Fake provider prohibited in production", 403);
+      }
+
+      const requestHash = hashRequest({ orderId: input.orderId, provider: providerName, method: "online" });
+
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "wOrder"),
+            eq(commandIdempotency.scopeId, input.orderId),
+            eq(commandIdempotency.commandType, "payments.create_online_intent"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
+      if (existingIdem) {
+        if (existingIdem.requestHash !== requestHash) throw new FinanceDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
+        if (existingIdem.state === "completed") {
+          const existingPayment = await tx.select().from(payment).where(eq(payment.id, existingIdem.resultResourceId)).limit(1);
+          return { payment: existingPayment[0], isNew: false, replayed: true };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "wOrder",
+          scopeId: input.orderId,
+          commandType: "payments.create_online_intent",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          state: "pending",
+          createdAt: await this.getDbNow(tx),
+          updatedAt: await this.getDbNow(tx),
+        });
+      }
+
+      // Check existing pending payment for same idempotency
+      const [existingPaymentByKey] = await tx.select().from(payment).where(and(eq(payment.wholesaleOrderId, input.orderId), eq(payment.idempotencyKey, input.idempotencyKey))).limit(1);
+      if (existingPaymentByKey) {
+        return { payment: existingPaymentByKey, isNew: false, replayed: true };
+      }
+
+      // Server derives currency and currentPayable from financial summary
+      const summary = await this.getOrderFinancialSummary(input.orderId, tx);
+      const currency = summary.currency || "IRR";
+      let currentPayable: bigint;
+      try {
+        currentPayable = BigInt(summary.currentPayable);
+      } catch {
+        currentPayable = 0n;
+      }
+      if (currentPayable <= 0n) {
+        throw new FinanceDomainError("INSUFFICIENT_PAYMENT_COVERAGE", `Current payable is ${currentPayable.toString()}, cannot create online payment`);
+      }
+
+      const now = await this.getDbNow(tx);
+      const pid = paymentId();
+      let pref = generatePaymentReference();
+      let pay: any = null;
+      let attempts = 0;
+      while (attempts < 5) {
+        try {
+          const [inserted] = await tx
+            .insert(payment)
+            .values({
+              id: pid,
+              paymentReference: pref,
+              wholesaleOrderId: input.orderId,
+              method: "online",
+              provider: providerName,
+              status: "pending",
+              amount: currentPayable as any,
+              currency,
+              externalReference: null,
+              providerReference: null,
+              providerState: "created",
+              redirectUrl: input.callbackUrl || null,
+              providerPayloadHash: null,
+              lastProviderCallAt: null,
+              providerAttempts: 0,
+              submittedBy: input.buyerUserId,
+              submittedAt: now,
+              idempotencyKey: input.idempotencyKey,
+              requestHash,
+              version: 0,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          pay = inserted;
+          break;
+        } catch (e: any) {
+          if (e?.code === "23505" && e?.message?.includes("payment_reference")) {
+            attempts++;
+            pref = generatePaymentReference();
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!pay) throw new FinanceDomainError("PAYMENT_REFERENCE_COLLISION", "Payment reference collision", 409);
+
+      await this.auditService.record(
+        {
+          actorId: input.buyerUserId,
+          actorRole: input.actorRole || "buyer",
+          action: "payment.provider_intent_created",
+          entityType: "payment",
+          entityId: pid,
+          after: { orderId: input.orderId, amount: currentPayable.toString(), currency, provider: providerName, method: "online" },
+          metadata: { idempotencyKey: input.idempotencyKey, provider: providerName },
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: pid, resultPayload: sanitizeForJsonb(pay) as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "wOrder"),
+            eq(commandIdempotency.scopeId, input.orderId),
+            eq(commandIdempotency.commandType, "payments.create_online_intent"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { payment: pay, isNew: true, replayed: false };
+    });
+  }
+
+  // Phase 4.7 — Persist provider intent result outside lock (Transaction B)
+  async persistProviderIntentResult(input: {
+    paymentId: string;
+    providerReference?: string;
+    redirectUrl?: string;
+    providerState?: string;
+    payloadHash?: string;
+    providerResult?: any;
+    error?: string;
+    executor?: DbOrTx;
+  }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const payResult = await tx.execute(sql`SELECT * FROM payment WHERE id = ${input.paymentId} FOR UPDATE`);
+      const pay = payResult.rows?.[0];
+      if (!pay) throw new FinanceDomainError("PAYMENT_NOT_FOUND", `Payment ${input.paymentId} not found`);
+      const now = await this.getDbNow(tx);
+      let providerReference = input.providerReference;
+      let redirectUrl = input.redirectUrl;
+      let providerState = input.providerState;
+      let payloadHash = input.payloadHash;
+      if (input.providerResult) {
+        providerReference = input.providerResult.providerReference || input.providerResult.authority || input.providerResult.reference || providerReference;
+        redirectUrl = input.providerResult.redirectUrl || input.providerResult.paymentUrl || redirectUrl;
+        providerState = input.providerResult.providerState || input.providerResult.state || providerState || "created";
+        payloadHash = hashRequest(input.providerResult);
+      }
+      if (input.error) {
+        providerState = "failed";
+      }
+      const [updated] = await tx
+        .update(payment)
+        .set({
+          providerReference: providerReference || pay.provider_reference,
+          redirectUrl: redirectUrl || pay.redirect_url,
+          providerState: providerState || pay.provider_state || "pending",
+          providerPayloadHash: payloadHash || pay.provider_payload_hash,
+          lastProviderCallAt: now,
+          providerAttempts: (pay.provider_attempts || 0) + 1,
+          updatedAt: now,
+        })
+        .where(eq(payment.id, input.paymentId))
+        .returning();
+      return updated;
+    });
+  }
+
+  // Phase 4.7 — Supersede proforma for shipping fee (fee triggers Finance via Proforma supersede not Order rewrite)
+  async supersedeProformaForShipping(input: { proformaId: string; childOrderId: string; shippingAmount: string; quoteId: string; actorId: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    const shippingAmt = BigInt(input.shippingAmount);
+    if (shippingAmt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Shipping amount must be >0 for supersede");
+    const [old] = await tx.select().from(wholesaleProforma).where(eq(wholesaleProforma.id, input.proformaId)).limit(1).for("update");
+    if (!old) throw new FinanceDomainError("PROFORMA_NOT_FOUND", `Proforma ${input.proformaId} not found`);
+    if (old.status !== "issued") throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot supersede from ${old.status}`);
+    if (old.childOrderId !== input.childOrderId) throw new FinanceDomainError("PROFORMA_MISMATCH", "Child order mismatch for supersede");
+
+    // Load lines
+    const existingLines = await tx.select().from(wholesaleProformaLine).where(eq(wholesaleProformaLine.proformaId, old.id));
+    const itemsTotal = BigInt(old.itemsTotal || 0);
+    const newTotal = itemsTotal + shippingAmt;
+
+    // Check if already superseded for same shipping (idempotent guard handled by caller idempotency, but double-check)
+    const now = await this.getDbNow(tx);
+    const validityHours = this.getProformaValidityHours();
+    let expiresAt: Date | null = null;
+    if (validityHours !== null) {
+      expiresAt = new Date(now.getTime() + validityHours * 60 * 60 * 1000);
+    }
+
+    const newTermsSnapshot = {
+      orderId: old.wholesaleOrderId,
+      childOrderId: old.childOrderId,
+      sellerId: old.sellerId,
+      supplierId: old.supplierId,
+      currency: old.currency,
+      itemsTotal: itemsTotal.toString(),
+      shippingTotal: shippingAmt.toString(),
+      totalAmount: newTotal.toString(),
+      issuedAt: now.toISOString(),
+      supersededFrom: old.id,
+      version: old.version + 1,
+      shippingQuoteId: input.quoteId,
+      lines: existingLines.map((l: any) => ({
+        wholesaleOrderItemId: l.wholesaleOrderItemId,
+        purchaseOrderItemId: l.purchaseOrderItemId,
+        descriptionSnapshot: l.descriptionSnapshot,
+        skuSnapshot: l.skuSnapshot,
+        quantity: l.quantity,
+        pricingUnit: l.pricingUnit,
+        unitPrice: (l.unitPrice || 0).toString(),
+        lineTotal: (l.lineTotal || 0).toString(),
+      })),
+    };
+
+    let newProforma: any = null;
+    let attempts = 0;
+    while (attempts < 5) {
+      const newId = proformaId();
+      const newNumber = generateProformaNumber();
+      try {
+        const [inserted] = await tx
+          .insert(wholesaleProforma)
+          .values({
+            id: newId,
+            proformaNumber: newNumber,
+            wholesaleOrderId: old.wholesaleOrderId,
+            childOrderId: old.childOrderId,
+            sellerId: old.sellerId,
+            supplierId: old.supplierId,
+            version: old.version + 1,
+            status: "issued",
+            currency: old.currency,
+            itemsTotal: itemsTotal as any,
+            shippingTotal: shippingAmt as any,
+            totalAmount: newTotal as any,
+            termsSnapshot: sanitizeForJsonb(newTermsSnapshot) as any,
+            issuedAt: now,
+            expiresAt,
+            supersededBy: null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+        newProforma = inserted;
+        break;
+      } catch (e: any) {
+        if (e?.code === "23505" && e?.message?.includes("proforma_number")) {
+          attempts++;
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (!newProforma) throw new FinanceDomainError("PROFORMA_NUMBER_COLLISION", "Failed to supersede proforma for shipping", 409);
+
+    for (const l of existingLines) {
+      const lineId = proformaLineId();
+      await tx.insert(wholesaleProformaLine).values({
+        id: lineId,
+        proformaId: newProforma.id,
+        wholesaleOrderItemId: l.wholesaleOrderItemId,
+        purchaseOrderItemId: l.purchaseOrderItemId,
+        descriptionSnapshot: l.descriptionSnapshot,
+        skuSnapshot: l.skuSnapshot,
+        quantity: l.quantity,
+        pricingUnit: l.pricingUnit,
+        unitPrice: l.unitPrice,
+        lineTotal: l.lineTotal,
+        currency: l.currency,
+        createdAt: now,
+      });
+    }
+
+    await tx.update(wholesaleProforma).set({ status: "superseded", supersededBy: newProforma.id, updatedAt: now }).where(eq(wholesaleProforma.id, old.id));
+
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: "admin",
+        action: "proforma.superseded_shipping",
+        entityType: "wholesale_proforma",
+        entityId: old.id,
+        before: { status: old.status, shippingTotal: (old.shippingTotal || 0).toString(), totalAmount: (old.totalAmount || 0).toString() },
+        after: { status: "superseded", newId: newProforma.id, shippingTotal: shippingAmt.toString(), totalAmount: newTotal.toString() },
+        metadata: { orderId: old.wholesaleOrderId, childOrderId: input.childOrderId, quoteId: input.quoteId },
+      },
+      tx,
+    );
+
+    return newProforma;
+  }
+
   async submitTransferPayment(input: {
     orderId: string;
     buyerUserId: string;
@@ -577,7 +902,7 @@ export class PaymentsService {
     if (!input.externalReference || input.externalReference.trim().length === 0) {
       throw new FinanceDomainError("EXTERNAL_REFERENCE_REQUIRED", "externalReference required for verification");
     }
-    if (!["admin", "finance"].includes(input.actorRole || "")) {
+    if (!["admin", "finance", "system"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may verify payments", 403);
     }
 
@@ -593,7 +918,7 @@ export class PaymentsService {
       if (pay.status === "verified") {
         return { payment: pay, replayed: true, allocations: [] };
       }
-      if (pay.status !== "evidence_submitted") {
+      if (!["evidence_submitted", "pending"].includes(pay.status)) {
         throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot verify from ${pay.status}`);
       }
 
@@ -639,6 +964,7 @@ export class PaymentsService {
           verifiedBy: input.adminUserId,
           verifiedAt: now,
           externalReference: input.externalReference,
+          providerState: "success",
           version: pay.version + 1,
           updatedAt: now,
         })
@@ -702,7 +1028,7 @@ export class PaymentsService {
 
   async rejectPayment(input: { paymentId: string; adminUserId: string; reason: string; idempotencyKey: string; expectedVersion?: number; actorRole?: string; executor?: DbOrTx }) {
     if (!input.reason) throw new FinanceDomainError("REASON_REQUIRED", "Reason required for rejection");
-    if (!["admin", "finance"].includes(input.actorRole || "")) {
+    if (!["admin", "finance", "system"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may reject payments", 403);
     }
     return this.withExecutor(input.executor, async (tx: any) => {
@@ -710,7 +1036,7 @@ export class PaymentsService {
       const pay = payResult.rows?.[0];
       if (!pay) throw new FinanceDomainError("PAYMENT_NOT_FOUND", `Payment ${input.paymentId} not found`);
       if (pay.status === "failed") return { payment: pay, replayed: true };
-      if (pay.status !== "evidence_submitted") throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot reject from ${pay.status}`);
+      if (!["evidence_submitted", "pending"].includes(pay.status)) throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot reject from ${pay.status}`);
 
       if (input.expectedVersion !== undefined && pay.version !== input.expectedVersion) {
         throw new FinanceDomainError("VERSION_CONFLICT", "Version conflict");
@@ -751,7 +1077,7 @@ export class PaymentsService {
       const now = await this.getDbNow(tx);
       const [updated] = await tx
         .update(payment)
-        .set({ status: "failed", failureReason: input.reason, version: pay.version + 1, updatedAt: now })
+        .set({ status: "failed", failureReason: input.reason, version: pay.version + 1, updatedAt: now, providerState: "failed" })
         .where(eq(payment.id, input.paymentId))
         .returning();
 
@@ -1117,8 +1443,6 @@ export class PaymentsService {
   async getOrderFinancialSummary(orderId: string, executor?: DbOrTx) {
     return this.withExecutor(executor, async (tx) => {
       const dbTx = tx as any;
-      // Payments owns only its tables — do NOT read wholesale_order for original total
-      // Active issued total is payable, original total is derived from sum of all proformas (issued+voided+superseded) or fallback to active
       const allProformaResult = await dbTx.execute(sql`SELECT COALESCE(SUM(total_amount),0) as sum FROM wholesale_proforma WHERE wholesale_order_id = ${orderId}`);
       const allProformaTotal = BigInt(allProformaResult.rows?.[0]?.sum || 0);
 
@@ -1746,5 +2070,82 @@ export class PaymentsService {
       createdAt: now,
     });
     return { releaseId: relId, createdAt: now };
+  }
+
+  async findByProviderReference(providerReference: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`SELECT * FROM payment WHERE provider_reference = ${providerReference} LIMIT 1`);
+      const row = result.rows?.[0];
+      if (!row) return null;
+      return row;
+    });
+  }
+
+  // Phase 4.7 — provider refund handling
+  async createProviderRefund(input: {
+    refundId: string;
+    provider: string;
+    externalReference?: string;
+    success: boolean;
+    failureReason?: string;
+    executor?: DbOrTx;
+  }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const now = await this.getDbNow(tx);
+      // If provider says unsupported, do NOT mark completed — stay suitable for manual completion
+      if (!input.success) {
+        // Check if failure is refund_unsupported
+        if (input.failureReason === "refund_unsupported") {
+          // Keep refund in approved state, do not complete
+          await this.auditService.record(
+            {
+              actorId: "system",
+              actorRole: "system",
+              action: "refund.provider_unsupported",
+              entityType: "refund",
+              entityId: input.refundId,
+              after: { provider: input.provider, failureReason: input.failureReason },
+              metadata: { refundId: input.refundId, provider: input.provider },
+            },
+            tx,
+          );
+          return { status: "unsupported" };
+        }
+        // Other failures — mark failed
+        await tx.execute(sql`UPDATE refund SET status = 'failed', updated_at = NOW() WHERE id = ${input.refundId}`);
+        return { status: "failed" };
+      }
+
+      // Success — complete via existing flow would require externalReference, but we have provider external ref
+      // For provider refunds, we complete with provider external reference
+      const [existing] = await tx.select().from(refund).where(eq(refund.id, input.refundId)).limit(1);
+      if (!existing) throw new FinanceDomainError("REFUND_NOT_FOUND", `Refund ${input.refundId} not found`);
+      if (existing.status === "completed") return { status: "already_completed" };
+
+      // Transition to completed using provider external ref
+      await tx
+        .update(refund)
+        .set({ status: "completed", completedAt: now, externalReference: input.externalReference || `provider-${input.provider}-${input.refundId}`, updatedAt: now, version: existing.version + 1 })
+        .where(eq(refund.id, input.refundId));
+
+      const ledgerEntryId = ledgerId();
+      await tx.insert(financialLedgerEntry).values({
+        id: ledgerEntryId,
+        orderId: existing.wholesaleOrderId,
+        childOrderId: existing.childOrderId,
+        refundId: input.refundId,
+        paymentId: existing.paymentId,
+        entryType: "refund_completed",
+        direction: "OUT",
+        amount: existing.amount,
+        currency: existing.currency,
+        externalReference: input.externalReference,
+        occurredAt: now,
+        createdAt: now,
+        metadata: sanitizeForJsonb({ provider: input.provider, completedBy: "provider" }) as any,
+      });
+
+      return { status: "completed", ledgerId: ledgerEntryId };
+    });
   }
 }

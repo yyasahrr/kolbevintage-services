@@ -3057,4 +3057,67 @@ export class OrdersService {
     const result = await tx.execute(sql`SELECT * FROM purchase_order WHERE wholesale_order_id = ${orderId} ORDER BY id ASC FOR UPDATE`);
     return result.rows;
   }
+
+  // Phase 4.7 — Shipping events (OrdersService owns Order status/history/event)
+  async recordShippingQuoteSelected(input: {
+    orderId?: string;
+    childOrderId: string;
+    quoteId: string;
+    shippingAmount: string;
+    actorId: string;
+    idempotencyKey: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const targetId = input.orderId || input.childOrderId;
+    const aggregateType = input.orderId ? "wholesale_order" : "purchase_order";
+    await this.appendEvent(
+      {
+        aggregateType: aggregateType as any,
+        aggregateId: targetId,
+        eventType: "shipping.quote_selected",
+        payload: { quoteId: input.quoteId, childOrderId: input.childOrderId, shippingAmount: input.shippingAmount, feeCause: "proforma_supersede" },
+        actorId: input.actorId,
+        actorRole: "admin",
+        idempotencyKey: input.idempotencyKey,
+      },
+      tx,
+    );
+  }
+
+  async recordShippingShipmentCreated(input: {
+    orderId: string;
+    childOrderId: string;
+    shipmentId: string;
+    actorId: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: "shipping.shipment_created",
+        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId, wholesaleOrderId: input.orderId },
+        actorId: input.actorId,
+        actorRole: "supplier",
+      },
+      tx,
+    );
+  }
+
+  async recordShippingDelivered(input: { orderId: string; childOrderId: string; shipmentId: string; actorId: string; executor: DbOrTx }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "purchase_order",
+        aggregateId: input.childOrderId,
+        eventType: "shipping.shipment_delivered",
+        payload: { shipmentId: input.shipmentId, childOrderId: input.childOrderId },
+        actorId: input.actorId,
+        actorRole: "system",
+      },
+      tx,
+    );
+  }
 }

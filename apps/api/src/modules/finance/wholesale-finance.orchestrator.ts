@@ -1,9 +1,11 @@
-import { Injectable, Inject } from "@nestjs/common";
+import { Injectable, Inject, Logger, forwardRef } from "@nestjs/common";
 import { eq, and } from "drizzle-orm";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
 import { PaymentsService } from "../payments/payments.service";
 import { OrdersService } from "../orders/orders.service";
+import { ShippingService } from "../shipping/shipping.service";
+import { PaymentProviderRegistry } from "../payments/payment-provider.registry";
 import { DomainError } from "@kolbe/shared";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -32,13 +34,17 @@ export class FinanceOrchestratorError extends DomainError {
 
 /**
  * WholesaleFinanceOrchestrator owns NO tables, coordinates via OrdersService and PaymentsService with same tx executor, shared tx.
+ * Phase 4.7: also coordinates ShippingService for quote->proforma supersede, and online payment provider intent.
  */
 @Injectable()
 export class WholesaleFinanceOrchestrator {
+  private readonly logger = new Logger(WholesaleFinanceOrchestrator.name);
   constructor(
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
     @Inject(PaymentsService) private readonly paymentsService: PaymentsService,
     @Inject(OrdersService) private readonly ordersService: OrdersService,
+    @Inject(forwardRef(() => ShippingService)) private readonly shippingService: ShippingService,
+    @Inject(PaymentProviderRegistry) private readonly paymentProviderRegistry: PaymentProviderRegistry,
     @Inject(AuditService) private readonly auditService: AuditService,
   ) {}
 
@@ -491,6 +497,216 @@ export class WholesaleFinanceOrchestrator {
       });
 
       return { refundObligations: refundObligations.map((o) => ({ childOrderId: o.childOrderId, amount: o.amount.toString() })), order };
+    });
+  }
+
+  // ── Phase 4.7: Online payment intent (provider-ready) ──────────────────
+  async createOnlinePaymentIntent(input: {
+    orderId: string;
+    buyerUserId: string;
+    idempotencyKey: string;
+    providerName?: string;
+    callbackUrl?: string;
+    actorRole?: string;
+  }) {
+    // TxA: validate + create pending payment
+    const pendingResult = await this.db.transaction(async (tx: any) => {
+      await this.ordersService.validateAndLockForPaymentSubmission({
+        orderId: input.orderId,
+        buyerUserId: input.buyerUserId,
+        executor: tx,
+      });
+      const result = await this.paymentsService.createOnlinePaymentIntent({
+        orderId: input.orderId,
+        buyerUserId: input.buyerUserId,
+        idempotencyKey: input.idempotencyKey,
+        providerName: input.providerName,
+        callbackUrl: input.callbackUrl,
+        actorRole: input.actorRole,
+        executor: tx,
+      });
+      if (!result.replayed) {
+        await this.ordersService.recordPaymentEvidenceSubmitted({
+          orderId: input.orderId,
+          paymentId: result.payment.id,
+          amount: (result.payment.amount || 0).toString(),
+          currency: result.payment.currency,
+          actorId: input.buyerUserId,
+          idempotencyKey: input.idempotencyKey,
+          executor: tx,
+        });
+      }
+      return result;
+    });
+
+    if (pendingResult.replayed) {
+      return pendingResult;
+    }
+
+    // Provider call outside DB lock — no network under lock
+    const providerName = (input.providerName || process.env.WHOLESALE_PAYMENT_PROVIDER || "manual").toLowerCase();
+    const provider = this.paymentProviderRegistry.resolve(providerName);
+    let providerResult: any;
+    try {
+      providerResult = await (provider as any).createIntent({
+        amount: BigInt(pendingResult.payment.amount || 0),
+        currency: pendingResult.payment.currency,
+        orderId: input.orderId,
+        paymentId: pendingResult.payment.id,
+        buyerUserId: input.buyerUserId,
+        idempotencyKey: input.idempotencyKey,
+        callbackUrl: input.callbackUrl,
+        method: "online",
+      });
+    } catch (e: any) {
+      this.logger.warn(`Payment provider ${providerName} createIntent failed for payment ${pendingResult.payment.id}: ${e.message}`);
+      // Do not throw away pending payment; it remains pending with failure audit
+      await this.db.transaction(async (tx: any) => {
+        await this.paymentsService.persistProviderIntentResult({
+          paymentId: pendingResult.payment.id,
+          providerResult: null,
+          error: e.message,
+          executor: tx,
+        });
+      });
+      throw new FinanceOrchestratorError("PROVIDER_ERROR", `Provider ${providerName} failed: ${e.message}`, 502);
+    }
+
+    // TxB: persist provider result
+    const persisted = await this.db.transaction(async (tx: any) => {
+      return this.paymentsService.persistProviderIntentResult({
+        paymentId: pendingResult.payment.id,
+        providerResult,
+        executor: tx,
+      });
+    });
+
+    return { payment: persisted, providerResult, replayed: false };
+  }
+
+  // ── Phase 4.7: Shipping quote selection triggers proforma supersede ────
+  async selectShippingQuote(input: {
+    quoteId: string;
+    actorId: string;
+    actorRole?: string;
+    idempotencyKey: string;
+  }) {
+    return this.db.transaction(async (tx: any) => {
+      const { commandIdempotency } = await import("@kolbe/database");
+      const requestHash = hashRequest({ quoteId: input.quoteId, action: "select_quote" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "shipping_quote"),
+            eq(commandIdempotency.scopeId, input.quoteId),
+            eq(commandIdempotency.commandType, "shipping.quote_select"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== requestHash) throw new FinanceOrchestratorError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
+        if (existingIdem.state === "completed") {
+          return { replayed: true };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "shipping_quote",
+          scopeId: input.quoteId,
+          commandType: "shipping.quote_select",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          state: "pending",
+          createdAt: await this.ordersService.getDbNow(tx),
+          updatedAt: await this.ordersService.getDbNow(tx),
+        });
+      }
+
+      const selectedQuote = await this.shippingService.selectQuote({
+        quoteId: input.quoteId,
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        executor: tx,
+      });
+
+      // Fee triggers Finance via Proforma supersede not Order rewrite
+      // If shipping_total = 0 means NOT QUOTED per spec, so skip supersede
+      const shippingAmount = BigInt(selectedQuote.amount || 0);
+      if (shippingAmount > 0n) {
+        // Supersede proforma for child order
+        const childOrderId = selectedQuote.childOrderId || selectedQuote.child_order_id;
+        const existingProforma = await this.paymentsService.getIssuedProformaForChild(childOrderId, tx);
+        if (existingProforma) {
+          await this.paymentsService.supersedeProformaForShipping({
+            proformaId: existingProforma.id,
+            childOrderId,
+            shippingAmount: shippingAmount.toString(),
+            quoteId: input.quoteId,
+            actorId: input.actorId,
+            executor: tx,
+          });
+          await this.ordersService.recordShippingQuoteSelected({
+            orderId: (selectedQuote as any).wholesaleOrderId || undefined,
+            childOrderId,
+            quoteId: input.quoteId,
+            shippingAmount: shippingAmount.toString(),
+            actorId: input.actorId,
+            idempotencyKey: input.idempotencyKey,
+            executor: tx,
+          });
+        }
+      }
+
+      const now = await this.ordersService.getDbNow(tx);
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: input.quoteId, resultPayload: { quoteId: input.quoteId } as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "shipping_quote"),
+            eq(commandIdempotency.scopeId, input.quoteId),
+            eq(commandIdempotency.commandType, "shipping.quote_select"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { quote: selectedQuote, replayed: false };
+    });
+  }
+
+  async createShipmentWithInventory(input: {
+    wholesaleOrderId: string;
+    childOrderId: string;
+    sellerId: string;
+    shippingResponsibility?: string;
+    providerName?: string;
+    addressSnapshot?: any;
+    quoteId?: string;
+    items: Array<{ wholesaleOrderItemId: string; purchaseOrderItemId?: string; variantId?: string; pieceQuantity: number }>;
+    idempotencyKey: string;
+    actorId: string;
+    actorRole?: string;
+  }) {
+    // Finance orchestrator delegates to ShippingService; Shipping owns inventory coordination via its own service
+    return this.db.transaction(async (tx: any) => {
+      return this.shippingService.createShipment({
+        wholesaleOrderId: input.wholesaleOrderId,
+        childOrderId: input.childOrderId,
+        sellerId: input.sellerId,
+        shippingResponsibility: input.shippingResponsibility,
+        providerName: input.providerName,
+        addressSnapshot: input.addressSnapshot,
+        quoteId: input.quoteId,
+        items: input.items,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        executor: tx,
+      });
     });
   }
 }

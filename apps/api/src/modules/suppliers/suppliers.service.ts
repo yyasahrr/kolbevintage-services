@@ -72,4 +72,15 @@ export class SuppliersService {
     const nowVal = (result as any).rows?.[0]?.now || (result as any)[0]?.now;
     return new Date(nowVal);
   }
+
+  async getUserMemberships(userId: string, executor?: any) {
+    const db = (executor as any) || this.db;
+    const members = await db.select().from(supplierMember).where(eq(supplierMember.userId, userId));
+    const result: any[] = [];
+    for (const m of members) {
+      const [sellerRow] = await db.select().from(seller).where(eq(seller.supplierId, m.supplierId)).limit(1);
+      result.push({ ...m, sellerId: sellerRow?.id || null, supplierId: m.supplierId, role: m.role, userId: m.userId });
+    }
+    return result;
+  }
 }

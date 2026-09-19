@@ -31,6 +31,7 @@ import { OrdersModule } from "./modules/orders/orders.module";
 import { FulfillmentModule } from "./modules/fulfillment/fulfillment.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { FinanceModule } from "./modules/finance/finance.module";
+import { ShippingModule } from "./modules/shipping/shipping.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
 
@@ -51,6 +52,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     OrdersModule,
     FulfillmentModule,
     PaymentsModule,
+    ShippingModule,
     FinanceModule,
     RatingsModule,
     AdminModule,

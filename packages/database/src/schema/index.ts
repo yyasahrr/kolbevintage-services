@@ -64,4 +64,9 @@ export {
   orderFinancialRelease,
   financialLedgerEntry,
   refund,
+  paymentProviderEvent,
+  shippingQuote,
+  shipment,
+  shipmentItem,
+  shipmentEvent,
 } from "./tables";

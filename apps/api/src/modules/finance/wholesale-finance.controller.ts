@@ -56,7 +56,6 @@ export class WholesaleFinanceController {
   @Get(":id/proformas")
   @Roles("vip", "customer")
   async getProformas(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    // Ownership verified via OrdersService (Orders owns wOrder)
     await this.ordersService.getWholesaleOrderDetailForBuyer({ orderId: id, buyerUserId: claims.sub });
     const proformas = await this.paymentsService.getProformasForBuyer(id);
     return { proformas };
@@ -119,6 +118,43 @@ export class WholesaleFinanceController {
         referencePresent: !!result.payment.externalReference || !!result.payment.external_reference,
       },
       replayed: result.replayed,
+    };
+  }
+
+  @Post(":id/payments/online")
+  @Roles("vip", "customer")
+  async createOnlinePayment(
+    @CurrentUser() claims: Claims,
+    @Param("id") id: string,
+    @Headers("idempotency-key") idempotencyKeyHeader: string,
+    @Headers("Idempotency-Key") idempotencyKeyHeader2: string,
+    @Body() body?: any,
+  ) {
+    const finalIdem = idempotencyKeyHeader || idempotencyKeyHeader2 || body?.idempotencyKey;
+    if (!finalIdem) throw new Error("Idempotency-Key required");
+    const result = await this.orchestrator.createOnlinePaymentIntent({
+      orderId: id,
+      buyerUserId: claims.sub,
+      idempotencyKey: finalIdem,
+      providerName: body?.provider,
+      callbackUrl: body?.callbackUrl,
+      actorRole: claims.role,
+    });
+    const payment = (result as any).payment;
+    const provResult = (result as any).providerResult;
+    return {
+      payment: {
+        id: payment.id,
+        paymentReference: payment.paymentReference || payment.payment_reference,
+        provider: payment.provider,
+        providerReference: payment.providerReference || payment.provider_reference,
+        redirectUrl: payment.redirectUrl || payment.redirect_url,
+        amount: (payment.amount || 0).toString(),
+        currency: payment.currency,
+        status: payment.status,
+      },
+      providerResult: provResult ? { hasRedirect: !!(provResult.redirectUrl || provResult.paymentUrl) } : null,
+      replayed: (result as any).replayed || false,
     };
   }
 }

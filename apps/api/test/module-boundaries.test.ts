@@ -129,6 +129,11 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "order_financial_release",
       "financial_ledger_entry",
       "refund",
+      "payment_provider_event",
+      "shipping_quote",
+      "shipment",
+      "shipment_item",
+      "shipment_event",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);
@@ -300,6 +305,7 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
       ],
       payments: ["command_idempotency", "seller", "supplier", "supplier_member", "account_user", "audit_log"],
       finance: ["seller", "supplier", "supplier_member", "command_idempotency", "account_user", "audit_log"],
+      shipping: ["seller", "supplier", "supplier_member", "product_variant", "product_variant_inventory", "inventory_reservation", "command_idempotency", "account_user", "audit_log"],
     };
 
     for (const module of MODULES) {
@@ -309,12 +315,10 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
       const aliases = new Map(tables.map((table) => [table, camelCase(table)]));
 
       for (const { file, content } of readModuleSources(module.name)) {
-        // Split into lines to avoid false positives from DTO property names
         const lines = content.split("\n");
         for (const [table, alias] of aliases) {
           if (owned.has(table)) continue;
           if (allowedRead.has(table)) continue;
-          // Patterns that indicate real table access
           const sqlTablePatterns = [
             new RegExp(`\\bFROM\\s+\"?${table}\"?\\b`, "i"),
             new RegExp(`\\bINTO\\s+\"?${table}\"?\\b`, "i"),
@@ -359,7 +363,7 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
     for (const module of MODULES) {
       if (module.status === "planned") continue;
       for (const { file, content } of readModuleSources(module.name)) {
-        for (const match of content.matchAll(/from\s+"([^"]*modules\/([^/"]+)\/[^"]+)"/g)) {
+        for (const match of content.matchAll(/from\s+"([^\"]*modules\/([^/\"]+)\/[^\"]+)"/g)) {
           const [, importPath, targetModule] = match;
           if (targetModule === module.name) continue;
           if (!allowedSurface.test(importPath)) {

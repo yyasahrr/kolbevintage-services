@@ -67,6 +67,8 @@ import {
   PACKAGE_TYPES,
   PAYMENT_ALLOCATION_STATUS,
   PAYMENT_METHODS,
+  PAYMENT_PROVIDER_EVENT_STATUSES,
+  PAYMENT_PROVIDER_EVENT_TYPES,
   PAYMENT_STATUSES,
   PRICING_UNITS,
   PRODUCT_STATUSES,
@@ -80,7 +82,11 @@ import {
   RETAIL_PAYMENT_STATUSES,
   RFQ_STATUSES,
   SELLER_TYPES,
+  SHIPMENT_EVENT_STATUSES,
+  SHIPMENT_EVENT_TYPES,
+  SHIPMENT_STATUSES,
   SHIPPING_METHOD_IDS,
+  SHIPPING_QUOTE_STATUSES,
   SHIPPING_RESPONSIBILITIES,
   SUPPLIER_APPLICATION_STATUSES,
   SUPPLIER_MEMBER_ROLES,
@@ -2069,6 +2075,13 @@ export const payment = pgTable(
     idempotencyKey: text("idempotency_key"),
     requestHash: text("request_hash"),
     version: integer("version").notNull().default(0),
+    // Phase 4.7 — provider-ready fields generic
+    providerReference: text("provider_reference"),
+    providerState: text("provider_state"),
+    redirectUrl: text("redirect_url"),
+    providerPayloadHash: text("provider_payload_hash"),
+    lastProviderCallAt: timestamp("last_provider_call_at", { withTimezone: true }),
+    providerAttempts: integer("provider_attempts").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -2273,6 +2286,195 @@ export const refund = pgTable(
       name: "refund_payment_fk",
       columns: [table.paymentId],
       foreignColumns: [payment.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/* ── Phase 4.7 — Provider-ready Payment & Shipping Foundation ──────────────
+ *  - payment_provider_event inbox for webhook/callback idempotency
+ *  - shipping_quote immutable snapshot
+ *  - shipment + shipment_item + shipment_event for provider-ready shipping
+ *  - All FKs RESTRICT, BIGINT money, no CASCADE
+ */
+
+export const paymentProviderEvent = pgTable(
+  "payment_provider_event",
+  {
+    id: text("id").primaryKey(),
+    provider: text("provider").notNull(),
+    externalEventId: text("external_event_id").notNull(),
+    externalPaymentReference: text("external_payment_reference"),
+    eventType: text("event_type").notNull().default("unknown"),
+    payloadHash: text("payload_hash"),
+    safeMetadata: jsonb("safe_metadata").notNull().default({}),
+    status: text("status").notNull().default("received"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("payment_provider_event_status_allowed", "status", PAYMENT_PROVIDER_EVENT_STATUSES),
+    stateCheck("payment_provider_event_type_allowed", "event_type", PAYMENT_PROVIDER_EVENT_TYPES),
+    uniqueIndex("payment_provider_event_provider_external_unique").on(table.provider, table.externalEventId),
+    index("payment_provider_event_provider_created").on(table.provider, table.createdAt),
+    index("payment_provider_event_status_created").on(table.status, table.createdAt),
+    index("payment_provider_event_external_ref").on(table.externalPaymentReference),
+  ],
+);
+
+export const shippingQuote = pgTable(
+  "shipping_quote",
+  {
+    id: text("id").primaryKey(),
+    quoteReference: text("quote_reference").notNull().unique(),
+    provider: text("provider").notNull().default("manual"),
+    childOrderId: text("child_order_id").notNull(),
+    serviceLevel: text("service_level"),
+    amount: bigint("amount", { mode: "bigint" }).notNull().default(sql`0`),
+    currency: text("currency").notNull().default("IRR"),
+    estimatedFrom: timestamp("estimated_from", { withTimezone: true }),
+    estimatedTo: timestamp("estimated_to", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    snapshot: jsonb("snapshot").notNull().default({}),
+    status: text("status").notNull().default("active"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("shipping_quote_status_allowed", "status", SHIPPING_QUOTE_STATUSES),
+    stateCheck("shipping_quote_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("shipping_quote_amount_range", "amount"),
+    uniqueIndex("shipping_quote_reference_unique").on(table.quoteReference),
+    index("shipping_quote_child_created").on(table.childOrderId, table.createdAt),
+    index("shipping_quote_provider_created").on(table.provider, table.createdAt),
+    index("shipping_quote_status_created").on(table.status, table.createdAt),
+    foreignKey({
+      name: "shipping_quote_child_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const shipment = pgTable(
+  "shipment",
+  {
+    id: text("id").primaryKey(),
+    shipmentCode: text("shipment_code").notNull().unique(),
+    wholesaleOrderId: text("wholesale_order_id").notNull(),
+    childOrderId: text("child_order_id").notNull(),
+    sellerId: text("seller_id").notNull(),
+    provider: text("provider").notNull().default("manual"),
+    shippingResponsibility: text("shipping_responsibility").notNull().default("SUPPLIER"),
+    externalReference: text("external_reference"),
+    status: text("status").notNull().default("pending"),
+    addressSnapshot: jsonb("address_snapshot").notNull().default({}),
+    quoteSnapshot: jsonb("quote_snapshot").notNull().default({}),
+    trackingCode: text("tracking_code"),
+    trackingUrl: text("tracking_url"),
+    handedOverAt: timestamp("handed_over_at", { withTimezone: true }),
+    shippedAt: timestamp("shipped_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("shipment_status_allowed", "status", SHIPMENT_STATUSES),
+    stateCheck("shipment_shipping_responsibility_allowed", "shipping_responsibility", SHIPPING_RESPONSIBILITIES),
+    uniqueIndex("shipment_code_unique").on(table.shipmentCode),
+    index("shipment_wholesale_created").on(table.wholesaleOrderId, table.createdAt),
+    index("shipment_child_created").on(table.childOrderId, table.createdAt),
+    index("shipment_seller_created").on(table.sellerId, table.createdAt),
+    index("shipment_status_created").on(table.status, table.createdAt),
+    index("shipment_tracking_code").on(table.trackingCode),
+    foreignKey({
+      name: "shipment_wholesale_fk",
+      columns: [table.wholesaleOrderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "shipment_child_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "shipment_seller_fk",
+      columns: [table.sellerId],
+      foreignColumns: [seller.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const shipmentItem = pgTable(
+  "shipment_item",
+  {
+    id: text("id").primaryKey(),
+    shipmentId: text("shipment_id").notNull(),
+    wholesaleOrderItemId: text("wholesale_order_item_id").notNull(),
+    purchaseOrderItemId: text("purchase_order_item_id"),
+    variantId: text("variant_id"),
+    pieceQuantity: integer("piece_quantity").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    positiveQuantityCheck("shipment_item_piece_quantity_positive", "piece_quantity"),
+    uniqueIndex("shipment_item_shipment_wholesale_unique").on(table.shipmentId, table.wholesaleOrderItemId),
+    index("shipment_item_shipment_created").on(table.shipmentId, table.createdAt),
+    index("shipment_item_wholesale_item").on(table.wholesaleOrderItemId),
+    foreignKey({
+      name: "shipment_item_shipment_fk",
+      columns: [table.shipmentId],
+      foreignColumns: [shipment.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "shipment_item_wholesale_item_fk",
+      columns: [table.wholesaleOrderItemId],
+      foreignColumns: [wholesaleOrderItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "shipment_item_purchase_item_fk",
+      columns: [table.purchaseOrderItemId],
+      foreignColumns: [purchaseOrderItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "shipment_item_variant_fk",
+      columns: [table.variantId],
+      foreignColumns: [productVariant.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const shipmentEvent = pgTable(
+  "shipment_event",
+  {
+    id: text("id").primaryKey(),
+    shipmentId: text("shipment_id").notNull(),
+    provider: text("provider").notNull(),
+    externalEventId: text("external_event_id").notNull(),
+    eventType: text("event_type").notNull().default("unknown"),
+    payloadHash: text("payload_hash"),
+    safeMetadata: jsonb("safe_metadata").notNull().default({}),
+    status: text("status").notNull().default("received"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("shipment_event_status_allowed", "status", SHIPMENT_EVENT_STATUSES),
+    stateCheck("shipment_event_type_allowed", "event_type", SHIPMENT_EVENT_TYPES),
+    uniqueIndex("shipment_event_provider_external_unique").on(table.provider, table.externalEventId),
+    index("shipment_event_shipment_created").on(table.shipmentId, table.createdAt),
+    index("shipment_event_provider_created").on(table.provider, table.createdAt),
+    index("shipment_event_status_created").on(table.status, table.createdAt),
+    foreignKey({
+      name: "shipment_event_shipment_fk",
+      columns: [table.shipmentId],
+      foreignColumns: [shipment.id],
     }).onDelete("restrict"),
   ],
 );
