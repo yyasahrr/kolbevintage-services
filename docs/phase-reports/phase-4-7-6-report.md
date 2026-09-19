@@ -20,7 +20,8 @@
 | Part 0 (4.7.5 closeout, verified) | `1d6de56f77156834a4853bb671b1d88751734938` | `docs: record phase 4.7.5 final CI` | 35452393985 | success |
 | A | `b9fdbc266dc9179d1414f9dc01ff9a286451c861` | `feat(phase-4-7-6-a): audit financial invariants and settlement readiness` | 35454492294 | success |
 | B | `70f6bb4dff1b2b13bf344a58ad92a2dc9f796e9a` | `feat(phase-4-7-6-b): freeze settlement architecture for phase 4.8` | 35454864085 | success |
-| C / report | (this commit) | `docs: phase 4.7.6 report` | recorded in the closeout commit below | — |
+| C / report | `7db29abf91eaaf9aeddb99eccf07d84e5f603f9f` | `docs: phase 4.7.6 report` | 35454980078 | success |
+| closeout | (this commit) | `docs: record phase 4.7.6 final CI` | — | its own run id can only be recorded by a later commit |
 
 ## Test totals (local, real embedded PostgreSQL, `NODE_ENV=test`, `npm run test:all` on `70f6bb4`)
 
@@ -61,7 +62,7 @@ unchanged and the `processed` count is now asserted to be **exactly 1** (stricte
 | `npm run build` | OK |
 | `npm run infra:verify` | OK (structure only — Docker/Nginx were **not** runtime-executed in this sandbox; no runtime infra verification is claimed) |
 | Architecture suites (`module-boundaries`, `architecture-freeze`, `phase-4-5-single-writer`, `phase-4-7-5-security-boundaries`) | OK with the new `settlement-readiness` module registered (no cycle, no foreign table names, no widened allowlists) |
-| CI | A 35454492294 SUCCESS · B 35454864085 SUCCESS · C recorded in the closeout commit |
+| CI | A 35454492294 SUCCESS · B 35454864085 SUCCESS · C (report) 35454980078 SUCCESS |
 
 ## Part 1 — Audit results (what the code actually does)
 
@@ -166,7 +167,8 @@ rates**.
 | Item | Value |
 |---|---|
 | Final code SHA | `70f6bb4dff1b2b13bf344a58ad92a2dc9f796e9a` — CI run 35454864085 — **SUCCESS** |
-| Report commit | `docs: phase 4.7.6 report` — its CI run id is recorded by the closeout commit `docs: record phase 4.7.6 final CI` that appends the row below |
-| Remote state | pushed to `origin/arena/01a0b926-kolbevintage-services` on 2026-09-19 (fast-forward; no force push) |
+| Report commit SHA | `7db29abf91eaaf9aeddb99eccf07d84e5f603f9f` (`docs: phase 4.7.6 report`) — CI run **35454980078** — **SUCCESS** (workflow `.github/workflows/ci.yml`, branch `arena/01a0b926-kolbevintage-services`) |
+| Remote state | `7db29ab` pushed to `origin/arena/01a0b926-kolbevintage-services` on 2026-09-19 (fast-forward; no force push) |
+| Closeout | this commit (`docs: record phase 4.7.6 final CI`) changes only this file; its own CI run id is reported in the session summary and can be recorded by the next phase's report |
 
 Phase 4.8 Supplier Wallet, Settlement & Payout has NOT started.
