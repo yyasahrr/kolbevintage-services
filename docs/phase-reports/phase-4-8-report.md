@@ -17,10 +17,11 @@
 | Stage | SHA | Message | CI run | Conclusion |
 |---|---|---|---|---|
 | Baseline | `86131b89ed5fc94f42946d13c146ba8ff0833899` | `docs: record phase 4.7.6 final CI` | 35454980078 | success |
-| A | `7b816d1104383482bce730f76e5a6c318aebb2c4` | `feat(phase-4-8-a): add balanced supplier settlement subledger` | pending | — |
-| B & C | `c4b2b67cac3ab7e73c4e92af0f52462ce92dca08` | `feat(phase-4-8-b-c): supplier earnings engine, financial accounts, payouts and reconciliation` | pending | — |
-| D | `0a08d4dce6caca912c96c6f9e6740017a2baa321` | `test(phase-4-8-d): adversarial invariant verification and double-spend hardening` | pending | — |
-| Report | (this commit) | `docs: phase 4.8 comprehensive report` | pending | — |
+| A | `7b816d1104383482bce730f76e5a6c318aebb2c4` | `feat(phase-4-8-a): add balanced supplier settlement subledger` | 35460091986 | superseded |
+| B & C | `c4b2b67cac3ab7e73c4e92af0f52462ce92dca08` | `feat(phase-4-8-b-c): supplier earnings engine, financial accounts, payouts and reconciliation` | — | batch pushed |
+| D | `0a08d4dce6caca912c96c6f9e6740017a2baa321` | `test(phase-4-8-d): adversarial invariant verification and double-spend hardening` | — | batch pushed |
+| Report | `ab6ccb6b90384cb93862db6369a6ac1b9a2d44b5` | `docs: phase 4.8 comprehensive report` | 35462539551 | success |
+| Closeout | (this commit) | `docs: record phase 4.8 final CI` | — | pending closeout |
 
 ---
 
