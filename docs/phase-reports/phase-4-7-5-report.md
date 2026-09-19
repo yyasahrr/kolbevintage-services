@@ -3,7 +3,7 @@
 **Branch:** `arena/01a0b926-kolbevintage-services` (only branch touched; no `main` interaction, no history rewrite, no force push, no PR)
 **Starting SHA:** `39213a7d697185309dd6f7269236b7d5a0a1f1db` (Phase 4.7.1 final, CI 35444618745 SUCCESS: 22 migrations, 63 tables, 144 FKs, 181 CHECKs, 675 tests)
 **Part 0 (4.7.1 report finalization):** `8b10bb06cd2cf24cecbaffc3725e2b839baf84b4` — CI 35446181858 SUCCESS
-**Ending SHA (code):** `dc3ecc99e66e4fe92c6aa7c9d5f103f91db40fc7` (+ this report commit, recorded in the final section)
+**Ending SHA (code):** `dc3ecc99e66e4fe92c6aa7c9d5f103f91db40fc7` — report commit `6c95f89c854b3b8e55d8d366d9e7d47828271255` (CI 35452124710 SUCCESS)
 **Date:** 2026-09-19
 **Migration:** `packages/database/migrations/0022_phase_4_7_5_iran_compliance_foundation.sql` forward-only; **23 migrations, 85 tables (+22), 194 FKs (+50, all `ON DELETE RESTRICT`), 266 CHECKs (+85)**, 26 indexes (13 unique/partial), 4 trigger functions, 11 triggers; 0020 and 0021 untouched; snapshot `0022_snapshot.json` chained (`prevId` = 0021 id)
 **Location:** Falkenstein, Saxony, DE — no Iranian gateway, carrier, tax-authority or eNAMAD credential exists in this repository; no real external call was made or claimed
@@ -19,7 +19,8 @@
 | A | `69d4ad0f5cf9882185dfcd2d11127da7cd500e1b` | `feat(phase-4-7-5-a): add legal policy and consent foundation` | 35448522058 | success |
 | B | `973893cf45ad71a2201081ef879f9497e4ec2d59` | `feat(phase-4-7-5-b): add supplier and product compliance foundation` | 35448668231 | success |
 | C | `dc3ecc99e66e4fe92c6aa7c9d5f103f91db40fc7` | `feat(phase-4-7-5-c): add tax and privacy compliance readiness` | 35448931256 | success |
-| D / report | (this commit) | `docs: phase 4.7.5 report` | — | see final section |
+| D / report | `6c95f89c854b3b8e55d8d366d9e7d47828271255` | `docs: phase 4.7.5 report` | 35452124710 | success |
+| closeout | (this commit) | `docs: record phase 4.7.5 final CI` | — | recorded in the Phase 4.7.6 report |
 
 ## Test totals (local, real embedded PostgreSQL, `NODE_ENV=test`, `npm run test:all`)
 
@@ -62,7 +63,7 @@ were extended (no `READ_EXCEPTIONS` widening).
 | `npm run build` | OK (Next production build) |
 | `npm run infra:verify` | OK (12 env vars, 9 compose services) |
 | 4.7.1 suites re-run | OK (payment provider, shipping, concurrency, cross-domain) |
-| CI | A/B/C SUCCESS (ids above); report commit: final section |
+| CI | A/B/C SUCCESS (ids above); report commit 35452124710 SUCCESS |
 
 ## What was built
 
@@ -297,7 +298,14 @@ invoices, fiscal, tax-config}`; buyer/supplier read: `/invoicing/wholesale/:orde
 
 ## Final Phase 4.7.5 verification record
 
-To be filled by the follow-up docs commit after CI completes on the report commit
-(see git history: `docs: record phase 4.7.5 final CI`).
+| Item | Value |
+|---|---|
+| Final code SHA | `dc3ecc99e66e4fe92c6aa7c9d5f103f91db40fc7` — CI run 35448931256 — **SUCCESS** |
+| Report commit SHA | `6c95f89c854b3b8e55d8d366d9e7d47828271255` (`docs: phase 4.7.5 report`) |
+| Report validation CI run | **35452124710** — conclusion **SUCCESS** (workflow `.github/workflows/ci.yml`, branch `arena/01a0b926-kolbevintage-services`) |
+| Remote state | `6c95f89` pushed to `origin/arena/01a0b926-kolbevintage-services` on 2026-09-19 (fast-forward from `dc3ecc9`; no force push) |
+| Note | The report commit was created locally on 2026-09-19 while the sandbox GitHub token had expired; it was pushed unchanged once the connection was restored, before any Phase 4.7.6 work started. |
+
+This closeout commit (`docs: record phase 4.7.5 final CI`) changes only this file; its own CI run id is recorded in `docs/phase-reports/phase-4-7-6-report.md`.
 
 Phase 4.8 Supplier Wallet, Settlement & Payout has NOT started.
