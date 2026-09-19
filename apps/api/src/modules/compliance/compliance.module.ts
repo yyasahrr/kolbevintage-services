@@ -20,7 +20,7 @@ import { ComplianceAdminController } from "./compliance-admin.controller";
  * Compliance depends only on Audit and Suppliers (membership facts). It never
  * imports Orders, Payments, Shipping, Inventory, Catalog or Offers, so the
  * publication gate (Catalog → Compliance) and the supplier provenance routes
- * (Offers → Compliance) create no cycle and no forwardRef is needed anywhere.
+ * (Offers → Compliance) create no cycle and no circular module reference is needed anywhere.
  */
 @Module({
   imports: [DatabaseModule, AuditModule, SuppliersModule],
