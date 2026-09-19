@@ -205,6 +205,15 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: "scaffolded",
     phase: 4,
   },
+  {
+    // Phase 4.9 — Production Reliability, Disaster Recovery & Distributed Worker Locks.
+    // Owns NO tables; delegates to owner domain services and coordinates via Postgres advisory locks.
+    name: "recovery",
+    tables: [],
+    dependsOn: ["inventory", "shipping", "payments", "settlement", "audit"],
+    status: "scaffolded",
+    phase: 4,
+  },
   { name: "payment-providers", tables: [], dependsOn: [], status: "planned", phase: 5 },
   { name: "refunds", tables: [], dependsOn: ["payments", "orders"], status: "planned", phase: 5 },
   { name: "ledger", tables: [], dependsOn: [], status: "planned", phase: 5 },

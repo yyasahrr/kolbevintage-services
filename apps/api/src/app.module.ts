@@ -43,6 +43,7 @@ import { SettlementReadinessModule } from "./modules/settlement-readiness/settle
 import { SettlementModule } from "./modules/settlement/settlement.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { RecoveryModule } from "./modules/recovery/recovery.module";
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     SettlementModule,
     RatingsModule,
     AdminModule,
+    RecoveryModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },

@@ -14,10 +14,22 @@ export type AppConfig = {
   env: "development" | "test" | "production";
   port: number;
   databaseUrl: string;
+  database: {
+    url: string;
+    poolMax: number;
+    poolMin: number;
+    idleTimeoutMs: number;
+    connectionTimeoutMs: number;
+    statementTimeoutMs: number;
+  };
   sessionSecret: string;
   internalApiToken: string | null;
   allowedOrigins: string[];
   redisUrl: string | null;
+  recovery?: {
+    schedulerEnabled: boolean;
+    intervalMs: number;
+  };
   trustProxy: boolean | number;
   storage: {
     endpoint: string | null;
@@ -125,14 +137,32 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   if (problems.length) throw new ConfigurationError(problems);
 
+  const poolMax = Number(env.DATABASE_POOL_MAX || (isProduction ? 20 : 10));
+  const poolMin = Number(env.DATABASE_POOL_MIN || (isProduction ? 2 : 0));
+  const idleTimeoutMs = Number(env.DATABASE_IDLE_TIMEOUT_MS || 30000);
+  const connectionTimeoutMs = Number(env.DATABASE_CONNECTION_TIMEOUT_MS || 5000);
+  const statementTimeoutMs = Number(env.DATABASE_STATEMENT_TIMEOUT_MS || 15000);
+
   return {
     env: nodeEnv,
     port: Number(env.PORT ?? 4000),
     databaseUrl,
+    database: {
+      url: databaseUrl,
+      poolMax,
+      poolMin,
+      idleTimeoutMs,
+      connectionTimeoutMs,
+      statementTimeoutMs,
+    },
     sessionSecret: sessionSecretCandidate || DEV_SESSION_SECRET,
     internalApiToken,
     allowedOrigins,
     redisUrl: env.REDIS_URL ?? null,
+    recovery: {
+      schedulerEnabled: env.ENABLE_RECOVERY_SCHEDULER === "true",
+      intervalMs: Number(env.RECOVERY_INTERVAL_MS || 60000),
+    },
     trustProxy: env.TRUST_PROXY ? (env.TRUST_PROXY === "true" ? true : Number(env.TRUST_PROXY)) : true,
     storage: {
       endpoint: env.S3_ENDPOINT ?? null,
@@ -168,6 +198,14 @@ export function toSafeConfig(config: AppConfig): Record<string, unknown> {
     env: config.env,
     port: config.port,
     databaseUrl: sanitizeUrl(config.databaseUrl),
+    database: {
+      url: sanitizeUrl(config.database?.url ?? config.databaseUrl),
+      poolMax: config.database?.poolMax ?? 10,
+      poolMin: config.database?.poolMin ?? 0,
+      idleTimeoutMs: config.database?.idleTimeoutMs ?? 30000,
+      connectionTimeoutMs: config.database?.connectionTimeoutMs ?? 5000,
+      statementTimeoutMs: config.database?.statementTimeoutMs ?? 15000,
+    },
     sessionSecret: mask(config.sessionSecret, 6),
     internalApiToken: mask(config.internalApiToken, 6),
     allowedOrigins: config.allowedOrigins,

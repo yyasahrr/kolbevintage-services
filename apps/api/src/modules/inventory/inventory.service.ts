@@ -627,8 +627,8 @@ export class InventoryService {
 
         let newStatus: string = "released";
         if (reservation.expiresAt) {
-          const [{ now }] = await (tx as any).execute(sql`SELECT NOW() as now`);
-          const dbNow = new Date((now as any) as string);
+          const nowRes: any = await (tx as any).execute(sql`SELECT NOW() as now`);
+          const dbNow = new Date((nowRes.rows?.[0]?.now ?? nowRes[0]?.now) as string);
           if (new Date(reservation.expiresAt).getTime() < dbNow.getTime() && reservation.status === "active") {
             newStatus = "expired";
             try {
@@ -761,8 +761,8 @@ export class InventoryService {
         }
 
         if (reservation.expiresAt) {
-          const [{ now }] = await (tx as any).execute(sql`SELECT NOW() as now`);
-          const dbNow = new Date((now as any) as string);
+          const nowRes: any = await (tx as any).execute(sql`SELECT NOW() as now`);
+          const dbNow = new Date((nowRes.rows?.[0]?.now ?? nowRes[0]?.now) as string);
           if (new Date(reservation.expiresAt).getTime() < dbNow.getTime()) {
             throw new CatalogDomainError("RESERVATION_EXPIRED", "رزرو منقضی شده — تأیید مجاز نیست");
           }
@@ -876,8 +876,8 @@ export class InventoryService {
           .limit(1);
         if (!reservation || reservation.status !== "active") continue;
 
-        const [{ now }] = await (executor as any).execute(sql`SELECT NOW() as now`);
-        const dbNow = new Date((now as any) as string);
+        const nowRes: any = await (executor as any).execute(sql`SELECT NOW() as now`);
+        const dbNow = new Date((nowRes.rows?.[0]?.now ?? nowRes[0]?.now) as string);
         if (reservation.expiresAt && new Date(reservation.expiresAt).getTime() >= dbNow.getTime()) continue;
 
         const [inventory] = await (executor as any)
@@ -966,8 +966,8 @@ export class InventoryService {
           if (!reservation) return null;
           if (reservation.status !== "active") return reservation;
 
-          const [{ now }] = await (tx as any).execute(sql`SELECT NOW() as now`);
-          const dbNow = new Date((now as any) as string);
+          const nowRes: any = await (tx as any).execute(sql`SELECT NOW() as now`);
+          const dbNow = new Date((nowRes.rows?.[0]?.now ?? nowRes[0]?.now) as string);
           if (reservation.expiresAt && new Date(reservation.expiresAt).getTime() >= dbNow.getTime()) return null;
 
           const [inventory] = await (tx as any)

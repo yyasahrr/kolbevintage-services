@@ -212,6 +212,7 @@ export async function seedTwoSuppliers(db: ReturnType<typeof drizzle>, opts: { p
     user(userAFinance, "supplier"),
     user(userBOwner, "supplier"),
     user(userAdmin, "admin"),
+    user("user_system", "admin"),
   ] as any);
   await db.insert(schema.supplier).values([
     { id: supA, legalName: "Sup A", displayName: "Sup A", status: "approved" },

@@ -49,6 +49,9 @@ async function bootstrap() {
 
   setupOpenApi(app);
 
+  // فعال‌سازی shutdown hooks برای تخلیه امن اتصالات (Graceful Draining on SIGTERM/SIGINT)
+  app.enableShutdownHooks();
+
   await app.listen(config.port, "0.0.0.0");
   logger.log(`کلبه API روی http://0.0.0.0:${config.port}/${API_PREFIX} (env=${config.env})`);
   logger.log(`مستندات OpenAPI: http://0.0.0.0:${config.port}/${API_PREFIX}/docs`);

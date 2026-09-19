@@ -23,6 +23,14 @@ export type DatabaseOptions = {
   connectionString: string;
   /** حداکثر اتصال‌های Pool؛ در تست‌ها پایین نگه داشته می‌شود. */
   max?: number;
+  /** حداقل اتصال‌های باز و آماده. */
+  min?: number;
+  /** سقف زمان بیکار ماندن یک کلاینت قبل از بسته شدن (میلی‌ثانیه). */
+  idleTimeoutMillis?: number;
+  /** سقف زمان انتظار برای دریافت یک اتصال جدید از استخر (میلی‌ثانیه). */
+  connectionTimeoutMillis?: number;
+  /** سقف زمان اجرای هر کوئری در سطح پایگاه داده (میلی‌ثانیه)؛ پیشگیری از تراکنش‌های قفل‌کننده. */
+  statementTimeoutMillis?: number;
 };
 
 export type KolbeDbHandle = {
@@ -35,8 +43,19 @@ export function createDatabase(options: DatabaseOptions): KolbeDbHandle {
   const pool = new Pool({
     connectionString: options.connectionString,
     max: options.max ?? 10,
+    min: options.min ?? 0,
+    idleTimeoutMillis: options.idleTimeoutMillis ?? 30000,
+    connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5000,
   });
   pool.on("error", () => {});
+
+  if (options.statementTimeoutMillis && options.statementTimeoutMillis > 0) {
+    const timeout = Math.floor(options.statementTimeoutMillis);
+    pool.on("connect", (client) => {
+      client.query(`SET statement_timeout = ${timeout}`).catch(() => {});
+    });
+  }
+
   const db = drizzle(pool, { schema });
   return {
     db,

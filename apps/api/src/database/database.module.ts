@@ -28,7 +28,14 @@ export const KOLBE_DB_HANDLE = Symbol("KOLBE_DB_HANDLE");
     {
       provide: KOLBE_DB_HANDLE,
       useFactory: (config: AppConfig): KolbeDbHandle =>
-        createDatabase({ connectionString: config.databaseUrl }),
+        createDatabase({
+          connectionString: config.databaseUrl,
+          max: config.database?.poolMax ?? 10,
+          min: config.database?.poolMin ?? 0,
+          idleTimeoutMillis: config.database?.idleTimeoutMs ?? 30000,
+          connectionTimeoutMillis: config.database?.connectionTimeoutMs ?? 5000,
+          statementTimeoutMillis: config.database?.statementTimeoutMs ?? 15000,
+        }),
       inject: [CONFIG_TOKEN],
     },
     {
