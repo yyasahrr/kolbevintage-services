@@ -1,10 +1,13 @@
 /**
- * پیکربندی و اعتبارسنجی متغیرهای محیطی.
+ * پیکربندی و اعتبارسنجی متغیرهای محیطی — فاز ۴.۹ سخت‌سازی تولید.
  *
- * قاعدهٔ ممیزی D4: نبودِ راز نشست در تولید باید **مانع بالا آمدن سرویس** شود
- * (fail-closed)، نه اینکه به یک مقدار پیش‌فرض قابل‌حدس برگردد. در route handler
- * قدیمی همین سیاست اعمال شد؛ اینجا در سطح bootstrap اپلیکیشن اجرا می‌شود تا
- * سرویس حتی یک درخواست هم نپذیرد.
+ * قاعدهٔ ممیزی D4 & فاز ۴.۹ Checkpoint A:
+ *   - نبود یا ناامنیِ راز نشست در تولید مانع بالا آمدن سرویس می‌شود (fail-closed).
+ *   - رازهای ضعیف یا placeholder در تولید رد می‌شوند.
+ *   - ارائه‌دهنده‌های fake/mock در تولید مسدود هستند.
+ *   - کاشت داده‌های نمایشی (KOLBE_SEED_DEMO_DATA) در تولید اکیداً ممنوع است.
+ *   - توکن‌های داخلی الزامی هستند.
+ *   - هیچ رازی در لاگ‌ها افشا نمی‌شود.
  */
 
 export type AppConfig = {
@@ -12,8 +15,10 @@ export type AppConfig = {
   port: number;
   databaseUrl: string;
   sessionSecret: string;
+  internalApiToken: string | null;
   allowedOrigins: string[];
   redisUrl: string | null;
+  trustProxy: boolean | number;
   storage: {
     endpoint: string | null;
     bucket: string | null;
@@ -24,6 +29,19 @@ export type AppConfig = {
 };
 
 const DEV_SESSION_SECRET = "kolbe-dev-secret-change-me";
+
+const INSECURE_SECRET_PATTERNS = [
+  /change[-_]?me/i,
+  /replace[-_]?me/i,
+  /kolbe[-_]?dev/i,
+  /test[-_]?secret/i,
+  /placeholder/i,
+  /^secret$/i,
+  /^password$/i,
+  /123456/,
+  /^default$/i,
+  /^admin$/i,
+];
 
 export class ConfigurationError extends Error {
   constructor(public readonly problems: string[]) {
@@ -41,10 +59,52 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!databaseUrl) problems.push("DATABASE_URL تعیین نشده است");
 
   const sessionSecretCandidate = env.KOLBE_SESSION_SECRET ?? env.JWT_SECRET ?? "";
-  if (isProduction && sessionSecretCandidate.length < 32) {
-    problems.push(
-      "KOLBE_SESSION_SECRET در محیط تولید باید حداقل ۳۲ کاراکتر باشد (توکن‌ها با آن امضا می‌شوند)",
-    );
+  if (isProduction) {
+    if (sessionSecretCandidate.length < 32) {
+      problems.push(
+        "KOLBE_SESSION_SECRET در محیط تولید باید حداقل ۳۲ کاراکتر باشد (توکن‌ها با آن امضا می‌شوند)",
+      );
+    }
+    if (INSECURE_SECRET_PATTERNS.some((pattern) => pattern.test(sessionSecretCandidate))) {
+      problems.push(
+        "KOLBE_SESSION_SECRET در محیط تولید نباید شامل الگوهای ناامن یا پیش‌فرض (مانند dev, secret, changeme) باشد",
+      );
+    }
+  }
+
+  const internalApiToken = env.KOLBE_INTERNAL_API_TOKEN ?? null;
+  if (isProduction) {
+    if (!internalApiToken || internalApiToken.length < 32) {
+      problems.push(
+        "KOLBE_INTERNAL_API_TOKEN در محیط تولید الزامی است و باید حداقل ۳۲ کاراکتر باشد",
+      );
+    } else if (INSECURE_SECRET_PATTERNS.some((pattern) => pattern.test(internalApiToken))) {
+      problems.push("KOLBE_INTERNAL_API_TOKEN در محیط تولید نباید شامل الگوهای ناامن یا پیش‌فرض باشد");
+    }
+  }
+
+  if (isProduction && env.KOLBE_SEED_DEMO_DATA === "true") {
+    problems.push("KOLBE_SEED_DEMO_DATA در محیط تولید اکیداً ممنوع است و نباید فعال باشد");
+  }
+
+  // بررسی ارائه‌دهنده‌های آزمایشی در تولید
+  if (isProduction) {
+    const paymentMode = (env.PAYMENT_PROVIDER_MODE ?? env.WHOLESALE_PAYMENT_PROVIDER ?? "").trim().toLowerCase();
+    if (paymentMode === "fake") {
+      problems.push("FakePaymentProvider در محیط تولید مجاز نیست");
+    }
+    const shippingMode = (env.SHIPPING_PROVIDER_MODE ?? env.WHOLESALE_SHIPPING_PROVIDER ?? "").trim().toLowerCase();
+    if (shippingMode === "fake") {
+      problems.push("FakeShippingProvider در محیط تولید مجاز نیست");
+    }
+    const taxMode = (env.TAX_INVOICE_PROVIDER_MODE ?? "").trim().toLowerCase();
+    if (taxMode === "fake") {
+      problems.push("FakeTaxInvoiceProvider در محیط تولید مجاز نیست");
+    }
+    const payoutMode = (env.PAYOUT_PROVIDER_MODE ?? "").trim().toLowerCase();
+    if (payoutMode === "fake" && env.ALLOW_FAKE_PAYOUT_PROVIDER !== "true") {
+      problems.push("FakePayoutProvider در محیط تولید مجاز نیست");
+    }
   }
 
   const allowedOrigins = (env.KOLBE_ALLOWED_ORIGINS ?? "")
@@ -70,14 +130,55 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: Number(env.PORT ?? 4000),
     databaseUrl,
     sessionSecret: sessionSecretCandidate || DEV_SESSION_SECRET,
+    internalApiToken,
     allowedOrigins,
     redisUrl: env.REDIS_URL ?? null,
+    trustProxy: env.TRUST_PROXY ? (env.TRUST_PROXY === "true" ? true : Number(env.TRUST_PROXY)) : true,
     storage: {
       endpoint: env.S3_ENDPOINT ?? null,
       bucket: env.S3_BUCKET ?? null,
       region: env.S3_REGION ?? "default",
       accessKey: env.S3_ACCESS_KEY ?? null,
       secretKey: env.S3_SECRET_KEY ?? null,
+    },
+  };
+}
+
+/**
+ * ماسک‌کردن رازهای پیکربندی برای ثبت ایمن در لاگ یا خطایابی.
+ */
+export function toSafeConfig(config: AppConfig): Record<string, unknown> {
+  const mask = (val: string | null | undefined, visibleCount = 4) => {
+    if (!val) return "[EMPTY]";
+    if (val.length <= visibleCount) return "***";
+    return `${val.slice(0, visibleCount)}***`;
+  };
+
+  const sanitizeUrl = (rawUrl: string) => {
+    try {
+      const u = new URL(rawUrl);
+      if (u.password) u.password = "REDACTED";
+      return u.toString();
+    } catch {
+      return "[MALFORMED_URL]";
+    }
+  };
+
+  return {
+    env: config.env,
+    port: config.port,
+    databaseUrl: sanitizeUrl(config.databaseUrl),
+    sessionSecret: mask(config.sessionSecret, 6),
+    internalApiToken: mask(config.internalApiToken, 6),
+    allowedOrigins: config.allowedOrigins,
+    redisUrl: config.redisUrl ? sanitizeUrl(config.redisUrl) : null,
+    trustProxy: config.trustProxy,
+    storage: {
+      endpoint: config.storage.endpoint,
+      bucket: config.storage.bucket,
+      region: config.storage.region,
+      accessKey: mask(config.storage.accessKey, 4),
+      secretKey: mask(config.storage.secretKey, 2),
     },
   };
 }

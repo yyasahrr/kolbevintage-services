@@ -18,6 +18,7 @@ import {
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { ErrorCodes, isDomainError, toPublicError } from "@kolbe/shared";
+import { redactSensitive } from "../logging/redaction";
 
 type ValidationIssue = { property?: string; constraints?: Record<string, string> };
 
@@ -39,6 +40,19 @@ export class DomainExceptionFilter implements ExceptionFilter {
       status = exception.status;
       error = exception.code;
       message = exception.message;
+    } else if (
+      exception instanceof SyntaxError &&
+      "status" in exception &&
+      (exception as any).status === 400 &&
+      "body" in exception
+    ) {
+      status = HttpStatus.BAD_REQUEST;
+      error = "MALFORMED_JSON";
+      message = "قالب بدنهٔ درخواست نامعتبر است (خطای ساختار JSON)";
+    } else if ((exception as any)?.type === "entity.too.large" || (exception as any)?.status === 413) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE;
+      error = "PAYLOAD_TOO_LARGE";
+      message = "حجم بدنهٔ درخواست بیش از سقف مجاز است";
     } else if (exception instanceof HttpException) {
       const payload = exception.getResponse();
       status = exception.getStatus();
@@ -46,7 +60,13 @@ export class DomainExceptionFilter implements ExceptionFilter {
       // به یک فهرست فشرده تبدیل می‌کنیم تا کلاینت بتواند فیلد خطادار را نشان دهد.
       if (typeof payload === "object" && payload !== null && "message" in payload) {
         const raw = (payload as { message: unknown }).message;
-        if (Array.isArray(raw)) {
+        if (
+          typeof raw === "string" &&
+          (raw.toLowerCase().includes("json") || raw.toLowerCase().includes("unexpected token"))
+        ) {
+          error = "MALFORMED_JSON";
+          message = "قالب بدنهٔ درخواست نامعتبر است (خطای ساختار JSON)";
+        } else if (Array.isArray(raw)) {
           const issues = raw as (string | ValidationIssue)[];
           const fields = issues.map((issue) =>
             typeof issue === "string"
@@ -66,9 +86,10 @@ export class DomainExceptionFilter implements ExceptionFilter {
     }
 
     if (status >= 500) {
+      const safeStack = redactSensitive(exception instanceof Error ? exception.stack : String(exception));
       this.logger.error(
         `${request.method} ${request.originalUrl} → ${status} [${requestId ?? "-"}]`,
-        exception instanceof Error ? exception.stack : String(exception),
+        safeStack,
       );
       // پیام داخلی هرگز به کلاینت نمی‌رود.
       const publicError = toPublicError(exception);

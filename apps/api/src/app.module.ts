@@ -1,23 +1,28 @@
 /**
- * ریشهٔ اپلیکیشن — مونولیت ماژولار کلبه.
+ * ریشهٔ اپلیکیشن — مونولیت ماژولار کلبه (فاز ۴.۹ سخت‌سازی تولید).
  *
  * ⚠️ قاعدهٔ A1: «Do not build microservices». این یک فرایند واحد است که همهٔ
  * دامنه‌ها را در خود دارد؛ مرزها **درون‌برنامه‌ای** و اجراشدنی‌اند
  * (`src/modules/registry.ts` + آزمون مرزها)، نه مرز شبکه‌ای.
  *
  * قواعد سراسری که اینجا اعمال می‌شوند:
- *  - فیلتر خطای دامنه (قرارداد پایدار `{error,message}` و عدم افشای جزئیات).
- *  - نگهبان نشست سراسری؛ هر کنترلر برای عمومی‌شدن باید صریحاً `@Public()` بزند
- *    (پیش‌فرض «بسته» است، نه «باز»).
+ *  - فیلتر خطای دامنه (قرارداد پایدار `{error,message}`، مقابله با افشای اطلاعات).
+ *  - نگهبان نشست سراسری؛ هر کنترلر برای عمومی‌شدن باید صریحاً `@Public()` بزند.
+ *  - نگهبان محدودیت نرخ سراسری (RateLimitGuard) برای مقابله با حملات brute-force و DoS.
+ *  - میان‌افزارهای سراسری هدرهای امنیتی و ثبت ساخت‌یافتهٔ درخواست با شناسهٔ رهگیری (Correlation ID).
  *  - اعتبارسنجی DTO با `class-validator` و `whitelist` (فیلد ناشناخته حذف می‌شود).
  */
 
-import { Module, ValidationPipe } from "@nestjs/common";
+import { MiddlewareConsumer, Module, NestModule, ValidationPipe } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_PIPE } from "@nestjs/core";
 import { ConfigModule } from "./config/config.module";
 import { DatabaseModule } from "./database/database.module";
 import { DomainExceptionFilter } from "./common/filters/domain-exception.filter";
 import { SessionGuard } from "./common/guards/session.guard";
+import { RateLimitModule } from "./common/rate-limit/rate-limit.module";
+import { RateLimitGuard } from "./common/rate-limit/rate-limit.guard";
+import { RequestLoggerMiddleware } from "./common/logging/request-logger.middleware";
+import { SecurityHeadersMiddleware } from "./common/middleware/security-headers.middleware";
 import { AuditModule } from "./modules/audit/audit.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
@@ -43,6 +48,7 @@ import { AdminModule } from "./modules/admin/admin.module";
   imports: [
     ConfigModule,
     DatabaseModule,
+    RateLimitModule,
     // ماژول‌های دامنه؛ ترتیب بر اساس فاز نقشهٔ مهاجرت ثبت می‌شود، نه وابستگی فنی.
     HealthModule,
     AuditModule,
@@ -68,6 +74,7 @@ import { AdminModule } from "./modules/admin/admin.module";
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },
     { provide: APP_GUARD, useClass: SessionGuard },
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     {
       provide: APP_PIPE,
       useValue: new ValidationPipe({
@@ -81,4 +88,10 @@ import { AdminModule } from "./modules/admin/admin.module";
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RequestLoggerMiddleware, SecurityHeadersMiddleware)
+      .forRoutes("*");
+  }
+}

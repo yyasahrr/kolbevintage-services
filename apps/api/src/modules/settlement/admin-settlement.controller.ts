@@ -13,6 +13,7 @@ import type { Claims } from "../../common/session";
 import { toApiJson } from "../../common/api-json";
 import { SettlementService } from "./settlement.service";
 import { SettlementDomainError } from "./settlement.errors";
+import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 
 @Controller("admin/settlement")
 export class AdminSettlementController {
@@ -55,6 +56,7 @@ export class AdminSettlementController {
 
   @Post("batches/release")
   @Roles("admin")
+  @RateLimit({ limit: 15, windowSeconds: 60, scope: "user", keyPrefix: "settlement:batch_release" })
   async releaseBatch(
     @CurrentUser() claims: Claims,
     @Headers("idempotency-key") idemHeader: string | undefined,
@@ -214,6 +216,7 @@ export class AdminSettlementController {
 
   @Post("payouts/execute")
   @Roles("admin")
+  @RateLimit({ limit: 15, windowSeconds: 60, scope: "user", keyPrefix: "settlement:payout_execute" })
   async executePayout(
     @CurrentUser() claims: Claims,
     @Headers("idempotency-key") idemHeader: string | undefined,

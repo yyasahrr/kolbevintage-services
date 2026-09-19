@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Body, Query, Headers, Inject, HttpCode } 
 import { Public, Roles, CurrentUser } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { PaymentProviderOrchestrator } from "./payment-provider.orchestrator";
+import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 
 /**
  * Phase 4.7.1 — provider-facing payment endpoints.
@@ -24,6 +25,7 @@ export class PaymentProviderController {
 
   @Public()
   @Post(":provider/webhook")
+  @RateLimit({ limit: 120, windowSeconds: 60, scope: "ip", keyPrefix: "webhook:payment" })
   @HttpCode(200)
   async webhook(@Param("provider") provider: string, @Body() body: unknown, @Headers() headers: Record<string, string | string[] | undefined>) {
     const result = await this.orchestrator.ingestWebhook({ provider, request: { headers: headers || {}, body } });

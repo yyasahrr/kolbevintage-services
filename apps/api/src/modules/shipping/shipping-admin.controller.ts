@@ -3,6 +3,7 @@ import { CurrentUser, Roles, Public } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { ShippingOrchestrator, type ShippingActor } from "./shipping.orchestrator";
 import { toApiJson } from "../../common/api-json";
+import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 
 /** Admin + carrier-facing shipping surface (B12 idempotency, B16 webhook inbox, B18 reconciliation). */
 @Controller("admin/shipping")
@@ -75,6 +76,7 @@ export class ShippingProviderWebhookController {
 
   @Public()
   @Post(":provider/webhook")
+  @RateLimit({ limit: 120, windowSeconds: 60, scope: "ip", keyPrefix: "webhook:shipping" })
   @HttpCode(200)
   async webhook(@Param("provider") provider: string, @Body() body: unknown, @Headers() headers: Record<string, string | string[] | undefined>) {
     const result = await this.orchestrator.ingestWebhook({ provider, request: { headers: headers || {}, body } });

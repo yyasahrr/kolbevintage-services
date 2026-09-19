@@ -1,22 +1,20 @@
 /**
- * نقطهٔ ورود بک‌اند کلبه (NestJS).
- *
- * وضعیت در نقشهٔ مهاجرت: **فاز ۱ — اسکلت.** این سرویس امروز فقط `/api/v1/health`
- * و `/api/v1/audit/*` را سرو می‌کند و هیچ ترافیکی از آن عبور نمی‌کند؛ مسیرهای زندهٔ
- * محصول هنوز در route handler قدیمی Next.js هستند. مسیرها یکی‌یکی و پس از
- * عبور آزمون هم‌ارزی، در Nginx به این سرویس منتقل می‌شوند (ADR-004).
+ * نقطهٔ ورود بک‌اند کلبه (NestJS) — فاز ۴.۹ سخت‌سازی تولید.
  *
  * قواعد رعایت‌شده:
  *  - نسخه‌بندی از روز اول: پیشوند سراسری `/api/v1` (قاعدهٔ API).
- *  - پیکربندی نامعتبر ⇒ بالا نیامدن سرویس (fail-closed)، نه اجرا با مقدار پیش‌فرض.
- *  - `0.0.0.0` برای اجرا در کانتینر و پیش‌نمایش محیط توسعه.
+ *  - پیکربندی نامعتبر یا رازهای ضعیف ⇒ بالا نیامدن سرویس (fail-closed).
+ *  - پیکربندی trust proxy برای شناسایی صحیح IP کلاینت در پشت پراکسی معتمد.
+ *  - محدودسازی سقف حجم Payload برای جلوگیری از حملات DoS مبتنی بر حافظه.
+ *  - پاک‌سازی لاگ‌ها و جلوگیری از چاپ رازها.
  */
 
 import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import * as express from "express";
 import { AppModule } from "./app.module";
-import { ConfigurationError, loadConfig } from "./config/configuration";
+import { ConfigurationError, loadConfig, toSafeConfig } from "./config/configuration";
 import { API_PREFIX, setupOpenApi } from "./openapi";
 
 async function bootstrap() {
@@ -25,7 +23,19 @@ async function bootstrap() {
   // پیکربندی پیش از ساخت اپلیکیشن اعتبارسنجی می‌شود تا خطا واضح و زودهنگام باشد.
   const config = loadConfig();
 
-  const app = await NestFactory.create(AppModule, { logger: ["log", "warn", "error"] });
+  const app = await NestFactory.create(AppModule, {
+    logger: ["log", "warn", "error"],
+    bodyParser: false, // کنترل دستی سقف حجم بدنه
+  });
+
+  // اعمال سقف حجم بدنه برای جلوگیری از سرریز حافظه
+  app.use(express.json({ limit: "2mb" }));
+  app.use(express.urlencoded({ limit: "2mb", extended: true }));
+
+  // پیکربندی Trust Proxy برای دریافت آدرس کلاینت در Nginx/Cloud
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set("trust proxy", config.trustProxy);
+
   app.setGlobalPrefix(API_PREFIX);
 
   // CORS فقط برای مبدأهای مجاز؛ در تولید اگر تنظیم نشده باشد، هیچ مبدأیی مجاز نیست
@@ -42,6 +52,7 @@ async function bootstrap() {
   await app.listen(config.port, "0.0.0.0");
   logger.log(`کلبه API روی http://0.0.0.0:${config.port}/${API_PREFIX} (env=${config.env})`);
   logger.log(`مستندات OpenAPI: http://0.0.0.0:${config.port}/${API_PREFIX}/docs`);
+  logger.log(`پیکربندی امن اولیه: ${JSON.stringify(toSafeConfig(config))}`);
 }
 
 bootstrap().catch((error: unknown) => {

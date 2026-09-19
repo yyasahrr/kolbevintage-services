@@ -4,6 +4,7 @@ import type { Claims } from "../../common/session";
 import { WholesaleFinanceOrchestrator } from "./wholesale-finance.orchestrator";
 import { PaymentsService } from "../payments/payments.service";
 import { OrdersService } from "../orders/orders.service";
+import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 
 @Controller("wholesale/orders")
 export class WholesaleFinanceController {
@@ -15,6 +16,7 @@ export class WholesaleFinanceController {
 
   @Post(":id/confirm")
   @Roles("vip", "customer")
+  @RateLimit({ limit: 30, windowSeconds: 60, scope: "user_or_ip", keyPrefix: "finance:order_confirm" })
   async confirmOrder(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -89,6 +91,7 @@ export class WholesaleFinanceController {
 
   @Post(":id/payments/transfer")
   @Roles("vip", "customer")
+  @RateLimit({ limit: 20, windowSeconds: 60, scope: "user_or_ip", keyPrefix: "finance:payment_transfer" })
   async submitTransfer(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,
@@ -123,6 +126,7 @@ export class WholesaleFinanceController {
 
   @Post(":id/payments/online")
   @Roles("vip", "customer")
+  @RateLimit({ limit: 20, windowSeconds: 60, scope: "user_or_ip", keyPrefix: "finance:payment_online" })
   async createOnlinePayment(
     @CurrentUser() claims: Claims,
     @Param("id") id: string,

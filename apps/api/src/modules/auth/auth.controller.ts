@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, Res, UseGuards, Inject } from "@nestjs/common";
 import { ApiTags, ApiOperation } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { AuthService } from "./auth.service";
@@ -8,14 +8,16 @@ import { TotpVerifyDto } from "./dto/totp.dto";
 import { Public, Roles, CurrentUser, type RequestWithClaims } from "../../common/guards/session.guard";
 import { SessionGuard } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
+import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Post("register")
   @Public()
+  @RateLimit({ limit: 5, windowSeconds: 60, scope: "ip", keyPrefix: "auth:register" })
   @ApiOperation({ summary: "ثبت‌نام مشتری" })
   async register(
     @Body() dto: RegisterDto,
@@ -41,6 +43,7 @@ export class AuthController {
 
   @Post("login")
   @Public()
+  @RateLimit({ limit: 5, windowSeconds: 60, scope: "ip", keyPrefix: "auth:login" })
   @ApiOperation({ summary: "ورود" })
   async login(
     @Body() dto: LoginDto,
@@ -100,6 +103,7 @@ export class AuthController {
   }
 
   @Post("totp/verify")
+  @RateLimit({ limit: 5, windowSeconds: 60, scope: "user", keyPrefix: "auth:totp_verify" })
   @ApiOperation({ summary: "تأیید کد TOTP و فعال‌سازی" })
   async verifyTotp(@CurrentUser() claims: Claims, @Body() dto: TotpVerifyDto) {
     await this.auth.verifyTotp(claims.sub, dto.code);
@@ -116,6 +120,7 @@ export class AuthController {
   // مسیرهای سازگار با لگاسی `/store/kolbe/*` — در دورهٔ گذار هر دو کار می‌کنند
   @Post("supplier/login")
   @Public()
+  @RateLimit({ limit: 5, windowSeconds: 60, scope: "ip", keyPrefix: "auth:supplier_login" })
   @ApiOperation({ summary: "ورود تأمین‌کننده (سازگار با لگاسی)" })
   async supplierLogin(
     @Body() dto: LoginDto,

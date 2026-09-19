@@ -14,6 +14,7 @@ import { toApiJson } from "../../common/api-json";
 import { SettlementService } from "./settlement.service";
 import { SuppliersService } from "../suppliers/suppliers.service";
 import { SettlementDomainError } from "./settlement.errors";
+import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 
 @Controller("supplier/financial-account")
 export class SupplierFinancialAccountController {
@@ -86,6 +87,7 @@ export class SupplierFinancialAccountController {
 
   @Post("withdrawals")
   @Roles("supplier")
+  @RateLimit({ limit: 10, windowSeconds: 60, scope: "user", keyPrefix: "settlement:withdrawal" })
   async requestWithdrawal(
     @CurrentUser() claims: Claims,
     @Headers("idempotency-key") idemHeader: string | undefined,
