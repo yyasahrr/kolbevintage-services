@@ -249,7 +249,8 @@ export const COMMAND_TYPES = [
 /** Phase 4.6 — Wholesale Finance */
 export const WHOLESALE_PROFORMA_STATUSES = ["draft", "issued", "superseded", "voided"] as const;
 export const PAYMENT_STATUSES = ["pending", "evidence_submitted", "verified", "failed", "cancelled"] as const;
-export const PAYMENT_METHODS = ["manual_transfer", "bank_transfer", "transfer", "credit", "cod", "on_delivery", "manual_authorized"] as const;
+/** Phase 4.7.1 — `online` = provider-driven (gateway) payment; the Phase 4.7 intent path wrote it without the CHECK allowing it. */
+export const PAYMENT_METHODS = ["manual_transfer", "bank_transfer", "transfer", "credit", "cod", "on_delivery", "manual_authorized", "online"] as const;
 export const REFUND_STATUSES = ["requested", "approved", "processing", "completed", "failed", "cancelled"] as const;
 export const FINANCIAL_RELEASE_TYPES = ["payment_verified", "credit_approved", "cod_policy_approved", "manual_authorized_release"] as const;
 export const FINANCIAL_LEDGER_ENTRY_TYPES = ["payment_verified", "refund_completed", "adjustment", "credit_release", "cod_release"] as const;

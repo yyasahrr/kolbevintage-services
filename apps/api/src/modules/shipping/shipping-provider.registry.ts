@@ -1,10 +1,23 @@
 import { Injectable, Logger, Inject } from "@nestjs/common";
+import { DomainError } from "@kolbe/shared";
 import type { ShippingProvider } from "./shipping-provider.interface";
 import { ManualShippingProvider } from "./providers/manual-shipping.provider";
 import { FakeShippingProvider } from "./providers/fake-shipping.provider";
 
 export type ShippingProviderMode = "disabled" | "fake" | "sandbox" | "live";
 
+export class ShippingProviderRegistryError extends DomainError {
+  constructor(code: "PROVIDER_NOT_ALLOWED" | "SHIPPING_PROVIDER_UNKNOWN", message: string) {
+    super(code === "SHIPPING_PROVIDER_UNKNOWN" ? 404 : 403, code, message);
+    this.name = "ShippingProviderRegistryError";
+  }
+}
+
+/**
+ * Phase 4.7.1 (A10): the production guard is enforced at the *resolve boundary*
+ * for every quote / shipment / webhook / reconciliation call, and rejections are
+ * stable DomainErrors.
+ */
 @Injectable()
 export class ShippingProviderRegistry {
   private readonly logger = new Logger(ShippingProviderRegistry.name);
@@ -33,7 +46,7 @@ export class ShippingProviderRegistry {
 
     if (["sandbox", "live"].includes(mode)) {
       if (providerKey !== "manual" && providerKey !== "fake") {
-        const hasCreds = false; // placeholder for future carrier creds check
+        const hasCreds = false; // no real carrier adapter is integrated in this phase — fail closed
         if (!hasCreds) {
           throw new Error(`ShippingProviderRegistry: provider ${providerKey} mode ${mode} requires credentials but none supplied`);
         }
@@ -54,15 +67,15 @@ export class ShippingProviderRegistry {
 
   resolve(name?: string): ShippingProvider {
     const key = (name || process.env.WHOLESALE_SHIPPING_PROVIDER || "manual").toLowerCase();
+    if (key === "fake" && (process.env.NODE_ENV || "development").toLowerCase() === "production") {
+      throw new ShippingProviderRegistryError("PROVIDER_NOT_ALLOWED", "Fake shipping provider is prohibited in production");
+    }
     const provider = this.providers.get(key);
     if (!provider) {
-      throw new Error(`Unknown shipping provider: ${key}. Registered: ${Array.from(this.providers.keys()).join(", ")}`);
+      throw new ShippingProviderRegistryError("SHIPPING_PROVIDER_UNKNOWN", `Unknown shipping provider: ${key}`);
     }
     if (!this.enabled.has(key)) {
-      const mode = (process.env.SHIPPING_PROVIDER_MODE || "disabled").toLowerCase();
-      if (mode === "disabled" && key !== "manual") {
-        throw new Error(`Shipping provider ${key} is disabled in mode ${mode}`);
-      }
+      throw new ShippingProviderRegistryError("PROVIDER_NOT_ALLOWED", `Shipping provider ${key} is not enabled (mode=${this.getMode()})`);
     }
     return provider;
   }
@@ -73,5 +86,9 @@ export class ShippingProviderRegistry {
 
   isEnabled(name: string): boolean {
     return this.enabled.has(name);
+  }
+
+  getMode(): ShippingProviderMode {
+    return (process.env.SHIPPING_PROVIDER_MODE || "disabled").toLowerCase() as ShippingProviderMode;
   }
 }

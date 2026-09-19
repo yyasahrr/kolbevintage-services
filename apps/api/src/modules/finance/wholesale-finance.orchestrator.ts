@@ -24,9 +24,10 @@ function hashRequest(input: unknown): string {
 
 export class FinanceOrchestratorError extends DomainError {
   constructor(code: string, message: string, status = 400) {
-    if (code === "ORDER_NOT_FOUND") status = 404;
-    else if (code === "ORDER_OWNERSHIP_VIOLATION") status = 403;
-    else if (code === "IDEMPOTENCY_KEY_REUSED" || code === "INVALID_STATUS_TRANSITION") status = 409;
+    if (code === "ORDER_NOT_FOUND" || code === "REFUND_NOT_FOUND" || code === "PAYMENT_NOT_FOUND") status = 404;
+    else if (code === "ORDER_OWNERSHIP_VIOLATION" || code === "PROVIDER_NOT_ALLOWED") status = 403;
+    else if (code === "IDEMPOTENCY_KEY_REUSED" || code === "INVALID_STATUS_TRANSITION" || code === "PROVIDER_REFUND_UNSUPPORTED") status = 409;
+    else if (code === "IDEMPOTENCY_KEY_REQUIRED") status = 400;
     super(status, code, message);
     this.name = "FinanceOrchestratorError";
   }
@@ -202,16 +203,31 @@ export class WholesaleFinanceOrchestrator {
     });
   }
 
+  private async withExecutor<T>(executor: any, work: (tx: any) => Promise<T>): Promise<T> {
+    if (executor) return work(executor);
+    return this.db.transaction(async (tx) => work(tx as any));
+  }
+
+  /**
+   * Canonical verification chain (single writer per table, one transaction):
+   * PaymentsService.verify → allocations → ledger IN → order events →
+   * per-active-proforma coverage → financial release → OrdersService gate.
+   *
+   * Phase 4.7.1: `executor` lets the provider webhook / reconciliation path run
+   * this chain inside the transaction that also finalizes the inbox event, so a
+   * failure anywhere leaves the event NOT processed (A1/A4).
+   */
   async verifyPayment(input: {
     paymentId: string;
-    adminUserId: string;
+    adminUserId: string | null;
     expectedVersion?: number;
     externalReference: string;
     idempotencyKey: string;
     actorRole?: string;
     reason?: string;
+    executor?: any;
   }) {
-    return this.db.transaction(async (tx: any) => {
+    return this.withExecutor(input.executor, async (tx: any) => {
       const verifyResult = await this.paymentsService.verifyPayment({
         paymentId: input.paymentId,
         adminUserId: input.adminUserId,
@@ -278,8 +294,8 @@ export class WholesaleFinanceOrchestrator {
     });
   }
 
-  async rejectPayment(input: { paymentId: string; adminUserId: string; reason: string; idempotencyKey: string; expectedVersion?: number; actorRole?: string }) {
-    return this.db.transaction(async (tx: any) => {
+  async rejectPayment(input: { paymentId: string; adminUserId: string | null; reason: string; idempotencyKey: string; expectedVersion?: number; actorRole?: string; executor?: any }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
       const result = await this.paymentsService.rejectPayment({ ...input, executor: tx });
       if (!result.replayed) {
         const orderId = result.payment.wholesaleOrderId || result.payment.wholesale_order_id;
@@ -353,10 +369,12 @@ export class WholesaleFinanceOrchestrator {
     childOrderId?: string;
     exceptionId?: string;
     paymentId?: string;
-    amount: string;
+    amount?: string;
     currency?: string;
     reasonCode?: string;
     reason?: string;
+    /** Phase 4.7.1 (A14) — exact item/quantity basis. */
+    lines?: Array<{ wholesaleOrderItemId: string; quantity: number }>;
     actorUserId: string;
     actorRole?: string;
     idempotencyKey: string;
@@ -368,7 +386,7 @@ export class WholesaleFinanceOrchestrator {
           orderId: input.orderId,
           refundId: result.refund.id,
           childOrderId: input.childOrderId,
-          amount: input.amount,
+          amount: (result.refund.amount ?? 0).toString(),
           reasonCode: input.reasonCode,
           actorId: input.actorUserId,
           idempotencyKey: input.idempotencyKey,
@@ -397,8 +415,8 @@ export class WholesaleFinanceOrchestrator {
     });
   }
 
-  async completeRefund(input: { refundId: string; adminUserId: string; externalReference: string; idempotencyKey: string; actorRole?: string }) {
-    return this.db.transaction(async (tx: any) => {
+  async completeRefund(input: { refundId: string; adminUserId: string; externalReference: string; idempotencyKey: string; actorRole?: string; executor?: any }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
       const result = await this.paymentsService.completeRefund({ ...input, executor: tx });
       if (!result.replayed) {
         const orderId = result.refund.wholesaleOrderId || result.refund.wholesale_order_id;
@@ -446,15 +464,12 @@ export class WholesaleFinanceOrchestrator {
         });
       }
 
-      await this.paymentsService.createManualReleaseForVoid({
-        orderId: input.orderId,
-        childOrderId: input.childOrderId,
-        actorId: input.actorUserId,
-        actorRole: input.actorRole,
-        currency: (order as any).currency || "IRR",
-        reason: `Child ${input.childOrderId} cancelled before payment, proforma voided, payable recomputed, original grand_total preserved`,
-        executor: tx,
-      });
+      // Phase 4.7.1 (D6): a cancellation is NOT a gate authorization. The payable is
+      // recomputed from the remaining *issued* proformas (void removes this child's
+      // obligation); no `manual_authorized_release` row is written here — that
+      // release type is reserved for a real, evidenced manual authorization of the
+      // financial gate. The original grand_total on the order is untouched.
+      const summary = await this.paymentsService.getOrderFinancialSummary(input.orderId, tx);
 
       await this.auditService.record(
         {
@@ -463,13 +478,20 @@ export class WholesaleFinanceOrchestrator {
           action: "proforma.voided",
           entityType: "wholesale_proforma",
           entityId: proforma?.id || input.childOrderId,
-          after: { childOrderId: input.childOrderId, reason: input.reason, originalGrandTotalPreserved: true },
-          metadata: { orderId: input.orderId },
+          after: {
+            childOrderId: input.childOrderId,
+            reason: `Child ${input.childOrderId} cancelled before payment, proforma voided, payable recomputed, original grand_total preserved`,
+            cancellationReason: input.reason,
+            originalGrandTotalPreserved: true,
+            currentPayable: summary.currentPayable,
+            currency: (order as any).currency || summary.currency || "IRR",
+          },
+          metadata: { orderId: input.orderId, releaseCreated: false },
         },
         tx,
       );
 
-      return { voidedProforma: proforma, adjustmentCreated: true };
+      return { voidedProforma: proforma, adjustmentCreated: false, currentPayable: summary.currentPayable };
     });
   }
 
@@ -511,10 +533,21 @@ export class WholesaleFinanceOrchestrator {
   }) {
     // TxA: validate + create pending payment
     const pendingResult = await this.db.transaction(async (tx: any) => {
+      // Phase 4.7.1 (D2/D3): after the gate was released, a late shipping fee leaves a
+      // delta obligation (active proformas − lineage allocations). Only a positive
+      // outstanding amount may re-open payment submission on a processing order.
+      const summary = await this.paymentsService.getOrderFinancialSummary(input.orderId, tx);
+      let outstanding = 0n;
+      try {
+        outstanding = BigInt(summary.currentPayable);
+      } catch {
+        outstanding = 0n;
+      }
       await this.ordersService.validateAndLockForPaymentSubmission({
         orderId: input.orderId,
         buyerUserId: input.buyerUserId,
         executor: tx,
+        allowOutstandingObligation: outstanding > 0n,
       });
       const result = await this.paymentsService.createOnlinePaymentIntent({
         orderId: input.orderId,
@@ -582,6 +615,93 @@ export class WholesaleFinanceOrchestrator {
     });
 
     return { payment: persisted, providerResult, replayed: false };
+  }
+
+  /**
+   * Phase 4.7.1 (A11/A12) — execute an approved refund through its source
+   * payment's provider. TxA claims the refund (`approved → processing`, row lock);
+   * the provider call runs with NO DB lock held; TxB records the real provider
+   * reference via the canonical completion (ledger OUT exactly once) or fails it.
+   * The manual provider never fabricates evidence: it reports `refund_unsupported`
+   * and the operator completes the refund with the real bank reference.
+   */
+  async executeRefundViaProvider(input: { refundId: string; actorUserId: string; actorRole?: string; idempotencyKey: string }) {
+    if (!input.idempotencyKey) throw new FinanceOrchestratorError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required", 400);
+    const refundRow = await this.paymentsService.getRefundRowById(input.refundId);
+    if (!refundRow) throw new FinanceOrchestratorError("REFUND_NOT_FOUND", `Refund ${input.refundId} not found`, 404);
+    if (refundRow.status === "completed") return { refund: refundRow, replayed: true, outcome: "already_completed" as const };
+
+    const allocations = await this.paymentsService.getRefundAllocations(input.refundId);
+    if (allocations.length !== 1) {
+      throw new FinanceOrchestratorError(
+        "PROVIDER_REFUND_UNSUPPORTED",
+        `Refund ${input.refundId} is drawn from ${allocations.length} payments; provider execution requires exactly one source payment (complete manually with evidence)`,
+        409,
+      );
+    }
+    const source = allocations[0];
+    const providerName = String(source.provider || "manual").toLowerCase();
+    const provider = this.paymentProviderRegistry.resolve(providerName); // A10 boundary: fake rejected in production
+
+    // TxA — claim
+    const claim = await this.db.transaction(async (tx: any) =>
+      this.paymentsService.markRefundProcessing({ refundId: input.refundId, actorUserId: input.actorUserId, actorRole: input.actorRole || "admin", executor: tx }),
+    );
+    if ((claim as any).alreadyCompleted) return { refund: claim.refund, replayed: true, outcome: "already_completed" as const };
+    if ((claim as any).alreadyProcessing) return { refund: claim.refund, replayed: true, outcome: "in_progress" as const };
+
+    // Provider I/O — no lock held
+    let providerResult: any;
+    try {
+      providerResult = await provider.refund({
+        refundId: input.refundId,
+        paymentId: source.payment_id,
+        amount: BigInt(refundRow.amount),
+        currency: refundRow.currency,
+        reason: refundRow.reason_code || undefined,
+      });
+    } catch (e: any) {
+      // Unknown outcome: keep `processing` (reconcilable), never fabricate a reference.
+      this.logger.warn(`Provider ${providerName} refund call failed for ${input.refundId}: ${e.message}`);
+      throw new FinanceOrchestratorError("PROVIDER_ERROR", `Provider ${providerName} refund failed: ${e.message}`, 502);
+    }
+
+    // TxB — outcome
+    if (providerResult?.success && providerResult.externalReference) {
+      const completed = await this.completeRefund({
+        refundId: input.refundId,
+        adminUserId: input.actorUserId,
+        externalReference: String(providerResult.externalReference),
+        idempotencyKey: `provider-refund:${input.refundId}:${input.idempotencyKey}`,
+        actorRole: input.actorRole || "admin",
+      });
+      return { ...completed, outcome: "completed" as const, provider: providerName };
+    }
+    if (providerResult?.failureReason === "refund_unsupported") {
+      // Leave in `processing` for operator completion with real evidence.
+      return { refund: claim.refund, replayed: false, outcome: "manual_evidence_required" as const, provider: providerName };
+    }
+    const failed = await this.db.transaction(async (tx: any) => {
+      const result = await this.paymentsService.failRefund({
+        refundId: input.refundId,
+        adminUserId: input.actorUserId,
+        reason: `provider_failure:${providerResult?.failureReason || "unknown"}`,
+        idempotencyKey: input.idempotencyKey,
+        actorRole: input.actorRole || "admin",
+        executor: tx,
+      });
+      if (!result.replayed) {
+        await this.ordersService.recordRefundFailed({
+          orderId: refundRow.wholesale_order_id,
+          refundId: input.refundId,
+          reason: `provider_failure:${providerResult?.failureReason || "unknown"}`,
+          actorId: input.actorUserId,
+          executor: tx,
+        });
+      }
+      return result;
+    });
+    return { ...failed, outcome: "failed" as const, provider: providerName };
   }
 
   // ── Phase 4.7: Shipping quote selection triggers proforma supersede ────

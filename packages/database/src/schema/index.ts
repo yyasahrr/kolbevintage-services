@@ -64,6 +64,8 @@ export {
   orderFinancialRelease,
   financialLedgerEntry,
   refund,
+  refundAllocation,
+  refundLine,
   paymentProviderEvent,
   shippingQuote,
   shipment,

@@ -8,6 +8,8 @@ import {
   orderFinancialRelease,
   financialLedgerEntry,
   refund,
+  refundAllocation,
+  refundLine,
 } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { PaymentsRepository, type DbOrTx } from "./payments.repository";
@@ -35,6 +37,26 @@ function ledgerId(): string {
 }
 function refundId(): string {
   return `ref_${randomUUID().replaceAll("-", "")}`;
+}
+function refundAllocationId(): string {
+  return `rall_${randomUUID().replaceAll("-", "")}`;
+}
+function refundLineId(): string {
+  return `rline_${randomUUID().replaceAll("-", "")}`;
+}
+
+/**
+ * Phase 4.7.1 (A11) — refund completion evidence must be a *real* external
+ * reference (bank tracking code / provider refund id). Placeholders that the
+ * code base itself used to fabricate are rejected explicitly.
+ */
+const FABRICATED_REFERENCE_PATTERN = /^(provider-|ref-manual-|auto-|generated-|placeholder|n\/a$|none$|test$|todo$|tbd$)/i;
+export function assertRealRefundEvidence(externalReference: string | undefined | null): string {
+  const trimmed = (externalReference || "").trim();
+  if (trimmed.length === 0) throw new FinanceDomainError("EXTERNAL_REFERENCE_REQUIRED", "externalReference required for refund completion");
+  if (trimmed.length < 4) throw new FinanceDomainError("REFUND_EVIDENCE_INVALID", "externalReference too short to be real evidence");
+  if (FABRICATED_REFERENCE_PATTERN.test(trimmed)) throw new FinanceDomainError("REFUND_EVIDENCE_INVALID", "externalReference looks fabricated; a real bank/provider reference is required");
+  return trimmed;
 }
 
 function generateProformaNumber(): string {
@@ -86,6 +108,23 @@ export class FinanceDomainError extends DomainError {
     else if (code === "BNPL_NOT_ALLOWED" || code === "INVALID_PAYMENT_METHOD" || code === "INVALID_PAYMENT_MODE") status = 400;
     else if (code === "PAYMENT_GATE_BLOCKED" || code === "INSUFFICIENT_PAYMENT_COVERAGE") status = 409;
     else if (code === "PROFORMA_LINES_MISSING") status = 422;
+    // Phase 4.7.1 — provider evidence & refund basis (stable codes)
+    else if (
+      code === "PAYMENT_PROVIDER_REFERENCE_MISMATCH" ||
+      code === "PAYMENT_PROVIDER_AMOUNT_MISMATCH" ||
+      code === "PAYMENT_PROVIDER_CURRENCY_MISMATCH" ||
+      code === "PAYMENT_PROVIDER_STATE_NOT_FINAL" ||
+      code === "PAYMENT_PROVIDER_MISMATCH" ||
+      code === "REFUND_SOURCE_PAYMENT_INVALID" ||
+      code === "REFUND_ALLOCATION_MISMATCH" ||
+      code === "REFUND_LINE_BASIS_MISMATCH" ||
+      code === "REFUND_LINE_QUANTITY_EXCEEDED" ||
+      code === "REFUND_EXCEEDS_ALLOCATED" ||
+      code === "PROVIDER_REFUND_UNSUPPORTED"
+    )
+      status = 409;
+    else if (code === "PROVIDER_NOT_ALLOWED") status = 403;
+    else if (code === "REFUND_EVIDENCE_INVALID" || code === "EXTERNAL_REFERENCE_REQUIRED") status = 400;
     super(status, code, message);
     this.name = "FinanceDomainError";
   }
@@ -891,7 +930,8 @@ export class PaymentsService {
 
   async verifyPayment(input: {
     paymentId: string;
-    adminUserId: string;
+    /** Human verifier (FK account_user). `null` for provider/system-driven verification (webhook, reconciliation). */
+    adminUserId: string | null;
     expectedVersion?: number;
     externalReference: string;
     idempotencyKey: string;
@@ -961,7 +1001,7 @@ export class PaymentsService {
         .update(payment)
         .set({
           status: "verified",
-          verifiedBy: input.adminUserId,
+          verifiedBy: input.actorRole === "system" ? null : input.adminUserId,
           verifiedAt: now,
           externalReference: input.externalReference,
           providerState: "success",
@@ -983,7 +1023,7 @@ export class PaymentsService {
         externalReference: input.externalReference,
         occurredAt: now,
         createdAt: now,
-        metadata: sanitizeForJsonb({ verifiedBy: input.adminUserId, reason: input.reason }) as any,
+        metadata: sanitizeForJsonb({ verifiedBy: input.adminUserId ?? "system", actorRole: input.actorRole || "admin", reason: input.reason }) as any,
       });
 
       const allocations = await this.allocatePaymentToProformas(
@@ -1026,7 +1066,7 @@ export class PaymentsService {
     });
   }
 
-  async rejectPayment(input: { paymentId: string; adminUserId: string; reason: string; idempotencyKey: string; expectedVersion?: number; actorRole?: string; executor?: DbOrTx }) {
+  async rejectPayment(input: { paymentId: string; adminUserId: string | null; reason: string; idempotencyKey: string; expectedVersion?: number; actorRole?: string; executor?: DbOrTx }) {
     if (!input.reason) throw new FinanceDomainError("REASON_REQUIRED", "Reason required for rejection");
     if (!["admin", "finance", "system"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may reject payments", 403);
@@ -1133,8 +1173,9 @@ export class PaymentsService {
       }
       const profId = prof.id;
       const profTotal = BigInt(prof.total_amount);
-      const allocResult = await tx.execute(sql`SELECT COALESCE(SUM(amount),0) as sum FROM payment_allocation WHERE proforma_id = ${profId} AND status = 'active'`);
-      const alreadyAllocated = BigInt(allocResult.rows?.[0]?.sum || 0);
+      // Phase 4.7.1 (D2/D4): allocations on superseded ancestors of this proforma
+      // (same child) stay immutable and still count — a late fee only leaves the delta open.
+      const alreadyAllocated = await this.getLineageAllocatedForProforma(prof, tx, { verifiedOnly: false });
       if (alreadyAllocated >= profTotal) continue;
       const needed = profTotal - alreadyAllocated;
       const toAllocate = remaining < needed ? remaining : needed;
@@ -1160,6 +1201,32 @@ export class PaymentsService {
     return allocations;
   }
 
+  /**
+   * Phase 4.7.1 (D2/D3/D4) — verified money allocated to a proforma *lineage*.
+   *
+   * A superseded proforma (e.g. replaced because a shipping fee was added after
+   * payment) keeps its allocations immutable; the successor proforma of the same
+   * child inherits that coverage so only the delta remains payable. Voided
+   * proformas are excluded (void is only possible before any allocation).
+   */
+  private async getLineageAllocatedForProforma(prof: { id: string; child_order_id?: string | null; childOrderId?: string | null }, tx: any, opts: { verifiedOnly: boolean }): Promise<bigint> {
+    const childId = prof.child_order_id ?? prof.childOrderId ?? null;
+    const paymentFilter = opts.verifiedOnly ? sql` AND p.status = 'verified'` : sql``;
+    const result = childId
+      ? await tx.execute(sql`
+          SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
+          JOIN payment p ON p.id = pa.payment_id
+          JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
+          WHERE wp.child_order_id = ${childId} AND wp.status IN ('issued','superseded') AND pa.status = 'active'${paymentFilter}
+        `)
+      : await tx.execute(sql`
+          SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
+          JOIN payment p ON p.id = pa.payment_id
+          WHERE pa.proforma_id = ${prof.id} AND pa.status = 'active'${paymentFilter}
+        `);
+    return BigInt(result.rows?.[0]?.sum || 0);
+  }
+
   async getFinancialCoverageStatus(orderId: string, executor: DbOrTx): Promise<{ payable: bigint; allocated: bigint; isFullyCovered: boolean; proformaCoverage: Array<{ proformaId: string; total: bigint; allocated: bigint; covered: boolean }> }> {
     const tx = executor as any;
     const proformasResult = await tx.execute(sql`
@@ -1176,12 +1243,7 @@ export class PaymentsService {
     for (const prof of proformas) {
       const total = BigInt(prof.total_amount);
       payable += total;
-      const allocResult = await tx.execute(sql`
-        SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
-        JOIN payment p ON p.id = pa.payment_id
-        WHERE pa.proforma_id = ${prof.id} AND pa.status = 'active' AND p.status = 'verified'
-      `);
-      const allocated = BigInt(allocResult.rows?.[0]?.sum || 0);
+      const allocated = await this.getLineageAllocatedForProforma(prof, tx, { verifiedOnly: true });
       proformaCoverage.push({
         proformaId: prof.id,
         total,
@@ -1202,7 +1264,8 @@ export class PaymentsService {
     evidenceReference?: string;
     amount: string;
     currency: string;
-    actorId: string;
+    /** FK account_user — `null` for system-driven releases (provider verification). */
+    actorId: string | null;
     actorRole: string;
     reason: string;
     executor: DbOrTx;
@@ -1452,11 +1515,14 @@ export class PaymentsService {
       const verifiedPaidResult = await dbTx.execute(sql`SELECT COALESCE(SUM(amount),0) as sum FROM payment WHERE wholesale_order_id = ${orderId} AND status = 'verified'`);
       const verifiedPaid = BigInt(verifiedPaidResult.rows?.[0]?.sum || 0);
 
+      // Phase 4.7.1 (D2/D4): allocations on superseded proformas remain immutable
+      // and keep covering the child's active proforma (lineage), so a late fee
+      // only opens the delta.
       const allocatedResult = await dbTx.execute(sql`
         SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
         JOIN payment p ON p.id = pa.payment_id
         JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
-        WHERE p.wholesale_order_id = ${orderId} AND pa.status = 'active' AND p.status = 'verified' AND wp.status = 'issued'
+        WHERE p.wholesale_order_id = ${orderId} AND pa.status = 'active' AND p.status = 'verified' AND wp.status IN ('issued','superseded')
       `);
       const allocated = BigInt(allocatedResult.rows?.[0]?.sum || 0);
       const unallocatedPaid = verifiedPaid - allocated;
@@ -1467,7 +1533,9 @@ export class PaymentsService {
       const refundCompletedResult = await dbTx.execute(sql`SELECT COALESCE(SUM(amount),0) as sum FROM refund WHERE wholesale_order_id = ${orderId} AND status = 'completed'`);
       const refundCompleted = BigInt(refundCompletedResult.rows?.[0]?.sum || 0);
 
-      const currentPayable = activeProformaTotal;
+      // Outstanding obligation = active proformas minus what verified payments already cover.
+      const outstanding = activeProformaTotal - allocated;
+      const currentPayable = outstanding > 0n ? outstanding : 0n;
       const netCollected = verifiedPaid - refundCompleted;
       const currencyResult = await dbTx.execute(sql`SELECT currency FROM wholesale_proforma WHERE wholesale_order_id = ${orderId} LIMIT 1`);
       const currency = currencyResult.rows?.[0]?.currency || "IRR";
@@ -1493,33 +1561,103 @@ export class PaymentsService {
     childOrderId?: string;
     exceptionId?: string;
     paymentId?: string;
-    amount: string;
+    /** Decimal string. Optional when `lines` are supplied (then derived exactly from the lines). */
+    amount?: string;
     currency?: string;
     reasonCode?: string;
     reason?: string;
+    /** Phase 4.7.1 (A14) — exact item/quantity basis of a partial refund. */
+    lines?: Array<{ wholesaleOrderItemId: string; quantity: number }>;
     actorUserId: string;
     actorRole?: string;
     idempotencyKey: string;
     executor?: DbOrTx;
   }) {
-    let amountBigInt: bigint;
-    try {
-      amountBigInt = BigInt(input.amount);
-    } catch {
-      throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be bigint decimal string");
-    }
-    if (amountBigInt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
     if (!["admin", "finance"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may create refunds", 403);
     }
+    const requestedLines = (input.lines || []).map((l) => ({ wholesaleOrderItemId: String(l.wholesaleOrderItemId || ""), quantity: Number(l.quantity) }));
+    for (const l of requestedLines) {
+      if (!l.wholesaleOrderItemId) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line requires wholesaleOrderItemId");
+      if (!Number.isInteger(l.quantity) || l.quantity <= 0) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line quantity must be a positive integer");
+    }
+    if (requestedLines.length > 0 && !input.childOrderId) {
+      throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Item-based refunds require childOrderId");
+    }
+    if (new Set(requestedLines.map((l) => l.wholesaleOrderItemId)).size !== requestedLines.length) {
+      throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Duplicate wholesaleOrderItemId in refund lines");
+    }
+    let requestedAmount: bigint | null = null;
+    if (input.amount !== undefined && input.amount !== null && String(input.amount).length > 0) {
+      try {
+        requestedAmount = BigInt(input.amount);
+      } catch {
+        throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be bigint decimal string");
+      }
+      if (requestedAmount <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
+    }
+    if (requestedAmount === null && requestedLines.length === 0) throw new FinanceDomainError("INVALID_AMOUNT", "Amount or lines required");
 
     return this.withExecutor(input.executor, async (tx: any) => {
+      // ── Serialize refund creation per order: lock the verified source payments ──
+      // (Payments owns `payment`; no order-table lock is taken here.)
+      const lockedPaymentsResult = await tx.execute(sql`
+        SELECT * FROM payment WHERE wholesale_order_id = ${input.orderId} AND status = 'verified' ORDER BY verified_at ASC, id ASC FOR UPDATE
+      `);
+      const verifiedPayments: any[] = lockedPaymentsResult.rows || [];
+
+      // ── A14: exact item basis (unit price × quantity from the immutable proforma line) ──
+      const resolvedLines: Array<{ wholesaleOrderItemId: string; quantity: number; unitPrice: bigint; lineTotal: bigint; currency: string }> = [];
+      if (requestedLines.length > 0) {
+        const proformaLinesResult = await tx.execute(sql`
+          SELECT pl.wholesale_order_item_id, pl.quantity, pl.unit_price, pl.currency
+          FROM wholesale_proforma_line pl
+          JOIN wholesale_proforma wp ON wp.id = pl.proforma_id
+          WHERE wp.child_order_id = ${input.childOrderId} AND wp.wholesale_order_id = ${input.orderId} AND wp.status = 'issued'
+        `);
+        const byItem = new Map<string, { quantity: number; unitPrice: bigint; currency: string }>();
+        for (const row of proformaLinesResult.rows || []) {
+          byItem.set(String(row.wholesale_order_item_id), { quantity: Number(row.quantity), unitPrice: BigInt(row.unit_price), currency: String(row.currency || "IRR") });
+        }
+        for (const line of requestedLines) {
+          const basis = byItem.get(line.wholesaleOrderItemId);
+          if (!basis) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", `Item ${line.wholesaleOrderItemId} is not on the active proforma of child ${input.childOrderId}`);
+          const refundedQtyResult = await tx.execute(sql`
+            SELECT COALESCE(SUM(rl.quantity),0) as sum FROM refund_line rl
+            JOIN refund r ON r.id = rl.refund_id
+            WHERE rl.wholesale_order_item_id = ${line.wholesaleOrderItemId} AND r.status IN ('requested','approved','processing','completed')
+          `);
+          const alreadyRefundedQty = Number(refundedQtyResult.rows?.[0]?.sum || 0);
+          if (line.quantity + alreadyRefundedQty > basis.quantity) {
+            throw new FinanceDomainError(
+              "REFUND_LINE_QUANTITY_EXCEEDED",
+              `Item ${line.wholesaleOrderItemId}: requested ${line.quantity} + already refunded ${alreadyRefundedQty} exceeds ordered ${basis.quantity}`,
+            );
+          }
+          resolvedLines.push({
+            wholesaleOrderItemId: line.wholesaleOrderItemId,
+            quantity: line.quantity,
+            unitPrice: basis.unitPrice,
+            lineTotal: basis.unitPrice * BigInt(line.quantity),
+            currency: basis.currency,
+          });
+        }
+      }
+      const linesTotal = resolvedLines.reduce((sum, l) => sum + l.lineTotal, 0n);
+      let amountBigInt: bigint;
+      if (requestedAmount === null) amountBigInt = linesTotal;
+      else if (resolvedLines.length > 0 && requestedAmount !== linesTotal) {
+        throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", `Amount ${requestedAmount.toString()} does not equal the exact line basis ${linesTotal.toString()}`);
+      } else amountBigInt = requestedAmount;
+      if (amountBigInt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
+
+      // ── Refundable ceiling (child-scoped or order-scoped) ──
       const allocResult = input.childOrderId
         ? await tx.execute(sql`
           SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
           JOIN payment p ON p.id = pa.payment_id
           JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
-          WHERE wp.child_order_id = ${input.childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status = 'issued'
+          WHERE wp.child_order_id = ${input.childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status IN ('issued','superseded')
         `)
         : await tx.execute(sql`SELECT COALESCE(SUM(amount),0) as sum FROM payment WHERE wholesale_order_id = ${input.orderId} AND status = 'verified'`);
       const allocatedToChild = BigInt(allocResult.rows?.[0]?.sum || 0);
@@ -1539,7 +1677,14 @@ export class PaymentsService {
       }
 
       const { commandIdempotency } = await import("@kolbe/database");
-      const requestHash = hashRequest({ orderId: input.orderId, childOrderId: input.childOrderId, amount: input.amount, reasonCode: input.reasonCode });
+      const requestHash = hashRequest({
+        orderId: input.orderId,
+        childOrderId: input.childOrderId,
+        amount: amountBigInt.toString(),
+        reasonCode: input.reasonCode,
+        paymentId: input.paymentId || null,
+        lines: requestedLines.map((l) => `${l.wholesaleOrderItemId}:${l.quantity}`).sort(),
+      });
       const [existingIdem] = await tx
         .select()
         .from(commandIdempotency)
@@ -1576,6 +1721,50 @@ export class PaymentsService {
       const [existingRefundByKey] = await tx.select().from(refund).where(and(eq(refund.wholesaleOrderId, input.orderId), eq(refund.idempotencyKey, input.idempotencyKey))).limit(1);
       if (existingRefundByKey) return { refund: existingRefundByKey, replayed: true };
 
+      // ── A13: map the refund onto concrete verified source payment(s) ──
+      // Capacity of a payment = what it contributed to this child (or, order-scoped, its
+      // full amount) minus what earlier live refunds already drew from it.
+      const candidatePayments = input.paymentId ? verifiedPayments.filter((p) => p.id === input.paymentId) : verifiedPayments;
+      if (input.paymentId && candidatePayments.length === 0) {
+        throw new FinanceDomainError("REFUND_SOURCE_PAYMENT_INVALID", `Payment ${input.paymentId} is not a verified payment of order ${input.orderId}`);
+      }
+      const plannedAllocations: Array<{ paymentId: string; amount: bigint; currency: string }> = [];
+      let remaining = amountBigInt;
+      for (const pay of candidatePayments) {
+        if (remaining <= 0n) break;
+        const contributedResult = input.childOrderId
+          ? await tx.execute(sql`
+              SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
+              JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
+              WHERE pa.payment_id = ${pay.id} AND pa.status = 'active' AND wp.child_order_id = ${input.childOrderId} AND wp.status IN ('issued','superseded')
+            `)
+          : { rows: [{ sum: pay.amount }] };
+        const contributed = BigInt(contributedResult.rows?.[0]?.sum || 0);
+        const drawnResult = await tx.execute(sql`
+          SELECT COALESCE(SUM(ra.amount),0) as sum FROM refund_allocation ra
+          JOIN refund r ON r.id = ra.refund_id
+          WHERE ra.payment_id = ${pay.id} AND r.status IN ('requested','approved','processing','completed')
+            ${input.childOrderId ? sql`AND r.child_order_id = ${input.childOrderId}` : sql``}
+        `);
+        const drawn = BigInt(drawnResult.rows?.[0]?.sum || 0);
+        const capacity = contributed - drawn;
+        if (capacity <= 0n) continue;
+        const take = remaining < capacity ? remaining : capacity;
+        plannedAllocations.push({ paymentId: pay.id, amount: take, currency: pay.currency });
+        remaining -= take;
+      }
+      const plannedSum = plannedAllocations.reduce((sum, a) => sum + a.amount, 0n);
+      if (remaining !== 0n || plannedSum !== amountBigInt) {
+        throw new FinanceDomainError(
+          "REFUND_ALLOCATION_MISMATCH",
+          `Refund ${amountBigInt.toString()} cannot be mapped onto verified source payments (mappable ${plannedSum.toString()})`,
+        );
+      }
+      const currency = input.currency || plannedAllocations[0]?.currency || "IRR";
+      if (plannedAllocations.some((a) => a.currency !== currency) || resolvedLines.some((l) => l.currency !== currency)) {
+        throw new FinanceDomainError("CURRENCY_MISMATCH", "Refund currency differs from its source payments / lines");
+      }
+
       const now = await this.getDbNow(tx);
       const rid = refundId();
       let rref = generateRefundReference();
@@ -1591,9 +1780,9 @@ export class PaymentsService {
               wholesaleOrderId: input.orderId,
               childOrderId: input.childOrderId || null,
               fulfillmentExceptionId: input.exceptionId || null,
-              paymentId: input.paymentId || null,
+              paymentId: plannedAllocations.length === 1 ? plannedAllocations[0].paymentId : input.paymentId || null,
               amount: amountBigInt as any,
-              currency: input.currency || "IRR",
+              currency,
               reasonCode: input.reasonCode || null,
               reason: input.reason || null,
               status: "requested",
@@ -1618,6 +1807,29 @@ export class PaymentsService {
       }
       if (!created) throw new FinanceDomainError("REFUND_REFERENCE_COLLISION", "Refund reference collision", 409);
 
+      for (const alloc of plannedAllocations) {
+        await tx.insert(refundAllocation).values({
+          id: refundAllocationId(),
+          refundId: rid,
+          paymentId: alloc.paymentId,
+          amount: alloc.amount as any,
+          currency,
+          createdAt: now,
+        });
+      }
+      for (const line of resolvedLines) {
+        await tx.insert(refundLine).values({
+          id: refundLineId(),
+          refundId: rid,
+          wholesaleOrderItemId: line.wholesaleOrderItemId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice as any,
+          lineTotal: line.lineTotal as any,
+          currency,
+          createdAt: now,
+        });
+      }
+
       await this.auditService.record(
         {
           actorId: input.actorUserId,
@@ -1625,7 +1837,13 @@ export class PaymentsService {
           action: "refund.requested",
           entityType: "refund",
           entityId: rid,
-          after: { orderId: input.orderId, childOrderId: input.childOrderId, amount: amountBigInt.toString() },
+          after: {
+            orderId: input.orderId,
+            childOrderId: input.childOrderId,
+            amount: amountBigInt.toString(),
+            sourcePayments: plannedAllocations.map((a) => ({ paymentId: a.paymentId, amount: a.amount.toString() })),
+            lines: resolvedLines.map((l) => ({ wholesaleOrderItemId: l.wholesaleOrderItemId, quantity: l.quantity, lineTotal: l.lineTotal.toString() })),
+          },
           metadata: { idempotencyKey: input.idempotencyKey },
         },
         tx,
@@ -1643,7 +1861,12 @@ export class PaymentsService {
           ),
         );
 
-      return { refund: created, replayed: false };
+      return {
+        refund: created,
+        allocations: plannedAllocations.map((a) => ({ paymentId: a.paymentId, amount: a.amount })),
+        lines: resolvedLines,
+        replayed: false,
+      };
     });
   }
 
@@ -1730,9 +1953,12 @@ export class PaymentsService {
     if (!["admin", "finance"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may complete refunds", 403);
     }
-    if (!input.externalReference || input.externalReference.trim().length === 0) throw new FinanceDomainError("EXTERNAL_REFERENCE_REQUIRED", "externalReference required for refund completion");
+    // A11 — completion needs real evidence (bank tracking code / provider refund id); nothing fabricated.
+    const externalReference = assertRealRefundEvidence(input.externalReference);
+    input = { ...input, externalReference };
 
     return this.withExecutor(input.executor, async (tx: any) => {
+      // A12 — row lock + persistent idempotency: exactly one completion, exactly one ledger OUT.
       const refResult = await tx.execute(sql`SELECT * FROM refund WHERE id = ${input.refundId} FOR UPDATE`);
       const refRow = refResult.rows?.[0];
       if (!refRow) throw new FinanceDomainError("REFUND_NOT_FOUND", `Refund ${input.refundId} not found`);
@@ -1825,8 +2051,47 @@ export class PaymentsService {
     });
   }
 
+  /**
+   * Phase 4.7.1 (A12) — claim a refund for provider execution: `approved → processing`
+   * under the row lock. Exactly one caller wins; the provider call then happens
+   * *outside* any DB lock and the outcome is recorded by `completeRefund`/`failRefund`.
+   */
+  async markRefundProcessing(input: { refundId: string; actorUserId: string; actorRole?: string; executor?: DbOrTx }) {
+    if (!["admin", "finance", "system"].includes(input.actorRole || "")) {
+      throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may execute refunds", 403);
+    }
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const refResult = await tx.execute(sql`SELECT * FROM refund WHERE id = ${input.refundId} FOR UPDATE`);
+      const refRow = refResult.rows?.[0];
+      if (!refRow) throw new FinanceDomainError("REFUND_NOT_FOUND", `Refund ${input.refundId} not found`);
+      if (refRow.status === "processing") return { refund: refRow, claimed: false, alreadyProcessing: true };
+      if (refRow.status === "completed") return { refund: refRow, claimed: false, alreadyCompleted: true };
+      if (refRow.status !== "approved") throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot execute refund from ${refRow.status}`);
+      const now = await this.getDbNow(tx);
+      const [updated] = await tx
+        .update(refund)
+        .set({ status: "processing", version: refRow.version + 1, updatedAt: now })
+        .where(eq(refund.id, input.refundId))
+        .returning();
+      await this.auditService.record(
+        {
+          actorId: input.actorUserId,
+          actorRole: input.actorRole || "admin",
+          action: "refund.processing",
+          entityType: "refund",
+          entityId: input.refundId,
+          before: { status: refRow.status },
+          after: { status: "processing" },
+          metadata: { orderId: refRow.wholesale_order_id },
+        },
+        tx,
+      );
+      return { refund: updated, claimed: true };
+    });
+  }
+
   async failRefund(input: { refundId: string; adminUserId: string; reason: string; idempotencyKey: string; actorRole?: string; executor?: DbOrTx }) {
-    if (!["admin", "finance"].includes(input.actorRole || "")) {
+    if (!["admin", "finance", "system"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may fail refunds", 403);
     }
     if (!input.reason) throw new FinanceDomainError("REASON_REQUIRED", "Reason required");
@@ -2038,7 +2303,7 @@ export class PaymentsService {
       SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
       JOIN payment p ON p.id = pa.payment_id
       JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
-      WHERE wp.child_order_id = ${childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status = 'issued'
+      WHERE wp.child_order_id = ${childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status IN ('issued','superseded')
     `);
     return BigInt(allocCheck.rows?.[0]?.sum || 0);
   }
@@ -2053,99 +2318,62 @@ export class PaymentsService {
     return obligations;
   }
 
-  async createManualReleaseForVoid(input: { orderId: string; childOrderId: string; actorId: string; actorRole: string; currency: string; reason: string; executor: DbOrTx }) {
-    const tx = input.executor as any;
-    const now = await this.getDbNow(tx);
-    const relId = releaseId();
-    await tx.insert(orderFinancialRelease).values({
-      id: relId,
-      orderId: input.orderId,
-      releaseType: "manual_authorized_release",
-      evidenceReference: `void_proforma_${input.childOrderId}`,
-      amount: null,
-      currency: input.currency || "IRR",
-      actorId: input.actorId,
-      actorRole: input.actorRole,
-      reason: input.reason,
-      createdAt: now,
-    });
-    return { releaseId: relId, createdAt: now };
-  }
-
-  async findByProviderReference(providerReference: string, executor?: DbOrTx) {
+  /**
+   * Phase 4.7.1 (A5) — a provider reference identifies exactly one payment *per provider*
+   * (DB: partial UNIQUE (provider, provider_reference)). Never look a reference up
+   * without its provider.
+   */
+  async findPaymentByProviderReference(provider: string, providerReference: string, executor?: DbOrTx) {
+    if (!provider || !providerReference) return null;
     return this.withExecutor(executor, async (tx: any) => {
-      const result = await tx.execute(sql`SELECT * FROM payment WHERE provider_reference = ${providerReference} LIMIT 1`);
-      const row = result.rows?.[0];
-      if (!row) return null;
-      return row;
+      const result = await tx.execute(sql`SELECT * FROM payment WHERE provider = ${provider.toLowerCase()} AND provider_reference = ${providerReference} LIMIT 1`);
+      return result.rows?.[0] || null;
     });
   }
 
-  // Phase 4.7 — provider refund handling
-  async createProviderRefund(input: {
-    refundId: string;
-    provider: string;
-    externalReference?: string;
-    success: boolean;
-    failureReason?: string;
-    executor?: DbOrTx;
-  }) {
-    return this.withExecutor(input.executor, async (tx: any) => {
-      const now = await this.getDbNow(tx);
-      // If provider says unsupported, do NOT mark completed — stay suitable for manual completion
-      if (!input.success) {
-        // Check if failure is refund_unsupported
-        if (input.failureReason === "refund_unsupported") {
-          // Keep refund in approved state, do not complete
-          await this.auditService.record(
-            {
-              actorId: "system",
-              actorRole: "system",
-              action: "refund.provider_unsupported",
-              entityType: "refund",
-              entityId: input.refundId,
-              after: { provider: input.provider, failureReason: input.failureReason },
-              metadata: { refundId: input.refundId, provider: input.provider },
-            },
-            tx,
-          );
-          return { status: "unsupported" };
-        }
-        // Other failures — mark failed
-        await tx.execute(sql`UPDATE refund SET status = 'failed', updated_at = NOW() WHERE id = ${input.refundId}`);
-        return { status: "failed" };
-      }
+  async getPaymentRowById(paymentId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`SELECT * FROM payment WHERE id = ${paymentId} LIMIT 1`);
+      return result.rows?.[0] || null;
+    });
+  }
 
-      // Success — complete via existing flow would require externalReference, but we have provider external ref
-      // For provider refunds, we complete with provider external reference
-      const [existing] = await tx.select().from(refund).where(eq(refund.id, input.refundId)).limit(1);
-      if (!existing) throw new FinanceDomainError("REFUND_NOT_FOUND", `Refund ${input.refundId} not found`);
-      if (existing.status === "completed") return { status: "already_completed" };
+  /** Non-manual payments still awaiting a final provider state (reconciliation input). */
+  async listUnresolvedProviderPayments(limit = 20, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`
+        SELECT id, payment_reference, provider, provider_reference, external_reference, amount, currency, status, provider_state, wholesale_order_id
+        FROM payment
+        WHERE status IN ('pending','evidence_submitted') AND provider <> 'manual' AND provider_reference IS NOT NULL
+        ORDER BY created_at ASC
+        LIMIT ${limit}
+      `);
+      return result.rows || [];
+    });
+  }
 
-      // Transition to completed using provider external ref
-      await tx
-        .update(refund)
-        .set({ status: "completed", completedAt: now, externalReference: input.externalReference || `provider-${input.provider}-${input.refundId}`, updatedAt: now, version: existing.version + 1 })
-        .where(eq(refund.id, input.refundId));
+  async getRefundRowById(refundId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`SELECT * FROM refund WHERE id = ${refundId} LIMIT 1`);
+      return result.rows?.[0] || null;
+    });
+  }
 
-      const ledgerEntryId = ledgerId();
-      await tx.insert(financialLedgerEntry).values({
-        id: ledgerEntryId,
-        orderId: existing.wholesaleOrderId,
-        childOrderId: existing.childOrderId,
-        refundId: input.refundId,
-        paymentId: existing.paymentId,
-        entryType: "refund_completed",
-        direction: "OUT",
-        amount: existing.amount,
-        currency: existing.currency,
-        externalReference: input.externalReference,
-        occurredAt: now,
-        createdAt: now,
-        metadata: sanitizeForJsonb({ provider: input.provider, completedBy: "provider" }) as any,
-      });
+  async getRefundAllocations(refundId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`
+        SELECT ra.id, ra.refund_id, ra.payment_id, ra.amount, ra.currency, p.provider, p.provider_reference
+        FROM refund_allocation ra JOIN payment p ON p.id = ra.payment_id
+        WHERE ra.refund_id = ${refundId} ORDER BY ra.created_at ASC, ra.id ASC
+      `);
+      return result.rows || [];
+    });
+  }
 
-      return { status: "completed", ledgerId: ledgerEntryId };
+  async getRefundLines(refundId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`SELECT * FROM refund_line WHERE refund_id = ${refundId} ORDER BY created_at ASC, id ASC`);
+      return result.rows || [];
     });
   }
 }

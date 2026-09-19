@@ -5,14 +5,11 @@ import { ManualTransferProvider } from "./manual-transfer.provider";
 import { FakePaymentProvider } from "./providers/fake-payment.provider";
 import { PaymentProviderRegistry } from "./payment-provider.registry";
 import { PaymentProviderEventService } from "./payment-provider-event.service";
-import { PaymentReconciliationService } from "./payment-reconciliation.service";
-import { PaymentProviderController } from "./payment-provider.controller";
 import { DatabaseModule } from "../../database/database.module";
 import { AuditModule } from "../audit/audit.module";
 
 @Module({
   imports: [DatabaseModule, AuditModule],
-  controllers: [PaymentProviderController],
   providers: [
     PaymentsService,
     PaymentsRepository,
@@ -20,7 +17,6 @@ import { AuditModule } from "../audit/audit.module";
     FakePaymentProvider,
     PaymentProviderRegistry,
     PaymentProviderEventService,
-    PaymentReconciliationService,
   ],
   exports: [
     PaymentsService,
@@ -29,7 +25,6 @@ import { AuditModule } from "../audit/audit.module";
     FakePaymentProvider,
     PaymentProviderRegistry,
     PaymentProviderEventService,
-    PaymentReconciliationService,
   ],
 })
 export class PaymentsModule {}

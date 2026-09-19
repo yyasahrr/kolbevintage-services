@@ -1613,12 +1613,19 @@ export const inventoryReservation = pgTable(
     orderItemId: text("order_item_id"),
     /** Phase 4.4 — linkage to child order for isolated release/consume */
     childOrderId: text("child_order_id"),
+    /**
+     * Phase 4.7.1 — exact partial consumption. A shipment handoff consumes a
+     * portion of the *order* reservation (no second reservation); the sum of
+     * consumed pieces can never exceed the reserved quantity (CHECK below).
+     */
+    consumedQuantity: integer("consumed_quantity").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
     stateCheck("inventory_reservation_status_allowed", "status", INVENTORY_RESERVATION_STATUSES),
     positiveQuantityCheck("inventory_reservation_quantity_positive", "quantity"),
+    check("inventory_reservation_consumed_within_quantity", sql.raw(`"consumed_quantity" >= 0 AND "consumed_quantity" <= "quantity"`)),
     foreignKey({
       name: "inventory_reservation_variant_fk",
       columns: [table.variantId],
@@ -2095,6 +2102,10 @@ export const payment = pgTable(
     uniqueIndex("payment_order_idempotency_unique")
       .on(table.wholesaleOrderId, table.idempotencyKey)
       .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    /** Phase 4.7.1 (A5) — a provider reference identifies exactly one payment per provider. */
+    uniqueIndex("payment_provider_reference_unique")
+      .on(table.provider, table.providerReference)
+      .where(sql`${table.providerReference} IS NOT NULL`),
     index("payment_order_created").on(table.wholesaleOrderId, table.createdAt),
     index("payment_status_created").on(table.status, table.createdAt),
     foreignKey({
@@ -2290,6 +2301,76 @@ export const refund = pgTable(
   ],
 );
 
+/* ── Phase 4.7.1 — Refund source mapping & exact item basis ────────────────
+ *  - refund_allocation: which verified payment(s) a refund is drawn from
+ *    (SUM(refund_allocation.amount) == refund.amount, enforced by the writer
+ *    under the payment row lock; a refund can never exceed what its source
+ *    payments actually allocated to the child).
+ *  - refund_line: exact item/quantity basis of a partial refund
+ *    (unit_price × quantity from the immutable proforma line; refunded
+ *    quantity per order item can never exceed the ordered quantity).
+ */
+
+export const refundAllocation = pgTable(
+  "refund_allocation",
+  {
+    id: text("id").primaryKey(),
+    refundId: text("refund_id").notNull(),
+    paymentId: text("payment_id").notNull(),
+    amount: bigint("amount", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull().default("IRR"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    check("refund_allocation_amount_positive", sql.raw(`"amount" > 0 AND "amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    stateCheck("refund_allocation_currency_allowed", "currency", CURRENCIES),
+    uniqueIndex("refund_allocation_refund_payment_unique").on(table.refundId, table.paymentId),
+    index("refund_allocation_payment").on(table.paymentId),
+    foreignKey({
+      name: "refund_allocation_refund_fk",
+      columns: [table.refundId],
+      foreignColumns: [refund.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_allocation_payment_fk",
+      columns: [table.paymentId],
+      foreignColumns: [payment.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const refundLine = pgTable(
+  "refund_line",
+  {
+    id: text("id").primaryKey(),
+    refundId: text("refund_id").notNull(),
+    wholesaleOrderItemId: text("wholesale_order_item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPrice: bigint("unit_price", { mode: "bigint" }).notNull(),
+    lineTotal: bigint("line_total", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull().default("IRR"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    positiveQuantityCheck("refund_line_quantity_positive", "quantity"),
+    moneyCheck("refund_line_unit_price_range", "unit_price"),
+    check("refund_line_total_matches", sql.raw(`"line_total" = "unit_price" * "quantity"`)),
+    stateCheck("refund_line_currency_allowed", "currency", CURRENCIES),
+    uniqueIndex("refund_line_refund_item_unique").on(table.refundId, table.wholesaleOrderItemId),
+    index("refund_line_item").on(table.wholesaleOrderItemId),
+    foreignKey({
+      name: "refund_line_refund_fk",
+      columns: [table.refundId],
+      foreignColumns: [refund.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_line_item_fk",
+      columns: [table.wholesaleOrderItemId],
+      foreignColumns: [wholesaleOrderItem.id],
+    }).onDelete("restrict"),
+  ],
+);
+
 /* ── Phase 4.7 — Provider-ready Payment & Shipping Foundation ──────────────
  *  - payment_provider_event inbox for webhook/callback idempotency
  *  - shipping_quote immutable snapshot
@@ -2374,6 +2455,8 @@ export const shipment = pgTable(
     quoteSnapshot: jsonb("quote_snapshot").notNull().default({}),
     trackingCode: text("tracking_code"),
     trackingUrl: text("tracking_url"),
+    /** Phase 4.7.1 (B14) — why a shipment ended in `failed` (pre- or post-handoff). */
+    failureReason: text("failure_reason"),
     handedOverAt: timestamp("handed_over_at", { withTimezone: true }),
     shippedAt: timestamp("shipped_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -2451,7 +2534,8 @@ export const shipmentEvent = pgTable(
   "shipment_event",
   {
     id: text("id").primaryKey(),
-    shipmentId: text("shipment_id").notNull(),
+    /** Phase 4.7.1 (B16/B17) — nullable: a carrier event that cannot be mapped to a shipment is persisted and `ignored`, never dropped. */
+    shipmentId: text("shipment_id"),
     provider: text("provider").notNull(),
     externalEventId: text("external_event_id").notNull(),
     eventType: text("event_type").notNull().default("unknown"),

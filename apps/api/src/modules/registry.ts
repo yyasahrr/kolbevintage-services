@@ -127,6 +127,8 @@ export const MODULES: readonly ModuleDefinition[] = [
       "order_financial_release",
       "financial_ledger_entry",
       "refund",
+      "refund_allocation",
+      "refund_line",
       "payment_provider_event",
     ],
     dependsOn: ["orders", "fulfillment", "audit"],

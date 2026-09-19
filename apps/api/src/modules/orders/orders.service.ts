@@ -2660,7 +2660,18 @@ export class OrdersService {
     return snapshot;
   }
 
-  async validateAndLockForPaymentSubmission(input: { orderId: string; buyerUserId: string; executor: DbOrTx }) {
+  async validateAndLockForPaymentSubmission(input: {
+    orderId: string;
+    buyerUserId: string;
+    executor: DbOrTx;
+    /**
+     * Phase 4.7.1 (D2/D3) — a late shipping fee after the gate was released
+     * creates a delta obligation on an already `processing`/`fulfillment`
+     * order. The caller (finance orchestrator) sets this only after it has
+     * computed a positive outstanding payable from the *active* proformas.
+     */
+    allowOutstandingObligation?: boolean;
+  }) {
     const tx = input.executor as any;
     const result = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${input.orderId} FOR UPDATE`);
     const order = result.rows?.[0];
@@ -2668,10 +2679,9 @@ export class OrdersService {
     const owner = order.buyer_user_id || order.buyerUserId;
     if (owner !== input.buyerUserId) throw new OrderDomainError("ORDER_OWNERSHIP_VIOLATION", "Not owner");
     // Strict: only awaiting_payment for normal buyer path
-    if (order.status !== "awaiting_payment") {
-      throw new OrderDomainError("PAYMENT_GATE_BLOCKED", `Cannot submit payment from ${order.status}, expected awaiting_payment`);
-    }
-    return order;
+    if (order.status === "awaiting_payment") return order;
+    if (input.allowOutstandingObligation && (order.status === "processing" || order.status === "fulfillment")) return order;
+    throw new OrderDomainError("PAYMENT_GATE_BLOCKED", `Cannot submit payment from ${order.status}, expected awaiting_payment`);
   }
 
   async transitionToConfirmed(input: { orderId: string; buyerUserId: string; expectedVersion?: number; idempotencyKey: string; executor: DbOrTx }) {
@@ -2777,7 +2787,7 @@ export class OrdersService {
     releaseType: string;
     amount: string;
     currency: string;
-    actorId: string;
+    actorId: string | null;
     actorRole: string;
     reason: string;
     executor: DbOrTx;
@@ -2867,7 +2877,7 @@ export class OrdersService {
     amount: string;
     currency: string;
     allocations: Array<{ proformaId: string; amount: string }>;
-    actorId: string;
+    actorId: string | null;
     idempotencyKey: string;
     executor: DbOrTx;
   }) {
@@ -2927,7 +2937,47 @@ export class OrdersService {
     return { recordedAt: dbNow };
   }
 
-  async recordPaymentFailed(input: { orderId: string; paymentId: string; reason: string; actorId: string; idempotencyKey: string; executor: DbOrTx }) {
+  /**
+   * Phase 4.7.1 — provider-driven payment events (webhook / reconciliation).
+   * Payload is intentionally minimal: never the provider reference or any secret.
+   */
+  async recordProviderPaymentEvent(input: {
+    orderId: string;
+    paymentId: string;
+    eventType: "payment.provider_webhook_received" | "payment.provider_verified" | "payment.reconciled" | "payment.provider_callback_received";
+    provider: string;
+    providerEventId?: string | null;
+    amount: string;
+    currency: string;
+    replayed?: boolean;
+    providerState?: string;
+    actorId: string | null;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    await this.appendEvent(
+      {
+        aggregateType: "wholesale_order",
+        aggregateId: input.orderId,
+        eventType: input.eventType,
+        payload: {
+          paymentId: input.paymentId,
+          provider: input.provider,
+          providerEventId: input.providerEventId || null,
+          amount: input.amount,
+          currency: input.currency,
+          providerState: input.providerState || null,
+          replayed: Boolean(input.replayed),
+          referencePresent: true,
+        },
+        actorId: input.actorId,
+        actorRole: "system",
+      },
+      tx,
+    );
+  }
+
+  async recordPaymentFailed(input: { orderId: string; paymentId: string; reason: string; actorId: string | null; idempotencyKey: string; executor: DbOrTx }) {
     const tx = input.executor as any;
     await this.appendEvent(
       {

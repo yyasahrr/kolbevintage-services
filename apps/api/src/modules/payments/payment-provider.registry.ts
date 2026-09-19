@@ -1,4 +1,5 @@
 import { Injectable, Logger, Inject } from "@nestjs/common";
+import { DomainError } from "@kolbe/shared";
 import type { PaymentProvider } from "./payment-provider.interface";
 import { ManualTransferProvider } from "./manual-transfer.provider";
 import { FakePaymentProvider } from "./providers/fake-payment.provider";
@@ -7,9 +8,24 @@ import { FakePaymentProvider } from "./providers/fake-payment.provider";
  * Phase 4.7 — PaymentProviderRegistry
  * Production-grade registry that distinguishes enabled/disabled and rejects unknown.
  * Manual is production default, fake only allowed in non-production unless PAYMENT_PROVIDER_MODE explicitly allows.
+ *
+ * Phase 4.7.1 (A10): the production guard is enforced at the *resolve boundary*
+ * (every intent / webhook / reconciliation / refund call), not only at startup,
+ * and every rejection is a stable DomainError instead of a generic Error.
  */
 
 export type PaymentProviderMode = "disabled" | "fake" | "sandbox" | "live";
+
+export class PaymentProviderRegistryError extends DomainError {
+  constructor(code: "PROVIDER_NOT_ALLOWED" | "PAYMENT_PROVIDER_UNKNOWN", message: string) {
+    super(code === "PAYMENT_PROVIDER_UNKNOWN" ? 404 : 403, code, message);
+    this.name = "PaymentProviderRegistryError";
+  }
+}
+
+export function isProductionEnv(): boolean {
+  return (process.env.NODE_ENV || "development").toLowerCase() === "production";
+}
 
 @Injectable()
 export class PaymentProviderRegistry {
@@ -33,7 +49,6 @@ export class PaymentProviderRegistry {
 
     // Production guard: fake must never be silent default in production
     if (nodeEnv === "production" && (providerKey === "fake" || mode === "fake")) {
-      // Allow if explicitly configured with fake mode? Task says startup must fail if fake in production
       throw new Error(
         `PaymentProviderRegistry: fake provider prohibited in production (WHOLESALE_PAYMENT_PROVIDER=${providerKey}, PAYMENT_PROVIDER_MODE=${mode}, NODE_ENV=${nodeEnv})`,
       );
@@ -41,7 +56,6 @@ export class PaymentProviderRegistry {
 
     // If external provider mode enabled but credentials missing, fail safely (placeholder for future real provider)
     if (["sandbox", "live"].includes(mode)) {
-      // For now, only manual and fake exist, so sandbox/live without real provider should fail
       if (providerKey !== "manual" && providerKey !== "fake") {
         const hasCreds = this.checkRealProviderCredentials(providerKey);
         if (!hasCreds) {
@@ -50,13 +64,10 @@ export class PaymentProviderRegistry {
           );
         }
       } else if (providerKey === "manual" && mode !== "disabled") {
-        // manual doesn't need sandbox/live, but allow disabled only
-        // If someone sets manual + sandbox, we treat as misconfig
         this.logger.warn(`Manual provider with mode ${mode} — treating as disabled mode for safety`);
       }
     }
 
-    // Enable providers based on env
     // Always enable manual
     this.enabledProviders.add("manual");
     if (mode === "fake" || providerKey === "fake") {
@@ -67,9 +78,8 @@ export class PaymentProviderRegistry {
   }
 
   private checkRealProviderCredentials(_providerKey: string): boolean {
-    // Placeholder for future Iranian provider credential check
-    // For now, return false to force safe failure if sandbox/live requested without creds
-    // Real implementation will check env vars like NEXTPAY_API_KEY, VANDAR_API_KEY, etc.
+    // No real Iranian gateway is integrated in this phase; sandbox/live without an
+    // adapter must fail closed. (Credential checks arrive with the adapter itself.)
     return false;
   }
 
@@ -78,18 +88,23 @@ export class PaymentProviderRegistry {
     this.providers.set(provider.name, provider);
   }
 
+  /**
+   * Resolve a provider for an operation. Fails closed:
+   *  - unknown name → PAYMENT_PROVIDER_UNKNOWN (404)
+   *  - fake in production → PROVIDER_NOT_ALLOWED (403), regardless of env flags
+   *  - not enabled by configuration → PROVIDER_NOT_ALLOWED (403)
+   */
   resolve(providerName?: string): PaymentProvider {
     const key = (providerName || process.env.WHOLESALE_PAYMENT_PROVIDER || "manual").toLowerCase();
+    if (key === "fake" && isProductionEnv()) {
+      throw new PaymentProviderRegistryError("PROVIDER_NOT_ALLOWED", "Fake payment provider is prohibited in production");
+    }
     const provider = this.providers.get(key);
     if (!provider) {
-      throw new Error(`Unknown payment provider: ${key}. Registered: ${Array.from(this.providers.keys()).join(", ")}`);
+      throw new PaymentProviderRegistryError("PAYMENT_PROVIDER_UNKNOWN", `Unknown payment provider: ${key}`);
     }
     if (!this.enabledProviders.has(key)) {
-      // If disabled mode, only manual allowed
-      const mode = (process.env.PAYMENT_PROVIDER_MODE || "disabled").toLowerCase();
-      if (mode === "disabled" && key !== "manual") {
-        throw new Error(`Payment provider ${key} is disabled in mode ${mode}`);
-      }
+      throw new PaymentProviderRegistryError("PROVIDER_NOT_ALLOWED", `Payment provider ${key} is not enabled (mode=${this.getMode()})`);
     }
     return provider;
   }

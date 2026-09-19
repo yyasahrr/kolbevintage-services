@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, Post, Query, Inject } from "@nestjs/common";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
+import { DomainError } from "@kolbe/shared";
 import { PaymentsService } from "../payments/payments.service";
 import { WholesaleFinanceOrchestrator } from "./wholesale-finance.orchestrator";
 
@@ -147,17 +148,20 @@ export class AdminFinanceController {
       childOrderId?: string;
       exceptionId?: string;
       paymentId?: string;
-      amount: string;
+      /** Optional when `lines` are given (amount is then derived exactly from the proforma lines). */
+      amount?: string;
       currency?: string;
       reasonCode?: string;
       reason?: string;
+      /** Phase 4.7.1 (A14) — exact item/quantity basis of a partial refund. */
+      lines?: Array<{ wholesaleOrderItemId: string; quantity: number }>;
     },
   ) {
     const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
     if (!idempotencyKey) throw new Error("Idempotency-Key required");
     const actorRole = claims.role;
     if (!["admin", "finance"].includes(actorRole)) throw new Error("Only admin/finance may create refunds");
-    const result = await this.orchestrator.createRefund({
+    const result: any = await this.orchestrator.createRefund({
       orderId: body.orderId,
       childOrderId: body.childOrderId,
       exceptionId: body.exceptionId,
@@ -166,6 +170,7 @@ export class AdminFinanceController {
       currency: body.currency,
       reasonCode: body.reasonCode,
       reason: body.reason,
+      lines: body.lines,
       actorUserId: claims.sub,
       actorRole,
       idempotencyKey,
@@ -177,7 +182,39 @@ export class AdminFinanceController {
         amount: (result.refund.amount || 0).toString(),
         status: result.refund.status,
       },
+      sourcePayments: (result.allocations || []).map((a: any) => ({ paymentId: a.paymentId, amount: (a.amount || 0).toString() })),
+      lines: (result.lines || []).map((l: any) => ({ wholesaleOrderItemId: l.wholesaleOrderItemId, quantity: l.quantity, lineTotal: (l.lineTotal || 0).toString() })),
       replayed: result.replayed,
+    };
+  }
+
+  /**
+   * Phase 4.7.1 (A11/A12) — execute an approved refund through the source payment's
+   * provider (TxA claim → provider call without lock → TxB completion with the real
+   * provider reference). Manual-provider refunds report `manual_evidence_required`.
+   */
+  @Post("refunds/:id/execute-provider")
+  @Roles("admin", "finance")
+  async executeRefundViaProvider(
+    @CurrentUser() claims: Claims,
+    @Param("id") id: string,
+    @Headers("idempotency-key") idempotencyKeyHeader: string,
+    @Headers("Idempotency-Key") idempotencyKeyHeader2: string,
+  ) {
+    const idempotencyKey = idempotencyKeyHeader || idempotencyKeyHeader2;
+    if (!idempotencyKey) throw new DomainError(400, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+    const result: any = await this.orchestrator.executeRefundViaProvider({
+      refundId: id,
+      actorUserId: claims.sub,
+      actorRole: claims.role,
+      idempotencyKey,
+    });
+    return {
+      refund: { id: result.refund?.id || id, status: result.refund?.status },
+      outcome: result.outcome,
+      provider: result.provider,
+      ledgerId: result.ledgerId,
+      replayed: Boolean(result.replayed),
     };
   }
 

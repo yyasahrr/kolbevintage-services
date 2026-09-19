@@ -129,6 +129,8 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "order_financial_release",
       "financial_ledger_entry",
       "refund",
+      "refund_allocation",
+      "refund_line",
       "payment_provider_event",
       "shipping_quote",
       "shipment",
