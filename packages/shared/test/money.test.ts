@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   add,
   adjust,
+  allocateProportionally,
+  basisPoints,
   divide,
   formatToman,
   MAX_MONEY,
@@ -89,5 +91,37 @@ describe("money — حساب صحیح پول", () => {
 
   it("نمایش فارسی مقدار را تغییر نمی‌دهد", () => {
     expect(formatToman(money(1_240_000))).toContain("تومان");
+  });
+
+  // ── Phase 4.7.6 — قواعد گردکردنِ منجمد برای Phase 4.8 (هیچ نرخی این‌جا تعریف نمی‌شود) ──
+  it("basisPoints — سهم bps با حساب صحیح و گردکردن صریح", () => {
+    expect(basisPoints(1_000_000n, 250n)).toBe(25_000n); // ۲٫۵٪
+    expect(basisPoints(999n, 250n)).toBe(25n); // 24.975 → half-up
+    expect(basisPoints(999n, 250n, "down")).toBe(24n); // کف
+    expect(basisPoints(1n, 1n)).toBe(0n); // 0.0001 → 0
+    expect(basisPoints(5_000n, 1n)).toBe(1n); // 0.5 → half-up 1
+    expect(basisPoints(5_000n, 1n, "down")).toBe(0n);
+    expect(basisPoints(123_456_789n, 0n)).toBe(0n); // پیش‌فرض کارمزد قبل از پیکربندی: صفر
+    expect(basisPoints(123_456_789n, 10_000n)).toBe(123_456_789n); // ۱۰۰٪
+    expect(basisPoints(100_000_000n, 3_333n)).toBe(33_330_000n); // مثال ۱۰۰ میلیون × ۳۳٫۳۳٪
+    expect(() => basisPoints(1n, 10_001n)).toThrowError(/MONEY_BPS_OUT_OF_RANGE/);
+    expect(() => basisPoints(1n, -1n)).toThrowError(/MONEY_BPS_OUT_OF_RANGE/);
+    expect(() => basisPoints(-1n, 100n)).toThrowError(/MONEY_NEGATIVE_BASE/);
+    expect(() => basisPoints(1n, 2.5)).toThrowError(MoneyError); // نرخ اعشاری پذیرفته نمی‌شود
+  });
+
+  it("allocateProportionally — بزرگ‌ترین باقی‌مانده؛ جمع اجزا همیشه برابر مبلغ است", () => {
+    expect(allocateProportionally(100n, [1n, 1n, 1n])).toEqual([34n, 33n, 33n]);
+    expect(allocateProportionally(100_000_000n, [40n, 35n, 25n])).toEqual([40_000_000n, 35_000_000n, 25_000_000n]);
+    expect(allocateProportionally(10n, [3n, 3n, 3n])).toEqual([4n, 3n, 3n]); // تساوی → اندیس کوچک‌تر
+    expect(allocateProportionally(1n, [1n, 1n])).toEqual([1n, 0n]);
+    expect(allocateProportionally(0n, [5n, 7n])).toEqual([0n, 0n]);
+    expect(allocateProportionally(7n, [0n, 1n])).toEqual([0n, 7n]); // وزن صفر سهمی نمی‌گیرد
+    const parts = allocateProportionally(999_999_999n, [7n, 11n, 13n, 17n]);
+    expect(parts.reduce((a, b) => a + b, 0n)).toBe(999_999_999n);
+    expect(() => allocateProportionally(1n, [])).toThrowError(/MONEY_ALLOCATION_NO_WEIGHTS/);
+    expect(() => allocateProportionally(1n, [0n, 0n])).toThrowError(/MONEY_ALLOCATION_ZERO_WEIGHT/);
+    expect(() => allocateProportionally(1n, [-1n, 2n])).toThrowError(/MONEY_ALLOCATION_NEGATIVE_WEIGHT/);
+    expect(() => allocateProportionally(-1n, [1n])).toThrowError(/MONEY_NEGATIVE_BASE/);
   });
 });

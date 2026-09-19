@@ -2912,12 +2912,20 @@ export class OrdersService {
         const items = childItemsForThisChild.map((ci: any) => {
           const woItemId = ci.wholesale_order_item_id || ci.wholesaleOrderItemId;
           const woItem = orderItems.find((oi: any) => oi.id === woItemId);
-          const quantity = woItem ? woItem.quantity || woItem.piece_quantity || 1 : ci.quantity || 1;
+          const pricingUnit = woItem ? woItem.pricing_unit || woItem.pricingUnit || "PIECE" : "PIECE";
+          // Phase 4.7.6 (financial invariant FI-3) — the proforma line quantity is expressed in the
+          // line's *pricing unit*, exactly like `calculateLineTotal` (PIECE/PER_PIECE ⇒ pieces, otherwise
+          // packages). A refund line (unit_price × quantity) and the delivered-quantity attribution both
+          // depend on this unit; a package-count quantity against a per-piece unit price would silently
+          // under-refund and mis-attribute. For PIECE offers the value is unchanged.
+          const isPiecePricing = pricingUnit === "PIECE" || pricingUnit === "PER_PIECE";
+          const quantity = woItem
+            ? Number(isPiecePricing ? woItem.piece_quantity || woItem.pieceQuantity || woItem.quantity || 1 : woItem.quantity || woItem.piece_quantity || 1)
+            : Number(ci.quantity || 1);
           const unitPrice = woItem ? BigInt(woItem.unit_price || woItem.unitPrice || 0) : BigInt(ci.unit_price || ci.unitPrice || 0);
           const lineTotal = woItem ? BigInt(woItem.line_total || woItem.lineTotal || 0) : BigInt(ci.total_amount || ci.totalAmount || 0);
           const descriptionSnapshot = woItem ? woItem.product_name_snapshot || woItem.productNameSnapshot || woItem.product_name || "" : ci.product_name || "";
           const skuSnapshot = woItem ? woItem.sku_snapshot || woItem.skuSnapshot || woItem.sku || "" : ci.sku || "";
-          const pricingUnit = woItem ? woItem.pricing_unit || woItem.pricingUnit || "PIECE" : "PIECE";
           return {
             wholesaleOrderItemId: woItemId,
             purchaseOrderItemId: ci.id,
@@ -3389,6 +3397,91 @@ export class OrdersService {
     const tx = executor as any;
     const result = await tx.execute(sql`SELECT * FROM purchase_order WHERE wholesale_order_id = ${orderId} ORDER BY id ASC FOR UPDATE`);
     return result.rows;
+  }
+
+  /** Phase 4.7.6 — read-only child ids of an order (no lock; settlement-readiness reads). */
+  async listChildOrderIdsForOrder(orderId: string, executor?: DbOrTx): Promise<string[]> {
+    const db = (executor as any) || this.db;
+    const result = await db.execute(sql`SELECT id FROM purchase_order WHERE wholesale_order_id = ${orderId} ORDER BY id ASC`);
+    return ((result.rows || []) as any[]).map((r) => String(r.id));
+  }
+
+  /**
+   * Phase 4.7.6 — read-only economic context of ONE child order (owner read, never locks).
+   * Returns the immutable line snapshot (pricing unit, quantity, piece quantity, unit price, line
+   * total), the seller identity carried by the child, and the delivery history evidence
+   * (`order_status_history` rows into `delivered`, with their trigger). Used by the read-only
+   * settlement-readiness computation; it is NOT a settlement balance.
+   */
+  async getChildOrderEconomicContext(childOrderId: string, executor?: DbOrTx) {
+    const db = (executor as any) || this.db;
+    const childResult = await db.execute(sql`SELECT * FROM purchase_order WHERE id = ${childOrderId}`);
+    const child = childResult.rows?.[0];
+    if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${childOrderId} not found`);
+    const parentResult = child.wholesale_order_id ? await db.execute(sql`SELECT * FROM wholesale_order WHERE id = ${child.wholesale_order_id}`) : { rows: [] };
+    const parent = parentResult.rows?.[0] || null;
+    const poItemsResult = await db.execute(sql`SELECT * FROM purchase_order_item WHERE purchase_order_id = ${childOrderId} ORDER BY id ASC`);
+    const poItems: any[] = poItemsResult.rows || [];
+    const woItemIds = poItems.map((ci) => ci.wholesale_order_item_id).filter(Boolean);
+    let woItems: any[] = [];
+    if (woItemIds.length > 0) {
+      const woItemsResult = await db.execute(sql`SELECT * FROM wholesale_order_item WHERE id IN (${sql.join(woItemIds.map((id: string) => sql`${id}`), sql`, `)}) ORDER BY id ASC`);
+      woItems = woItemsResult.rows || [];
+    }
+    const historyResult = await db.execute(sql`
+      SELECT actor_role, reason, metadata, created_at FROM order_status_history
+      WHERE child_order_id = ${childOrderId} AND to_status = 'delivered' ORDER BY created_at ASC, id ASC
+    `);
+    return {
+      child: {
+        id: String(child.id),
+        orderCode: String(child.order_code),
+        wholesaleOrderId: child.wholesale_order_id ? String(child.wholesale_order_id) : null,
+        status: String(child.status),
+        sellerId: String(child.seller_id),
+        supplierId: child.supplier_id ? String(child.supplier_id) : null,
+        currency: String(child.currency || "IRR"),
+        shippingResponsibility: String(child.shipping_responsibility || ""),
+        itemsTotal: String(child.items_total ?? 0),
+        grandTotal: String(child.grand_total ?? 0),
+        version: Number(child.version || 0),
+        deliveredAt: child.delivered_at ? new Date(child.delivered_at).toISOString() : null,
+        cancelledAt: child.cancelled_at ? new Date(child.cancelled_at).toISOString() : null,
+      },
+      parent: parent
+        ? {
+            id: String(parent.id),
+            orderCode: String(parent.order_code),
+            status: String(parent.status),
+            currency: String(parent.currency || "IRR"),
+            paymentMode: String(parent.payment_mode || ""),
+            buyerUserId: String(parent.buyer_user_id || ""),
+            grandTotal: String(parent.grand_total ?? 0),
+          }
+        : null,
+      items: poItems.map((ci) => {
+        const wo = woItems.find((w) => w.id === ci.wholesale_order_item_id) || null;
+        const pricingUnit = String(wo?.pricing_unit || "PIECE");
+        return {
+          purchaseOrderItemId: String(ci.id),
+          wholesaleOrderItemId: ci.wholesale_order_item_id ? String(ci.wholesale_order_item_id) : null,
+          sellerId: wo?.seller_id ? String(wo.seller_id) : String(child.seller_id),
+          supplierId: wo?.supplier_id ? String(wo.supplier_id) : child.supplier_id ? String(child.supplier_id) : null,
+          pricingUnit,
+          quantity: Number(wo?.quantity ?? ci.quantity ?? 0),
+          pieceQuantity: Number(wo?.piece_quantity ?? ci.quantity ?? 0),
+          unitPrice: String(wo?.unit_price ?? ci.unit_price ?? 0),
+          lineTotal: String(wo?.line_total ?? ci.total_amount ?? 0),
+          currency: String(wo?.currency || child.currency || "IRR"),
+        };
+      }),
+      deliveryHistory: ((historyResult.rows || []) as any[]).map((h) => ({
+        actorRole: h.actor_role ? String(h.actor_role) : null,
+        trigger: h.metadata && typeof h.metadata === "object" && (h.metadata as any).trigger ? String((h.metadata as any).trigger) : null,
+        shipmentId: h.metadata && typeof h.metadata === "object" && (h.metadata as any).shipmentId ? String((h.metadata as any).shipmentId) : null,
+        at: h.created_at ? new Date(h.created_at).toISOString() : null,
+      })),
+    };
   }
 
   // Phase 4.7 — Shipping events (OrdersService owns Order status/history/event)

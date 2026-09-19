@@ -133,9 +133,12 @@ describe("Phase 4.7.1 — C: 12 mandatory concurrency races (real PostgreSQL)", 
     const body = fakeWebhookBody(providerReference, { eventId: "evt-c1-" + paymentId });
     const { ok, failed } = await race(Array.from({ length: 8 }, () => () => paymentWebhook(body)));
     expect(failed).toEqual([]);
-    // one worker processes; the others observe the in-flight claim or the final state — never a second processing
-    expect(ok.filter((r: any) => r.outcome.status === "processed").length).toBeGreaterThanOrEqual(1);
-    expect(ok.every((r: any) => ["processed", "processing"].includes(r.outcome.status))).toBe(true);
+    // one worker processes; the others observe the in-flight claim (`processing`) or the final state
+    // (`duplicate` / already_processed, when they arrive after the worker finished) — never a second processing
+    expect(ok.filter((r: any) => r.outcome.status === "processed").length).toBe(1);
+    expect(
+      ok.every((r: any) => r.outcome.status === "processed" || r.outcome.status === "processing" || (r.outcome.status === "duplicate" && r.outcome.reason === "already_processed")),
+    ).toBe(true);
     expect(ok.filter((r: any) => r.duplicate).length).toBe(7);
     expect(await count(h.pool, `SELECT 1 FROM payment_provider_event WHERE external_event_id = $1`, ["evt-c1-" + paymentId])).toBe(1);
     expect((await one(h.pool, `SELECT status FROM payment_provider_event WHERE external_event_id = $1`, ["evt-c1-" + paymentId])).status).toBe("processed");

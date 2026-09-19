@@ -175,6 +175,38 @@ export class InvoicingService {
     return { percent, reference: `${row.configKey}@v${row.version}` };
   }
 
+  /**
+   * Phase 4.7.6 — read-only tax facts for the settlement-readiness computation (owner read of the
+   * invoicing tables; never a settlement input). Reports whether a VERIFIED VAT rate is active and
+   * the tax fields of the child's issued commercial invoice, if one exists.
+   */
+  async getTaxFactsForChild(childOrderId: string, executor?: Executor) {
+    const db = executor || this.db;
+    const vat = await this.resolveVatRate(db);
+    const [inv] = await db
+      .select()
+      .from(commercialInvoice)
+      .where(and(eq(commercialInvoice.childOrderId, childOrderId), eq(commercialInvoice.status, "issued")))
+      .limit(1);
+    return {
+      vatRateActive: vat !== null,
+      vatRateReference: vat?.reference ?? null,
+      issuedInvoice: inv
+        ? {
+            invoiceId: String(inv.id),
+            invoiceNumber: String(inv.invoiceNumber),
+            currency: String(inv.currency || "IRR"),
+            subtotal: String(inv.subtotal ?? 0),
+            shippingTotal: String(inv.shippingTotal ?? 0),
+            taxTotal: String(inv.taxTotal ?? 0),
+            taxStatus: String(inv.taxStatus || "not_assessed"),
+            taxBasisReference: inv.taxBasisReference ? String(inv.taxBasisReference) : null,
+            grandTotal: String(inv.grandTotal ?? 0),
+          }
+        : null,
+    };
+  }
+
   /* ───────────────────────── commercial invoices (wholesale child orders) ───────────────────────── */
 
   /**

@@ -171,6 +171,15 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: "scaffolded",
     phase: 4,
   },
+  {
+    // Phase 4.7.6 — read-only settlement-readiness diagnostics (admin/finance). Owns NO tables, moves
+    // no money, exposes no balance; NOT the Phase 4.8 settlement module (see phase-4-8-domain-ownership).
+    name: "settlement-readiness",
+    tables: [],
+    dependsOn: ["orders", "payments", "shipping", "compliance", "invoicing"],
+    status: "scaffolded",
+    phase: 4,
+  },
   { name: "payment-providers", tables: [], dependsOn: [], status: "planned", phase: 5 },
   { name: "refunds", tables: [], dependsOn: ["payments", "orders"], status: "planned", phase: 5 },
   { name: "ledger", tables: [], dependsOn: [], status: "planned", phase: 5 },

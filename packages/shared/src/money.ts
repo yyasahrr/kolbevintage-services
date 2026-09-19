@@ -130,6 +130,64 @@ export function formatToman(amount: Money): string {
   return `${amount.toLocaleString("fa-IR")} تومان`;
 }
 
+/**
+ * Phase 4.7.6 — سهم basis-point از یک مبلغ (مثلاً کارمزد ۲٫۵٪ = ۲۵۰ bps).
+ *
+ * قاعدهٔ منجمد (FROZEN): `amount × bps / 10_000` با حساب صحیح و گردکردنِ صریح.
+ * پیش‌فرض «نیم‌به‌بالا» است؛ `"down"` کف می‌گیرد. هرگز از float استفاده نمی‌شود.
+ * این تابع هیچ نرخی نمی‌داند — نرخ باید از پیکربندی/اسنپ‌شات بیاید.
+ *
+ * مثال: `basisPoints(999n, 250n)`: 999×250 = 249_750 → ÷10_000 = 24.975 →
+ * half-up `25n`، down `24n`.
+ */
+export function basisPoints(amount: Money, bps: bigint | number, rounding: "half-up" | "down" = "half-up"): Money {
+  const b = typeof bps === "bigint" ? bps : money(bps);
+  if (b < 0n || b > 10_000n) throw new MoneyError("MONEY_BPS_OUT_OF_RANGE");
+  if (amount < 0n) throw new MoneyError("MONEY_NEGATIVE_BASE");
+  const numerator = amount * b;
+  const result = rounding === "half-up" ? roundDivide(numerator, 10_000n) : numerator / 10_000n;
+  return assertSafeMoney(result);
+}
+
+/**
+ * Phase 4.7.6 — تقسیم یک مبلغ صحیح بین چند وزن، بدون گم‌شدن یا خلق ریال.
+ *
+ * روش «بزرگ‌ترین باقی‌مانده» (largest remainder): ابتدا کفِ سهم هر وزن، سپس
+ * ریال‌های باقی‌مانده یکی‌یکی به بزرگ‌ترین باقی‌مانده‌ها (و در تساوی، به اندیس
+ * کوچک‌تر) داده می‌شود. نتیجه قطعی (deterministic) است و `Σ parts === amount`.
+ *
+ * فقط برای تقسیمِ ناگزیر (مثلاً سهم تخفیف سبد بین خطوط) — انتساب اقتصادی
+ * فروشنده هرگز با تقسیم نسبی تخمین زده نمی‌شود، از خطوط دقیق می‌آید.
+ */
+export function allocateProportionally(amount: Money, weights: ReadonlyArray<bigint>): Money[] {
+  if (weights.length === 0) throw new MoneyError("MONEY_ALLOCATION_NO_WEIGHTS");
+  if (amount < 0n) throw new MoneyError("MONEY_NEGATIVE_BASE");
+  let totalWeight = 0n;
+  for (const w of weights) {
+    if (w < 0n) throw new MoneyError("MONEY_ALLOCATION_NEGATIVE_WEIGHT");
+    totalWeight += w;
+  }
+  if (totalWeight === 0n) throw new MoneyError("MONEY_ALLOCATION_ZERO_WEIGHT");
+  const parts: Money[] = [];
+  const remainders: Array<{ index: number; remainder: bigint }> = [];
+  let distributed = 0n;
+  weights.forEach((w, index) => {
+    const scaled = amount * w;
+    const part = scaled / totalWeight;
+    parts.push(part);
+    distributed += part;
+    remainders.push({ index, remainder: scaled % totalWeight });
+  });
+  let leftover = amount - distributed;
+  remainders.sort((a, b) => (a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1));
+  for (const entry of remainders) {
+    if (leftover <= 0n) break;
+    parts[entry.index] += 1n;
+    leftover -= 1n;
+  }
+  return parts.map((p) => assertSafeMoney(p));
+}
+
 /** جمع مبالغ با بررسی تطابق واحد پول. */
 export function sumByCurrency(
   entries: ReadonlyArray<{ amount: Money; currency: string }>,

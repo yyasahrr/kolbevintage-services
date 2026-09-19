@@ -6,6 +6,7 @@ import { PaymentsService } from "../payments/payments.service";
 import { OrdersService } from "../orders/orders.service";
 import { PaymentProviderRegistry } from "../payments/payment-provider.registry";
 import { ComplianceService } from "../compliance/compliance.service";
+import { FulfillmentService } from "../fulfillment/fulfillment.service";
 import { DomainError } from "@kolbe/shared";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -28,6 +29,8 @@ export class FinanceOrchestratorError extends DomainError {
     else if (code === "ORDER_OWNERSHIP_VIOLATION" || code === "PROVIDER_NOT_ALLOWED") status = 403;
     else if (code === "IDEMPOTENCY_KEY_REUSED" || code === "INVALID_STATUS_TRANSITION" || code === "PROVIDER_REFUND_UNSUPPORTED") status = 409;
     else if (code === "IDEMPOTENCY_KEY_REQUIRED") status = 400;
+    else if (code === "EXCEPTION_NOT_FOUND") status = 404;
+    else if (code === "REFUND_EXCEPTION_CHILD_MISMATCH") status = 409;
     super(status, code, message);
     this.name = "FinanceOrchestratorError";
   }
@@ -47,6 +50,7 @@ export class WholesaleFinanceOrchestrator {
     @Inject(PaymentProviderRegistry) private readonly paymentProviderRegistry: PaymentProviderRegistry,
     @Inject(AuditService) private readonly auditService: AuditService,
     @Inject(ComplianceService) private readonly complianceService: ComplianceService,
+    @Inject(FulfillmentService) private readonly fulfillmentService: FulfillmentService,
   ) {}
 
   async confirmOrder(input: {
@@ -398,6 +402,20 @@ export class WholesaleFinanceOrchestrator {
     idempotencyKey: string;
   }) {
     return this.db.transaction(async (tx: any) => {
+      // Phase 4.7.6 (FI-10) — a refund that cites a fulfillment exception must cite an exception of the
+      // SAME child. The exception link is the immutable signal that the refunded quantity was never
+      // delivered (shortage / cannot-fulfil), so a cross-child link would move money between sellers.
+      if (input.exceptionId) {
+        const exception: any = await this.fulfillmentService.getExceptionById(input.exceptionId, tx);
+        if (!exception) throw new FinanceOrchestratorError("EXCEPTION_NOT_FOUND", `Fulfillment exception ${input.exceptionId} not found`);
+        const exceptionChildId = String(exception.childOrderId || exception.child_order_id || "");
+        if (!input.childOrderId || exceptionChildId !== input.childOrderId) {
+          throw new FinanceOrchestratorError(
+            "REFUND_EXCEPTION_CHILD_MISMATCH",
+            `Fulfillment exception ${input.exceptionId} belongs to child ${exceptionChildId}, not ${input.childOrderId || "(order-scoped)"}`,
+          );
+        }
+      }
       const result = await this.paymentsService.createRefund({ ...input, executor: tx });
       if (!result.replayed) {
         await this.ordersService.recordRefundRequested({

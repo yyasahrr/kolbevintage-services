@@ -107,7 +107,9 @@ export class FinanceDomainError extends DomainError {
     else if (code === "INVALID_STATUS_TRANSITION" || code === "PAYMENT_ALREADY_VERIFIED" || code === "REFUND_ALREADY_COMPLETED" || code === "OVERPAYMENT_ALLOCATION" || code === "PROFORMA_OVERPAID") status = 409;
     else if (code === "BNPL_NOT_ALLOWED" || code === "INVALID_PAYMENT_METHOD" || code === "INVALID_PAYMENT_MODE") status = 400;
     else if (code === "PAYMENT_GATE_BLOCKED" || code === "INSUFFICIENT_PAYMENT_COVERAGE") status = 409;
-    else if (code === "PROFORMA_LINES_MISSING") status = 422;
+    else if (code === "PROFORMA_LINES_MISSING" || code === "PROFORMA_LINE_BASIS_INCONSISTENT") status = 422;
+    // Phase 4.7.6 — an order-scoped refund may only return unallocated (non-seller) money
+    else if (code === "REFUND_SCOPE_REQUIRED" || code === "REFUND_EXCEPTION_CHILD_MISMATCH") status = 409;
     // Phase 4.7.1 — provider evidence & refund basis (stable codes)
     else if (
       code === "PAYMENT_PROVIDER_REFERENCE_MISMATCH" ||
@@ -217,7 +219,21 @@ export class PaymentsService {
 
       let itemsTotal = 0n;
       for (const it of child.items) {
-        itemsTotal += BigInt(it.lineTotal);
+        // Phase 4.7.6 (FI-3) — fail closed: a proforma line is the immutable basis of every refund line
+        // and of the delivered-quantity attribution, so `unit_price × quantity` MUST equal `line_total`.
+        const lineQuantity = Number(it.quantity);
+        if (!Number.isSafeInteger(lineQuantity) || lineQuantity <= 0) {
+          throw new FinanceDomainError("PROFORMA_LINE_BASIS_INCONSISTENT", `Child ${childId} item ${it.wholesaleOrderItemId}: quantity ${String(it.quantity)} is not a positive integer`);
+        }
+        const unitPrice = BigInt(it.unitPrice);
+        const lineTotal = BigInt(it.lineTotal);
+        if (unitPrice < 0n || lineTotal < 0n || unitPrice * BigInt(lineQuantity) !== lineTotal) {
+          throw new FinanceDomainError(
+            "PROFORMA_LINE_BASIS_INCONSISTENT",
+            `Child ${childId} item ${it.wholesaleOrderItemId}: unit_price ${unitPrice.toString()} × quantity ${lineQuantity} (${it.pricingUnit}) != line_total ${lineTotal.toString()}`,
+          );
+        }
+        itemsTotal += lineTotal;
       }
       if (itemsTotal <= 0n) {
         throw new FinanceDomainError("PROFORMA_LINES_MISSING", `Child ${childId} has zero total`);
@@ -1670,28 +1686,51 @@ export class PaymentsService {
       if (amountBigInt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
 
       // ── Refundable ceiling (child-scoped or order-scoped) ──
-      const allocResult = input.childOrderId
-        ? await tx.execute(sql`
+      // Phase 4.7.6 (FI-9) — money that is allocated to a child's proforma lineage is seller-attributable
+      // and may only leave through a *child-scoped* refund (exact slice). An order-scoped refund (no
+      // childOrderId) may return only the order's UNALLOCATED verified money (overpayment / voided
+      // lineage), minus the order-scoped refunds already live. Anything larger must name the child.
+      let refundable: bigint;
+      if (input.childOrderId) {
+        const allocResult = await tx.execute(sql`
           SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
           JOIN payment p ON p.id = pa.payment_id
           JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
           WHERE wp.child_order_id = ${input.childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status IN ('issued','superseded')
-        `)
-        : await tx.execute(sql`SELECT COALESCE(SUM(amount),0) as sum FROM payment WHERE wholesale_order_id = ${input.orderId} AND status = 'verified'`);
-      const allocatedToChild = BigInt(allocResult.rows?.[0]?.sum || 0);
-
-      const refundResult = input.childOrderId
-        ? await tx.execute(sql`
+        `);
+        const allocatedToChild = BigInt(allocResult.rows?.[0]?.sum || 0);
+        const refundResult = await tx.execute(sql`
           SELECT COALESCE(SUM(amount),0) as sum FROM refund
           WHERE child_order_id = ${input.childOrderId} AND status IN ('requested','approved','processing','completed')
-        `)
-        : await tx.execute(sql`SELECT COALESCE(SUM(amount),0) as sum FROM refund WHERE wholesale_order_id = ${input.orderId} AND status IN ('requested','approved','processing','completed')`);
-      const alreadyRefunded = BigInt(refundResult.rows?.[0]?.sum || 0);
-
-      const refundable = allocatedToChild - alreadyRefunded;
-
-      if (amountBigInt > refundable) {
-        throw new FinanceDomainError("REFUND_EXCEEDS_ALLOCATED", `Refund ${amountBigInt.toString()} exceeds refundable ${refundable.toString()} for child ${input.childOrderId || "parent"}`, 409);
+        `);
+        const alreadyRefunded = BigInt(refundResult.rows?.[0]?.sum || 0);
+        refundable = allocatedToChild - alreadyRefunded;
+        if (amountBigInt > refundable) {
+          throw new FinanceDomainError("REFUND_EXCEEDS_ALLOCATED", `Refund ${amountBigInt.toString()} exceeds refundable ${refundable.toString()} for child ${input.childOrderId}`, 409);
+        }
+      } else {
+        const verifiedPaid = verifiedPayments.reduce((sum, p) => sum + BigInt(p.amount || 0), 0n);
+        const allocatedResult = await tx.execute(sql`
+          SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
+          JOIN payment p ON p.id = pa.payment_id
+          WHERE p.wholesale_order_id = ${input.orderId} AND p.status = 'verified' AND pa.status = 'active'
+        `);
+        const allocatedTotal = BigInt(allocatedResult.rows?.[0]?.sum || 0);
+        const orderScopedRefundResult = await tx.execute(sql`
+          SELECT COALESCE(SUM(amount),0) as sum FROM refund
+          WHERE wholesale_order_id = ${input.orderId} AND child_order_id IS NULL AND status IN ('requested','approved','processing','completed')
+        `);
+        const orderScopedRefunded = BigInt(orderScopedRefundResult.rows?.[0]?.sum || 0);
+        const unallocated = verifiedPaid - allocatedTotal;
+        refundable = unallocated - orderScopedRefunded;
+        if (refundable < 0n) refundable = 0n;
+        if (amountBigInt > refundable) {
+          throw new FinanceDomainError(
+            "REFUND_SCOPE_REQUIRED",
+            `Order-scoped refund ${amountBigInt.toString()} exceeds the unallocated money of order ${input.orderId} (${refundable.toString()}); allocated money is seller-attributable and must be refunded with childOrderId (and lines)`,
+            409,
+          );
+        }
       }
 
       const { commandIdempotency } = await import("@kolbe/database");
@@ -1741,7 +1780,8 @@ export class PaymentsService {
 
       // ── A13: map the refund onto concrete verified source payment(s) ──
       // Capacity of a payment = what it contributed to this child (or, order-scoped, its
-      // full amount) minus what earlier live refunds already drew from it.
+      // UNALLOCATED part — Phase 4.7.6 FI-9) minus what earlier live refunds of the same scope
+      // already drew from it.
       const candidatePayments = input.paymentId ? verifiedPayments.filter((p) => p.id === input.paymentId) : verifiedPayments;
       if (input.paymentId && candidatePayments.length === 0) {
         throw new FinanceDomainError("REFUND_SOURCE_PAYMENT_INVALID", `Payment ${input.paymentId} is not a verified payment of order ${input.orderId}`);
@@ -1750,19 +1790,26 @@ export class PaymentsService {
       let remaining = amountBigInt;
       for (const pay of candidatePayments) {
         if (remaining <= 0n) break;
-        const contributedResult = input.childOrderId
-          ? await tx.execute(sql`
+        let contributed: bigint;
+        if (input.childOrderId) {
+          const contributedResult = await tx.execute(sql`
               SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
               JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
               WHERE pa.payment_id = ${pay.id} AND pa.status = 'active' AND wp.child_order_id = ${input.childOrderId} AND wp.status IN ('issued','superseded')
-            `)
-          : { rows: [{ sum: pay.amount }] };
-        const contributed = BigInt(contributedResult.rows?.[0]?.sum || 0);
+            `);
+          contributed = BigInt(contributedResult.rows?.[0]?.sum || 0);
+        } else {
+          const allocatedOfPaymentResult = await tx.execute(sql`
+              SELECT COALESCE(SUM(pa.amount),0) as sum FROM payment_allocation pa
+              WHERE pa.payment_id = ${pay.id} AND pa.status = 'active'
+            `);
+          contributed = BigInt(pay.amount || 0) - BigInt(allocatedOfPaymentResult.rows?.[0]?.sum || 0);
+        }
         const drawnResult = await tx.execute(sql`
           SELECT COALESCE(SUM(ra.amount),0) as sum FROM refund_allocation ra
           JOIN refund r ON r.id = ra.refund_id
           WHERE ra.payment_id = ${pay.id} AND r.status IN ('requested','approved','processing','completed')
-            ${input.childOrderId ? sql`AND r.child_order_id = ${input.childOrderId}` : sql``}
+            ${input.childOrderId ? sql`AND r.child_order_id = ${input.childOrderId}` : sql`AND r.child_order_id IS NULL`}
         `);
         const drawn = BigInt(drawnResult.rows?.[0]?.sum || 0);
         const capacity = contributed - drawn;
@@ -2332,6 +2379,133 @@ export class PaymentsService {
       WHERE wp.child_order_id = ${childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status IN ('issued','superseded')
     `);
     return BigInt(allocCheck.rows?.[0]?.sum || 0);
+  }
+
+  /**
+   * Phase 4.7.6 — read-only cash & obligation facts of ONE child and its order (owner read, no locks).
+   *
+   * Everything here is reconstructed from immutable rows: the active proforma lines (basis), verified
+   * active allocations to the child's proforma lineage (cash), live refunds with their exact lines,
+   * the order-level verified/allocated totals, releases and ledger sums. None of it is a balance.
+   */
+  async getChildSettlementFacts(input: { orderId: string; childOrderId: string; executor?: DbOrTx }) {
+    const db = (input.executor as any) || this.db;
+    const { orderId, childOrderId } = input;
+    const proformaResult = await db.execute(sql`
+      SELECT id, proforma_number, version, status, currency, items_total, shipping_total, total_amount, issued_at, superseded_by, terms_snapshot
+      FROM wholesale_proforma WHERE child_order_id = ${childOrderId} AND wholesale_order_id = ${orderId} ORDER BY version ASC, issued_at ASC, id ASC
+    `);
+    const proformas: any[] = proformaResult.rows || [];
+    const active = proformas.find((p) => p.status === "issued") || null;
+    let lines: any[] = [];
+    if (active) {
+      const linesResult = await db.execute(sql`
+        SELECT id, wholesale_order_item_id, purchase_order_item_id, quantity, pricing_unit, unit_price, line_total, currency
+        FROM wholesale_proforma_line WHERE proforma_id = ${active.id} ORDER BY id ASC
+      `);
+      lines = linesResult.rows || [];
+    }
+    const allocationsResult = await db.execute(sql`
+      SELECT pa.id, pa.payment_id, pa.proforma_id, pa.amount, pa.currency, p.method, p.provider, p.status AS payment_status, p.verified_at
+      FROM payment_allocation pa
+      JOIN payment p ON p.id = pa.payment_id
+      JOIN wholesale_proforma wp ON wp.id = pa.proforma_id
+      WHERE wp.child_order_id = ${childOrderId} AND p.status = 'verified' AND pa.status = 'active' AND wp.status IN ('issued','superseded')
+      ORDER BY p.verified_at ASC, pa.id ASC
+    `);
+    const allocations: any[] = allocationsResult.rows || [];
+    const refundsResult = await db.execute(sql`
+      SELECT id, refund_reference, status, amount, currency, fulfillment_exception_id, reason_code, created_at
+      FROM refund WHERE child_order_id = ${childOrderId} ORDER BY created_at ASC, id ASC
+    `);
+    const refunds: any[] = refundsResult.rows || [];
+    const refundLinesResult = await db.execute(sql`
+      SELECT rl.refund_id, rl.wholesale_order_item_id, rl.quantity, rl.unit_price, rl.line_total, rl.currency
+      FROM refund_line rl JOIN refund r ON r.id = rl.refund_id WHERE r.child_order_id = ${childOrderId} ORDER BY rl.id ASC
+    `);
+    const refundLines: any[] = refundLinesResult.rows || [];
+    const orderPaidResult = await db.execute(sql`SELECT COALESCE(SUM(amount),0) AS sum, COUNT(*) AS n FROM payment WHERE wholesale_order_id = ${orderId} AND status = 'verified'`);
+    const orderAllocatedResult = await db.execute(sql`
+      SELECT COALESCE(SUM(pa.amount),0) AS sum FROM payment_allocation pa JOIN payment p ON p.id = pa.payment_id
+      WHERE p.wholesale_order_id = ${orderId} AND p.status = 'verified' AND pa.status = 'active'
+    `);
+    const orderScopedRefundsResult = await db.execute(sql`
+      SELECT id, status, amount, currency FROM refund WHERE wholesale_order_id = ${orderId} AND child_order_id IS NULL ORDER BY created_at ASC, id ASC
+    `);
+    const releasesResult = await db.execute(sql`SELECT release_type, amount, currency, actor_role, created_at FROM order_financial_release WHERE order_id = ${orderId} ORDER BY created_at ASC`);
+    const ledgerResult = await db.execute(sql`
+      SELECT direction, COALESCE(SUM(amount),0) AS sum FROM financial_ledger_entry WHERE order_id = ${orderId} GROUP BY direction
+    `);
+    const ledgerIn = BigInt(((ledgerResult.rows || []) as any[]).find((r) => r.direction === "IN")?.sum || 0);
+    const ledgerOut = BigInt(((ledgerResult.rows || []) as any[]).find((r) => r.direction === "OUT")?.sum || 0);
+    return {
+      proformas: proformas.map((p) => ({
+        id: String(p.id),
+        proformaNumber: String(p.proforma_number),
+        version: Number(p.version),
+        status: String(p.status),
+        currency: String(p.currency || "IRR"),
+        itemsTotal: String(p.items_total ?? 0),
+        shippingTotal: String(p.shipping_total ?? 0),
+        totalAmount: String(p.total_amount ?? 0),
+        issuedAt: p.issued_at ? new Date(p.issued_at).toISOString() : null,
+        shippingQuoteId: p.terms_snapshot && typeof p.terms_snapshot === "object" ? ((p.terms_snapshot as any).shippingQuoteId ?? null) : null,
+      })),
+      activeProformaId: active ? String(active.id) : null,
+      lines: lines.map((l) => ({
+        id: String(l.id),
+        wholesaleOrderItemId: String(l.wholesale_order_item_id),
+        purchaseOrderItemId: l.purchase_order_item_id ? String(l.purchase_order_item_id) : null,
+        quantity: Number(l.quantity),
+        pricingUnit: String(l.pricing_unit || "PIECE"),
+        unitPrice: String(l.unit_price ?? 0),
+        lineTotal: String(l.line_total ?? 0),
+        currency: String(l.currency || "IRR"),
+      })),
+      allocations: allocations.map((a) => ({
+        id: String(a.id),
+        paymentId: String(a.payment_id),
+        proformaId: String(a.proforma_id),
+        amount: String(a.amount ?? 0),
+        currency: String(a.currency || "IRR"),
+        method: String(a.method || ""),
+        provider: a.provider ? String(a.provider) : null,
+        verifiedAt: a.verified_at ? new Date(a.verified_at).toISOString() : null,
+      })),
+      refunds: refunds.map((r) => ({
+        id: String(r.id),
+        refundReference: String(r.refund_reference),
+        status: String(r.status),
+        amount: String(r.amount ?? 0),
+        currency: String(r.currency || "IRR"),
+        fulfillmentExceptionId: r.fulfillment_exception_id ? String(r.fulfillment_exception_id) : null,
+        reasonCode: r.reason_code ? String(r.reason_code) : null,
+        lines: refundLines
+          .filter((l) => String(l.refund_id) === String(r.id))
+          .map((l) => ({
+            wholesaleOrderItemId: String(l.wholesale_order_item_id),
+            quantity: Number(l.quantity),
+            unitPrice: String(l.unit_price ?? 0),
+            lineTotal: String(l.line_total ?? 0),
+            currency: String(l.currency || "IRR"),
+          })),
+      })),
+      order: {
+        verifiedPaid: String(orderPaidResult.rows?.[0]?.sum ?? 0),
+        verifiedPaymentCount: Number(orderPaidResult.rows?.[0]?.n ?? 0),
+        allocatedVerified: String(orderAllocatedResult.rows?.[0]?.sum ?? 0),
+        orderScopedRefunds: ((orderScopedRefundsResult.rows || []) as any[]).map((r) => ({ id: String(r.id), status: String(r.status), amount: String(r.amount ?? 0), currency: String(r.currency || "IRR") })),
+        releases: ((releasesResult.rows || []) as any[]).map((r) => ({
+          releaseType: String(r.release_type),
+          amount: String(r.amount ?? 0),
+          currency: String(r.currency || "IRR"),
+          actorRole: r.actor_role ? String(r.actor_role) : null,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
+        })),
+        ledgerIn: ledgerIn.toString(),
+        ledgerOut: ledgerOut.toString(),
+      },
+    };
   }
 
   async getRefundObligationsForOrder(orderId: string, childOrderIds: string[], executor: DbOrTx): Promise<Array<{ childOrderId: string; amount: bigint }>> {
