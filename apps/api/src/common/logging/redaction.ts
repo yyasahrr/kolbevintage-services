@@ -92,11 +92,12 @@ export function redactSensitive<T = unknown>(data: T, depth = 0): T {
   if (depth > 6) return "[MAX_DEPTH]" as unknown as T;
 
   if (typeof data === "string") {
-    // بررسی الگوهای احتمالی توکن Bearer
-    if (/^Bearer\s+[A-Za-z0-9-_.]+/i.test(data)) {
-      return "Bearer [REDACTED]" as unknown as T;
+    let str: string = data;
+    if (/Bearer\s+[A-Za-z0-9-_.]+/i.test(str)) {
+      str = str.replace(/Bearer\s+[A-Za-z0-9-_.]+/gi, "Bearer [REDACTED]");
     }
-    return data;
+    str = str.replace(/(password|token|secret|jwt)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]");
+    return str as any as T;
   }
 
   if (typeof data !== "object") {
@@ -123,7 +124,7 @@ export function redactSensitive<T = unknown>(data: T, depth = 0): T {
     if (SENSITIVE_KEYS.has(normalizedKey)) {
       result[k] = "[REDACTED]";
     } else if (typeof val === "string") {
-      result[k] = maskSensitiveString(k, val);
+      result[k] = redactSensitive(maskSensitiveString(k, val));
     } else if (typeof val === "object" && val !== null) {
       result[k] = redactSensitive(val, depth + 1);
     } else {

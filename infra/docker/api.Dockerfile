@@ -40,6 +40,10 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /repo
 ENV NODE_ENV=production
 
+# dumb-init برای فوروارد دقیق سیگنال‌های SIGTERM و SIGINT به عنوان PID 1
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init \
+ && rm -rf /var/lib/apt/lists/*
+
 # فقط وابستگی‌های زمان اجرا.
 #
 # ⚠️ همهٔ مانیفست‌های workspace کپی می‌شوند، نه فقط آن‌هایی که اجرا می‌شوند:
@@ -73,4 +77,5 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:4000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "apps/api/dist/main.js"]

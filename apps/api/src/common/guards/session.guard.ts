@@ -35,6 +35,7 @@ import { accountUser } from "@kolbe/database";
 import { CONFIG_TOKEN, type AppConfig } from "../../config/configuration";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { extractToken, SessionVerifier, type Claims, type Role } from "../session";
+import { RequestContext } from "../context/request-context";
 
 export const ROLES_KEY = "kolbe:roles";
 export const PUBLIC_KEY = "kolbe:public";
@@ -120,6 +121,7 @@ export class SessionGuard implements CanActivate {
     }
 
     request.claims = claims;
+    RequestContext.setActor(claims.sub, claims.role);
     return true;
   }
 

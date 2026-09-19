@@ -19,12 +19,18 @@ import {
 import type { Request, Response } from "express";
 import { ErrorCodes, isDomainError, toPublicError } from "@kolbe/shared";
 import { redactSensitive } from "../logging/redaction";
+import { ErrorMonitoringService } from "../monitoring/error-monitoring.service";
 
 type ValidationIssue = { property?: string; constraints?: Record<string, string> };
 
 @Catch()
 export class DomainExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger("ExceptionFilter");
+  private readonly errorMonitoring: ErrorMonitoringService;
+
+  constructor(errorMonitoring?: ErrorMonitoringService) {
+    this.errorMonitoring = errorMonitoring ?? new ErrorMonitoringService();
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const context = host.switchToHttp();
@@ -85,18 +91,24 @@ export class DomainExceptionFilter implements ExceptionFilter {
       }
     }
 
+    let errorId: string | undefined;
     if (status >= 500) {
-      const safeStack = redactSensitive(exception instanceof Error ? exception.stack : String(exception));
-      this.logger.error(
-        `${request.method} ${request.originalUrl} → ${status} [${requestId ?? "-"}]`,
-        safeStack,
-      );
+      errorId = this.errorMonitoring.captureException(exception, {
+        method: request.method,
+        path: request.originalUrl,
+        requestId,
+      });
       // پیام داخلی هرگز به کلاینت نمی‌رود.
       const publicError = toPublicError(exception);
       error = publicError.body.error;
       message = publicError.body.message;
     }
 
-    response.status(status).json({ error, message, requestId: requestId ?? null });
+    response.status(status).json({
+      error,
+      message,
+      requestId: requestId ?? null,
+      ...(errorId ? { errorId } : {}),
+    });
   }
 }

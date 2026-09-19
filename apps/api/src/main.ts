@@ -16,15 +16,17 @@ import * as express from "express";
 import { AppModule } from "./app.module";
 import { ConfigurationError, loadConfig, toSafeConfig } from "./config/configuration";
 import { API_PREFIX, setupOpenApi } from "./openapi";
+import { StructuredLoggerService } from "./common/logging/structured-logger.service";
 
 async function bootstrap() {
+  const structuredLogger = new StructuredLoggerService();
   const logger = new Logger("Bootstrap");
 
   // پیکربندی پیش از ساخت اپلیکیشن اعتبارسنجی می‌شود تا خطا واضح و زودهنگام باشد.
   const config = loadConfig();
 
   const app = await NestFactory.create(AppModule, {
-    logger: ["log", "warn", "error"],
+    logger: structuredLogger,
     bodyParser: false, // کنترل دستی سقف حجم بدنه
   });
 
@@ -43,7 +45,13 @@ async function bootstrap() {
   app.enableCors({
     origin: config.allowedOrigins.length ? config.allowedOrigins : false,
     credentials: true,
-    allowedHeaders: ["content-type", "authorization", "idempotency-key", "x-request-id"],
+    allowedHeaders: [
+      "content-type",
+      "authorization",
+      "idempotency-key",
+      "x-request-id",
+      "x-correlation-id",
+    ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 
