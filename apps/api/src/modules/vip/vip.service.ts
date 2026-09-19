@@ -45,6 +45,20 @@ function hashReq(input: unknown): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
+function sanitizeForJsonb(value: any): any {
+  if (typeof value === "bigint") return value.toString();
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) return value.map(sanitizeForJsonb);
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = sanitizeForJsonb(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 @Injectable()
 export class VipService {
   constructor(
@@ -696,7 +710,7 @@ export class VipService {
     if (!idempotencyKey) return;
     await (tx as any)
       .update(commandIdempotency)
-      .set({ state: "completed", resultResourceId: resultId, resultPayload: payload as any, completedAt: new Date(), updatedAt: new Date() })
+      .set({ state: "completed", resultResourceId: resultId, resultPayload: sanitizeForJsonb(payload) as any, completedAt: new Date(), updatedAt: new Date() })
       .where(
         and(
           eq(commandIdempotency.scopeType, scopeType),

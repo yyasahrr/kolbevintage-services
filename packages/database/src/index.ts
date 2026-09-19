@@ -36,6 +36,7 @@ export function createDatabase(options: DatabaseOptions): KolbeDbHandle {
     connectionString: options.connectionString,
     max: options.max ?? 10,
   });
+  pool.on("error", () => {});
   const db = drizzle(pool, { schema });
   return {
     db,

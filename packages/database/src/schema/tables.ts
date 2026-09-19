@@ -1885,3 +1885,41 @@ export const fulfillmentException = pgTable(
     }).onDelete("restrict"),
   ],
 );
+
+/* ── Phase 4.5 — Fulfillment replacement request (Fulfillment-owned link) ──
+ *  - Fulfillment-owned, not VIP-owned
+ *  - Links exception_id → replacement_request_id
+ *  - RESTRICT FKs, no CASCADE
+ *  - Unique indexes prevent one exception replacing multiple, or one replacement linked to multiple exceptions
+ */
+export const fulfillmentReplacementRequest = pgTable(
+  "fulfillment_replacement_request",
+  {
+    id: text("id").primaryKey(),
+    exceptionId: text("exception_id").notNull(),
+    replacementRequestId: text("replacement_request_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "fulfillment_replacement_request_exception_fk",
+      columns: [table.exceptionId],
+      foreignColumns: [fulfillmentException.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fulfillment_replacement_request_replacement_fk",
+      columns: [table.replacementRequestId],
+      foreignColumns: [wholesaleRequest.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "fulfillment_replacement_request_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    uniqueIndex("fulfillment_replacement_request_exception_unique").on(table.exceptionId),
+    uniqueIndex("fulfillment_replacement_request_replacement_unique").on(table.replacementRequestId),
+    index("fulfillment_replacement_request_exception_created").on(table.exceptionId, table.createdAt),
+    index("fulfillment_replacement_request_created").on(table.createdAt),
+  ],
+);

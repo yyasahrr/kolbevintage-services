@@ -5,9 +5,10 @@ import { DatabaseModule } from "../../database/database.module";
 import { AuditModule } from "../audit/audit.module";
 import { OrdersModule } from "../orders/orders.module";
 import { SuppliersModule } from "../suppliers/suppliers.module";
+import { VipModule } from "../vip/vip.module";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, OrdersModule, SuppliersModule],
+  imports: [DatabaseModule, AuditModule, OrdersModule, SuppliersModule, VipModule],
   controllers: [FulfillmentController],
   providers: [FulfillmentService],
   exports: [FulfillmentService],

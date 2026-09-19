@@ -201,14 +201,19 @@ export const COMMAND_TYPES = [
   "vip.request_reject",
   "vip.request_cancel",
   "vip.request_expire",
+  "vip.create_replacement",
   "orders.child_confirm",
   "orders.child_prepare",
   "orders.child_ready",
   "orders.child_dispatch",
   "orders.child_deliver",
   "orders.child_cancel",
+  "orders.parent_cancel",
   "fulfillment.report_exception",
   "fulfillment.resolve_exception",
+  "fulfillment.link_replacement",
+  "admin.wholesale_cancel",
+  "admin.exception_resolve",
 ] as const;
 
 /**
@@ -298,7 +303,7 @@ export const WHOLESALE_PAYMENT_MODES = ["prepaid", "credit", "on_delivery", "tra
 /** Phase 4.2 — واحد قیمت‌گذاری خط سفارش */
 export const PRICING_UNITS = ["PIECE", "PACKAGE", "SERIES", "BOX", "CARTON", "SET", "PER_PIECE"] as const;
 
-/** Phase 4.2 — انواع رویداد سفارش + Phase 4.4 extensions */
+/** Phase 4.2 — انواع رویداد سفارش + Phase 4.4/4.5 extensions */
 export const ORDER_EVENT_TYPES = [
   "order.created",
   "order.confirmed",
@@ -308,6 +313,7 @@ export const ORDER_EVENT_TYPES = [
   "order.shipped",
   "order.completed",
   "order.cancelled",
+  "order.parent_cancelled",
   "child.created",
   "child.confirmed",
   "child.preparing",
@@ -317,12 +323,16 @@ export const ORDER_EVENT_TYPES = [
   "child.cancelled",
   "child.exception_opened",
   "child.exception_resolved",
+  "child.replacement_requested",
   "request.converted",
   "request.revision_requested",
   "request.revision_accepted",
   "request.rejected",
   "request.cancelled",
   "request.expired",
+  "request.replacement_created",
+  "fulfillment.replacement_linked",
+  "fulfillment.replacement_requested",
   "inventory.reserved",
   "inventory.released",
   "inventory.consumed",

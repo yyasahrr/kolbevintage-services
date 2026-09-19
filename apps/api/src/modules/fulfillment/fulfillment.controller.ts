@@ -4,6 +4,7 @@ import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { CatalogDomainError } from "../catalog/catalog.logic";
 import { OrdersService } from "../orders/orders.service";
+import { VipService } from "../vip/vip.service";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { eq, and } from "drizzle-orm";
 import { purchaseOrder, seller, supplierMember } from "@kolbe/database";
@@ -13,6 +14,7 @@ export class FulfillmentController {
   constructor(
     @Inject(FulfillmentService) private readonly fulfillmentService: FulfillmentService,
     @Inject(OrdersService) private readonly ordersService: OrdersService,
+    @Inject(VipService) private readonly vipService: VipService,
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
   ) {}
 
@@ -49,6 +51,7 @@ export class FulfillmentController {
   ) {
     const idempotencyKey = idem1 || idem2;
     if (!idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+    if (!body?.reason) throw new CatalogDomainError("REJECTION_REASON_REQUIRED", "Reason required");
 
     let sellerId: string;
     if (claims.role === "admin") {
@@ -138,7 +141,6 @@ export class FulfillmentController {
   @Get("wholesale/orders/:orderId/exceptions")
   @Roles("vip", "customer", "admin", "supplier")
   async listExceptionsForParent(@Param("orderId") orderId: string) {
-    // List all exceptions for children of this parent
     const children = await (this.db as any).select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, orderId));
     const all: any[] = [];
     for (const child of children) {
@@ -146,5 +148,62 @@ export class FulfillmentController {
       all.push(...ex);
     }
     return { exceptions: all };
+  }
+
+  @Post("wholesale/orders/:orderId/exceptions/:exceptionId/replacement")
+  @Roles("vip", "customer", "admin")
+  async createReplacement(
+    @CurrentUser() claims: Claims,
+    @Param("orderId") orderId: string,
+    @Param("exceptionId") exceptionId: string,
+    @Headers("idempotency-key") idem1: string,
+    @Headers("Idempotency-Key") idem2: string,
+    @Body()
+    body: {
+      offerId?: string;
+      productId?: string;
+      variantId?: string;
+      packageId?: string;
+      quantity: number;
+      reason?: string;
+    },
+  ) {
+    const idempotencyKey = idem1 || idem2;
+    if (!idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+
+    // Verify buyer owns parent order
+    const parent = await this.ordersService.getWholesaleOrderById(orderId);
+    if (!parent) throw new CatalogDomainError("ORDER_NOT_FOUND", "Parent not found");
+    if ((parent as any).buyerUserId !== claims.sub && (parent as any).buyer_user_id !== claims.sub) {
+      if (claims.role !== "admin") throw new CatalogDomainError("ORDER_OWNERSHIP_VIOLATION", "Not owner");
+    }
+
+    // Ensure exception belongs to this order
+    const exc = await this.fulfillmentService.getExceptionById(exceptionId);
+    if (!exc) throw new CatalogDomainError("EXCEPTION_NOT_FOUND", "Exception not found");
+    const excWholesaleId = (exc as any).wholesaleOrderId || (exc as any).wholesale_order_id;
+    if (excWholesaleId !== orderId) throw new CatalogDomainError("EXCEPTION_ORDER_MISMATCH", "Exception not linked to order");
+
+    // Create new wholesale_request via VipService normal flow NOT auto accepted
+    const createResult = await this.vipService.createWholesaleRequest({
+      productId: body.productId || (exc as any).productId || "unknown",
+      offerId: body.offerId || "unknown",
+      variantId: body.variantId,
+      packageId: body.packageId,
+      quantity: body.quantity,
+      userId: claims.sub,
+    } as any);
+
+    const replacementRequestId = (createResult as any).request?.id || (createResult as any).id;
+
+    // Link via Fulfillment-owned fulfillment_replacement_request
+    const linkResult = await this.fulfillmentService.linkReplacement({
+      exceptionId,
+      replacementRequestId,
+      createdByUserId: claims.sub,
+      idempotencyKey: `${idempotencyKey}:link`,
+    });
+
+    return { replacementRequest: createResult, link: linkResult.link, replayed: linkResult.replayed };
   }
 }

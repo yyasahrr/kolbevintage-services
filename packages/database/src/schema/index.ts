@@ -56,4 +56,5 @@ export {
   wholesaleRequest,
   wholesaleRequestRevision,
   fulfillmentException,
+  fulfillmentReplacementRequest,
 } from "./tables";

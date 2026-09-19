@@ -120,6 +120,13 @@
       "when": 1789688000000,
       "tag": "0016_phase_4_4_supplier_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789690000000,
+      "tag": "0017_phase_4_5_replacement_and_parent_cancel",
+      "breakpoints": true
     }
   ]
 }

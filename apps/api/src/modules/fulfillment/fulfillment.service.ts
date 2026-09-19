@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, sql } from "drizzle-orm";
 import {
   fulfillmentException,
+  fulfillmentReplacementRequest,
   purchaseOrder,
   purchaseOrderItem,
   wholesaleOrderItem,
@@ -28,6 +29,20 @@ function idemId(): string {
 function hashReq(input: unknown): string {
   const canonical = canonicalStringify(input as any);
   return createHash("sha256").update(canonical).digest("hex");
+}
+
+function sanitizeForJsonb(value: any): any {
+  if (typeof value === "bigint") return value.toString();
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) return value.map(sanitizeForJsonb);
+  if (value && typeof value === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = sanitizeForJsonb(v);
+    }
+    return out;
+  }
+  return value;
 }
 
 export type FulfillmentExceptionType = "cannot_fulfill" | "partial_shortage" | "package_unavailable" | "operational_failure";
@@ -96,7 +111,7 @@ export class FulfillmentService {
     if (!idempotencyKey) return;
     await (tx as any)
       .update(commandIdempotency)
-      .set({ state: "completed", resultResourceId: resultId, resultPayload: payload as any, completedAt: new Date(), updatedAt: new Date() })
+      .set({ state: "completed", resultResourceId: resultId, resultPayload: sanitizeForJsonb(payload) as any, completedAt: new Date(), updatedAt: new Date() })
       .where(
         and(
           eq(commandIdempotency.scopeType, scopeType),
@@ -356,5 +371,78 @@ export class FulfillmentService {
   async listOpenExceptionsBySeller(sellerId: string, executor?: DbOrTx) {
     const db = this.getExecutor(executor);
     return db.select().from(fulfillmentException).where(and(eq(fulfillmentException.sellerId, sellerId), eq(fulfillmentException.status, "open")));
+  }
+
+  async linkReplacement(input: {
+    exceptionId: string;
+    replacementRequestId: string;
+    createdByUserId: string;
+    idempotencyKey: string;
+  }) {
+    // Phase 4.5 — one request not pretending to replace multiple unrelated unless deliberate
+    if (!input.idempotencyKey) throw new CatalogDomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key required");
+    return this.db.transaction(async (tx: any) => {
+      const excRes = await tx.execute(sql`SELECT * FROM fulfillment_exception WHERE id = ${input.exceptionId} FOR UPDATE`);
+      const exc = excRes.rows?.[0];
+      if (!exc) throw new NotFoundError("استثناء تحقق یافت نشد");
+      if (exc.status !== "replacement_requested" && exc.status !== "awaiting_buyer" && exc.status !== "open") {
+        throw new CatalogDomainError("INVALID_EXCEPTION_STATUS", `Cannot link replacement from ${exc.status}`);
+      }
+
+      const reqHash = hashReq({ exceptionId: input.exceptionId, replacementRequestId: input.replacementRequestId });
+      const claim = await this.claimIdempotency(tx, "fulfillment_exception", input.exceptionId, "fulfillment.link_replacement", input.idempotencyKey, reqHash);
+      if (claim.isReplay && claim.existing) {
+        return { link: claim.existing.resultPayload as any, replayed: true };
+      }
+
+      const id = `frr_${randomUUID().replaceAll("-", "")}`;
+      const now = new Date();
+      try {
+        const [link] = await tx
+          .insert(fulfillmentReplacementRequest)
+          .values({
+            id,
+            exceptionId: input.exceptionId,
+            replacementRequestId: input.replacementRequestId,
+            createdBy: input.createdByUserId,
+            createdAt: now,
+          })
+          .returning();
+
+        // Update exception status to replacement_requested if not already
+        if (exc.status !== "replacement_requested") {
+          await tx
+            .update(fulfillmentException)
+            .set({ status: "replacement_requested", updatedAt: now })
+            .where(eq(fulfillmentException.id, input.exceptionId));
+        }
+
+        await this.auditService.record(
+          {
+            actorId: input.createdByUserId,
+            actorRole: "buyer",
+            action: "fulfillment.replacement_linked",
+            entityType: "fulfillment_replacement_request",
+            entityId: id,
+            after: { exceptionId: input.exceptionId, replacementRequestId: input.replacementRequestId },
+            metadata: { childOrderId: exc.child_order_id || exc.childOrderId },
+          },
+          tx,
+        );
+
+        await this.completeIdempotency(tx, "fulfillment_exception", input.exceptionId, "fulfillment.link_replacement", input.idempotencyKey, id, link);
+        return { link, replayed: false };
+      } catch (e: any) {
+        if (e?.code === "23505") {
+          // Unique violation: exception already linked or replacement already linked
+          const existing = await tx.select().from(fulfillmentReplacementRequest).where(eq(fulfillmentReplacementRequest.exceptionId, input.exceptionId)).limit(1);
+          if (existing.length > 0) {
+            throw new CatalogDomainError("REPLACEMENT_ALREADY_LINKED", "Exception already has replacement");
+          }
+          throw new CatalogDomainError("REPLACEMENT_REQUEST_ALREADY_LINKED", "Replacement request already linked to another exception");
+        }
+        throw e;
+      }
+    });
   }
 }

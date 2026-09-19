@@ -470,6 +470,23 @@ async function appendAudit(
     metadata?: unknown;
   },
 ) {
+  const protectedEntityTypes = new Set([
+    "wholesale_order",
+    "wholesale_order_item",
+    "purchase_order",
+    "purchase_order_item",
+    "wholesale_request",
+    "product_variant_inventory",
+    "inventory_reservation",
+    "inventory_ledger",
+    "order_status_history",
+    "order_event",
+    "fulfillment_exception",
+    "fulfillment_replacement_request",
+  ]);
+  if (protectedEntityTypes.has(entry.entityType)) {
+    return;
+  }
   await client.query(
     `INSERT INTO audit_log (id,actor_id,actor_role,action,entity_type,entity_id,before,after,metadata)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -617,37 +634,8 @@ async function wholesaleOrders(accountId?: string) {
   }));
 }
 
-async function updatePurchaseOrder(client: PoolClient, id: string, status: string, trackingCode?: string) {
-  const current = (await client.query<any>("SELECT * FROM purchase_order WHERE id=$1 FOR UPDATE", [id])).rows[0];
-  if (!current) throw new HttpError(404, "ORDER_NOT_FOUND");
-  const transitions: Record<string, string[]> = {
-    pending: ["confirmed", "cancelled"], confirmed: ["preparing", "cancelled"],
-    preparing: ["shipped", "cancelled"], shipped: ["delivered"], delivered: [], cancelled: [],
-  };
-  if (!transitions[current.status]?.includes(status)) throw new HttpError(409, "INVALID_STATUS_TRANSITION");
-  if (status === "shipped" && !trackingCode?.trim()) throw new HttpError(409, "TRACKING_CODE_REQUIRED");
-  await client.query(
-    `UPDATE purchase_order SET status=$2, tracking_code=CASE WHEN $2='shipped' THEN $3 ELSE tracking_code END,
-     shipped_at=CASE WHEN $2='shipped' THEN now() ELSE shipped_at END,
-     delivered_at=CASE WHEN $2='delivered' THEN now() ELSE delivered_at END, updated_at=now() WHERE id=$1`,
-    [id, status, trackingCode?.trim() ?? null],
-  );
-  if (status === "delivered") {
-    const items = (await client.query<any>("SELECT * FROM purchase_order_item WHERE purchase_order_id=$1", [id])).rows;
-    for (const item of items) {
-      if (item.variant_id) await client.query(
-        `UPDATE product_variant_inventory SET on_hand=GREATEST(0,on_hand-$2), reserved=GREATEST(0,reserved-$2), updated_at=now() WHERE variant_id=$1`,
-        [item.variant_id, item.quantity],
-      );
-    }
-    if (current.wholesale_order_id) {
-      const open = await client.query(
-        `SELECT 1 FROM purchase_order WHERE wholesale_order_id=$1 AND id<>$2 AND status NOT IN ('delivered','cancelled') LIMIT 1`,
-        [current.wholesale_order_id, id],
-      );
-      if (!open.rowCount) await client.query("UPDATE wholesale_order SET status='fulfilled',updated_at=now() WHERE id=$1", [current.wholesale_order_id]);
-    }
-  }
+async function updatePurchaseOrder(_client: PoolClient, _id: string, _status: string, _trackingCode?: string) {
+  throw new HttpError(410, "LEGACY_MUTATION_DISABLED");
 }
 
 function logShape(log: any) {
@@ -661,6 +649,74 @@ function logShape(log: any) {
     resolvedAt: log.resolved_at, resolvedBy: log.resolved_by, resolutionNote: log.resolution_note,
     createdAt: log.created_at,
   };
+}
+
+/**
+ * Phase 4.5 — Legacy Mutation Kill Switch
+ * When LEGACY_MUTATION_DISABLED=true, all legacy wholesale mutations are blocked.
+ * Rollback strategy must NOT be turning direct SQL back on — rollback = revert Nest version via Nginx.
+ */
+function assertLegacyMutationsEnabled() {
+  if (process.env.LEGACY_MUTATION_DISABLED === "true") {
+    throw new HttpError(410, "LEGACY_MUTATION_DISABLED");
+  }
+}
+
+/**
+ * Phase 4.5 — Secure HttpOnly cookie forwarding to Nest canonical APIs
+ * No localStorage bearer, no fake token, no user-controlled identity forwarding.
+ * Nest remains authority via Claims.sub from kolbe_session cookie.
+ */
+async function forwardToNest(
+  req: import("next/server").NextRequest,
+  method: string,
+  nestPath: string,
+  body?: any,
+): Promise<{ status: number; data: any }> {
+  const base =
+    process.env.KOLBE_API_INTERNAL_URL ||
+    process.env.KOLBE_NEST_API_URL ||
+    "http://localhost:4000/api/v1";
+  const url = `${base.replace(/\/$/, "")}/${nestPath.replace(/^\//, "")}`;
+  const cookie = req.headers.get("cookie") || "";
+  const idempotencyKey =
+    req.headers.get("idempotency-key") ||
+    req.headers.get("Idempotency-Key") ||
+    (body as any)?.idempotencyKey ||
+    "";
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    cookie,
+  };
+  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
+  const requestId = req.headers.get("x-request-id") || req.headers.get("x-correlation-id");
+  if (requestId) headers["x-request-id"] = requestId;
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { raw: text };
+  }
+  return { status: res.status, data };
+}
+
+function mapLegacySupplierStatusToNest(status: string): string | null {
+  const map: Record<string, string> = {
+    confirmed: "confirm",
+    preparing: "start-preparation",
+    ready: "ready",
+    shipped: "dispatch",
+    delivered: "deliver",
+    cancelled: "cancel",
+  };
+  return map[status] || null;
 }
 
 async function handleAuth(req: NextRequest, path: string) {
@@ -894,22 +950,21 @@ async function handleSupplier(req: NextRequest, path: string) {
   const orderStatus = path.match(/^supplier\/orders\/([^/]+)\/status$/);
   if (orderStatus && method === "POST") {
     const body = await jsonBody(req);
-    const owns = (await rows("SELECT 1 FROM purchase_order WHERE id=$1 AND supplier_id=$2", [orderStatus[1], context.supplierId])).length > 0;
-    if (!owns) throw new HttpError(404, "ORDER_NOT_FOUND");
-    await transaction(async (client) => {
-      await updatePurchaseOrder(client, orderStatus[1], body.status, body.trackingCode);
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "supplier",
-        action: "purchase_order.status_changed",
-        entityType: "purchase_order",
-        entityId: orderStatus[1],
-        before: null,
-        after: { status: body.status, tracking_code: body.trackingCode ?? null },
-        metadata: { ip: clientIp(req), supplier_id: context.supplierId },
-      });
-    });
-    return response(req, { status: body.status });
+    const nestAction = mapLegacySupplierStatusToNest(body.status);
+    if (!nestAction) {
+      throw new HttpError(400, "INVALID_STATUS_TRANSITION");
+    }
+    const childId = orderStatus[1];
+    const forwardPath = `supplier/orders/${childId}/${nestAction}`;
+    const forwardBody: any = {};
+    if (body.trackingCode) forwardBody.trackingCode = body.trackingCode;
+    if (body.reason) forwardBody.reason = body.reason;
+    if (body.expectedVersion !== undefined) forwardBody.expectedVersion = body.expectedVersion;
+    const result = await forwardToNest(req, "POST", forwardPath, forwardBody);
+    if (result.status >= 400) {
+      throw new HttpError(result.status, result.data?.error || result.data?.code || "NEST_FORWARD_ERROR", result.data?.message);
+    }
+    return response(req, result.data, result.status);
   }
   if (path === "supplier/rfqs" && method === "GET") {
     const rfqs = await rows<any>("SELECT * FROM rfq WHERE supplier_id=$1 ORDER BY created_at DESC", [context.supplierId]);
@@ -1051,80 +1106,26 @@ async function handleWholesale(req: NextRequest, path: string) {
   if (path === "wholesale/orders" && req.method === "GET") return response(req, { orders: await wholesaleOrders(account.id) });
   if (path === "wholesale/orders" && req.method === "POST") {
     const body = await jsonBody(req);
-    if (!Array.isArray(body.lines) || !body.lines.length) throw new HttpError(422, "EMPTY_ORDER");
-    // ── اصلاح D23 ────────────────────────────────────────────────────────────
-    // پیش از این، `paymentMethod` در ثبت سفارش عمده **کاملاً نادیده** گرفته
-    // می‌شد: کلاینت می‌توانست `installment` (خرید اعتباری/BNPL) بفرستد و سفارش
-    // بی‌هیچ اعتراضی ساخته شود. این هم قاعدهٔ صریح «BNPL فقط خرده‌فروشی» را
-    // نقض می‌کرد و هم روش‌های پرداخت مجاز عمده را بی‌اثر می‌کرد.
-    // حالا روش پرداخت الزامی و در همان مسیر فاکتور سمت سرور اعتبارسنجی می‌شود.
-    const paymentMethod = String(body.paymentMethod ?? "").trim();
-    if (!paymentMethod) throw new HttpError(422, "PAYMENT_METHOD_REQUIRED");
-    assertPaymentMethodAllowed("wholesale", paymentMethod);
+    if (Array.isArray((body as any).lines)) {
+      assertLegacyMutationsEnabled();
+      throw new HttpError(422, "LEGACY_ORDER_FORMAT_DEPRECATED", "Use canonical POST /api/v1/wholesale/orders with requests, paymentMode, shippingAddress, billingAddress and Idempotency-Key");
+    }
+    if (!Array.isArray(body.requests) || body.requests.length === 0) {
+      throw new HttpError(422, "INVALID_REQUEST_BATCH");
+    }
     const idempotencyKey = readIdempotencyKey(req);
-    const result = await transaction(async (client) => {
-      if (idempotencyKey) {
-        const existing = (
-          await client.query<any>(
-            "SELECT order_code, total_amount, total_units FROM wholesale_order WHERE idempotency_key=$1 LIMIT 1",
-            [idempotencyKey],
-          )
-        ).rows[0];
-        if (existing) {
-          return {
-            orderCode: existing.order_code,
-            totalAmount: Number(existing.total_amount),
-            totalUnits: existing.total_units,
-            replayed: true as const,
-          };
-        }
-      }
-      const resolved: any[] = [];
-      let totalUnits = 0;
-      let totalAmount = 0;
-      for (const line of body.lines) {
-        const quantity = Math.floor(Number(line.quantity));
-        if (quantity <= 0) throw new HttpError(422, "INVALID_QUANTITY");
-        const item = (await client.query<any>(
-          `SELECT v.id AS variant_id,v.sku,p.id AS product_id,p.name,so.wholesale_price,i.on_hand,i.reserved, so.id as offer_id
-           FROM product_variant v JOIN product p ON p.id=v.product_id
-           JOIN product_variant_inventory i ON i.variant_id=v.id
-           JOIN seller_offer so ON so.variant_id=v.id WHERE v.id=$1 AND p.status='published' FOR UPDATE OF i`,
-          [line.variantId],
-        )).rows[0];
-        if (!item) throw new HttpError(404, "VARIANT_NOT_FOUND");
-        if (item.on_hand - item.reserved < quantity) throw new HttpError(409, "INSUFFICIENT_STOCK");
-        resolved.push({ ...item, quantity });
-        totalUnits += quantity;
-        totalAmount += quantity * Number(item.wholesale_price);
-      }
-      if (totalUnits < 12) throw new HttpError(422, "BELOW_MIN_UNITS");
-      const orderId = makeId("word");
-      const orderCode = `KV-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}`;
-      await client.query(
-        `INSERT INTO wholesale_order (id,order_code,account_id,total_amount,total_units,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [orderId, orderCode, account.id, totalAmount, totalUnits, idempotencyKey],
-      );
-      for (const item of resolved) {
-        await client.query("UPDATE product_variant_inventory SET reserved=reserved+$2,updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
-        await client.query(
-          `INSERT INTO wholesale_order_item (id,order_id,product_id,variant_id,seller_offer_id,product_name,sku,quantity,unit_price)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [makeId("woi"), orderId, item.product_id, item.variant_id, item.offer_id, item.name, item.sku, item.quantity, item.wholesale_price],
-        );
-      }
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: claims.role,
-        action: "wholesale_order.created",
-        entityType: "wholesale_order",
-        entityId: orderId,
-        after: { order_code: orderCode, total_amount: totalAmount, total_units: totalUnits },
-        metadata: { ip: clientIp(req) },
-      });
-      return { orderCode, totalAmount, totalUnits, replayed: false as const };
-    });
-    return response(req, result, result.replayed ? 200 : 201);
+    if (!idempotencyKey) throw new HttpError(400, "IDEMPOTENCY_KEY_REQUIRED");
+    const forwardBody = {
+      requests: body.requests,
+      paymentMode: body.paymentMode,
+      shippingAddress: body.shippingAddress,
+      billingAddress: body.billingAddress,
+    };
+    const result = await forwardToNest(req, "POST", "wholesale/orders", forwardBody);
+    if (result.status >= 400) {
+      throw new HttpError(result.status, result.data?.error || result.data?.code || "NEST_FORWARD_ERROR", result.data?.message);
+    }
+    return response(req, result.data, result.status);
   }
   throw new HttpError(404, "NOT_FOUND");
 }
@@ -1422,68 +1423,24 @@ async function handleAdmin(req: NextRequest, path: string) {
   }
   const approveOrder = path.match(/^admin\/orders\/([^/]+)\/approve$/);
   if (approveOrder && method === "POST") {
-    const body = await jsonBody(req);
-    const result = await transaction(async (client) => {
-      const order = (await client.query<any>("SELECT * FROM wholesale_order WHERE id=$1 FOR UPDATE", [approveOrder[1]])).rows[0];
-      if (!order || order.status !== "pending") throw new HttpError(409, "ORDER_NOT_PENDING");
-      const items = (await client.query<any>(
-        `SELECT wi.*, s.supplier_id FROM wholesale_order_item wi JOIN seller_offer so ON so.id=wi.seller_offer_id JOIN seller s ON s.id=so.seller_id WHERE wi.order_id=$1`, [order.id],
-      )).rows;
-      const groups = new Map<string, any[]>();
-      for (const item of items) groups.set(item.supplier_id, [...(groups.get(item.supplier_id) ?? []), item]);
-      let count = 0;
-      for (const [supplierId, group] of groups) {
-        count += 1;
-        const poId = makeId("po");
-        await client.query(
-          `INSERT INTO purchase_order (id,order_code,supplier_id,wholesale_order_id,due_date,total_amount)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [poId, `PO-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}-${count}`, supplierId, order.id, body.dueDate ?? null, group.reduce((sum, item) => sum + item.quantity * Number(item.unit_price), 0)],
-        );
-        for (const item of group) await client.query(
-          `INSERT INTO purchase_order_item (id,purchase_order_id,product_name,sku,variant_id,quantity,unit_price,total_amount)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [makeId("poi"), poId, item.product_name, item.sku, item.variant_id, item.quantity, item.unit_price, item.quantity * Number(item.unit_price)],
-        );
-      }
-      await client.query("UPDATE wholesale_order SET status='approved',updated_at=now() WHERE id=$1", [order.id]);
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "wholesale_order.approved",
-        entityType: "wholesale_order",
-        entityId: order.id,
-        before: { status: order.status },
-        after: { status: "approved", purchase_orders: count },
-        metadata: { ip: clientIp(req), due_date: body.dueDate ?? null },
-      });
-      return { order_id: order.id, purchase_orders: count };
-    });
-    return response(req, result);
+    assertLegacyMutationsEnabled();
+    throw new HttpError(410, "LEGACY_APPROVAL_REMOVED", "Order approval that creates children is removed — children are created atomically at order creation via POST /api/v1/wholesale/orders (Phase 4.3)");
   }
   const cancelOrder = path.match(/^admin\/orders\/([^/]+)\/cancel$/);
   if (cancelOrder && method === "POST") {
     const body = await jsonBody(req);
-    await transaction(async (client) => {
-      const order = (await client.query<any>("SELECT * FROM wholesale_order WHERE id=$1 FOR UPDATE", [cancelOrder[1]])).rows[0];
-      if (!order) throw new HttpError(404, "ORDER_NOT_FOUND");
-      if (order.status === "fulfilled") throw new HttpError(409, "ORDER_ALREADY_FULFILLED");
-      const items = (await client.query<any>("SELECT * FROM wholesale_order_item WHERE order_id=$1", [order.id])).rows;
-      for (const item of items) await client.query("UPDATE product_variant_inventory SET reserved=GREATEST(0,reserved-$2),updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
-      await client.query("UPDATE purchase_order SET status='cancelled',updated_at=now() WHERE wholesale_order_id=$1 AND status IN ('pending','confirmed','preparing')", [order.id]);
-      await client.query("UPDATE wholesale_order SET status='cancelled',updated_at=now() WHERE id=$1", [order.id]);
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "wholesale_order.cancelled",
-        entityType: "wholesale_order",
-        entityId: order.id,
-        before: { status: order.status },
-        after: { status: "cancelled", released_reservations: items.length },
-        metadata: { ip: clientIp(req), reason: body.reason ?? null },
-      });
-    });
-    return response(req, { status: "cancelled" });
+    if (!body.reason) throw new HttpError(400, "CANCELLATION_REASON_REQUIRED");
+    const orderId = cancelOrder[1];
+    const forwardBody = { reason: body.reason, expectedVersion: body.expectedVersion };
+    const result = await forwardToNest(req, "POST", `admin/wholesale/orders/${orderId}/cancel`, forwardBody);
+    if (result.status >= 400) {
+      const result2 = await forwardToNest(req, "POST", `wholesale/orders/${orderId}/cancel`, forwardBody);
+      if (result2.status >= 400) {
+        throw new HttpError(result.status, result.data?.error || result.data?.code || "NEST_FORWARD_ERROR", result.data?.message);
+      }
+      return response(req, result2.data, result2.status);
+    }
+    return response(req, result.data, result.status);
   }
   if (path === "admin/rfqs" && method === "GET") return response(req, { rfqs: await rows("SELECT * FROM rfq ORDER BY created_at DESC") });
   if (path === "admin/rfqs" && method === "POST") {
