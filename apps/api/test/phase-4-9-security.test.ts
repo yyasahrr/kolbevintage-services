@@ -258,7 +258,7 @@ describe("Phase 4.9 — Checkpoint A: Security & Runtime Hardening", () => {
       );
       await h.pool.query(
         `INSERT INTO wholesale_account (id, user_id, member_name, store_name, phone, city, status)
-         VALUES ($1, $2, 'Buyer B', 'Store B', '0912', 'Tehran', 'approved')`,
+         VALUES ($1, $2, 'Buyer B', 'Store B', '09350000000', 'Tehran', 'approved')`,
         [accB, buyerB],
       );
 
