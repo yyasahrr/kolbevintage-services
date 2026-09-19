@@ -29,6 +29,8 @@ import { InventoryModule } from "./modules/inventory/inventory.module";
 import { VipModule } from "./modules/vip/vip.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { FulfillmentModule } from "./modules/fulfillment/fulfillment.module";
+import { PaymentsModule } from "./modules/payments/payments.module";
+import { FinanceModule } from "./modules/finance/finance.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
 
@@ -48,6 +50,8 @@ import { AdminModule } from "./modules/admin/admin.module";
     VipModule,
     OrdersModule,
     FulfillmentModule,
+    PaymentsModule,
+    FinanceModule,
     RatingsModule,
     AdminModule,
   ],

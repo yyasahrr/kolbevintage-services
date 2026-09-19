@@ -209,12 +209,39 @@ export const COMMAND_TYPES = [
   "orders.child_deliver",
   "orders.child_cancel",
   "orders.parent_cancel",
+  "orders.confirm",
+  "orders.payment_gate",
+  "orders.processing_release",
   "fulfillment.report_exception",
   "fulfillment.resolve_exception",
   "fulfillment.link_replacement",
   "admin.wholesale_cancel",
   "admin.exception_resolve",
+  "payments.issue_proforma",
+  "payments.submit_transfer",
+  "payments.verify",
+  "payments.reject",
+  "payments.allocate",
+  "finance.credit_approve",
+  "finance.cod_approve",
+  "finance.manual_release",
+  "finance.release",
+  "refunds.create",
+  "refunds.approve",
+  "refunds.complete",
+  "refunds.fail",
+  "refunds.cancel",
 ] as const;
+
+/** Phase 4.6 — Wholesale Finance */
+export const WHOLESALE_PROFORMA_STATUSES = ["draft", "issued", "superseded", "voided"] as const;
+export const PAYMENT_STATUSES = ["pending", "evidence_submitted", "verified", "failed", "cancelled"] as const;
+export const PAYMENT_METHODS = ["manual_transfer", "bank_transfer", "transfer", "credit", "cod", "on_delivery", "manual_authorized"] as const;
+export const REFUND_STATUSES = ["requested", "approved", "processing", "completed", "failed", "cancelled"] as const;
+export const FINANCIAL_RELEASE_TYPES = ["payment_verified", "credit_approved", "cod_policy_approved", "manual_authorized_release"] as const;
+export const FINANCIAL_LEDGER_ENTRY_TYPES = ["payment_verified", "refund_completed", "adjustment", "credit_release", "cod_release"] as const;
+export const FINANCIAL_LEDGER_DIRECTIONS = ["IN", "OUT"] as const;
+export const PAYMENT_ALLOCATION_STATUS = ["active", "voided"] as const;
 
 /**
  * وضعیت تأمین‌کننده و درخواست تأمین‌کننده.
@@ -336,6 +363,20 @@ export const ORDER_EVENT_TYPES = [
   "inventory.reserved",
   "inventory.released",
   "inventory.consumed",
+  "proforma.issued",
+  "proforma.superseded",
+  "proforma.voided",
+  "payment.evidence_submitted",
+  "payment.verified",
+  "payment.failed",
+  "payment.allocated",
+  "payment.overpaid",
+  "financial.release_created",
+  "refund.requested",
+  "refund.approved",
+  "refund.completed",
+  "refund.failed",
+  "refund.cancelled",
 ] as const;
 
 /** Phase 4.2 — نقش عامل در تاریخچه/رویداد */

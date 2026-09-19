@@ -57,4 +57,11 @@ export {
   wholesaleRequestRevision,
   fulfillmentException,
   fulfillmentReplacementRequest,
+  wholesaleProforma,
+  wholesaleProformaLine,
+  payment,
+  paymentAllocation,
+  orderFinancialRelease,
+  financialLedgerEntry,
+  refund,
 } from "./tables";

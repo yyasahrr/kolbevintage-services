@@ -127,6 +127,13 @@
       "when": 1789690000000,
       "tag": "0017_phase_4_5_replacement_and_parent_cancel",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789692000000,
+      "tag": "0018_phase_4_6_wholesale_finance",
+      "breakpoints": true
     }
   ]
 }

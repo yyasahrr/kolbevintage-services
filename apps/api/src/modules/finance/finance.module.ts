@@ -1,0 +1,16 @@
+import { Module } from "@nestjs/common";
+import { WholesaleFinanceOrchestrator } from "./wholesale-finance.orchestrator";
+import { PaymentsModule } from "../payments/payments.module";
+import { DatabaseModule } from "../../database/database.module";
+import { AuditModule } from "../audit/audit.module";
+import { WholesaleFinanceController } from "./wholesale-finance.controller";
+import { AdminFinanceController } from "./admin-finance.controller";
+import { SupplierFinanceController } from "./supplier-finance.controller";
+
+@Module({
+  imports: [DatabaseModule, AuditModule, PaymentsModule],
+  controllers: [WholesaleFinanceController, AdminFinanceController, SupplierFinanceController],
+  providers: [WholesaleFinanceOrchestrator],
+  exports: [WholesaleFinanceOrchestrator],
+})
+export class FinanceModule {}

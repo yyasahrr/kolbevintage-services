@@ -50,6 +50,9 @@ import {
   COMMAND_IDEMPOTENCY_STATES,
   COMMAND_TYPES,
   CURRENCIES,
+  FINANCIAL_LEDGER_DIRECTIONS,
+  FINANCIAL_LEDGER_ENTRY_TYPES,
+  FINANCIAL_RELEASE_TYPES,
   FULFILLMENT_EXCEPTION_BUYER_RESOLUTIONS,
   FULFILLMENT_EXCEPTION_STATUSES,
   FULFILLMENT_EXCEPTION_TYPES,
@@ -62,12 +65,16 @@ import {
   ORDER_AGGREGATE_TYPES,
   ORDER_EVENT_TYPES,
   PACKAGE_TYPES,
+  PAYMENT_ALLOCATION_STATUS,
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
   PRICING_UNITS,
   PRODUCT_STATUSES,
   PRODUCT_VARIANT_STATUSES,
   PURCHASE_ORDER_STATUS_VALUES,
   QUOTE_STATUSES,
   RATING_STATUSES,
+  REFUND_STATUSES,
   RETAIL_ORDER_STATUS_VALUES,
   RETAIL_PAYMENT_METHODS,
   RETAIL_PAYMENT_STATUSES,
@@ -88,6 +95,7 @@ import {
   WHOLESALE_ACCOUNT_STATUSES,
   WHOLESALE_ORDER_STATUS_VALUES,
   WHOLESALE_PAYMENT_MODES,
+  WHOLESALE_PROFORMA_STATUSES,
   WHOLESALE_REQUEST_STATUSES,
   WHOLESALE_REVISION_BUYER_RESPONSES,
 } from "./state-values";
@@ -1921,5 +1929,342 @@ export const fulfillmentReplacementRequest = pgTable(
     uniqueIndex("fulfillment_replacement_request_replacement_unique").on(table.replacementRequestId),
     index("fulfillment_replacement_request_exception_created").on(table.exceptionId, table.createdAt),
     index("fulfillment_replacement_request_created").on(table.createdAt),
+  ],
+);
+
+/* ── Phase 4.6 — Wholesale Finance Foundation ────────────────────────────
+ *  - Proforma per seller child
+ *  - Payment aggregate (manual transfer first)
+ *  - Payment allocation per proforma
+ *  - Financial release evidence (payment_verified, credit_approved, cod_policy_approved, manual_authorized_release)
+ *  - Financial ledger append-only (IN/OUT)
+ *  - Refund aggregate partial refunds per child isolation
+ *  - All FKs RESTRICT, no CASCADE historical destruction, BIGINT money, immutable snapshots
+ */
+
+export const wholesaleProforma = pgTable(
+  "wholesale_proforma",
+  {
+    id: text("id").primaryKey(),
+    proformaNumber: text("proforma_number").notNull().unique(),
+    wholesaleOrderId: text("wholesale_order_id").notNull(),
+    childOrderId: text("child_order_id").notNull(),
+    sellerId: text("seller_id").notNull(),
+    supplierId: text("supplier_id"),
+    version: integer("version").notNull().default(1),
+    status: text("status").notNull().default("draft"),
+    currency: text("currency").notNull().default("IRR"),
+    itemsTotal: bigint("items_total", { mode: "bigint" }).notNull().default(sql`0`),
+    shippingTotal: bigint("shipping_total", { mode: "bigint" }).notNull().default(sql`0`),
+    totalAmount: bigint("total_amount", { mode: "bigint" }).notNull().default(sql`0`),
+    termsSnapshot: jsonb("terms_snapshot").notNull().default({}),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    supersededBy: text("superseded_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_proforma_status_allowed", "status", WHOLESALE_PROFORMA_STATUSES),
+    stateCheck("wholesale_proforma_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("wholesale_proforma_items_total_range", "items_total"),
+    moneyCheck("wholesale_proforma_shipping_total_range", "shipping_total"),
+    moneyCheck("wholesale_proforma_total_amount_range", "total_amount"),
+    quantityCheck("wholesale_proforma_version_non_negative", "version"),
+    uniqueIndex("wholesale_proforma_number_unique").on(table.proformaNumber),
+    // One current active issued version per child: partial unique where status=issued
+    uniqueIndex("wholesale_proforma_child_issued_unique")
+      .on(table.childOrderId, table.status)
+      .where(sql`${table.status} = 'issued'`),
+    index("wholesale_proforma_order_created").on(table.wholesaleOrderId, table.createdAt),
+    index("wholesale_proforma_child_created").on(table.childOrderId, table.createdAt),
+    index("wholesale_proforma_seller_created").on(table.sellerId, table.createdAt),
+    foreignKey({
+      name: "wholesale_proforma_order_fk",
+      columns: [table.wholesaleOrderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_proforma_child_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_proforma_seller_fk",
+      columns: [table.sellerId],
+      foreignColumns: [seller.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_proforma_supplier_fk",
+      columns: [table.supplierId],
+      foreignColumns: [supplier.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_proforma_superseded_by_fk",
+      columns: [table.supersededBy],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const wholesaleProformaLine = pgTable(
+  "wholesale_proforma_line",
+  {
+    id: text("id").primaryKey(),
+    proformaId: text("proforma_id").notNull(),
+    wholesaleOrderItemId: text("wholesale_order_item_id").notNull(),
+    purchaseOrderItemId: text("purchase_order_item_id"),
+    descriptionSnapshot: text("description_snapshot").notNull().default(""),
+    skuSnapshot: text("sku_snapshot").notNull().default(""),
+    quantity: integer("quantity").notNull().default(1),
+    pricingUnit: text("pricing_unit").notNull().default("PIECE"),
+    unitPrice: bigint("unit_price", { mode: "bigint" }).notNull().default(sql`0`),
+    lineTotal: bigint("line_total", { mode: "bigint" }).notNull().default(sql`0`),
+    currency: text("currency").notNull().default("IRR"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_proforma_line_pricing_unit_allowed", "pricing_unit", PRICING_UNITS),
+    stateCheck("wholesale_proforma_line_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("wholesale_proforma_line_unit_price_range", "unit_price"),
+    moneyCheck("wholesale_proforma_line_line_total_range", "line_total"),
+    positiveQuantityCheck("wholesale_proforma_line_quantity_positive", "quantity"),
+    index("wholesale_proforma_line_proforma").on(table.proformaId),
+    index("wholesale_proforma_line_order_item").on(table.wholesaleOrderItemId),
+    foreignKey({
+      name: "wholesale_proforma_line_proforma_fk",
+      columns: [table.proformaId],
+      foreignColumns: [wholesaleProforma.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_proforma_line_wholesale_item_fk",
+      columns: [table.wholesaleOrderItemId],
+      foreignColumns: [wholesaleOrderItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_proforma_line_purchase_item_fk",
+      columns: [table.purchaseOrderItemId],
+      foreignColumns: [purchaseOrderItem.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const payment = pgTable(
+  "payment",
+  {
+    id: text("id").primaryKey(),
+    paymentReference: text("payment_reference").notNull().unique(),
+    wholesaleOrderId: text("wholesale_order_id").notNull(),
+    method: text("method").notNull(),
+    provider: text("provider").notNull().default("manual"),
+    status: text("status").notNull().default("pending"),
+    amount: bigint("amount", { mode: "bigint" }).notNull().default(sql`0`),
+    currency: text("currency").notNull().default("IRR"),
+    externalReference: text("external_reference"),
+    submittedBy: text("submitted_by"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    verifiedBy: text("verified_by"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
+    idempotencyKey: text("idempotency_key"),
+    requestHash: text("request_hash"),
+    version: integer("version").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("payment_status_allowed", "status", PAYMENT_STATUSES),
+    stateCheck("payment_method_allowed", "method", PAYMENT_METHODS),
+    stateCheck("payment_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("payment_amount_range", "amount"),
+    quantityCheck("payment_version_non_negative", "version"),
+    uniqueIndex("payment_reference_unique").on(table.paymentReference),
+    uniqueIndex("payment_order_idempotency_unique")
+      .on(table.wholesaleOrderId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index("payment_order_created").on(table.wholesaleOrderId, table.createdAt),
+    index("payment_status_created").on(table.status, table.createdAt),
+    foreignKey({
+      name: "payment_order_fk",
+      columns: [table.wholesaleOrderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "payment_submitted_by_fk",
+      columns: [table.submittedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "payment_verified_by_fk",
+      columns: [table.verifiedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const paymentAllocation = pgTable(
+  "payment_allocation",
+  {
+    id: text("id").primaryKey(),
+    paymentId: text("payment_id").notNull(),
+    proformaId: text("proforma_id").notNull(),
+    amount: bigint("amount", { mode: "bigint" }).notNull().default(sql`0`),
+    currency: text("currency").notNull().default("IRR"),
+    status: text("status").notNull().default("active"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("payment_allocation_currency_allowed", "currency", CURRENCIES),
+    stateCheck("payment_allocation_status_allowed", "status", PAYMENT_ALLOCATION_STATUS),
+    moneyCheck("payment_allocation_amount_range", "amount"),
+    uniqueIndex("payment_allocation_payment_proforma_unique").on(table.paymentId, table.proformaId),
+    index("payment_allocation_payment_created").on(table.paymentId, table.createdAt),
+    index("payment_allocation_proforma_created").on(table.proformaId, table.createdAt),
+    foreignKey({
+      name: "payment_allocation_payment_fk",
+      columns: [table.paymentId],
+      foreignColumns: [payment.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "payment_allocation_proforma_fk",
+      columns: [table.proformaId],
+      foreignColumns: [wholesaleProforma.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const orderFinancialRelease = pgTable(
+  "order_financial_release",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    releaseType: text("release_type").notNull(),
+    evidenceReference: text("evidence_reference"),
+    amount: bigint("amount", { mode: "bigint" }),
+    currency: text("currency").default("IRR"),
+    actorId: text("actor_id"),
+    actorRole: text("actor_role"),
+    reason: text("reason"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("order_financial_release_type_allowed", "release_type", FINANCIAL_RELEASE_TYPES),
+    stateCheck("order_financial_release_currency_allowed", "currency", CURRENCIES),
+    index("order_financial_release_order_created").on(table.orderId, table.createdAt),
+    index("order_financial_release_type_created").on(table.releaseType, table.createdAt),
+    foreignKey({
+      name: "order_financial_release_order_fk",
+      columns: [table.orderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "order_financial_release_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const financialLedgerEntry = pgTable(
+  "financial_ledger_entry",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    childOrderId: text("child_order_id"),
+    paymentId: text("payment_id"),
+    refundId: text("refund_id"),
+    entryType: text("entry_type").notNull(),
+    direction: text("direction").notNull(),
+    amount: bigint("amount", { mode: "bigint" }).notNull(),
+    currency: text("currency").notNull().default("IRR"),
+    externalReference: text("external_reference"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (table) => [
+    stateCheck("financial_ledger_entry_type_allowed", "entry_type", FINANCIAL_LEDGER_ENTRY_TYPES),
+    stateCheck("financial_ledger_direction_allowed", "direction", FINANCIAL_LEDGER_DIRECTIONS),
+    stateCheck("financial_ledger_currency_allowed", "currency", CURRENCIES),
+    // amount >0 enforced via CHECK raw
+    check("financial_ledger_amount_positive", sql.raw(`"amount" > 0`)),
+    index("financial_ledger_order_created").on(table.orderId, table.createdAt),
+    index("financial_ledger_child_created").on(table.childOrderId, table.createdAt),
+    index("financial_ledger_payment_created").on(table.paymentId, table.createdAt),
+    index("financial_ledger_refund_created").on(table.refundId, table.createdAt),
+    foreignKey({
+      name: "financial_ledger_order_fk",
+      columns: [table.orderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "financial_ledger_child_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "financial_ledger_payment_fk",
+      columns: [table.paymentId],
+      foreignColumns: [payment.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const refund = pgTable(
+  "refund",
+  {
+    id: text("id").primaryKey(),
+    refundReference: text("refund_reference").notNull().unique(),
+    wholesaleOrderId: text("wholesale_order_id").notNull(),
+    childOrderId: text("child_order_id"),
+    fulfillmentExceptionId: text("fulfillment_exception_id"),
+    paymentId: text("payment_id"),
+    amount: bigint("amount", { mode: "bigint" }).notNull().default(sql`0`),
+    currency: text("currency").notNull().default("IRR"),
+    reasonCode: text("reason_code"),
+    reason: text("reason"),
+    status: text("status").notNull().default("requested"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    externalReference: text("external_reference"),
+    idempotencyKey: text("idempotency_key"),
+    requestHash: text("request_hash"),
+    version: integer("version").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("refund_status_allowed", "status", REFUND_STATUSES),
+    stateCheck("refund_currency_allowed", "currency", CURRENCIES),
+    moneyCheck("refund_amount_range", "amount"),
+    quantityCheck("refund_version_non_negative", "version"),
+    uniqueIndex("refund_reference_unique").on(table.refundReference),
+    uniqueIndex("refund_order_idempotency_unique")
+      .on(table.wholesaleOrderId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index("refund_order_created").on(table.wholesaleOrderId, table.createdAt),
+    index("refund_child_created").on(table.childOrderId, table.createdAt),
+    index("refund_status_created").on(table.status, table.createdAt),
+    foreignKey({
+      name: "refund_order_fk",
+      columns: [table.wholesaleOrderId],
+      foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_child_fk",
+      columns: [table.childOrderId],
+      foreignColumns: [purchaseOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_exception_fk",
+      columns: [table.fulfillmentExceptionId],
+      foreignColumns: [fulfillmentException.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_payment_fk",
+      columns: [table.paymentId],
+      foreignColumns: [payment.id],
+    }).onDelete("restrict"),
   ],
 );

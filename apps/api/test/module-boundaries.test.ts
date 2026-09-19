@@ -85,7 +85,7 @@ describe("دفتر مالکیت ماژول‌ها", () => {
   });
 
   it("جدول‌های اسکیمای فعلی همه تعیین‌تکلیف شده‌اند (مالک‌دار یا صریحاً بی‌مالک)", () => {
-    // این فهرست از `packages/database/src/schema/tables.ts` آمده است — فاز ۴.۲
+    // این فهرست از `packages/database/src/schema/tables.ts` آمده است — فاز ۴.۶
     const schemaTables = [
       "account_user",
       "audit_log",
@@ -135,6 +135,14 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "order_event",
       "wholesale_request_revision",
       "fulfillment_exception",
+      "fulfillment_replacement_request",
+      "wholesale_proforma",
+      "wholesale_proforma_line",
+      "payment",
+      "payment_allocation",
+      "order_financial_release",
+      "financial_ledger_entry",
+      "refund",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);
@@ -293,6 +301,15 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "quote",
         "rfq",
         "fulfillment_exception",
+        "fulfillment_replacement_request",
+        // Phase 4.6 — orders may read payment tables for gate checks via orchestrator (read-only)
+        "wholesale_proforma",
+        "wholesale_proforma_line",
+        "payment",
+        "payment_allocation",
+        "order_financial_release",
+        "financial_ledger_entry",
+        "refund",
       ],
       fulfillment: [
         "purchase_order",
@@ -310,6 +327,57 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "account_user",
         "wholesale_account",
         "wholesale_request",
+        "wholesale_proforma",
+        "payment",
+        "refund",
+      ],
+      payments: [
+        "wholesale_order",
+        "wholesale_order_item",
+        "wholesale_order_request",
+        "purchase_order",
+        "purchase_order_item",
+        "order_status_history",
+        "order_event",
+        "seller",
+        "supplier",
+        "supplier_member",
+        "command_idempotency",
+        "audit_log",
+        "account_user",
+        "wholesale_account",
+        "fulfillment_exception",
+        "fulfillment_replacement_request",
+        "product",
+        "product_variant",
+        "product_variant_inventory",
+      ],
+      finance: [
+        "wholesale_order",
+        "wholesale_order_item",
+        "wholesale_order_request",
+        "purchase_order",
+        "purchase_order_item",
+        "order_status_history",
+        "order_event",
+        "seller",
+        "supplier",
+        "supplier_member",
+        "command_idempotency",
+        "audit_log",
+        "account_user",
+        "wholesale_account",
+        "wholesale_proforma",
+        "wholesale_proforma_line",
+        "payment",
+        "payment_allocation",
+        "order_financial_release",
+        "financial_ledger_entry",
+        "refund",
+        "fulfillment_exception",
+        "fulfillment_replacement_request",
+        "product",
+        "product_variant",
       ],
     };
 

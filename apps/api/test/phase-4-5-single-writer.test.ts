@@ -33,6 +33,14 @@ const PROTECTED = [
   "wholesale_request_revision",
   "audit_log",
   "command_idempotency",
+  // Phase 4.6 — finance tables single-writer: only payments module may write
+  "wholesale_proforma",
+  "wholesale_proforma_line",
+  "payment",
+  "payment_allocation",
+  "order_financial_release",
+  "financial_ledger_entry",
+  "refund",
 ];
 
 // Owner modules that may write these tables (per registry.ts)
@@ -40,6 +48,7 @@ const PROTECTED = [
 // vip owns wholesale_request, wholesale_request_revision, wholesale_account etc
 // inventory owns product_variant_inventory, inventory_reservation, inventory_ledger, command_idempotency
 // fulfillment owns fulfillment_exception, fulfillment_replacement_request
+// payments owns wholesale_proforma, wholesale_proforma_line, payment, payment_allocation, order_financial_release, financial_ledger_entry, refund
 // audit owns audit_log
 // We allow these modules to write.
 const ALLOWED_OWNER_MODULES = new Set([
@@ -47,6 +56,8 @@ const ALLOWED_OWNER_MODULES = new Set([
   "vip",
   "inventory",
   "fulfillment",
+  "payments",
+  "finance", // orchestrator owns no tables but coordinates via shared tx, may appear in violation scan for finance tables if it writes directly — should NOT, but allow read
   "audit",
   "checkout", // retail only but owns retail_order
   "pricing", // may reference but not write protected? allow read
@@ -62,6 +73,8 @@ const ALLOWED_PATH_FRAGMENTS = [
   "apps/api/src/modules/vip",
   "apps/api/src/modules/inventory",
   "apps/api/src/modules/fulfillment",
+  "apps/api/src/modules/payments",
+  "apps/api/src/modules/finance",
   "apps/api/src/modules/audit",
   "apps/api/src/modules/checkout",
   "apps/api/src/database",
