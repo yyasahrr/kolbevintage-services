@@ -131,18 +131,45 @@ export class ShippingService {
       return { state: "pending", resourceId: existing.resultResourceId };
     }
     const now = await this.getDbNow(tx);
-    await tx.insert(commandIdempotency).values({
-      id: `cid_${randomUUID().replaceAll("-", "")}`,
-      scopeType: scope.scopeType,
-      scopeId: scope.scopeId,
-      commandType: scope.commandType,
-      idempotencyKey: scope.idempotencyKey,
-      requestHash: scope.requestHash,
-      state: "pending",
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { state: "new" };
+    // Two workers may race for the same key before either row exists. The unique
+    // index (scope_type, scope_id, command_type, idempotency_key) decides: the
+    // loser's insert is a no-op and it then blocks on the winner's row until that
+    // transaction commits, observing its final state — never a raw 23505.
+    const inserted = await tx
+      .insert(commandIdempotency)
+      .values({
+        id: `cid_${randomUUID().replaceAll("-", "")}`,
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        commandType: scope.commandType,
+        idempotencyKey: scope.idempotencyKey,
+        requestHash: scope.requestHash,
+        state: "pending",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning({ id: commandIdempotency.id });
+    if (inserted.length > 0) return { state: "new" };
+    const [winner] = await tx
+      .select()
+      .from(commandIdempotency)
+      .where(
+        and(
+          eq(commandIdempotency.scopeType, scope.scopeType),
+          eq(commandIdempotency.scopeId, scope.scopeId),
+          eq(commandIdempotency.commandType, scope.commandType),
+          eq(commandIdempotency.idempotencyKey, scope.idempotencyKey),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!winner) throw new ShippingDomainError("IDEMPOTENCY_CLAIM_RACE", "Idempotency claim vanished during a race; retry", 409);
+    if (winner.requestHash !== scope.requestHash) {
+      throw new ShippingDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with a different payload");
+    }
+    if (winner.state === "completed") return { state: "completed", resourceId: winner.resultResourceId, payload: winner.resultPayload };
+    return { state: "pending", resourceId: winner.resultResourceId };
   }
 
   async attachCommandResource(tx: any, scope: { scopeType: string; scopeId: string; commandType: string; idempotencyKey: string }, resourceId: string) {

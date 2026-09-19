@@ -168,10 +168,20 @@ export class WholesaleFinanceOrchestrator {
     actorRole?: string;
   }) {
     return this.db.transaction(async (tx: any) => {
+      // Phase 4.7.1 (D2/D3): same rule as the online intent — a positive outstanding
+      // delta (late shipping fee) may be paid by transfer on a released order.
+      const summary = await this.paymentsService.getOrderFinancialSummary(input.orderId, tx);
+      let outstanding = 0n;
+      try {
+        outstanding = BigInt(summary.currentPayable);
+      } catch {
+        outstanding = 0n;
+      }
       await this.ordersService.validateAndLockForPaymentSubmission({
         orderId: input.orderId,
         buyerUserId: input.buyerUserId,
         executor: tx,
+        allowOutstandingObligation: outstanding > 0n,
       });
 
       const result = await this.paymentsService.submitTransferPayment({

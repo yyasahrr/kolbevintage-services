@@ -2298,10 +2298,13 @@ export class OrdersService {
   /** Parent projection after a child fulfillment change (never auto-cancels; derives from all children). */
   private async projectParentAfterChildChange(tx: any, parentId: string | null, childId: string, childStatus: string, actorId: string | null, now: Date, trigger: string) {
     if (!parentId) return null;
-    const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, parentId));
+    // Phase 4.7.1 (C10) — lock the parent BEFORE reading the siblings: two children
+    // shipped in parallel serialize here and the second projection sees the first
+    // child's committed status (READ COMMITTED re-reads after the lock is granted).
     const parentResult = await tx.execute(sql`SELECT * FROM wholesale_order WHERE id = ${parentId} FOR UPDATE`);
     const parent = parentResult.rows?.[0];
     if (!parent) return null;
+    const siblings = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, parentId));
     const childSummaries = siblings.map((c: any) => ({ id: c.id, status: c.id === childId ? childStatus : c.status })) as any;
     const newParentStatus = calculateParentFulfillmentProjection(parent.status as any, childSummaries);
     if (newParentStatus === parent.status) return parent;
