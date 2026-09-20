@@ -49,7 +49,7 @@
 | Checkpoint B | `5b263ca` | `feat(phase-5-1-b): add CRM activities and follow-up workflows` | 35518882583 | success |
 | Checkpoint C | `f82c178` | `feat(phase-5-1-c): add authoritative customer 360 read model` | 35519936565 | success |
 | Checkpoint D | `179c39f` | `feat(phase-5-1-d): add CRM pipeline search and customer operations` | 35531781513 | success |
-| Final CI Record | (current) | `docs: record phase 5.1 final CI` | Pending | — |
+| Final CI Record | `1e8d617` | `docs: record phase 5.1 final CI` | 35532021830 | success |
 
 ---
 
