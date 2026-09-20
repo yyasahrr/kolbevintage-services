@@ -9,11 +9,15 @@ import { Public, Roles, CurrentUser, type RequestWithClaims } from "../../common
 import { SessionGuard } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
+import { CONFIG_TOKEN, type AppConfig } from "../../config/configuration";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(CONFIG_TOKEN) private readonly config: AppConfig,
+  ) {}
 
   @Post("register")
   @Public()
@@ -24,7 +28,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? null;
+    const ip = req.ip ?? null;
     const requesterRole = (req as RequestWithClaims).claims?.role ?? null;
 
     const { user, token } = await this.auth.register({
@@ -50,7 +54,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? null;
+    const ip = req.ip ?? null;
     const userAgent = String(req.headers["user-agent"] ?? "");
 
     const { user, token, supplierContext } = await this.auth.login({
@@ -127,7 +131,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? null;
+    const ip = req.ip ?? null;
     const userAgent = String(req.headers["user-agent"] ?? "");
 
     const { user, token, supplierContext } = await this.auth.login({
@@ -146,6 +150,14 @@ export class AuthController {
     }
 
     res.setHeader("Set-Cookie", this.auth.cookie(token));
-    return { user: { id: user.id, email: user.email, role: user.role }, supplier: supplierContext, token };
+    const responseBody: Record<string, unknown> = {
+      user: { id: user.id, email: user.email, role: user.role },
+      supplier: supplierContext,
+    };
+    // در تولید توکن هرگز در بدنه افشا نمی‌شود؛ در صورت نیاز به سازگاری با لگاسی فقط در غیرتولید فعال می‌شود
+    if (this.config.env !== "production" && process.env.LEGACY_AUTH_EXPOSE_TOKEN_BODY === "true") {
+      responseBody.token = token;
+    }
+    return responseBody;
   }
 }

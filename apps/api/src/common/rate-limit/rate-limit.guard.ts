@@ -37,7 +37,8 @@ export class RateLimitGuard implements CanActivate {
     const req = http.getRequest<RequestWithClaims>();
     const res = http.getResponse<Response>();
 
-    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? "unknown-ip";
+    // قاعدهٔ A2: استفاده انحصاری از IP معتبر حل‌شده توسط Express (req.ip)
+    const ip = req.ip || "unknown-ip";
     const userId = req.claims?.sub;
 
     let keyIdent = ip;
@@ -50,10 +51,24 @@ export class RateLimitGuard implements CanActivate {
     const prefix = effectiveOptions.keyPrefix ?? req.path;
     const bucketKey = `${prefix}:${keyIdent}`;
 
+    // تعیین حساسیت عملیات برای رفتار fail-closed در صورت قطعی ردیس
+    const isSensitive = effectiveOptions.sensitive ?? (
+      req.path.includes("/auth/") ||
+      req.path.includes("/payments") ||
+      req.path.includes("/refunds") ||
+      req.path.includes("/withdrawals") ||
+      req.path.includes("/payouts") ||
+      req.path.includes("/settlement") ||
+      req.path.includes("/compliance") ||
+      req.path.includes("/recovery") ||
+      ["POST", "PUT", "PATCH", "DELETE"].includes(String(req.method || "").toUpperCase())
+    );
+
     const decision = await this.rateLimiter.consume(
       bucketKey,
       effectiveOptions.limit,
       effectiveOptions.windowSeconds,
+      { sensitive: isSensitive },
     );
 
     if (res && typeof res.setHeader === "function") {

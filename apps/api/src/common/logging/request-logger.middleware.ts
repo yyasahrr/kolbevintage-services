@@ -33,8 +33,7 @@ export class RequestLoggerMiddleware implements NestMiddleware {
     res.setHeader("X-Request-Id", requestId);
     res.setHeader("X-Correlation-Id", correlationId);
 
-    const clientIp =
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? null;
+    const clientIp = req.ip ?? null;
 
     res.on("finish", () => {
       const durationMs = Date.now() - start;

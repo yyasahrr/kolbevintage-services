@@ -20,6 +20,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "drizzle-orm": "^0.44.6",
+    "ioredis": "^5.11.1",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"
@@ -30,6 +31,7 @@
     "@types/node": "^22.19.17",
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
+    "ioredis-mock": "^8.13.1",
     "supertest": "^7.1.4",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

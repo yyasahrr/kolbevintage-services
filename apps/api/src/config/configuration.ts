@@ -30,7 +30,7 @@ export type AppConfig = {
     schedulerEnabled: boolean;
     intervalMs: number;
   };
-  trustProxy: boolean | number;
+  trustProxy: boolean | number | string;
   storage: {
     endpoint: string | null;
     bucket: string | null;
@@ -114,8 +114,55 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       problems.push("FakeTaxInvoiceProvider در محیط تولید مجاز نیست");
     }
     const payoutMode = (env.PAYOUT_PROVIDER_MODE ?? "").trim().toLowerCase();
-    if (payoutMode === "fake" && env.ALLOW_FAKE_PAYOUT_PROVIDER !== "true") {
+    if (payoutMode === "fake") {
       problems.push("FakePayoutProvider در محیط تولید مجاز نیست");
+    }
+
+    if (!env.REDIS_URL || env.REDIS_URL.trim() === "") {
+      problems.push(
+        "REDIS_URL در محیط تولید برای محدودسازی نرخ توزیع‌شده (Distributed Rate Limiting) الزامی است",
+      );
+    }
+  }
+
+  // ارزیابی TRUST_PROXY
+  const trustProxyRaw = env.TRUST_PROXY?.trim();
+  let trustProxy: boolean | number | string = false;
+
+  if (!trustProxyRaw) {
+    if (isProduction) {
+      problems.push(
+        "TRUST_PROXY در محیط تولید الزامی است و باید صریحاً مقداردهی شود (برای سناریوی Nginx → API مقدار عددی 1 یا loopback تنظیم کنید)",
+      );
+    }
+    trustProxy = false;
+  } else if (trustProxyRaw.toLowerCase() === "false") {
+    trustProxy = false;
+  } else if (trustProxyRaw.toLowerCase() === "true") {
+    if (isProduction) {
+      problems.push(
+        "TRUST_PROXY در محیط تولید نباید مقدار نامحدود true باشد (امکان جعل آدرس IP کلاینت)؛ تعداد هاپ‌ها (مثلاً 1) یا آدرس پروکسی مشخص را وارد کنید",
+      );
+    }
+    trustProxy = true;
+  } else if (!isNaN(Number(trustProxyRaw))) {
+    const hops = Number(trustProxyRaw);
+    if (hops < 0 || !Number.isInteger(hops)) {
+      problems.push("TRUST_PROXY در صورت عدد بودن باید یک عدد صحیح نامنفی (تعداد هاپ‌های پروکسی) باشد");
+    }
+    trustProxy = hops;
+  } else {
+    const allowedNamed = ["loopback", "linklocal", "uniquelocal"];
+    const lower = trustProxyRaw.toLowerCase();
+    if (allowedNamed.includes(lower)) {
+      trustProxy = lower;
+    } else {
+      const ipPattern = /^([a-fA-F0-9:.]+(\/\d+)?)(,\s*[a-fA-F0-9:.]+(\/\d+)?)*$/;
+      if (ipPattern.test(trustProxyRaw)) {
+        trustProxy = trustProxyRaw;
+      } else {
+        problems.push(`مقدار TRUST_PROXY نامعتبر است: "${trustProxyRaw}"`);
+      }
     }
   }
 
@@ -163,7 +210,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       schedulerEnabled: env.ENABLE_RECOVERY_SCHEDULER === "true",
       intervalMs: Number(env.RECOVERY_INTERVAL_MS || 60000),
     },
-    trustProxy: env.TRUST_PROXY ? (env.TRUST_PROXY === "true" ? true : Number(env.TRUST_PROXY)) : true,
+    trustProxy,
     storage: {
       endpoint: env.S3_ENDPOINT ?? null,
       bucket: env.S3_BUCKET ?? null,
