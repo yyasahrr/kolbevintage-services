@@ -95,7 +95,7 @@ Net change: **+4 test suites, +27 tests**, all passing with real PostgreSQL data
    - Default policy uncredits shipping fees to the supplier (`SHIPPING_UNCREDITED_TO_SUPPLIER`).
    - Shipping fees are credited to the supplier only when explicitly designated with `shippingResponsibility = SUPPLIER`.
 5. **Tax Non-Crediting by Default**:
-   - Tax is not credited to supplier settlement by default. Final tax treatment and liability require verified legal/tax configuration (TAX_REVIEW_REQUIRED).
+   - Tax is not credited to supplier settlement by default. Final tax treatment/liability requires verified legal/tax configuration.
 6. **Financial Holds & Pending-to-Available Lifecycle**:
    - Settlement hold policies: `DISPUTE`, `COMPLIANCE`, `TAX`, `FRAUD`, and `MANUAL`.
    - Batch release engine (`evaluateAndReleaseSettlementBatch`) evaluates matured earnings, inspects active holds and compliance eligibility, and moves eligible funds from `SUPPLIER_PENDING` to `SUPPLIER_AVAILABLE`.
