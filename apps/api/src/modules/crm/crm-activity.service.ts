@@ -224,7 +224,7 @@ export class CrmActivityService {
         timestamp: act.occurredAt,
         actorId: act.actorId,
         actorName: act.actorName,
-        metadata: act.metadata,
+        metadata: (act.metadata as Record<string, unknown>) || {},
       })),
       ...internalNotes.map((note) => ({
         id: note.id,
@@ -236,7 +236,7 @@ export class CrmActivityService {
         timestamp: note.createdAt,
         actorId: note.authorId,
         actorName: note.authorName,
-        metadata: { targetType: note.targetType, targetId: note.targetId },
+        metadata: { targetType: note.targetType, targetId: note.targetId } as Record<string, unknown>,
       })),
     ];
 

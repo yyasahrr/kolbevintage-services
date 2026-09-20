@@ -333,6 +333,7 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "wholesale_membership",
         "wholesale_plan",
         "consent_event",
+        "payment",
         "audit_log",
       ],
       orders: [
