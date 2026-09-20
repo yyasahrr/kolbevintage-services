@@ -1,7 +1,7 @@
 # Phase 5.1 — CRM & Customer Operations Backend — Report
 
 **Branch:** `arena/01a0bac3-kolbevintage-services` (strictly working branch; no `main` interaction, no history rewrite, no force push, no PR)
-**Starting SHA:** `f5f416dd2b363ad8ea46416c34aa75748ab27f9a` (docs: record phase 5.0 final CI — CI run **35516835939 SUCCESS**)
+**Starting SHA:** `f5f416dd2b363ad8ea46416c34aa75748ab27f9a` (docs: record phase 5.0 report CI verification — CI run **35517015310 SUCCESS**)
 **Baseline re-verified locally before any change:** 25 migrations / 113 tables / 253 FKs / 348 CHECKs; `npm run test:all` = shared 23 / database 84 / api 723 / next 125 = **955 passed, 0 skipped, 0 failed**
 **Ending SHA (code):** `179c39f` (feat(phase-5-1-d): add CRM pipeline search and customer operations — CI run **35531781513 SUCCESS**)
 **Date:** 2026-09-20
@@ -43,13 +43,13 @@
 
 | Stage | SHA | Message | CI run | Conclusion |
 |---|---|---|---|---|
-| Baseline | `f5f416d` | `docs: record phase 5.0 final CI` | 35516835939 | success |
-| Checkpoint A | `b70c3ec` | `feat(phase-5-1-a): add CRM customer profile and relationship domain` | 35518296769 | failure (schema missing exported CrmStage type) |
-| Checkpoint A (Fix) | `36d1f95` | `fix(phase-5-1-a): export CrmStage type from database schema` | 35518465037 | success |
-| Checkpoint B | `5b263ca` | `feat(phase-5-1-b): add CRM activities and follow-up workflows` | 35518882583 | success |
+| Baseline | `f5f416d` | `docs: record phase 5.0 report CI verification` | 35517015310 | success |
+| Checkpoint A | `d45ff9f` | `feat(phase-5-1-a): add CRM customer profile and relationship domain` | 35518900901 | failure (schema missing exported CrmStage type) |
+| Checkpoint A (Fix) | `f211921` | `fix(phase-5-1-a): export CRM types and verify backend typecheck` | 35519047686 | success |
+| Checkpoint B | `3986bf5` | `feat(phase-5-1-b): add CRM activities and follow-up workflows` | 35519468273 | success |
 | Checkpoint C | `f82c178` | `feat(phase-5-1-c): add authoritative customer 360 read model` | 35519936565 | success |
 | Checkpoint D | `179c39f` | `feat(phase-5-1-d): add CRM pipeline search and customer operations` | 35531781513 | success |
-| Final CI Record | `1e8d617` | `docs: record phase 5.1 final CI` | 35532021830 | success |
+| Final CI Record | `4cf918a` | `docs: finalize phase 5.1 CI record` | 35532215788 | success |
 
 ---
 
