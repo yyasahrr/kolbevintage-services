@@ -115,8 +115,23 @@ export async function runRestore(options = {}) {
   if (psqlCheck.status === 0) {
     const res = spawnSync("psql", ["-d", url, "-f", input], { stdio: "pipe" });
     if (res.status === 0) {
+      let tablesCount = 0;
+      try {
+        const client = new Client({ connectionString: url });
+        await client.connect();
+        const countRes = await client.query(`
+          SELECT count(*)::int as c
+          FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+        `);
+        tablesCount = countRes.rows[0].c;
+        await client.end();
+      } catch {
+        // ignore
+      }
       return {
         method: "psql",
+        tablesCount,
         restoredFrom: input,
         checksumVerified: checksumResult.verified,
         success: true,

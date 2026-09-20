@@ -150,12 +150,21 @@ describe("Phase 4.9.1 — Checkpoint B: Operational Proof & Closeout", () => {
       const restoreResult = await runRestore({ url: dstUrl, input: tempBackupPath });
       expect(restoreResult.success).toBe(true);
       expect(restoreResult.checksumVerified).toBe(true);
-      expect(restoreResult.tablesCount).toBe(100);
+      if (restoreResult.tablesCount !== undefined) {
+        expect(restoreResult.tablesCount).toBe(100);
+      }
 
       // 5. Verify restored data and invariants in target database
       const dstClient = new Client({ connectionString: dstUrl });
       await dstClient.connect();
       try {
+        const countRes = await dstClient.query(`
+          SELECT count(*)::int as c
+          FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+        `);
+        expect(countRes.rows[0].c).toBe(100);
+
         const userRes = await dstClient.query(`SELECT * FROM account_user WHERE id = '${testUserId}'`);
         expect(userRes.rows.length).toBe(1);
         expect(userRes.rows[0].email).toBe("smoke_user@kolbe.test");
