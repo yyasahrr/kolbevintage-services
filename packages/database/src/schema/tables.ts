@@ -123,6 +123,19 @@ import {
   PAYOUT_PROVIDER_EVENT_STATUSES,
   SETTLEMENT_RECONCILIATION_TYPES,
   SETTLEMENT_RECONCILIATION_STATUSES,
+  WHOLESALE_PLAN_STATUSES,
+  WHOLESALE_PLAN_VERSION_STATUSES,
+  WHOLESALE_PLAN_BILLING_PERIODS,
+  WHOLESALE_PLAN_FEATURE_TYPES,
+  WHOLESALE_PLAN_LIMIT_PERIODS,
+  WHOLESALE_PLAN_LIMIT_KEYS,
+  WHOLESALE_MEMBERSHIP_STATUSES,
+  WHOLESALE_MEMBERSHIP_EVENT_TYPES,
+  ADMIN_PERMISSION_ACTIONS,
+  APPROVAL_REQUEST_TYPES,
+  APPROVAL_REQUEST_STATUSES,
+  BUSINESS_SETTING_CATEGORIES,
+  ADMIN_NOTE_TARGET_TYPES,
   MAX_MONEY_RIAL,
   MOQ_UNITS,
   OFFER_STATUSES,
@@ -3745,4 +3758,402 @@ export const settlementAdjustment = pgTable(
     index("settlement_adjustment_supplier").on(table.supplierId),
   ],
 );
+
+/* ── Phase 5.0 — Business Control Plane, Wholesale Plans & Memberships ───────── */
+
+export const wholesalePlan = pgTable(
+  "wholesale_plan",
+  {
+    id: text("id").primaryKey(),
+    code: text("code").notNull().unique(),
+    name: text("name").notNull(),
+    description: text("description"),
+    tierLevel: integer("tier_level").notNull().default(1),
+    status: text("status").notNull().default("draft"),
+    currency: text("currency").notNull().default("IRR"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    currentPublishedVersionId: text("current_published_version_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_plan_status_allowed", "status", WHOLESALE_PLAN_STATUSES),
+    stateCheck("wholesale_plan_currency_allowed", "currency", CURRENCIES),
+    positiveQuantityCheck("wholesale_plan_tier_level_positive", "tier_level"),
+  ],
+);
+
+export const wholesalePlanVersion = pgTable(
+  "wholesale_plan_version",
+  {
+    id: text("id").primaryKey(),
+    planId: text("plan_id").notNull(),
+    versionNumber: integer("version_number").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    billingPeriod: text("billing_period").notNull().default("annual"),
+    durationDays: integer("duration_days").notNull().default(365),
+    baseFee: bigint("base_fee", { mode: "bigint" }).notNull().default(sql`0`),
+    depositRequirement: bigint("deposit_requirement", { mode: "bigint" }).notNull().default(sql`0`),
+    status: text("status").notNull().default("draft"),
+    changeSummary: text("change_summary"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true }),
+    effectiveTo: timestamp("effective_to", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_plan_version_status_allowed", "status", WHOLESALE_PLAN_VERSION_STATUSES),
+    stateCheck("wholesale_plan_version_billing_period_allowed", "billing_period", WHOLESALE_PLAN_BILLING_PERIODS),
+    positiveQuantityCheck("wholesale_plan_version_duration_positive", "duration_days"),
+    positiveQuantityCheck("wholesale_plan_version_number_positive", "version_number"),
+    moneyCheck("wholesale_plan_version_base_fee_range", "base_fee"),
+    moneyCheck("wholesale_plan_version_deposit_range", "deposit_requirement"),
+    foreignKey({
+      name: "wholesale_plan_version_plan_fk",
+      columns: [table.planId],
+      foreignColumns: [wholesalePlan.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_plan_version_published_by_fk",
+      columns: [table.publishedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    uniqueIndex("wholesale_plan_version_plan_ver_unique").on(table.planId, table.versionNumber),
+    index("wholesale_plan_version_plan_status").on(table.planId, table.status),
+  ],
+);
+
+export const wholesalePlanFeature = pgTable(
+  "wholesale_plan_feature",
+  {
+    id: text("id").primaryKey(),
+    planVersionId: text("plan_version_id").notNull(),
+    featureKey: text("feature_key").notNull(),
+    featureType: text("feature_type").notNull().default("boolean"),
+    isEnabled: boolean("is_enabled").notNull().default(true),
+    configValue: jsonb("config_value").notNull().default({}),
+    description: text("description"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_plan_feature_type_allowed", "feature_type", WHOLESALE_PLAN_FEATURE_TYPES),
+    foreignKey({
+      name: "wholesale_plan_feature_version_fk",
+      columns: [table.planVersionId],
+      foreignColumns: [wholesalePlanVersion.id],
+    }).onDelete("restrict"),
+    uniqueIndex("wholesale_plan_feature_version_key_unique").on(table.planVersionId, table.featureKey),
+    index("wholesale_plan_feature_version_idx").on(table.planVersionId),
+  ],
+);
+
+export const wholesalePlanLimit = pgTable(
+  "wholesale_plan_limit",
+  {
+    id: text("id").primaryKey(),
+    planVersionId: text("plan_version_id").notNull(),
+    limitKey: text("limit_key").notNull(),
+    limitValue: bigint("limit_value", { mode: "bigint" }).notNull(),
+    period: text("period").notNull().default("order"),
+    isEnforced: boolean("is_enforced").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_plan_limit_period_allowed", "period", WHOLESALE_PLAN_LIMIT_PERIODS),
+    check("wholesale_plan_limit_value_positive", sql.raw(`"limit_value" >= 0`)),
+    foreignKey({
+      name: "wholesale_plan_limit_version_fk",
+      columns: [table.planVersionId],
+      foreignColumns: [wholesalePlanVersion.id],
+    }).onDelete("restrict"),
+    uniqueIndex("wholesale_plan_limit_version_key_unique").on(table.planVersionId, table.limitKey),
+    index("wholesale_plan_limit_version_idx").on(table.planVersionId),
+  ],
+);
+
+export const wholesaleMembership = pgTable(
+  "wholesale_membership",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    planId: text("plan_id").notNull(),
+    planVersionId: text("plan_version_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    suspendedReason: text("suspended_reason"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledReason: text("cancelled_reason"),
+    scheduledPlanId: text("scheduled_plan_id"),
+    scheduledPlanVersionId: text("scheduled_plan_version_id"),
+    scheduledEffectiveAt: timestamp("scheduled_effective_at", { withTimezone: true }),
+    snapshotFeatures: jsonb("snapshot_features").notNull().default({}),
+    snapshotLimits: jsonb("snapshot_limits").notNull().default({}),
+    currentVersion: integer("current_version").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_membership_status_allowed", "status", WHOLESALE_MEMBERSHIP_STATUSES),
+    positiveQuantityCheck("wholesale_membership_version_positive", "current_version"),
+    foreignKey({
+      name: "wholesale_membership_account_fk",
+      columns: [table.accountId],
+      foreignColumns: [wholesaleAccount.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_membership_plan_fk",
+      columns: [table.planId],
+      foreignColumns: [wholesalePlan.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_membership_plan_version_fk",
+      columns: [table.planVersionId],
+      foreignColumns: [wholesalePlanVersion.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_membership_sched_plan_fk",
+      columns: [table.scheduledPlanId],
+      foreignColumns: [wholesalePlan.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_membership_sched_version_fk",
+      columns: [table.scheduledPlanVersionId],
+      foreignColumns: [wholesalePlanVersion.id],
+    }).onDelete("restrict"),
+    index("wholesale_membership_account_status_idx").on(table.accountId, table.status),
+    index("wholesale_membership_status_expires_idx").on(table.status, table.expiresAt),
+  ],
+);
+
+export const wholesaleMembershipHistory = pgTable(
+  "wholesale_membership_history",
+  {
+    id: text("id").primaryKey(),
+    membershipId: text("membership_id").notNull(),
+    accountId: text("account_id").notNull(),
+    eventType: text("event_type").notNull(),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    fromPlanVersionId: text("from_plan_version_id"),
+    toPlanVersionId: text("to_plan_version_id"),
+    actorId: text("actor_id").notNull(),
+    reason: text("reason"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("wholesale_membership_history_event_allowed", "event_type", WHOLESALE_MEMBERSHIP_EVENT_TYPES),
+    foreignKey({
+      name: "wholesale_membership_history_membership_fk",
+      columns: [table.membershipId],
+      foreignColumns: [wholesaleMembership.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_membership_history_account_fk",
+      columns: [table.accountId],
+      foreignColumns: [wholesaleAccount.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "wholesale_membership_history_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("wholesale_membership_history_membership_idx").on(table.membershipId, table.createdAt),
+    index("wholesale_membership_history_account_idx").on(table.accountId, table.createdAt),
+  ],
+);
+
+/* ── Phase 5.0 — Admin RBAC, Approvals, Settings & Internal Notes ───────────── */
+
+export const adminRole = pgTable(
+  "admin_role",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    displayName: text("display_name").notNull(),
+    description: text("description"),
+    isSystem: boolean("is_system").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+);
+
+export const adminRolePermission = pgTable(
+  "admin_role_permission",
+  {
+    id: text("id").primaryKey(),
+    roleId: text("role_id").notNull(),
+    action: text("action").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("admin_role_permission_action_allowed", "action", ADMIN_PERMISSION_ACTIONS),
+    foreignKey({
+      name: "admin_role_permission_role_fk",
+      columns: [table.roleId],
+      foreignColumns: [adminRole.id],
+    }).onDelete("restrict"),
+    uniqueIndex("admin_role_permission_role_action_unique").on(table.roleId, table.action),
+  ],
+);
+
+export const adminUserRole = pgTable(
+  "admin_user_role",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    roleId: text("role_id").notNull(),
+    assignedBy: text("assigned_by").notNull(),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "admin_user_role_user_fk",
+      columns: [table.userId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "admin_user_role_role_fk",
+      columns: [table.roleId],
+      foreignColumns: [adminRole.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "admin_user_role_assigned_by_fk",
+      columns: [table.assignedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    uniqueIndex("admin_user_role_user_role_unique").on(table.userId, table.roleId),
+  ],
+);
+
+export const approvalRequest = pgTable(
+  "approval_request",
+  {
+    id: text("id").primaryKey(),
+    requestType: text("request_type").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    makerId: text("maker_id").notNull(),
+    checkerId: text("checker_id"),
+    status: text("status").notNull().default("pending"),
+    makerNotes: text("maker_notes"),
+    checkerNotes: text("checker_notes"),
+    payload: jsonb("payload").notNull().default({}),
+    executionResult: jsonb("execution_result"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("approval_request_type_allowed", "request_type", APPROVAL_REQUEST_TYPES),
+    stateCheck("approval_request_status_allowed", "status", APPROVAL_REQUEST_STATUSES),
+    check("maker_checker_distinct", sql.raw(`"checker_id" IS NULL OR "checker_id" <> "maker_id"`)),
+    foreignKey({
+      name: "approval_request_maker_fk",
+      columns: [table.makerId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "approval_request_checker_fk",
+      columns: [table.checkerId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("approval_request_status_type_idx").on(table.status, table.requestType),
+    index("approval_request_maker_idx").on(table.makerId),
+    index("approval_request_checker_idx").on(table.checkerId),
+    index("approval_request_target_idx").on(table.targetType, table.targetId),
+  ],
+);
+
+export const businessSetting = pgTable(
+  "business_setting",
+  {
+    id: text("id").primaryKey(),
+    category: text("category").notNull().default("wholesale"),
+    key: text("key").notNull().unique(),
+    value: jsonb("value").notNull().default({}),
+    valueType: text("value_type").notNull().default("string"),
+    description: text("description"),
+    isSecret: boolean("is_secret").notNull().default(false),
+    isReadOnly: boolean("is_read_only").notNull().default(false),
+    version: integer("version").notNull().default(1),
+    updatedBy: text("updated_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("business_setting_category_allowed", "category", BUSINESS_SETTING_CATEGORIES),
+    positiveQuantityCheck("business_setting_version_positive", "version"),
+    foreignKey({
+      name: "business_setting_updated_by_fk",
+      columns: [table.updatedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("business_setting_category_idx").on(table.category),
+  ],
+);
+
+export const businessSettingHistory = pgTable(
+  "business_setting_history",
+  {
+    id: text("id").primaryKey(),
+    settingId: text("setting_id").notNull(),
+    key: text("key").notNull(),
+    previousValue: jsonb("previous_value"),
+    newValue: jsonb("new_value").notNull(),
+    version: integer("version").notNull(),
+    reason: text("reason"),
+    changedBy: text("changed_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    positiveQuantityCheck("business_setting_history_version_positive", "version"),
+    foreignKey({
+      name: "business_setting_history_setting_fk",
+      columns: [table.settingId],
+      foreignColumns: [businessSetting.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "business_setting_history_changed_by_fk",
+      columns: [table.changedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("business_setting_history_setting_ver_idx").on(table.settingId, table.version),
+  ],
+);
+
+export const adminInternalNote = pgTable(
+  "admin_internal_note",
+  {
+    id: text("id").primaryKey(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    authorId: text("author_id").notNull(),
+    noteText: text("note_text").notNull(),
+    isPinned: boolean("is_pinned").notNull().default(false),
+    isArchived: boolean("is_archived").notNull().default(false),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("admin_internal_note_target_type_allowed", "target_type", ADMIN_NOTE_TARGET_TYPES),
+    foreignKey({
+      name: "admin_internal_note_author_fk",
+      columns: [table.authorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("admin_internal_note_target_idx").on(table.targetType, table.targetId, table.createdAt),
+    index("admin_internal_note_author_idx").on(table.authorId),
+  ],
+);
+
 

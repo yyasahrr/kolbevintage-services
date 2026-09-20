@@ -709,3 +709,112 @@ export const SETTLEMENT_RECONCILIATION_STATUSES = [
   "mismatch_detected",
 ] as const;
 
+/* ── Phase 5.0 — Business Control Plane & Wholesale Plans ───────────────────── */
+
+export const WHOLESALE_PLAN_STATUSES = ["draft", "active", "archived"] as const;
+export const WHOLESALE_PLAN_VERSION_STATUSES = [
+  "draft",
+  "published",
+  "superseded",
+  "archived",
+] as const;
+export const WHOLESALE_PLAN_BILLING_PERIODS = [
+  "monthly",
+  "quarterly",
+  "semi_annual",
+  "annual",
+  "custom",
+] as const;
+export const WHOLESALE_PLAN_FEATURE_TYPES = [
+  "boolean",
+  "limit",
+  "config",
+] as const;
+export const WHOLESALE_PLAN_LIMIT_PERIODS = [
+  "order",
+  "day",
+  "month",
+  "year",
+  "lifetime",
+] as const;
+export const WHOLESALE_PLAN_LIMIT_KEYS = [
+  "min_order_amount",
+  "max_order_amount",
+  "max_monthly_order_amount",
+  "max_order_units",
+  "max_team_members",
+  "max_shipping_addresses",
+  "max_branches",
+  "max_open_rfqs",
+] as const;
+
+export const WHOLESALE_MEMBERSHIP_STATUSES = [
+  "pending",
+  "active",
+  "suspended",
+  "expired",
+  "cancelled",
+  "scheduled_change",
+] as const;
+export const WHOLESALE_MEMBERSHIP_EVENT_TYPES = [
+  "activated",
+  "renewed",
+  "upgraded",
+  "downgraded",
+  "plan_change_scheduled",
+  "suspended",
+  "resumed",
+  "cancelled",
+  "expired",
+] as const;
+
+export const ADMIN_PERMISSION_ACTIONS = [
+  "wholesale:plan:view",
+  "wholesale:plan:manage",
+  "wholesale:membership:view",
+  "wholesale:membership:manage",
+  "wholesale:membership:override",
+  "wholesale:approval:view",
+  "wholesale:approval:create",
+  "wholesale:approval:decide",
+  "wholesale:settings:view",
+  "wholesale:settings:manage",
+  "wholesale:notes:view",
+  "wholesale:notes:create",
+  "wholesale:control_tower:view",
+] as const;
+
+export const APPROVAL_REQUEST_TYPES = [
+  "MEMBERSHIP_OVERRIDE",
+  "MEMBERSHIP_PLAN_CHANGE",
+  "PLAN_VERSION_PUBLISH",
+  "BUSINESS_SETTING_CHANGE",
+  "MEMBERSHIP_MANUAL_ACTIVATE",
+  "MEMBERSHIP_TERMINATE",
+] as const;
+export const APPROVAL_REQUEST_STATUSES = [
+  "pending",
+  "approved",
+  "rejected",
+  "executed",
+  "failed",
+  "cancelled",
+] as const;
+
+export const BUSINESS_SETTING_CATEGORIES = [
+  "wholesale",
+  "membership",
+  "operations",
+  "security",
+  "financial",
+] as const;
+
+export const ADMIN_NOTE_TARGET_TYPES = [
+  "wholesale_account",
+  "wholesale_membership",
+  "wholesale_order",
+  "wholesale_request",
+  "supplier",
+] as const;
+
+

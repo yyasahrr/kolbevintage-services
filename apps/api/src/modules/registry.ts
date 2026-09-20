@@ -40,7 +40,19 @@ export const MODULES: readonly ModuleDefinition[] = [
   // فاز ۳ — بازار عمده و کاتالوگ
   {
     name: "vip",
-    tables: ["wholesale_account", "vip_plan", "vip_subscription", "wholesale_request", "wholesale_request_revision"],
+    tables: [
+      "wholesale_account",
+      "vip_plan",
+      "vip_subscription",
+      "wholesale_request",
+      "wholesale_request_revision",
+      "wholesale_plan",
+      "wholesale_plan_version",
+      "wholesale_plan_feature",
+      "wholesale_plan_limit",
+      "wholesale_membership",
+      "wholesale_membership_history",
+    ],
     dependsOn: ["customers", "pricing", "suppliers", "supplier-team", "offers", "catalog", "audit"],
     status: "scaffolded",
     phase: 3,
@@ -226,7 +238,21 @@ export const MODULES: readonly ModuleDefinition[] = [
   { name: "try-on", tables: [], dependsOn: ["files", "catalog"], status: "planned", phase: 6 },
   { name: "analytics", tables: ["system_log"], dependsOn: [], status: "planned", phase: 6 },
   { name: "audit", tables: ["audit_log"], dependsOn: [], status: "live", phase: 0 },
-  { name: "admin", tables: [], dependsOn: ["auth", "audit", "catalog", "suppliers", "vip"], status: "scaffolded", phase: 3 },
+  {
+    name: "admin",
+    tables: [
+      "admin_role",
+      "admin_role_permission",
+      "admin_user_role",
+      "approval_request",
+      "business_setting",
+      "business_setting_history",
+      "admin_internal_note",
+    ],
+    dependsOn: ["auth", "audit", "catalog", "suppliers", "vip", "orders", "payments", "shipping", "settlement", "compliance"],
+    status: "scaffolded",
+    phase: 3,
+  },
   { name: "files", tables: [], dependsOn: [], status: "planned", phase: 6 },
   // Rating foundations — part of catalog/offers
   {
