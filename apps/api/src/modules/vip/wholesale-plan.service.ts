@@ -96,6 +96,7 @@ export class WholesalePlanService {
         entityType: "wholesale_plan",
         entityId: id,
         actorId,
+        actorRole: "admin",
         metadata: { code: input.code, name: input.name },
       });
     }
@@ -193,6 +194,7 @@ export class WholesalePlanService {
           entityType: "wholesale_plan_version",
           entityId: versionId,
           actorId,
+          actorRole: "admin",
           metadata: { planId, versionNumber: nextVersionNumber },
         });
       }
@@ -326,6 +328,7 @@ export class WholesalePlanService {
           entityType: "wholesale_plan_version",
           entityId: versionId,
           actorId,
+          actorRole: "admin",
           metadata: { planId, versionNumber: version.versionNumber },
         });
       }
