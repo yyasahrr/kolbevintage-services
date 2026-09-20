@@ -3,13 +3,16 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Inject,
   Param,
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { toApiJson } from "../../common/api-json";
@@ -19,6 +22,7 @@ import { CrmTagService } from "./crm-tag.service";
 import { CrmActivityService } from "./crm-activity.service";
 import { CrmTaskService } from "./crm-task.service";
 import { Customer360Service } from "./customer-360.service";
+import { CrmOperationsService } from "./crm-operations.service";
 
 @Controller("admin/crm")
 @Roles("admin")
@@ -30,7 +34,54 @@ export class AdminCrmController {
     @Inject(CrmActivityService) private readonly activityService: CrmActivityService,
     @Inject(CrmTaskService) private readonly taskService: CrmTaskService,
     @Inject(Customer360Service) private readonly customer360Service: Customer360Service,
+    @Inject(CrmOperationsService) private readonly operationsService: CrmOperationsService,
   ) {}
+
+  // ── Operations & Pipeline ─────────────────────────────────
+  @Get("pipeline")
+  @RequireAdminPermission("crm:customer:view")
+  async getPipeline(@Query("assignedAdminId") assignedAdminId?: string) {
+    const pipeline = await this.operationsService.getPipelineMetrics(assignedAdminId);
+    return toApiJson(pipeline);
+  }
+
+  @Get("dedup-check")
+  @RequireAdminPermission("crm:customer:view")
+  async checkDuplicates(
+    @Query("phone") phone?: string,
+    @Query("email") email?: string,
+    @Query("name") name?: string,
+    @Query("excludeContactId") excludeContactId?: string,
+  ) {
+    const result = await this.operationsService.checkDuplicates({
+      phone,
+      email,
+      name,
+      excludeContactId,
+    });
+    return toApiJson(result);
+  }
+
+  @Get("export")
+  @RequireAdminPermission("crm:export")
+  async exportCsv(
+    @Query("stage") stage: any,
+    @Query("search") search: string | undefined,
+    @Query("assignedAdminId") assignedAdminId: string | undefined,
+    @Res() res: Response,
+  ) {
+    const csv = await this.operationsService.exportContactsCsv({
+      stage,
+      search,
+      assignedAdminId,
+    });
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="crm_contacts_${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    return res.status(200).send(csv);
+  }
 
   // ── Customer 360 ──────────────────────────────────────────
   @Get("contacts/:id/360")

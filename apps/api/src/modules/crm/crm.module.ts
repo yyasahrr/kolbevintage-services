@@ -7,6 +7,7 @@ import { CrmTagService } from "./crm-tag.service";
 import { CrmActivityService } from "./crm-activity.service";
 import { CrmTaskService } from "./crm-task.service";
 import { Customer360Service } from "./customer-360.service";
+import { CrmOperationsService } from "./crm-operations.service";
 import { AdminCrmController } from "./admin-crm.controller";
 
 @Module({
@@ -22,6 +23,7 @@ import { AdminCrmController } from "./admin-crm.controller";
     CrmActivityService,
     CrmTaskService,
     Customer360Service,
+    CrmOperationsService,
   ],
   exports: [
     CrmContactService,
@@ -29,6 +31,7 @@ import { AdminCrmController } from "./admin-crm.controller";
     CrmActivityService,
     CrmTaskService,
     Customer360Service,
+    CrmOperationsService,
   ],
 })
 export class CrmModule {}
