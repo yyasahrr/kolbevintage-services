@@ -791,6 +791,16 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "crm:tag:manage",
   "crm:export",
   "crm:sensitive:view",
+  "support:case:view",
+  "support:case:reply",
+  "support:case:assign",
+  "support:case:priority",
+  "support:case:resolve",
+  "support:internal_note:create",
+  "support:attachment:view",
+  "support:sla:manage",
+  "support:report:view",
+  "support:sensitive:view",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -883,5 +893,138 @@ export const ADMIN_NOTE_TARGET_TYPES = [
   "wholesale_request",
   "supplier",
 ] as const;
+
+/* ── Phase 5.2 — Support / Ticket / Case Management ──────────────────────────── */
+
+export const SUPPORT_REQUESTER_TYPES = [
+  "RETAIL_CUSTOMER",
+  "VIP_BUYER",
+  "SUPPLIER",
+  "ADMIN_CREATED",
+] as const;
+export type SupportRequesterType = (typeof SUPPORT_REQUESTER_TYPES)[number];
+
+export const SUPPORT_CATEGORIES = [
+  "ORDER",
+  "PAYMENT",
+  "SHIPPING",
+  "RETURN",
+  "REFUND",
+  "MEMBERSHIP",
+  "WHOLESALE",
+  "SUPPLIER",
+  "PRODUCT",
+  "QUALITY",
+  "CUSTOM_PRODUCTION",
+  "FINANCE",
+  "SETTLEMENT",
+  "ACCOUNT",
+  "OTHER",
+] as const;
+export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
+
+export const SUPPORT_PRIORITIES = [
+  "LOW",
+  "NORMAL",
+  "HIGH",
+  "URGENT",
+] as const;
+export type SupportPriority = (typeof SUPPORT_PRIORITIES)[number];
+
+export const SUPPORT_CASE_STATUSES = [
+  "OPEN",
+  "IN_PROGRESS",
+  "WAITING_FOR_CUSTOMER",
+  "WAITING_FOR_INTERNAL",
+  "RESOLVED",
+  "CLOSED",
+] as const;
+export type SupportCaseStatus = (typeof SUPPORT_CASE_STATUSES)[number];
+
+export const SUPPORT_SOURCES = [
+  "PORTAL",
+  "VIP_PORTAL",
+  "SUPPLIER_PORTAL",
+  "ADMIN_MANUAL",
+  "EMAIL",
+  "API",
+] as const;
+export type SupportSource = (typeof SUPPORT_SOURCES)[number];
+
+export const SUPPORT_TEAMS = [
+  "RETAIL_SUPPORT",
+  "VIP_SUPPORT",
+  "SUPPLIER_OPERATIONS",
+  "PAYMENTS",
+  "SHIPPING",
+  "FINANCE",
+  "COMPLIANCE",
+  "QUALITY",
+] as const;
+export type SupportTeam = (typeof SUPPORT_TEAMS)[number];
+
+export const SUPPORT_RELATION_TYPES = [
+  "ORDER",
+  "ORDER_ITEM",
+  "SHIPMENT",
+  "PAYMENT",
+  "REFUND",
+  "WHOLESALE_REQUEST",
+  "PURCHASE_ORDER",
+  "SUPPLIER",
+  "VIP_ACCOUNT",
+  "CRM_CONTACT",
+  "SETTLEMENT_WITHDRAWAL",
+  "PAYOUT",
+] as const;
+export type SupportRelationType = (typeof SUPPORT_RELATION_TYPES)[number];
+
+export const SUPPORT_AUTHOR_TYPES = [
+  "CUSTOMER",
+  "VIP_BUYER",
+  "SUPPLIER",
+  "ADMIN",
+  "SYSTEM",
+] as const;
+export type SupportAuthorType = (typeof SUPPORT_AUTHOR_TYPES)[number];
+
+export const SUPPORT_VISIBILITIES = [
+  "PUBLIC",
+  "INTERNAL",
+] as const;
+export type SupportVisibility = (typeof SUPPORT_VISIBILITIES)[number];
+
+export const SUPPORT_ATTACHMENT_SCAN_STATUSES = [
+  "PENDING_SCAN",
+  "CLEAN",
+  "SUSPICIOUS",
+  "REJECTED",
+] as const;
+export type SupportAttachmentScanStatus = (typeof SUPPORT_ATTACHMENT_SCAN_STATUSES)[number];
+
+export const SUPPORT_ESCALATION_SOURCES = [
+  "MANUAL_ADMIN",
+  "SLA_BREACH",
+  "SYSTEM_RULE",
+] as const;
+export type SupportEscalationSource = (typeof SUPPORT_ESCALATION_SOURCES)[number];
+
+export const SUPPORT_ACTION_TYPES = [
+  "REFUND_REQUEST",
+  "SHIPMENT_INVESTIGATION",
+  "PAYMENT_RECONCILIATION",
+  "COMPLIANCE_ESCALATION",
+  "SUPPLIER_FINANCE_INVESTIGATION",
+] as const;
+export type SupportActionType = (typeof SUPPORT_ACTION_TYPES)[number];
+
+export const SUPPORT_ACTION_STATUSES = [
+  "REQUESTED",
+  "IN_REVIEW",
+  "EXECUTED",
+  "REJECTED",
+] as const;
+export type SupportActionStatus = (typeof SUPPORT_ACTION_STATUSES)[number];
+
 
 

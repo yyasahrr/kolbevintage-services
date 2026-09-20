@@ -183,6 +183,13 @@
       "when": 1789950000000,
       "tag": "0025_phase_5_1_crm_customer_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0026_phase_5_2_support_case_management",
+      "breakpoints": true
     }
   ]
 }

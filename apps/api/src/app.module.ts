@@ -45,6 +45,7 @@ import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { RecoveryModule } from "./modules/recovery/recovery.module";
 import { CrmModule } from "./modules/crm/crm.module";
+import { SupportModule } from "./modules/support/support.module";
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { CrmModule } from "./modules/crm/crm.module";
     AdminModule,
     RecoveryModule,
     CrmModule,
+    SupportModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },

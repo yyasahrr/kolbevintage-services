@@ -189,6 +189,28 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "business_setting",
       "business_setting_history",
       "admin_internal_note",
+      // Phase 5.1
+      "crm_contact",
+      "crm_contact_identity_link",
+      "crm_stage_history",
+      "crm_assignment_history",
+      "crm_tag",
+      "crm_contact_tag",
+      "crm_activity",
+      "crm_task",
+      // Phase 5.2
+      "support_case",
+      "support_case_status_history",
+      "support_case_priority_history",
+      "support_case_assignment_history",
+      "support_case_relation",
+      "support_message",
+      "support_internal_note",
+      "support_attachment",
+      "support_sla_policy",
+      "support_case_sla",
+      "support_case_escalation_history",
+      "support_case_action",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);
@@ -335,6 +357,18 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "consent_event",
         "payment",
         "audit_log",
+      ],
+      support: [
+        "account_user",
+        "wholesale_account",
+        "supplier",
+        "retail_order",
+        "wholesale_order",
+        "purchase_order",
+        "audit_log",
+        "admin_internal_note",
+        "settlement_batch",
+        "withdrawal_request",
       ],
       orders: [
         "wholesale_account",

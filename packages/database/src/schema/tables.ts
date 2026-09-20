@@ -180,6 +180,19 @@ import {
   SUPPLIER_STATUSES,
   SUPPORT_TICKET_PRIORITIES,
   SUPPORT_TICKET_STATUSES,
+  SUPPORT_REQUESTER_TYPES,
+  SUPPORT_CATEGORIES,
+  SUPPORT_PRIORITIES,
+  SUPPORT_CASE_STATUSES,
+  SUPPORT_SOURCES,
+  SUPPORT_TEAMS,
+  SUPPORT_RELATION_TYPES,
+  SUPPORT_AUTHOR_TYPES,
+  SUPPORT_VISIBILITIES,
+  SUPPORT_ATTACHMENT_SCAN_STATUSES,
+  SUPPORT_ESCALATION_SOURCES,
+  SUPPORT_ACTION_TYPES,
+  SUPPORT_ACTION_STATUSES,
   VARIANT_INVENTORY_STATUS,
   VIP_PLAN_STATUSES,
   VIP_SUBSCRIPTION_STATUSES,
@@ -4430,6 +4443,408 @@ export const crmTask = pgTable(
     index("crm_task_due_at_idx").on(table.dueAt),
   ],
 );
+
+/* ── Phase 5.2 — Support / Ticket / Case Management ──────────────────────────── */
+
+export const supportCase = pgTable(
+  "support_case",
+  {
+    id: text("id").primaryKey(),
+    publicReference: text("public_reference").notNull().unique(),
+    requesterType: text("requester_type").notNull(),
+    requesterUserId: text("requester_user_id"),
+    wholesaleAccountId: text("wholesale_account_id"),
+    supplierId: text("supplier_id"),
+    category: text("category").notNull(),
+    subject: text("subject").notNull(),
+    priority: text("priority").notNull().default("NORMAL"),
+    status: text("status").notNull().default("OPEN"),
+    source: text("source").notNull().default("PORTAL"),
+    assignedAdminId: text("assigned_admin_id"),
+    assignedTeamKey: text("assigned_team_key"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    firstResponseAt: timestamp("first_response_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    reopenedAt: timestamp("reopened_at", { withTimezone: true }),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("support_case_requester_type_allowed", "requester_type", SUPPORT_REQUESTER_TYPES),
+    stateCheck("support_case_category_allowed", "category", SUPPORT_CATEGORIES),
+    stateCheck("support_case_priority_allowed", "priority", SUPPORT_PRIORITIES),
+    stateCheck("support_case_status_allowed", "status", SUPPORT_CASE_STATUSES),
+    stateCheck("support_case_source_allowed", "source", SUPPORT_SOURCES),
+    foreignKey({
+      name: "support_case_requester_user_fk",
+      columns: [table.requesterUserId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_wholesale_account_fk",
+      columns: [table.wholesaleAccountId],
+      foreignColumns: [wholesaleAccount.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_supplier_fk",
+      columns: [table.supplierId],
+      foreignColumns: [supplier.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_assigned_admin_fk",
+      columns: [table.assignedAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_case_status_idx").on(table.status),
+    index("support_case_category_idx").on(table.category),
+    index("support_case_priority_idx").on(table.priority),
+    index("support_case_requester_type_idx").on(table.requesterType),
+    index("support_case_assigned_admin_idx").on(table.assignedAdminId),
+    index("support_case_wholesale_account_idx").on(table.wholesaleAccountId),
+    index("support_case_supplier_idx").on(table.supplierId),
+    index("support_case_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const supportCaseStatusHistory = pgTable(
+  "support_case_status_history",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    fromStatus: text("from_status").notNull(),
+    toStatus: text("to_status").notNull(),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id"),
+    reason: text("reason"),
+    source: text("source").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("support_case_status_history_from_allowed", "from_status", SUPPORT_CASE_STATUSES),
+    stateCheck("support_case_status_history_to_allowed", "to_status", SUPPORT_CASE_STATUSES),
+    stateCheck("support_case_status_history_actor_allowed", "actor_type", SUPPORT_AUTHOR_TYPES),
+    foreignKey({
+      name: "support_case_status_history_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_status_history_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_case_status_history_case_idx").on(table.caseId, table.createdAt),
+  ],
+);
+
+export const supportCasePriorityHistory = pgTable(
+  "support_case_priority_history",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    fromPriority: text("from_priority").notNull(),
+    toPriority: text("to_priority").notNull(),
+    changedByAdminId: text("changed_by_admin_id").notNull(),
+    reason: text("reason"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("support_case_priority_history_from_allowed", "from_priority", SUPPORT_PRIORITIES),
+    stateCheck("support_case_priority_history_to_allowed", "to_priority", SUPPORT_PRIORITIES),
+    foreignKey({
+      name: "support_case_priority_history_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_priority_history_admin_fk",
+      columns: [table.changedByAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_case_priority_history_case_idx").on(table.caseId, table.createdAt),
+  ],
+);
+
+export const supportCaseAssignmentHistory = pgTable(
+  "support_case_assignment_history",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    fromAdminId: text("from_admin_id"),
+    toAdminId: text("to_admin_id"),
+    fromTeamKey: text("from_team_key"),
+    toTeamKey: text("to_team_key"),
+    assignedByAdminId: text("assigned_by_admin_id").notNull(),
+    reason: text("reason"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "support_case_assign_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_assign_from_admin_fk",
+      columns: [table.fromAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_assign_to_admin_fk",
+      columns: [table.toAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_assign_by_admin_fk",
+      columns: [table.assignedByAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_case_assign_case_idx").on(table.caseId, table.createdAt),
+  ],
+);
+
+export const supportCaseRelation = pgTable(
+  "support_case_relation",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    relationType: text("relation_type").notNull(),
+    targetId: text("target_id").notNull(),
+    itemId: text("item_id"),
+    quantity: integer("quantity"),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("support_case_relation_type_allowed", "relation_type", SUPPORT_RELATION_TYPES),
+    foreignKey({
+      name: "support_case_relation_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    index("support_case_relation_target_idx").on(table.relationType, table.targetId),
+    index("support_case_relation_case_idx").on(table.caseId),
+  ],
+);
+
+export const supportMessage = pgTable(
+  "support_message",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    authorType: text("author_type").notNull(),
+    authorId: text("author_id"),
+    authorDisplayName: text("author_display_name").notNull(),
+    body: text("body").notNull(),
+    visibility: text("visibility").notNull().default("PUBLIC"),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("support_message_author_type_allowed", "author_type", SUPPORT_AUTHOR_TYPES),
+    stateCheck("support_message_visibility_allowed", "visibility", SUPPORT_VISIBILITIES),
+    foreignKey({
+      name: "support_message_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_message_author_fk",
+      columns: [table.authorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_message_case_idx").on(table.caseId, table.createdAt),
+    index("support_message_idempotency_idx").on(table.idempotencyKey),
+  ],
+);
+
+export const supportInternalNote = pgTable(
+  "support_internal_note",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    authorAdminId: text("author_admin_id").notNull(),
+    authorDisplayName: text("author_display_name").notNull(),
+    body: text("body").notNull(),
+    isPinned: boolean("is_pinned").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "support_internal_note_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_internal_note_author_fk",
+      columns: [table.authorAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_internal_note_case_idx").on(table.caseId, table.createdAt),
+  ],
+);
+
+export const supportAttachment = pgTable(
+  "support_attachment",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    messageId: text("message_id"),
+    uploaderType: text("uploader_type").notNull(),
+    uploaderId: text("uploader_id"),
+    objectKey: text("object_key").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "bigint" }).notNull(),
+    visibility: text("visibility").notNull().default("PUBLIC"),
+    scanStatus: text("scan_status").notNull().default("PENDING_SCAN"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("support_attachment_uploader_type_allowed", "uploader_type", SUPPORT_AUTHOR_TYPES),
+    stateCheck("support_attachment_visibility_allowed", "visibility", SUPPORT_VISIBILITIES),
+    stateCheck("support_attachment_scan_status_allowed", "scan_status", SUPPORT_ATTACHMENT_SCAN_STATUSES),
+    foreignKey({
+      name: "support_attachment_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_attachment_message_fk",
+      columns: [table.messageId],
+      foreignColumns: [supportMessage.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_attachment_uploader_fk",
+      columns: [table.uploaderId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_attachment_case_idx").on(table.caseId),
+  ],
+);
+
+export const supportSlaPolicy = pgTable(
+  "support_sla_policy",
+  {
+    id: text("id").primaryKey(),
+    version: integer("version").notNull().default(1),
+    policyCode: text("policy_code").notNull(),
+    name: text("name").notNull(),
+    requesterType: text("requester_type"),
+    category: text("category"),
+    priority: text("priority").notNull(),
+    firstResponseTargetMinutes: integer("first_response_target_minutes").notNull(),
+    resolutionTargetMinutes: integer("resolution_target_minutes").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("support_sla_priority_allowed", "priority", SUPPORT_PRIORITIES),
+    index("support_sla_policy_code_version_idx").on(table.policyCode, table.version),
+  ],
+);
+
+export const supportCaseSla = pgTable(
+  "support_case_sla",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull().unique(),
+    policyId: text("policy_id"),
+    policyVersion: integer("policy_version").notNull().default(1),
+    firstResponseTargetMinutes: integer("first_response_target_minutes").notNull(),
+    resolutionTargetMinutes: integer("resolution_target_minutes").notNull(),
+    firstResponseDueAt: timestamp("first_response_due_at", { withTimezone: true }).notNull(),
+    resolutionDueAt: timestamp("resolution_due_at", { withTimezone: true }).notNull(),
+    firstResponseAt: timestamp("first_response_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "support_case_sla_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_sla_policy_fk",
+      columns: [table.policyId],
+      foreignColumns: [supportSlaPolicy.id],
+    }).onDelete("restrict"),
+    index("support_case_sla_first_response_due_idx").on(table.firstResponseDueAt),
+    index("support_case_sla_resolution_due_idx").on(table.resolutionDueAt),
+  ],
+);
+
+export const supportCaseEscalationHistory = pgTable(
+  "support_case_escalation_history",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    reason: text("reason").notNull(),
+    source: text("source").notNull(),
+    fromPriority: text("from_priority").notNull(),
+    toPriority: text("to_priority").notNull(),
+    fromTeamKey: text("from_team_key"),
+    toTeamKey: text("to_team_key"),
+    actorAdminId: text("actor_admin_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("support_escalation_source_allowed", "source", SUPPORT_ESCALATION_SOURCES),
+    stateCheck("support_escalation_from_priority_allowed", "from_priority", SUPPORT_PRIORITIES),
+    stateCheck("support_escalation_to_priority_allowed", "to_priority", SUPPORT_PRIORITIES),
+    foreignKey({
+      name: "support_case_escalation_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_escalation_admin_fk",
+      columns: [table.actorAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_case_escalation_case_idx").on(table.caseId, table.createdAt),
+  ],
+);
+
+export const supportCaseAction = pgTable(
+  "support_case_action",
+  {
+    id: text("id").primaryKey(),
+    caseId: text("case_id").notNull(),
+    actionType: text("action_type").notNull(),
+    targetDomain: text("target_domain").notNull(),
+    targetId: text("target_id").notNull(),
+    requestedByAdminId: text("requested_by_admin_id").notNull(),
+    resultingReference: text("resulting_reference"),
+    status: text("status").notNull().default("REQUESTED"),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    stateCheck("support_action_type_allowed", "action_type", SUPPORT_ACTION_TYPES),
+    stateCheck("support_action_status_allowed", "status", SUPPORT_ACTION_STATUSES),
+    foreignKey({
+      name: "support_case_action_case_fk",
+      columns: [table.caseId],
+      foreignColumns: [supportCase.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "support_case_action_admin_fk",
+      columns: [table.requestedByAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("support_case_action_case_idx").on(table.caseId),
+    index("support_case_action_target_idx").on(table.targetDomain, table.targetId),
+  ],
+);
+
 
 
 
