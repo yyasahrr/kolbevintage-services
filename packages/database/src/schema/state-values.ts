@@ -803,17 +803,20 @@ export const CRM_STAGES = [
   "LOYAL",
   "CHURNED",
 ] as const;
+export type CrmStage = (typeof CRM_STAGES)[number];
 
 export const CRM_LINK_TYPES = [
   "account_user",
   "wholesale_account",
 ] as const;
+export type CrmLinkType = (typeof CRM_LINK_TYPES)[number];
 
 export const CRM_STAGE_SOURCES = [
   "manual",
   "system_rule",
   "import",
 ] as const;
+export type CrmStageSource = (typeof CRM_STAGE_SOURCES)[number];
 
 export const CRM_ACTIVITY_TYPES = [
   "NOTE",
@@ -823,12 +826,14 @@ export const CRM_ACTIVITY_TYPES = [
   "MEETING",
   "SYSTEM",
 ] as const;
+export type CrmActivityType = (typeof CRM_ACTIVITY_TYPES)[number];
 
 export const CRM_ACTIVITY_SOURCES = [
   "MANUAL_ACTIVITY",
   "SYSTEM_EVENT",
   "PROVIDER_EVENT",
 ] as const;
+export type CrmActivitySource = (typeof CRM_ACTIVITY_SOURCES)[number];
 
 export const CRM_TASK_STATUSES = [
   "OPEN",
@@ -836,6 +841,7 @@ export const CRM_TASK_STATUSES = [
   "DONE",
   "CANCELLED",
 ] as const;
+export type CrmTaskStatus = (typeof CRM_TASK_STATUSES)[number];
 
 export const CRM_TASK_PRIORITIES = [
   "low",
@@ -843,6 +849,7 @@ export const CRM_TASK_PRIORITIES = [
   "high",
   "urgent",
 ] as const;
+export type CrmTaskPriority = (typeof CRM_TASK_PRIORITIES)[number];
 
 export const APPROVAL_REQUEST_TYPES = [
   "MEMBERSHIP_OVERRIDE",
