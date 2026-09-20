@@ -47,6 +47,7 @@
 | Checkpoint B | `95ee14a` | `feat(phase-5-0-b): add wholesale plan and membership lifecycle` | 35515100174 | success |
 | Checkpoint C | `37dff2c` | `feat(phase-5-0-c): add admin permissions approvals and business settings` | 35515533140 | success |
 | Checkpoint D | `2eca603` | `feat(phase-5-0-d): add wholesale admin control tower read models` | 35516443186 | success |
+| Report | `0566cd4` | `docs: phase 5.0 comprehensive report` | 35516835939 | success |
 
 ---
 
