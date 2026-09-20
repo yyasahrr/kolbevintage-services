@@ -6,11 +6,13 @@ import { AdminRbacService } from "./admin-rbac.service";
 import { BusinessSettingsService } from "./business-settings.service";
 import { InternalNotesService } from "./internal-notes.service";
 import { AdminApprovalsService } from "./admin-approvals.service";
+import { ControlTowerService } from "./control-tower.service";
 import { AdminPermissionGuard } from "./admin-rbac.guard";
 import { AdminApprovalsController } from "./admin-approvals.controller";
 import { AdminSettingsController } from "./admin-settings.controller";
 import { AdminNotesController } from "./admin-notes.controller";
 import { AdminRbacController } from "./admin-rbac.controller";
+import { ControlTowerController } from "./control-tower.controller";
 
 @Module({
   imports: [
@@ -23,12 +25,14 @@ import { AdminRbacController } from "./admin-rbac.controller";
     AdminSettingsController,
     AdminNotesController,
     AdminRbacController,
+    ControlTowerController,
   ],
   providers: [
     AdminRbacService,
     BusinessSettingsService,
     InternalNotesService,
     AdminApprovalsService,
+    ControlTowerService,
     AdminPermissionGuard,
   ],
   exports: [
@@ -36,6 +40,7 @@ import { AdminRbacController } from "./admin-rbac.controller";
     BusinessSettingsService,
     InternalNotesService,
     AdminApprovalsService,
+    ControlTowerService,
     AdminPermissionGuard,
   ],
 })

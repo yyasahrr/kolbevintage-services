@@ -1,59 +1,47 @@
-export class AdminPermissionDeniedError extends Error {
-  public readonly code = "ADMIN_PERMISSION_DENIED";
-  public readonly statusCode = 403;
+import { DomainError } from "@kolbe/shared";
 
+export class AdminPermissionDeniedError extends DomainError {
   constructor(public readonly permission: string, message?: string) {
-    super(message || `Access denied: missing required admin permission '${permission}'`);
+    super(
+      403,
+      "ADMIN_PERMISSION_DENIED",
+      message || `Access denied: missing required admin permission '${permission}'`,
+    );
     this.name = "AdminPermissionDeniedError";
   }
 }
 
-export class TwoPersonRuleViolationError extends Error {
-  public readonly code = "TWO_PERSON_RULE_VIOLATION";
-  public readonly statusCode = 400;
-
+export class TwoPersonRuleViolationError extends DomainError {
   constructor(message = "Maker cannot approve or decide their own approval request under two-person rule") {
-    super(message);
+    super(400, "TWO_PERSON_RULE_VIOLATION", message);
     this.name = "TwoPersonRuleViolationError";
   }
 }
 
-export class ApprovalRequestStateError extends Error {
-  public readonly code = "APPROVAL_REQUEST_INVALID_STATE";
-  public readonly statusCode = 400;
-
+export class ApprovalRequestStateError extends DomainError {
   constructor(message: string) {
-    super(message);
+    super(400, "APPROVAL_REQUEST_INVALID_STATE", message);
     this.name = "ApprovalRequestStateError";
   }
 }
 
-export class ApprovalExecutionError extends Error {
-  public readonly code = "APPROVAL_EXECUTION_FAILED";
-  public readonly statusCode = 500;
-
+export class ApprovalExecutionError extends DomainError {
   constructor(message: string, public readonly details?: unknown) {
-    super(message);
+    super(500, "APPROVAL_EXECUTION_FAILED", message);
     this.name = "ApprovalExecutionError";
   }
 }
 
-export class BusinessSettingValidationError extends Error {
-  public readonly code = "BUSINESS_SETTING_INVALID_VALUE";
-  public readonly statusCode = 400;
-
+export class BusinessSettingValidationError extends DomainError {
   constructor(message: string) {
-    super(message);
+    super(400, "BUSINESS_SETTING_INVALID_VALUE", message);
     this.name = "BusinessSettingValidationError";
   }
 }
 
-export class BusinessSettingReadOnlyError extends Error {
-  public readonly code = "BUSINESS_SETTING_READ_ONLY";
-  public readonly statusCode = 409;
-
+export class BusinessSettingReadOnlyError extends DomainError {
   constructor(public readonly key: string) {
-    super(`Business setting '${key}' is read-only and cannot be modified`);
+    super(409, "BUSINESS_SETTING_READ_ONLY", `Business setting '${key}' is read-only and cannot be modified`);
     this.name = "BusinessSettingReadOnlyError";
   }
 }
