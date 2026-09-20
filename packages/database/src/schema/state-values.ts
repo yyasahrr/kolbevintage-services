@@ -782,6 +782,66 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "wholesale:notes:view",
   "wholesale:notes:create",
   "wholesale:control_tower:view",
+  "crm:customer:view",
+  "crm:customer:manage",
+  "crm:stage:manage",
+  "crm:assign:manage",
+  "crm:activity:create",
+  "crm:task:manage",
+  "crm:tag:manage",
+  "crm:export",
+  "crm:sensitive:view",
+] as const;
+
+/* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
+
+export const CRM_STAGES = [
+  "LEAD",
+  "CONTACTED",
+  "NEGOTIATION",
+  "ACTIVE_CUSTOMER",
+  "LOYAL",
+  "CHURNED",
+] as const;
+
+export const CRM_LINK_TYPES = [
+  "account_user",
+  "wholesale_account",
+] as const;
+
+export const CRM_STAGE_SOURCES = [
+  "manual",
+  "system_rule",
+  "import",
+] as const;
+
+export const CRM_ACTIVITY_TYPES = [
+  "NOTE",
+  "CALL",
+  "MESSAGE",
+  "EMAIL",
+  "MEETING",
+  "SYSTEM",
+] as const;
+
+export const CRM_ACTIVITY_SOURCES = [
+  "MANUAL_ACTIVITY",
+  "SYSTEM_EVENT",
+  "PROVIDER_EVENT",
+] as const;
+
+export const CRM_TASK_STATUSES = [
+  "OPEN",
+  "IN_PROGRESS",
+  "DONE",
+  "CANCELLED",
+] as const;
+
+export const CRM_TASK_PRIORITIES = [
+  "low",
+  "medium",
+  "high",
+  "urgent",
 ] as const;
 
 export const APPROVAL_REQUEST_TYPES = [

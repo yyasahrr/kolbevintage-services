@@ -322,6 +322,18 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
       ],
       pricing: ["product", "product_variant", "seller", "wholesale_package", "wholesale_package_item", "seller_offer"],
       ratings: ["product_rating", "supplier_rating", "transaction_rating", "product", "supplier", "product_variant"],
+      crm: [
+        "account_user",
+        "wholesale_order",
+        "wholesale_order_item",
+        "retail_order",
+        "retail_order_item",
+        "wholesale_account",
+        "wholesale_membership",
+        "wholesale_plan",
+        "consent_event",
+        "audit_log",
+      ],
       orders: [
         "wholesale_account",
         "wholesale_request",

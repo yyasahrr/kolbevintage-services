@@ -176,6 +176,13 @@
       "when": 1789900000000,
       "tag": "0024_phase_5_business_control_plane",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789950000000,
+      "tag": "0025_phase_5_1_crm_customer_operations",
+      "breakpoints": true
     }
   ]
 }

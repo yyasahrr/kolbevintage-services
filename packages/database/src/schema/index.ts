@@ -121,4 +121,12 @@ export {
   businessSetting,
   businessSettingHistory,
   adminInternalNote,
+  crmContact,
+  crmContactIdentityLink,
+  crmStageHistory,
+  crmAssignmentHistory,
+  crmTag,
+  crmContactTag,
+  crmActivity,
+  crmTask,
 } from "./tables";

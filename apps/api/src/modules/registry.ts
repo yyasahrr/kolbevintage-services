@@ -253,6 +253,22 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: "scaffolded",
     phase: 3,
   },
+  {
+    name: "crm",
+    tables: [
+      "crm_contact",
+      "crm_contact_identity_link",
+      "crm_stage_history",
+      "crm_assignment_history",
+      "crm_tag",
+      "crm_contact_tag",
+      "crm_activity",
+      "crm_task",
+    ],
+    dependsOn: ["auth", "audit", "compliance", "orders", "vip", "admin"],
+    status: "live",
+    phase: 5,
+  },
   { name: "files", tables: [], dependsOn: [], status: "planned", phase: 6 },
   // Rating foundations — part of catalog/offers
   {

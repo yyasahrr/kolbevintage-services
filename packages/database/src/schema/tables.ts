@@ -136,6 +136,13 @@ import {
   APPROVAL_REQUEST_STATUSES,
   BUSINESS_SETTING_CATEGORIES,
   ADMIN_NOTE_TARGET_TYPES,
+  CRM_STAGES,
+  CRM_LINK_TYPES,
+  CRM_STAGE_SOURCES,
+  CRM_ACTIVITY_TYPES,
+  CRM_ACTIVITY_SOURCES,
+  CRM_TASK_STATUSES,
+  CRM_TASK_PRIORITIES,
   MAX_MONEY_RIAL,
   MOQ_UNITS,
   OFFER_STATUSES,
@@ -4155,5 +4162,274 @@ export const adminInternalNote = pgTable(
     index("admin_internal_note_author_idx").on(table.authorId),
   ],
 );
+
+/* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
+
+export const crmContact = pgTable(
+  "crm_contact",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    phone: text("phone"),
+    email: text("email"),
+    city: text("city"),
+    stage: text("stage").notNull().default("LEAD"),
+    assignedAdminId: text("assigned_admin_id"),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("crm_contact_stage_allowed", "stage", CRM_STAGES),
+    foreignKey({
+      name: "crm_contact_assigned_admin_fk",
+      columns: [table.assignedAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("crm_contact_phone_idx").on(table.phone),
+    index("crm_contact_email_idx").on(table.email),
+    index("crm_contact_stage_idx").on(table.stage),
+    index("crm_contact_assigned_admin_idx").on(table.assignedAdminId),
+    index("crm_contact_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const crmContactIdentityLink = pgTable(
+  "crm_contact_identity_link",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    userId: text("user_id").notNull(),
+    linkType: text("link_type").notNull().default("account_user"),
+    linkedBy: text("linked_by").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (table) => [
+    stateCheck("crm_link_type_allowed", "link_type", CRM_LINK_TYPES),
+    foreignKey({
+      name: "crm_contact_identity_link_contact_fk",
+      columns: [table.contactId],
+      foreignColumns: [crmContact.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_contact_identity_link_user_fk",
+      columns: [table.userId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_contact_identity_link_linked_by_fk",
+      columns: [table.linkedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    uniqueIndex("crm_contact_identity_link_user_unique").on(table.userId),
+    index("crm_contact_identity_link_contact_idx").on(table.contactId),
+  ],
+);
+
+export const crmStageHistory = pgTable(
+  "crm_stage_history",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    fromStage: text("from_stage"),
+    toStage: text("to_stage").notNull(),
+    actorId: text("actor_id").notNull(),
+    reason: text("reason"),
+    source: text("source").notNull().default("manual"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("crm_stage_history_to_stage_allowed", "to_stage", CRM_STAGES),
+    stateCheck("crm_stage_history_source_allowed", "source", CRM_STAGE_SOURCES),
+    foreignKey({
+      name: "crm_stage_history_contact_fk",
+      columns: [table.contactId],
+      foreignColumns: [crmContact.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_stage_history_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("crm_stage_history_contact_idx").on(table.contactId, table.createdAt),
+  ],
+);
+
+export const crmAssignmentHistory = pgTable(
+  "crm_assignment_history",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    fromAdminId: text("from_admin_id"),
+    toAdminId: text("to_admin_id"),
+    assignedBy: text("assigned_by").notNull(),
+    reason: text("reason"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "crm_assignment_history_contact_fk",
+      columns: [table.contactId],
+      foreignColumns: [crmContact.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_assignment_history_from_admin_fk",
+      columns: [table.fromAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_assignment_history_to_admin_fk",
+      columns: [table.toAdminId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_assignment_history_assigned_by_fk",
+      columns: [table.assignedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("crm_assignment_history_contact_idx").on(table.contactId, table.createdAt),
+  ],
+);
+
+export const crmTag = pgTable(
+  "crm_tag",
+  {
+    id: text("id").primaryKey(),
+    key: text("key").notNull().unique(),
+    label: text("label").notNull(),
+    color: text("color"),
+    description: text("description"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "crm_tag_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("crm_tag_is_active_idx").on(table.isActive),
+  ],
+);
+
+export const crmContactTag = pgTable(
+  "crm_contact_tag",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    tagId: text("tag_id").notNull(),
+    assignedBy: text("assigned_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      name: "crm_contact_tag_contact_fk",
+      columns: [table.contactId],
+      foreignColumns: [crmContact.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_contact_tag_tag_fk",
+      columns: [table.tagId],
+      foreignColumns: [crmTag.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_contact_tag_assigned_by_fk",
+      columns: [table.assignedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    uniqueIndex("crm_contact_tag_unique").on(table.contactId, table.tagId),
+  ],
+);
+
+export const crmActivity = pgTable(
+  "crm_activity",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    activityType: text("activity_type").notNull(),
+    body: text("body").notNull(),
+    actorId: text("actor_id").notNull(),
+    actorType: text("actor_type").notNull().default("admin"),
+    source: text("source").notNull().default("MANUAL_ACTIVITY"),
+    visibility: text("visibility").notNull().default("internal"),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("crm_activity_type_allowed", "activity_type", CRM_ACTIVITY_TYPES),
+    stateCheck("crm_activity_source_allowed", "source", CRM_ACTIVITY_SOURCES),
+    foreignKey({
+      name: "crm_activity_contact_fk",
+      columns: [table.contactId],
+      foreignColumns: [crmContact.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_activity_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("crm_activity_contact_occurred_idx").on(table.contactId, table.occurredAt),
+  ],
+);
+
+export const crmTask = pgTable(
+  "crm_task",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    assigneeId: text("assignee_id"),
+    priority: text("priority").notNull().default("medium"),
+    status: text("status").notNull().default("OPEN"),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedBy: text("completed_by"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledBy: text("cancelled_by"),
+    createdBy: text("created_by").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("crm_task_status_allowed", "status", CRM_TASK_STATUSES),
+    stateCheck("crm_task_priority_allowed", "priority", CRM_TASK_PRIORITIES),
+    foreignKey({
+      name: "crm_task_contact_fk",
+      columns: [table.contactId],
+      foreignColumns: [crmContact.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_task_assignee_fk",
+      columns: [table.assigneeId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_task_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_task_completed_by_fk",
+      columns: [table.completedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "crm_task_cancelled_by_fk",
+      columns: [table.cancelledBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("crm_task_contact_idx").on(table.contactId),
+    index("crm_task_assignee_status_idx").on(table.assigneeId, table.status),
+    index("crm_task_due_at_idx").on(table.dueAt),
+  ],
+);
+
 
 
