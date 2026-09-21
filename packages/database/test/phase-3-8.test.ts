@@ -23,12 +23,12 @@ describe("فاز ۳.۸ — Legacy Removal & Clean Architecture", () => {
     expect(rows).toEqual([]);
   });
 
-  it("142 جدول پس از حذف legacy و افزودن submission کانونیکال و idempotency و order foundation و multi-request link و revision و exception و replacement و finance (phase 4.6) و provider+shipping (phase 4.7) و refund mapping (phase 4.7.1) و compliance+invoicing (phase 4.7.5) و settlement (phase 4.8) و business control plane (phase 5.0) و CRM (phase 5.1) و Support (phase 5.2) و Notifications (phase 5.3)", async () => {
+  it("155 جدول پس از حذف legacy و افزودن submission کانونیکال و idempotency و order foundation و multi-request link و revision و exception و replacement و finance (phase 4.6) و provider+shipping (phase 4.7) و refund mapping (phase 4.7.1) و compliance+invoicing (phase 4.7.5) و settlement (phase 4.8) و business control plane (phase 5.0) و CRM (phase 5.1) و Support (phase 5.2) و Notifications (phase 5.3) و CMS (phase 5.4)", async () => {
     const { rows } = await withClient(DB, (client) =>
       client.query<{ count: string }>(`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`),
     );
-    // 42 from phase 3.8 + 1 command_idempotency from phase 4.1 + 2 order tables from 4.2 + 1 wholesale_order_request from 4.2.2 + 2 phase 4.4 (revision + exception) + 1 phase 4.5 (replacement) + 7 finance (proforma, proforma_line, payment, allocation, release, ledger, refund) + 5 phase 4.7 (payment_provider_event, shipping_quote, shipment, shipment_item, shipment_event) + 2 phase 4.7.1 (refund_allocation, refund_line) + 17 compliance + 5 invoicing (phase 4.7.5) + 15 settlement (phase 4.8) + 13 business control plane (phase 5.0) + 8 CRM (phase 5.1) + 12 support (phase 5.2) + 9 notifications (phase 5.3) = 142
-    expect(Number(rows[0].count)).toBe(142);
+    // 42 from phase 3.8 + 1 command_idempotency from phase 4.1 + 2 order tables from 4.2 + 1 wholesale_order_request from 4.2.2 + 2 phase 4.4 (revision + exception) + 1 phase 4.5 (replacement) + 7 finance (proforma, proforma_line, payment, allocation, release, ledger, refund) + 5 phase 4.7 (payment_provider_event, shipping_quote, shipment, shipment_item, shipment_event) + 2 phase 4.7.1 (refund_allocation, refund_line) + 17 compliance + 5 invoicing (phase 4.7.5) + 15 settlement (phase 4.8) + 13 business control plane (phase 5.0) + 8 CRM (phase 5.1) + 12 support (phase 5.2) + 9 notifications (phase 5.3) + 13 CMS (phase 5.4) = 155
+    expect(Number(rows[0].count)).toBe(155);
   });
 
   it("wholesale_order_item به canonical references اشاره می‌کند (Phase 4.2 evolved)", async () => {
