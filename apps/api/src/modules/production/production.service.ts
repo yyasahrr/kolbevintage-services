@@ -447,6 +447,7 @@ export class ProductionService {
       const [updated] = await tx.update(productionJobMilestone).set(patch).where(eq(productionJobMilestone.id, milestone.id)).returning();
       const history = await this.appendHistory(tx, { jobId: job.id, eventType: "milestone_changed", milestoneId: milestone.id, actorId: actor.userId, metadata: { fromStatus: milestone.status, toStatus, reason: input.reason ?? null } });
       await this.emit(tx, { eventType: "MILESTONE_CHANGED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { milestoneId: milestone.id, milestoneKey: milestone.milestoneKey, fromStatus: milestone.status, toStatus } });
+      await this.recordAudit(tx, actor, "production.milestone_status_changed", "production_job_milestone", milestone.id, { jobId, fromStatus: milestone.status, toStatus, reason: input.reason ?? null });
       await this.completeCommand(tx, claim.command.id, milestone.id, { milestoneId: milestone.id, status: toStatus });
       return { milestone: updated, replayed: false };
     });
@@ -569,6 +570,7 @@ export class ProductionService {
     await tx.update(supplierCapacityPeriod).set({ reservedUnits: period.reservedUnits + job.targetUnits, version: period.version + 1, updatedAt: new Date() }).where(eq(supplierCapacityPeriod.id, period.id));
     const history = await this.appendHistory(tx, { jobId: job.id, eventType: "capacity_reserved", actorId: actor.userId, metadata: { reservationId: reservation.id, periodId: period.id, units: job.targetUnits } });
     await this.emit(tx, { eventType: "CAPACITY_RESERVED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { reservationId: reservation.id, capacityPeriodId: period.id, units: job.targetUnits } });
+    await this.recordAudit(tx, actor, "production.capacity_reserved", "production_capacity_reservation", reservation.id, { jobId: job.id, capacityPeriodId: period.id, units: job.targetUnits });
     return reservation;
   }
 
@@ -582,6 +584,7 @@ export class ProductionService {
     await tx.update(productionCapacityReservation).set({ status: "released", releasedAt: new Date(), updatedAt: new Date() }).where(eq(productionCapacityReservation.id, reservation.id));
     const history = await this.appendHistory(tx, { jobId: job.id, eventType: "capacity_released", actorId: actor.userId, metadata: { reservationId: reservation.id, capacityPeriodId: period.id, units: reservation.units, reason } });
     await this.emit(tx, { eventType: "CAPACITY_RELEASED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { reservationId: reservation.id, capacityPeriodId: period.id, units: reservation.units, reason } });
+    await this.recordAudit(tx, actor, "production.capacity_released", "production_capacity_reservation", reservation.id, { jobId: job.id, capacityPeriodId: period.id, units: reservation.units, reason });
   }
 
   async planJob(actor: ProductionActor, jobId: string, input: { capacityPeriodId: string; idempotencyKey: string; plannedStartAt?: unknown; plannedEndAt?: unknown; expectedVersion?: number }) {
@@ -600,6 +603,7 @@ export class ProductionService {
       const [planned] = await tx.update(productionJob).set({ status: "planned", version: jobWithWindow.version + 1, updatedAt: new Date() }).where(eq(productionJob.id, job.id)).returning();
       const history = await this.appendHistory(tx, { jobId: job.id, eventType: "status_changed", fromStatus: job.status, toStatus: "planned", actorId: actor.userId, metadata: { capacityReservationId: reservation.id } });
       await this.emit(tx, { eventType: "JOB_STATUS_CHANGED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { productionJobId: job.id, fromStatus: job.status, toStatus: "planned", capacityReservationId: reservation.id } });
+      await this.recordAudit(tx, actor, "production.job_planned", "production_job", job.id, { capacityPeriodId: input.capacityPeriodId, reservationId: reservation.id, plannedStartAt: planned.plannedStartAt, plannedEndAt: planned.plannedEndAt });
       await this.completeCommand(tx, claim.command.id, job.id, { jobId: job.id, status: "planned", reservationId: reservation.id });
       return { job: planned, reservation, replayed: false };
     });
@@ -758,7 +762,7 @@ export class ProductionService {
         decisionFromStatus = "under_review";
       }
       const nextStatus = decision === "needs_information" ? "under_review" : decision;
-      assertTransition(CHANGE_TRANSITIONS, decisionFromStatus, nextStatus, "INVALID_CHANGE_TRANSITION");
+      if (nextStatus !== decisionFromStatus) assertTransition(CHANGE_TRANSITIONS, decisionFromStatus, nextStatus, "INVALID_CHANGE_TRANSITION");
       const [decisionRow] = await tx.insert(productionChangeDecision).values({ id: id("pdec"), changeRequestId: change.id, decision, decisionReference, notes, decidedBy: actor.userId }).returning();
       const [updated] = await tx.update(productionChangeRequest).set({ status: nextStatus, ownerDecisionReference: decisionReference, updatedAt: new Date() }).where(eq(productionChangeRequest.id, change.id)).returning();
       await this.recordAudit(tx, actor, "production.change_request_decided", "production_change_request", change.id, { decision, decisionReference, ownerDomain: change.ownerDomain });

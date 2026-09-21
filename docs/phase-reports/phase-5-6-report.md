@@ -24,7 +24,7 @@ The resulting checkpoint history is:
 | C | `abfed50` — `feat(phase-5-6-c): add QC lot traceability and quality release controls` | QC arithmetic, lots, traceability, defects/rework, release gates, and PostgreSQL hardening |
 | D | `4c7acdd` — `feat(phase-5-6-d): add recall APIs and production hardening` | Recall hardening, capacity tests, security tests, RBAC, Notifications relay, Analytics metrics, and integration hardening |
 
-The current local HEAD and pushed HEAD are both `4c7acdd`.
+`4c7acdd` is the required Phase 5.6-D implementation checkpoint. The report commit and a small follow-up hardening patch are later commits on the same fixed branch; they do not rewrite or replace the required A/B/C/D checkpoint history.
 
 ## Canonical ownership and API behavior
 
@@ -98,6 +98,15 @@ The existing session role guard, `AdminPermissionGuard`, `AdminRbacService`, sup
 
 Supplier IDs in request bodies and query strings never grant authority. Supplier scope comes from `Claims.sub` and server-side memberships. Outsider access, ambiguous supplier context, IDOR, unsafe pagination/status input, SQL injection-shaped input, raw evidence attempts, cross-job sample evidence, maker/checker self-approval, and mixed recall targets are covered by tests.
 
+## Post-checkpoint hardening
+
+After checkpoint D, a follow-up hardening patch closed two small completeness gaps without changing the schema or any required checkpoint commit:
+
+- milestone transitions, capacity reservation/release, and job planning now all write through `AuditService` inside the same transaction as their durable state/history changes;
+- repeated `needs_information` decisions while a change request is already `under_review` remain a legal append-only decision rather than being rejected as an invalid self-transition.
+
+The production service typecheck and the complete 81-file API suite were rerun after this patch.
+
 ## Migration and schema result
 
 Only migration `0030_phase_5_6_supplier_production_quality.sql` was changed or added for this phase. Migrations `0000` through `0029` were not modified. Drizzle schema, state-values, snapshot, and journal/registry ownership are aligned.
@@ -136,7 +145,7 @@ The later cutover must replace reads with relative server-proxied API calls, pre
 | `npm run test:all` | PASS — 23 shared tests, 95 database tests, 904 API tests across 81 files, 142 frontend tests across 15 files |
 | `git diff --check` | PASS before checkpoint commits |
 
-Phase 5.6 dedicated API coverage passed with 27 assertions across capacity, samples/changes, QC/lots, recall/security, service, and logic suites. The dedicated migration suite passed 5 tests. Real PostgreSQL coverage includes supplier ownership, IDOR, reservation races, cancellation release, sample gates/immutability, upload safety, change-owner boundaries, QC arithmetic, lot traceability, release gates, recall maker/checker, RBAC, idempotency, pagination, injection-shaped inputs, notification failure isolation, and Analytics source-backed reads.
+Phase 5.6 dedicated API coverage passed with 27 test cases across capacity, samples/changes, QC/lots, recall/security, service, and logic suites. The dedicated migration suite passed 5 tests. Real PostgreSQL coverage includes supplier ownership, IDOR, reservation races, cancellation release, sample gates/immutability, upload safety, change-owner boundaries, QC arithmetic, lot traceability, release gates, recall maker/checker, RBAC, idempotency, pagination, injection-shaped inputs, notification failure isolation, and Analytics source-backed reads.
 
 ### GitHub Actions
 

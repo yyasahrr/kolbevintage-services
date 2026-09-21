@@ -138,6 +138,8 @@ describe("Phase 5.6 ProductionService ownership, idempotency and races", () => {
     const admin = { userId: "p56_service_admin", role: "admin" as const };
     const needsInfo = await production.decideChangeRequest(admin, operational.change.id, { decision: "needs_information", notes: "Add the work-center reference", idempotencyKey: "p56-operational-decision-1" });
     expect(needsInfo.change.status).toBe("under_review");
+    const needsInfoAgain = await production.decideChangeRequest(admin, operational.change.id, { decision: "needs_information", notes: "The work-center reference is still required", idempotencyKey: "p56-operational-decision-2" });
+    expect(needsInfoAgain.change.status).toBe("under_review");
 
     const commercial = await production.createChangeRequest(actor, job.id, {
       changeType: "commercial",
