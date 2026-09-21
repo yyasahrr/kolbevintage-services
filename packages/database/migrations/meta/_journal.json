@@ -211,6 +211,13 @@
       "when": 1790150000000,
       "tag": "0029_phase_5_5_analytics_reporting",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790200000000,
+      "tag": "0030_phase_5_6_supplier_production_quality",
+      "breakpoints": true
     }
   ]
 }
