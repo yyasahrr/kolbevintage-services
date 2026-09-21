@@ -276,6 +276,34 @@ export function assertRecallScope(input: { severity: unknown; scopeType: unknown
   return { severity, scopeType, highImpact };
 }
 
+/**
+ * A recall target is deliberately a single canonical kind. A row that mixes a
+ * lot, order item, or variant would make downstream containment ambiguous, so
+ * the API rejects it before it reaches the database. Global recalls may carry
+ * multiple rows, but every row still has exactly one concrete target.
+ */
+export function assertRecallTarget(input: {
+  scopeType: string;
+  lotId?: string | null;
+  purchaseOrderItemId?: string | null;
+  variantId?: string | null;
+}): void {
+  const targets = [input.lotId, input.purchaseOrderItemId, input.variantId].filter((value) => Boolean(value));
+  if (targets.length !== 1) {
+    throw new ProductionDomainError("RECALL_SCOPE_TARGET_EXACTLY_ONE", "Each recall scope row must identify exactly one lot, order item, or variant", 422);
+  }
+  const expectedField = input.scopeType === "lot"
+    ? input.lotId
+    : input.scopeType === "order_item"
+      ? input.purchaseOrderItemId
+      : input.scopeType === "variant"
+        ? input.variantId
+        : targets[0];
+  if (!expectedField) {
+    throw new ProductionDomainError("RECALL_SCOPE_TYPE_MISMATCH", `Recall scope type ${input.scopeType} requires its matching target`, 422);
+  }
+}
+
 export function availableCapacity(declared: number, reserved: number, unavailable: number): number {
   const available = declared - reserved - unavailable;
   if (!Number.isSafeInteger(available) || available < 0) {

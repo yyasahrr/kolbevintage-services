@@ -1,3 +1,18 @@
+/* Phase 5.6 additive extensions to existing owner-domain state checks. Earlier migrations remain immutable. */
+
+ALTER TABLE "admin_role_permission" DROP CONSTRAINT IF EXISTS "admin_role_permission_action_allowed";
+--> statement-breakpoint
+ALTER TABLE "admin_role_permission" ADD CONSTRAINT "admin_role_permission_action_allowed" CHECK ("action" IN ('wholesale:plan:view', 'wholesale:plan:manage', 'wholesale:membership:view', 'wholesale:membership:manage', 'wholesale:membership:override', 'wholesale:approval:view', 'wholesale:approval:create', 'wholesale:approval:decide', 'wholesale:settings:view', 'wholesale:settings:manage', 'wholesale:notes:view', 'wholesale:notes:create', 'wholesale:control_tower:view', 'crm:customer:view', 'crm:customer:manage', 'crm:stage:manage', 'crm:assign:manage', 'crm:activity:create', 'crm:task:manage', 'crm:tag:manage', 'crm:export', 'crm:sensitive:view', 'support:case:view', 'support:case:reply', 'support:case:assign', 'support:case:priority', 'support:case:resolve', 'support:internal_note:create', 'support:attachment:view', 'support:sla:manage', 'support:report:view', 'support:sensitive:view', 'notification:template:view', 'notification:template:manage', 'notification:outbox:view', 'notification:outbox:retry', 'notification:provider:view', 'notification:preference:manage', 'notification:report:view', 'cms:content:view', 'cms:content:create', 'cms:content:edit', 'cms:content:publish', 'cms:content:archive', 'cms:navigation:manage', 'cms:media:manage', 'cms:seo:manage', 'cms:blog:manage', 'analytics:dashboard:view', 'analytics:report:view', 'analytics:report:manage', 'analytics:export', 'analytics:reconciliation:view', 'production:jobs:view', 'production:config:view', 'production:config:manage', 'production:quality:review', 'production:release:decide', 'production:recall:approve'));
+--> statement-breakpoint
+ALTER TABLE "notification_event" DROP CONSTRAINT IF EXISTS "notification_event_key_allowed";
+--> statement-breakpoint
+ALTER TABLE "notification_event" ADD CONSTRAINT "notification_event_key_allowed" CHECK ("event_key" IN ('AUTH_SECURITY_ALERT', 'ORDER_CREATED', 'ORDER_CONFIRMED', 'ORDER_CANCELLED', 'ORDER_FULFILLMENT_UPDATED', 'SHIPMENT_CREATED', 'SHIPMENT_SHIPPED', 'SHIPMENT_DELIVERED', 'PAYMENT_PENDING', 'PAYMENT_CONFIRMED', 'PAYMENT_FAILED', 'REFUND_REQUESTED', 'REFUND_COMPLETED', 'VIP_MEMBERSHIP_ACTIVATED', 'VIP_MEMBERSHIP_EXPIRING', 'VIP_MEMBERSHIP_SUSPENDED', 'SUPPLIER_ORDER_CREATED', 'SUPPLIER_ORDER_ACTION_REQUIRED', 'SUPPORT_CASE_CREATED', 'SUPPORT_CASE_REPLIED', 'SUPPORT_CASE_STATUS_CHANGED', 'SETTLEMENT_AVAILABLE', 'WITHDRAWAL_REQUESTED', 'WITHDRAWAL_APPROVED', 'PAYOUT_SUBMITTED', 'PAYOUT_RECONCILIATION_REQUIRED', 'COMPLIANCE_ACTION_REQUIRED', 'SUPPLIER_PRODUCTION_JOB_CREATED', 'SUPPLIER_PRODUCTION_ACTION_REQUIRED', 'SUPPLIER_PRODUCTION_QUALITY_UPDATED', 'SUPPLIER_PRODUCTION_RECALL_ACTION_REQUIRED'));
+--> statement-breakpoint
+ALTER TABLE "notification_template" DROP CONSTRAINT IF EXISTS "notification_template_event_key_allowed";
+--> statement-breakpoint
+ALTER TABLE "notification_template" ADD CONSTRAINT "notification_template_event_key_allowed" CHECK ("event_key" IN ('AUTH_SECURITY_ALERT', 'ORDER_CREATED', 'ORDER_CONFIRMED', 'ORDER_CANCELLED', 'ORDER_FULFILLMENT_UPDATED', 'SHIPMENT_CREATED', 'SHIPMENT_SHIPPED', 'SHIPMENT_DELIVERED', 'PAYMENT_PENDING', 'PAYMENT_CONFIRMED', 'PAYMENT_FAILED', 'REFUND_REQUESTED', 'REFUND_COMPLETED', 'VIP_MEMBERSHIP_ACTIVATED', 'VIP_MEMBERSHIP_EXPIRING', 'VIP_MEMBERSHIP_SUSPENDED', 'SUPPLIER_ORDER_CREATED', 'SUPPLIER_ORDER_ACTION_REQUIRED', 'SUPPORT_CASE_CREATED', 'SUPPORT_CASE_REPLIED', 'SUPPORT_CASE_STATUS_CHANGED', 'SETTLEMENT_AVAILABLE', 'WITHDRAWAL_REQUESTED', 'WITHDRAWAL_APPROVED', 'PAYOUT_SUBMITTED', 'PAYOUT_RECONCILIATION_REQUIRED', 'COMPLIANCE_ACTION_REQUIRED', 'SUPPLIER_PRODUCTION_JOB_CREATED', 'SUPPLIER_PRODUCTION_ACTION_REQUIRED', 'SUPPLIER_PRODUCTION_QUALITY_UPDATED', 'SUPPLIER_PRODUCTION_RECALL_ACTION_REQUIRED'));
+--> statement-breakpoint
+
 /*
  * Phase 5.6 — Supplier Production / Samples / QC
  *
@@ -418,6 +433,7 @@ CREATE TABLE production_lot (
   CONSTRAINT production_lot_rejected_non_negative CHECK (rejected_units >= 0),
   CONSTRAINT production_lot_rework_non_negative CHECK (rework_units >= 0),
   CONSTRAINT production_lot_accepted_rejected_within_produced CHECK (accepted_units + rejected_units <= produced_units),
+  CONSTRAINT production_lot_disposition_within_produced CHECK (accepted_units + rejected_units + rework_units <= produced_units),
   CONSTRAINT production_lot_rework_within_produced CHECK (rework_units <= produced_units),
   CONSTRAINT production_lot_job_fk FOREIGN KEY (job_id) REFERENCES production_job(id) ON DELETE RESTRICT,
   CONSTRAINT production_lot_purchase_order_fk FOREIGN KEY (purchase_order_id) REFERENCES purchase_order(id) ON DELETE RESTRICT,
@@ -453,7 +469,7 @@ CREATE TABLE quality_inspection (
   CONSTRAINT quality_inspection_defect_non_negative CHECK (defect_units >= 0),
   CONSTRAINT quality_inspection_rework_non_negative CHECK (rework_units >= 0),
   CONSTRAINT quality_inspection_rejected_non_negative CHECK (rejected_units >= 0),
-  CONSTRAINT quality_inspection_arithmetic_invariant CHECK (sample_size = accepted_units + defect_units + rework_units + rejected_units),
+  CONSTRAINT quality_inspection_arithmetic_invariant CHECK (status IN ('draft', 'in_progress') OR sample_size = accepted_units + defect_units + rework_units + rejected_units),
   CONSTRAINT quality_inspection_defect_rate_bounds CHECK (defect_rate_bps >= 0 AND defect_rate_bps <= 10000),
   CONSTRAINT quality_inspection_pass_rate_bounds CHECK (pass_rate_bps >= 0 AND pass_rate_bps <= 10000),
   CONSTRAINT quality_inspection_rates_not_over_total CHECK (defect_rate_bps + pass_rate_bps <= 10000),
@@ -546,7 +562,7 @@ CREATE TABLE production_lot_trace (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT production_lot_trace_type_allowed CHECK (trace_type IN ('purchase_order_item', 'variant', 'source_lot')),
   CONSTRAINT production_lot_trace_quantity_positive CHECK (quantity > 0),
-  CONSTRAINT production_lot_trace_target_present CHECK ((trace_type = 'purchase_order_item' AND purchase_order_item_id IS NOT NULL) OR (trace_type = 'variant' AND variant_id IS NOT NULL) OR (trace_type = 'source_lot' AND source_lot_id IS NOT NULL)),
+  CONSTRAINT production_lot_trace_target_present CHECK ((trace_type = 'purchase_order_item' AND purchase_order_item_id IS NOT NULL AND variant_id IS NULL AND source_lot_id IS NULL) OR (trace_type = 'variant' AND variant_id IS NOT NULL AND purchase_order_item_id IS NULL AND source_lot_id IS NULL) OR (trace_type = 'source_lot' AND source_lot_id IS NOT NULL AND purchase_order_item_id IS NULL AND variant_id IS NULL)),
   CONSTRAINT production_lot_trace_lot_fk FOREIGN KEY (lot_id) REFERENCES production_lot(id) ON DELETE RESTRICT,
   CONSTRAINT production_lot_trace_purchase_order_item_fk FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_item(id) ON DELETE RESTRICT,
   CONSTRAINT production_lot_trace_variant_fk FOREIGN KEY (variant_id) REFERENCES product_variant(id) ON DELETE RESTRICT,
@@ -616,7 +632,7 @@ CREATE TABLE production_recall_scope (
   quantity integer,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT production_recall_scope_quantity_non_negative CHECK (quantity IS NULL OR quantity >= 0),
-  CONSTRAINT production_recall_scope_target_present CHECK (lot_id IS NOT NULL OR purchase_order_item_id IS NOT NULL OR variant_id IS NOT NULL),
+  CONSTRAINT production_recall_scope_target_exactly_one CHECK (((lot_id IS NOT NULL)::integer + (purchase_order_item_id IS NOT NULL)::integer + (variant_id IS NOT NULL)::integer) = 1),
   CONSTRAINT production_recall_scope_recall_fk FOREIGN KEY (recall_id) REFERENCES production_recall(id) ON DELETE RESTRICT,
   CONSTRAINT production_recall_scope_lot_fk FOREIGN KEY (lot_id) REFERENCES production_lot(id) ON DELETE RESTRICT,
   CONSTRAINT production_recall_scope_purchase_order_item_fk FOREIGN KEY (purchase_order_item_id) REFERENCES purchase_order_item(id) ON DELETE RESTRICT,

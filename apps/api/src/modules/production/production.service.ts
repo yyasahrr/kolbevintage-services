@@ -43,6 +43,7 @@ import {
   assertOneOf,
   assertProductionPermission,
   assertRecallScope,
+  assertRecallTarget,
   assertTransition,
   availableCapacity,
   CHANGE_TRANSITIONS,
@@ -367,7 +368,11 @@ export class ProductionService {
       const patch: any = { status: toStatus, version: job.version + 1, updatedAt: now };
       if (toStatus === "in_progress") patch.startedAt = now;
       if (toStatus === "completed") patch.completedAt = now;
-      if (toStatus === "cancelled") { patch.cancelledAt = now; patch.cancellationReason = requireText(input.reason, "reason", 1000); }
+      if (toStatus === "cancelled") {
+        patch.cancelledAt = now;
+        patch.cancellationReason = requireText(input.reason, "reason", 1000);
+        await this.releaseReservedCapacityTx(tx, actor, job, patch.cancellationReason);
+      }
       const [updated] = await tx.update(productionJob).set(patch).where(eq(productionJob.id, job.id)).returning();
       const history = await this.appendHistory(tx, { jobId: job.id, eventType: "status_changed", fromStatus: job.status, toStatus, actorId: actor.userId, metadata: { reason: input.reason ?? null, version: updated.version } });
       await this.emit(tx, { eventType: "JOB_STATUS_CHANGED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { productionJobId: job.id, fromStatus: job.status, toStatus } });
@@ -548,6 +553,18 @@ export class ProductionService {
     const history = await this.appendHistory(tx, { jobId: job.id, eventType: "capacity_reserved", actorId: actor.userId, metadata: { reservationId: reservation.id, periodId: period.id, units: job.targetUnits } });
     await this.emit(tx, { eventType: "CAPACITY_RESERVED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { reservationId: reservation.id, capacityPeriodId: period.id, units: job.targetUnits } });
     return reservation;
+  }
+
+  private async releaseReservedCapacityTx(tx: any, actor: ProductionActor, job: any, reason: string): Promise<void> {
+    await this.lockSupplierCapacity(tx, job.supplierId);
+    const [reservation] = await tx.select().from(productionCapacityReservation).where(eq(productionCapacityReservation.jobId, job.id)).for("update").limit(1);
+    if (!reservation || reservation.status !== "reserved") return;
+    const [period] = await tx.select().from(supplierCapacityPeriod).where(eq(supplierCapacityPeriod.id, reservation.capacityPeriodId)).for("update").limit(1);
+    if (!period || period.reservedUnits < reservation.units) throw new ProductionDomainError("CAPACITY_INVARIANT", "Capacity reservation cannot be released safely", 409);
+    await tx.update(supplierCapacityPeriod).set({ reservedUnits: period.reservedUnits - reservation.units, version: period.version + 1, updatedAt: new Date() }).where(eq(supplierCapacityPeriod.id, period.id));
+    await tx.update(productionCapacityReservation).set({ status: "released", releasedAt: new Date(), updatedAt: new Date() }).where(eq(productionCapacityReservation.id, reservation.id));
+    const history = await this.appendHistory(tx, { jobId: job.id, eventType: "capacity_released", actorId: actor.userId, metadata: { reservationId: reservation.id, capacityPeriodId: period.id, units: reservation.units, reason } });
+    await this.emit(tx, { eventType: "CAPACITY_RELEASED", entityType: "production_job_history", entityId: history.id, jobId: job.id, supplierId: job.supplierId, recipientScope: "SUPPLIER", recipientId: job.supplierId, payload: { reservationId: reservation.id, capacityPeriodId: period.id, units: reservation.units, reason } });
   }
 
   async planJob(actor: ProductionActor, jobId: string, input: { capacityPeriodId: string; idempotencyKey: string; plannedStartAt?: unknown; plannedEndAt?: unknown; expectedVersion?: number }) {
@@ -833,7 +850,7 @@ export class ProductionService {
     const acceptedUnits = requireSafeInteger(input.acceptedUnits, "acceptedUnits", 0);
     const rejectedUnits = requireSafeInteger(input.rejectedUnits, "rejectedUnits", 0);
     const reworkUnits = requireSafeInteger(input.reworkUnits, "reworkUnits", 0);
-    if (acceptedUnits + rejectedUnits > producedUnits || reworkUnits > producedUnits) throw new ProductionDomainError("LOT_ARITHMETIC_INVARIANT", "Lot accepted/rejected/rework quantities exceed produced units", 422);
+    if (acceptedUnits + rejectedUnits + reworkUnits > producedUnits) throw new ProductionDomainError("LOT_ARITHMETIC_INVARIANT", "Lot accepted, rejected, and rework quantities must not exceed produced units", 422);
     return this.db.transaction(async (tx: any) => {
       const job = await this.jobForAccess(tx, actor, jobId, "manage_lot", true);
       const [lot] = await tx.select().from(productionLot).where(and(eq(productionLot.id, lotId), eq(productionLot.jobId, job.id))).for("update").limit(1);
@@ -966,6 +983,7 @@ export class ProductionService {
       const [lot] = await tx.select().from(productionLot).where(and(eq(productionLot.id, input.lotId), eq(productionLot.jobId, job.id))).for("update").limit(1);
       if (!lot) throw new ProductionDomainError("LOT_NOT_FOUND", "Lot not found", 404);
       if (["released", "recall_hold"].includes(lot.status)) throw new ProductionDomainError("LOT_NOT_MUTABLE", `Lot is ${lot.status}`, 409);
+      if (lot.producedUnits > 0 && quantity > lot.producedUnits) throw new ProductionDomainError("DEFECT_QUANTITY_OVER_OUTPUT", "Defect quantity cannot exceed lot output", 422);
       if (input.inspectionId) {
         const [inspection] = await tx.select().from(qualityInspection).where(and(eq(qualityInspection.id, input.inspectionId), eq(qualityInspection.lotId, lot.id))).limit(1);
         if (!inspection) throw new ProductionDomainError("INSPECTION_NOT_FOUND", "Inspection is outside this lot", 404);
@@ -1009,7 +1027,9 @@ export class ProductionService {
       const [defect] = await tx.select().from(qualityDefect).where(and(eq(qualityDefect.id, input.defectId), eq(qualityDefect.jobId, job.id), eq(qualityDefect.lotId, input.lotId))).for("update").limit(1);
       if (!defect) throw new ProductionDomainError("DEFECT_NOT_FOUND", "Defect not found for this lot/job", 404);
       if (!["open", "acknowledged", "rework"].includes(defect.status)) throw new ProductionDomainError("DEFECT_NOT_REWORKABLE", `Defect is ${defect.status}`, 409);
-      if (quantity > defect.quantity) throw new ProductionDomainError("REWORK_QUANTITY_OVER_DEFECT", "Rework quantity cannot exceed defect quantity", 422);
+      const existingRework = await tx.select({ quantity: qualityRework.quantity }).from(qualityRework).where(and(eq(qualityRework.defectId, defect.id), inArray(qualityRework.status, ["requested", "in_progress", "completed"]))).for("update");
+      const allocatedRework = existingRework.reduce((sum: number, row: any) => sum + row.quantity, 0);
+      if (allocatedRework + quantity > defect.quantity) throw new ProductionDomainError("REWORK_QUANTITY_OVER_DEFECT", "Total rework quantity cannot exceed defect quantity", 422);
       const claim = await this.claimCommand(tx, "quality_defect", defect.id, "production.rework_create", input.idempotencyKey, { jobId, lotId: input.lotId, defectId: input.defectId, quantity, instructions });
       if (claim.replayed) {
         const [rework] = await tx.select().from(qualityRework).where(eq(qualityRework.id, claim.command.resultResourceId!)).limit(1);
@@ -1177,10 +1197,12 @@ export class ProductionService {
         const lotId = target.lotId ?? null;
         const purchaseOrderItemId = target.purchaseOrderItemId ?? null;
         const variantId = target.variantId ?? null;
-        if (!lotId && !purchaseOrderItemId && !variantId) throw new ProductionDomainError("RECALL_SCOPE_TARGET_REQUIRED", "Each recall scope row needs a lot, order item, or variant");
+        assertRecallTarget({ scopeType: scope.scopeType, lotId, purchaseOrderItemId, variantId });
+        let scopedLot: any = null;
         if (lotId) {
           const [lot] = await tx.select().from(productionLot).where(eq(productionLot.id, lotId)).limit(1);
           if (!lot) throw new ProductionDomainError("RECALL_SCOPE_VIOLATION", "Recall lot was not found", 404);
+          scopedLot = lot;
           const [lotJob] = await tx.select().from(productionJob).where(eq(productionJob.id, lot.jobId)).limit(1);
           if (!lotJob || lotJob.supplierId !== supplierId || (job && lotJob.id !== job.id)) throw new ProductionDomainError("RECALL_SCOPE_VIOLATION", "Recall lot is outside the supplier production scope", 403);
         }
@@ -1194,6 +1216,10 @@ export class ProductionService {
           }
         }
         const quantity = target.quantity === undefined || target.quantity === null ? null : requireSafeInteger(target.quantity, "quantity", 0);
+        if (scopedLot && quantity !== null) {
+          const lotCeiling = scopedLot.producedUnits > 0 ? scopedLot.producedUnits : scopedLot.plannedUnits;
+          if (quantity > lotCeiling) throw new ProductionDomainError("RECALL_SCOPE_QUANTITY_OVER_LOT", "Recall quantity cannot exceed the lot output", 422);
+        }
         await tx.insert(productionRecallScope).values({ id: id("prcs"), recallId: recall.id, lotId, purchaseOrderItemId, variantId, quantity });
       }
       await this.recordAudit(tx, actor, "production.recall_created", "production_recall", recall.id, { supplierId, severity: scope.severity, scopeType: scope.scopeType, highImpact: scope.highImpact });
