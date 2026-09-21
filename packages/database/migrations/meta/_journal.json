@@ -218,6 +218,13 @@
       "when": 1790200000000,
       "tag": "0030_phase_5_6_supplier_production_quality",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790250000000,
+      "tag": "0031_phase_5_7_promotions_commercial_engine",
+      "breakpoints": true
     }
   ]
 }

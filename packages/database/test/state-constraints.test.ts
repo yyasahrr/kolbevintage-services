@@ -144,6 +144,21 @@ const STATE_COLUMNS: Array<{ table: string; column: string; values: readonly str
   { table: "order_event", column: "aggregate_type", values: sets.ORDER_AGGREGATE_TYPES, check: "order_event_aggregate_type_allowed" },
   { table: "order_event", column: "event_type", values: sets.ORDER_EVENT_TYPES, check: "order_event_event_type_allowed" },
   { table: "order_event", column: "actor_role", values: sets.ORDER_ACTOR_ROLES, check: "order_event_actor_role_allowed" },
+  // Phase 5.7 — promotions / commercial engine
+  { table: "promotion", column: "channel", values: sets.PROMOTION_CHANNELS, check: "promotion_channel_allowed" },
+  { table: "promotion", column: "status", values: sets.PROMOTION_STATUSES, check: "promotion_status_allowed" },
+  { table: "promotion_revision", column: "status", values: sets.PROMOTION_REVISION_STATUSES, check: "promotion_revision_status_allowed" },
+  { table: "promotion_revision", column: "stacking_policy", values: sets.PROMOTION_STACKING_POLICIES, check: "promotion_revision_stacking_allowed" },
+  { table: "promotion_target", column: "target_type", values: sets.PROMOTION_TARGET_TYPES, check: "promotion_target_type_allowed" },
+  { table: "promotion_benefit", column: "benefit_type", values: sets.PROMOTION_BENEFIT_TYPES, check: "promotion_benefit_type_allowed" },
+  { table: "promotion_benefit", column: "scope", values: sets.PROMOTION_BENEFIT_SCOPES, check: "promotion_benefit_scope_allowed" },
+  { table: "promotion_coupon", column: "status", values: sets.PROMOTION_COUPON_STATUSES, check: "promotion_coupon_status_allowed" },
+  { table: "promotion_coupon_redemption", column: "channel", values: sets.PROMOTION_CHANNELS, check: "promotion_coupon_redemption_channel_allowed" },
+  { table: "promotion_usage", column: "channel", values: sets.PROMOTION_CHANNELS, check: "promotion_usage_channel_allowed" },
+  { table: "promotion_schedule", column: "action", values: sets.PROMOTION_SCHEDULE_ACTIONS, check: "promotion_schedule_action_allowed" },
+  { table: "promotion_schedule", column: "status", values: sets.PROMOTION_SCHEDULE_STATUSES, check: "promotion_schedule_status_allowed" },
+  { table: "admin_role_permission", column: "action", values: sets.ADMIN_PERMISSION_ACTIONS, check: "admin_role_permission_action_allowed" },
+  { table: "approval_request", column: "request_type", values: sets.APPROVAL_REQUEST_TYPES, check: "approval_request_type_allowed" },
 ];
 
 const sorted = (values: readonly string[]) => [...values].sort();

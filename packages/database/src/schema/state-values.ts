@@ -857,6 +857,13 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "production:quality:review",
   "production:release:decide",
   "production:recall:approve",
+  // Phase 5.7 — Promotions / Campaign / Commercial Engine
+  "promotion:view",
+  "promotion:create",
+  "promotion:edit",
+  "promotion:publish",
+  "promotion:pause",
+  "promotion:coupon:manage",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -925,6 +932,7 @@ export const APPROVAL_REQUEST_TYPES = [
   "MEMBERSHIP_MANUAL_ACTIVATE",
   "MEMBERSHIP_TERMINATE",
   "PRODUCTION_RECALL",
+  "PROMOTION_PUBLISH",
 ] as const;
 export const APPROVAL_REQUEST_STATUSES = [
   "pending",
@@ -1282,4 +1290,83 @@ export const QUALITY_RELEASE_STATUSES = ["pending", "ready", "approved", "reject
 export const PRODUCTION_RECALL_SEVERITIES = ["low", "high", "critical", "global"] as const;
 export const PRODUCTION_RECALL_STATUSES = ["draft", "pending_approval", "approved", "active", "contained", "closed", "rejected", "cancelled"] as const;
 export const PRODUCTION_RECALL_SCOPE_TYPES = ["lot", "order_item", "variant", "global"] as const;
+
+/* ── Phase 5.7 — Promotions / Campaign / Commercial Engine ────────────────────
+ *
+ * Promotions decides eligibility + benefit only. It never owns product, offer,
+ * price, inventory, order, payment, shipping, settlement, membership, segment,
+ * presentation, or delivery state. Money is BIGINT IRR; percents are integer
+ * basis points (15% = 1500). There is no executable rule language anywhere.
+ */
+
+export const PROMOTION_CHANNELS = ["RETAIL", "WHOLESALE"] as const;
+export type PromotionChannel = (typeof PROMOTION_CHANNELS)[number];
+
+export const PROMOTION_STATUSES = [
+  "DRAFT",
+  "IN_REVIEW",
+  "SCHEDULED",
+  "ACTIVE",
+  "PAUSED",
+  "ENDED",
+  "ARCHIVED",
+] as const;
+export type PromotionStatus = (typeof PROMOTION_STATUSES)[number];
+
+export const PROMOTION_REVISION_STATUSES = [
+  "DRAFT",
+  "IN_REVIEW",
+  "PUBLISHED",
+  "SUPERSEDED",
+  "ARCHIVED",
+] as const;
+export type PromotionRevisionStatus = (typeof PROMOTION_REVISION_STATUSES)[number];
+
+export const PROMOTION_TARGET_TYPES = [
+  "CHANNEL",
+  "PRODUCT",
+  "CATEGORY",
+  "OFFER",
+  "VIP_PLAN",
+  "VIP_ACCOUNT",
+  "CUSTOMER_SEGMENT",
+  "MIN_SUBTOTAL",
+  "MIN_QUANTITY",
+  "DATE_WINDOW",
+] as const;
+export type PromotionTargetType = (typeof PROMOTION_TARGET_TYPES)[number];
+
+export const PROMOTION_BENEFIT_TYPES = [
+  "PERCENT_DISCOUNT",
+  "FIXED_AMOUNT_DISCOUNT",
+  "FREE_SHIPPING",
+] as const;
+export type PromotionBenefitType = (typeof PROMOTION_BENEFIT_TYPES)[number];
+
+export const PROMOTION_BENEFIT_SCOPES = ["ORDER", "LINE", "SHIPPING"] as const;
+export type PromotionBenefitScope = (typeof PROMOTION_BENEFIT_SCOPES)[number];
+
+export const PROMOTION_STACKING_POLICIES = ["EXCLUSIVE", "STACKABLE"] as const;
+export type PromotionStackingPolicy = (typeof PROMOTION_STACKING_POLICIES)[number];
+
+export const PROMOTION_COUPON_STATUSES = ["ENABLED", "DISABLED"] as const;
+export type PromotionCouponStatus = (typeof PROMOTION_COUPON_STATUSES)[number];
+
+export const PROMOTION_SCHEDULE_ACTIONS = ["ACTIVATE", "DEACTIVATE"] as const;
+export type PromotionScheduleAction = (typeof PROMOTION_SCHEDULE_ACTIONS)[number];
+
+export const PROMOTION_SCHEDULE_STATUSES = [
+  "SCHEDULED",
+  "PROCESSING",
+  "EXECUTED",
+  "FAILED",
+  "CANCELLED",
+] as const;
+export type PromotionScheduleStatus = (typeof PROMOTION_SCHEDULE_STATUSES)[number];
+
+/** Deterministic commercial evaluation contract version (bumped on semantics change). */
+export const PROMOTION_EVALUATION_VERSION = "promo-eval-v1" as const;
+
+/** 100% expressed in basis points. Percent benefits are integers in 1..10000. */
+export const PROMOTION_BPS_PER_100_PERCENT = 10_000 as const;
 

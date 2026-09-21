@@ -94,7 +94,25 @@ export const MODULES: readonly ModuleDefinition[] = [
     phase: 3,
   },
   { name: "pricing", tables: [], dependsOn: ["offers"], status: "scaffolded", phase: 3 },
-  { name: "promotions", tables: [], dependsOn: ["pricing", "orders"], status: "planned", phase: 4 },
+  {
+    // Phase 5.7 — decides commercial eligibility + benefit only. Reads product,
+    // offer, membership, and segment facts through owner services; never owns
+    // price, inventory, order, payment, shipping, or settlement state.
+    name: "promotions",
+    tables: [
+      "promotion",
+      "promotion_revision",
+      "promotion_target",
+      "promotion_benefit",
+      "promotion_coupon",
+      "promotion_coupon_redemption",
+      "promotion_usage",
+      "promotion_schedule",
+    ],
+    dependsOn: ["catalog", "offers", "vip", "crm", "admin", "recovery", "audit"],
+    status: "live",
+    phase: 5,
+  },
   {
     name: "inventory",
     tables: ["product_variant_inventory", "inventory_reservation", "inventory_ledger", "command_idempotency"],

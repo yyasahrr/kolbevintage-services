@@ -279,6 +279,16 @@ export class CatalogService {
     return found;
   }
 
+  /**
+   * Phase 5.7 read surface: category by id. Read-only; used by Promotions to
+   * validate CATEGORY references at authoring time.
+   */
+  async getCategoryById(id: string) {
+    const [found] = await this.db.select().from(category).where(eq(category.id, id)).limit(1);
+    if (!found) throw new NotFoundError("دسته‌بندی یافت نشد");
+    return found;
+  }
+
   // ── Variant ──────────────────────────────────────────────────────────────
   async createVariant(input: { productId: string; sku: string; attributes?: Record<string, any> }) {
     const id = `var_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;

@@ -264,6 +264,14 @@ export class AdminApprovalsService {
           break;
         }
 
+        case "PROMOTION_PUBLISH": {
+          // Promotions owns publish execution (same deferred pattern as recalls).
+          // The shared Admin approval row enforces maker/checker separation; the
+          // Promotions API validates the approved/executed row at publish time.
+          executionResult = { deferredTo: "promotions.publish", targetType: req.targetType, targetId: req.targetId };
+          break;
+        }
+
         default:
           throw new Error(`Unsupported approval requestType: ${req.requestType}`);
       }

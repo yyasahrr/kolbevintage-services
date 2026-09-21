@@ -264,6 +264,16 @@ import {
   PRODUCTION_RECALL_SEVERITIES,
   PRODUCTION_RECALL_STATUSES,
   PRODUCTION_RECALL_SCOPE_TYPES,
+  PROMOTION_BENEFIT_SCOPES,
+  PROMOTION_BENEFIT_TYPES,
+  PROMOTION_CHANNELS,
+  PROMOTION_COUPON_STATUSES,
+  PROMOTION_REVISION_STATUSES,
+  PROMOTION_SCHEDULE_ACTIONS,
+  PROMOTION_SCHEDULE_STATUSES,
+  PROMOTION_STACKING_POLICIES,
+  PROMOTION_STATUSES,
+  PROMOTION_TARGET_TYPES,
 } from "./state-values";
 
 /** ستون‌های زمانی تکراری — یک‌بار تعریف می‌شوند تا همهٔ جداول یکدست بمانند. */
@@ -6546,5 +6556,268 @@ export const productionRecallApproval = pgTable(
     foreignKey({ name: "production_recall_approval_request_fk", columns: [table.approvalRequestId], foreignColumns: [approvalRequest.id] }).onDelete("restrict"),
     foreignKey({ name: "production_recall_approval_maker_fk", columns: [table.makerId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
     foreignKey({ name: "production_recall_approval_checker_fk", columns: [table.checkerId], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+/* ── Phase 5.7 — Promotions / Campaign / Commercial Engine ────────────────────
+ *
+ * Promotions decides commercial eligibility + benefit. Identity (promotion) is
+ * separate from versioned commercial terms (promotion_revision): publishing
+ * freezes a revision (service + trigger), and every redemption/usage row
+ * points at the exact revision applied. Money is BIGINT IRR, percents are
+ * integer basis points. Targets are allowlisted (type, reference) rows —
+ * there is no executable rule language anywhere in this model.
+ */
+
+export const promotion = pgTable(
+  "promotion",
+  {
+    id: text("id").primaryKey(),
+    promotionKey: text("promotion_key").notNull(),
+    channel: text("channel").notNull(),
+    status: text("status").notNull().default("DRAFT"),
+    currentPublishedRevisionId: text("current_published_revision_id"),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("promotion_channel_allowed", "channel", PROMOTION_CHANNELS),
+    stateCheck("promotion_status_allowed", "status", PROMOTION_STATUSES),
+    check("promotion_key_format", sql.raw(`"promotion_key" ~ '^[A-Z0-9][A-Z0-9._-]{2,63}$'`)),
+    uniqueIndex("promotion_key_unique").on(table.promotionKey),
+    index("promotion_channel_status").on(table.channel, table.status),
+    // NOTE (CMS precedent): the current_published_revision_id → promotion_revision
+    // FK exists in SQL + snapshot but is omitted from the Drizzle model to avoid a
+    // circular type-inference cycle (promotion ↔ promotion_revision).
+    foreignKey({ name: "promotion_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionRevision = pgTable(
+  "promotion_revision",
+  {
+    id: text("id").primaryKey(),
+    promotionId: text("promotion_id").notNull(),
+    revisionNumber: integer("revision_number").notNull(),
+    status: text("status").notNull().default("DRAFT"),
+    stackingPolicy: text("stacking_policy").notNull().default("STACKABLE"),
+    priority: integer("priority").notNull().default(100),
+    couponRequired: boolean("coupon_required").notNull().default(false),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    usageLimitTotal: integer("usage_limit_total"),
+    usageLimitPerCustomer: integer("usage_limit_per_customer"),
+    approvalRequestId: text("approval_request_id"),
+    termsHash: text("terms_hash").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    publishedBy: text("published_by"),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("promotion_revision_status_allowed", "status", PROMOTION_REVISION_STATUSES),
+    stateCheck("promotion_revision_stacking_allowed", "stacking_policy", PROMOTION_STACKING_POLICIES),
+    positiveQuantityCheck("promotion_revision_number_positive", "revision_number"),
+    quantityCheck("promotion_revision_priority_non_negative", "priority"),
+    check("promotion_revision_window_valid", sql.raw(`"ends_at" IS NULL OR "starts_at" IS NULL OR "ends_at" > "starts_at"`)),
+    check("promotion_revision_usage_limit_total_positive", sql.raw(`"usage_limit_total" IS NULL OR "usage_limit_total" > 0`)),
+    check("promotion_revision_usage_limit_per_customer_positive", sql.raw(`"usage_limit_per_customer" IS NULL OR "usage_limit_per_customer" > 0`)),
+    check("promotion_revision_terms_hash_format", sql.raw(`"terms_hash" ~ '^[0-9a-f]{64}$'`)),
+    uniqueIndex("promotion_revision_number_unique").on(table.promotionId, table.revisionNumber),
+    index("promotion_revision_promotion_status").on(table.promotionId, table.status),
+    foreignKey({ name: "promotion_revision_promotion_fk", columns: [table.promotionId], foreignColumns: [promotion.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_revision_approval_request_fk", columns: [table.approvalRequestId], foreignColumns: [approvalRequest.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_revision_published_by_fk", columns: [table.publishedBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_revision_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionTarget = pgTable(
+  "promotion_target",
+  {
+    id: text("id").primaryKey(),
+    revisionId: text("revision_id").notNull(),
+    targetType: text("target_type").notNull(),
+    referenceId: text("reference_id"),
+    minSubtotal: bigint("min_subtotal", { mode: "bigint" }),
+    minQuantity: integer("min_quantity"),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("promotion_target_type_allowed", "target_type", PROMOTION_TARGET_TYPES),
+    check(
+      "promotion_target_shape_valid",
+      sql.raw(
+        `("target_type" IN ('PRODUCT', 'CATEGORY', 'OFFER', 'VIP_PLAN', 'VIP_ACCOUNT', 'CUSTOMER_SEGMENT', 'CHANNEL') AND "reference_id" IS NOT NULL AND "min_subtotal" IS NULL AND "min_quantity" IS NULL AND "starts_at" IS NULL AND "ends_at" IS NULL)` +
+          ` OR ("target_type" = 'MIN_SUBTOTAL' AND "min_subtotal" IS NOT NULL AND "reference_id" IS NULL AND "min_quantity" IS NULL AND "starts_at" IS NULL AND "ends_at" IS NULL)` +
+          ` OR ("target_type" = 'MIN_QUANTITY' AND "min_quantity" IS NOT NULL AND "reference_id" IS NULL AND "min_subtotal" IS NULL AND "starts_at" IS NULL AND "ends_at" IS NULL)` +
+          ` OR ("target_type" = 'DATE_WINDOW' AND "starts_at" IS NOT NULL AND "ends_at" IS NOT NULL AND "ends_at" > "starts_at" AND "reference_id" IS NULL AND "min_subtotal" IS NULL AND "min_quantity" IS NULL)`,
+      ),
+    ),
+    check("promotion_target_channel_reference_valid", sql.raw(`"target_type" <> 'CHANNEL' OR "reference_id" IN ('RETAIL', 'WHOLESALE')`)),
+    check("promotion_target_min_subtotal_range", sql.raw(`"min_subtotal" IS NULL OR ("min_subtotal" >= 0 AND "min_subtotal" <= ${MAX_MONEY_RIAL.toString()})`)),
+    check("promotion_target_min_quantity_positive", sql.raw(`"min_quantity" IS NULL OR "min_quantity" > 0`)),
+    index("promotion_target_revision").on(table.revisionId),
+    foreignKey({ name: "promotion_target_revision_fk", columns: [table.revisionId], foreignColumns: [promotionRevision.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionBenefit = pgTable(
+  "promotion_benefit",
+  {
+    id: text("id").primaryKey(),
+    revisionId: text("revision_id").notNull(),
+    benefitType: text("benefit_type").notNull(),
+    scope: text("scope").notNull(),
+    percentBps: integer("percent_bps"),
+    amount: bigint("amount", { mode: "bigint" }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("promotion_benefit_type_allowed", "benefit_type", PROMOTION_BENEFIT_TYPES),
+    stateCheck("promotion_benefit_scope_allowed", "scope", PROMOTION_BENEFIT_SCOPES),
+    check(
+      "promotion_benefit_shape_valid",
+      sql.raw(
+        `("benefit_type" = 'PERCENT_DISCOUNT' AND "scope" IN ('LINE', 'ORDER') AND "percent_bps" >= 1 AND "percent_bps" <= 10000 AND "amount" IS NULL)` +
+          ` OR ("benefit_type" = 'FIXED_AMOUNT_DISCOUNT' AND "scope" = 'ORDER' AND "amount" > 0 AND "amount" <= ${MAX_MONEY_RIAL.toString()} AND "percent_bps" IS NULL)` +
+          ` OR ("benefit_type" = 'FREE_SHIPPING' AND "scope" = 'SHIPPING' AND "percent_bps" IS NULL AND "amount" IS NULL)`,
+      ),
+    ),
+    index("promotion_benefit_revision").on(table.revisionId),
+    foreignKey({ name: "promotion_benefit_revision_fk", columns: [table.revisionId], foreignColumns: [promotionRevision.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionCoupon = pgTable(
+  "promotion_coupon",
+  {
+    id: text("id").primaryKey(),
+    promotionId: text("promotion_id").notNull(),
+    revisionId: text("revision_id"),
+    code: text("code").notNull(),
+    codeNormalized: text("code_normalized").notNull(),
+    status: text("status").notNull().default("ENABLED"),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    usageLimit: integer("usage_limit"),
+    perCustomerLimit: integer("per_customer_limit"),
+    redeemedCount: integer("redeemed_count").notNull().default(0),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("promotion_coupon_status_allowed", "status", PROMOTION_COUPON_STATUSES),
+    check("promotion_coupon_window_valid", sql.raw(`"ends_at" IS NULL OR "starts_at" IS NULL OR "ends_at" > "starts_at"`)),
+    check("promotion_coupon_usage_limit_positive", sql.raw(`"usage_limit" IS NULL OR "usage_limit" > 0`)),
+    check("promotion_coupon_per_customer_limit_positive", sql.raw(`"per_customer_limit" IS NULL OR "per_customer_limit" > 0`)),
+    quantityCheck("promotion_coupon_redeemed_count_non_negative", "redeemed_count"),
+    check("promotion_coupon_code_normalized_format", sql.raw(`"code_normalized" ~ '^[A-Z0-9][A-Z0-9._-]{1,63}$'`)),
+    uniqueIndex("promotion_coupon_code_unique").on(table.codeNormalized),
+    index("promotion_coupon_promotion_status").on(table.promotionId, table.status),
+    index("promotion_coupon_revision").on(table.revisionId),
+    foreignKey({ name: "promotion_coupon_promotion_fk", columns: [table.promotionId], foreignColumns: [promotion.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_coupon_revision_fk", columns: [table.revisionId], foreignColumns: [promotionRevision.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_coupon_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionCouponRedemption = pgTable(
+  "promotion_coupon_redemption",
+  {
+    id: text("id").primaryKey(),
+    couponId: text("coupon_id").notNull(),
+    promotionId: text("promotion_id").notNull(),
+    revisionId: text("revision_id").notNull(),
+    channel: text("channel").notNull(),
+    customerKey: text("customer_key").notNull(),
+    orderReference: text("order_reference"),
+    baseAmount: bigint("base_amount", { mode: "bigint" }).notNull(),
+    discountAmount: bigint("discount_amount", { mode: "bigint" }).notNull(),
+    finalAmount: bigint("final_amount", { mode: "bigint" }).notNull(),
+    evaluationHash: text("evaluation_hash").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("promotion_coupon_redemption_channel_allowed", "channel", PROMOTION_CHANNELS),
+    check("promotion_coupon_redemption_base_amount_range", sql.raw(`"base_amount" >= 0 AND "base_amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    check("promotion_coupon_redemption_discount_amount_range", sql.raw(`"discount_amount" >= 0 AND "discount_amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    check("promotion_coupon_redemption_final_amount_range", sql.raw(`"final_amount" >= 0 AND "final_amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    check("promotion_coupon_redemption_amounts_consistent", sql.raw(`"discount_amount" <= "base_amount" AND "final_amount" = "base_amount" - "discount_amount"`)),
+    check("promotion_coupon_redemption_evaluation_hash_format", sql.raw(`"evaluation_hash" ~ '^[0-9a-f]{64}$'`)),
+    uniqueIndex("promotion_coupon_redemption_idempotency_unique").on(table.couponId, table.idempotencyKey),
+    index("promotion_coupon_redemption_coupon_created").on(table.couponId, table.createdAt),
+    index("promotion_coupon_redemption_promotion_customer").on(table.promotionId, table.customerKey),
+    index("promotion_coupon_redemption_revision").on(table.revisionId),
+    foreignKey({ name: "promotion_coupon_redemption_coupon_fk", columns: [table.couponId], foreignColumns: [promotionCoupon.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_coupon_redemption_promotion_fk", columns: [table.promotionId], foreignColumns: [promotion.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_coupon_redemption_revision_fk", columns: [table.revisionId], foreignColumns: [promotionRevision.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionUsage = pgTable(
+  "promotion_usage",
+  {
+    id: text("id").primaryKey(),
+    promotionId: text("promotion_id").notNull(),
+    revisionId: text("revision_id").notNull(),
+    channel: text("channel").notNull(),
+    customerKey: text("customer_key").notNull(),
+    orderReference: text("order_reference"),
+    baseAmount: bigint("base_amount", { mode: "bigint" }).notNull(),
+    discountAmount: bigint("discount_amount", { mode: "bigint" }).notNull(),
+    finalAmount: bigint("final_amount", { mode: "bigint" }).notNull(),
+    evaluationHash: text("evaluation_hash").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("promotion_usage_channel_allowed", "channel", PROMOTION_CHANNELS),
+    check("promotion_usage_base_amount_range", sql.raw(`"base_amount" >= 0 AND "base_amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    check("promotion_usage_discount_amount_range", sql.raw(`"discount_amount" >= 0 AND "discount_amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    check("promotion_usage_final_amount_range", sql.raw(`"final_amount" >= 0 AND "final_amount" <= ${MAX_MONEY_RIAL.toString()}`)),
+    check("promotion_usage_amounts_consistent", sql.raw(`"discount_amount" <= "base_amount" AND "final_amount" = "base_amount" - "discount_amount"`)),
+    check("promotion_usage_evaluation_hash_format", sql.raw(`"evaluation_hash" ~ '^[0-9a-f]{64}$'`)),
+    uniqueIndex("promotion_usage_idempotency_unique").on(table.promotionId, table.idempotencyKey),
+    index("promotion_usage_promotion_customer").on(table.promotionId, table.customerKey),
+    index("promotion_usage_revision").on(table.revisionId),
+    foreignKey({ name: "promotion_usage_promotion_fk", columns: [table.promotionId], foreignColumns: [promotion.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_usage_revision_fk", columns: [table.revisionId], foreignColumns: [promotionRevision.id] }).onDelete("restrict"),
+  ],
+);
+
+export const promotionSchedule = pgTable(
+  "promotion_schedule",
+  {
+    id: text("id").primaryKey(),
+    promotionId: text("promotion_id").notNull(),
+    revisionId: text("revision_id").notNull(),
+    action: text("action").notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("SCHEDULED"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("promotion_schedule_action_allowed", "action", PROMOTION_SCHEDULE_ACTIONS),
+    stateCheck("promotion_schedule_status_allowed", "status", PROMOTION_SCHEDULE_STATUSES),
+    quantityCheck("promotion_schedule_attempt_count_non_negative", "attempt_count"),
+    uniqueIndex("promotion_schedule_idempotency_unique").on(table.idempotencyKey),
+    index("promotion_schedule_status_scheduled").on(table.status, table.scheduledAt),
+    index("promotion_schedule_promotion").on(table.promotionId),
+    foreignKey({ name: "promotion_schedule_promotion_fk", columns: [table.promotionId], foreignColumns: [promotion.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_schedule_revision_fk", columns: [table.revisionId], foreignColumns: [promotionRevision.id] }).onDelete("restrict"),
+    foreignKey({ name: "promotion_schedule_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
   ],
 );

@@ -579,4 +579,39 @@ export class CrmContactService {
       offset,
     };
   }
+
+  /**
+   * Phase 5.7 read surface: active segment tag keys for a user, resolved
+   * through the identity link (user → contact → tags). Read-only; used by
+   * Promotions to resolve CUSTOMER_SEGMENT facts. Returns an empty list when
+   * the user has no linked contact (fail closed for segment-targeted
+   * promotions). Keys (not labels) are the stable segment identifiers.
+   */
+  async getSegmentKeysForUser(userId: string): Promise<string[]> {
+    const [link] = await this.db
+      .select({ contactId: crmContactIdentityLink.contactId })
+      .from(crmContactIdentityLink)
+      .where(eq(crmContactIdentityLink.userId, userId))
+      .limit(1);
+    if (!link) return [];
+    const rows = await this.db
+      .select({ key: crmTag.key })
+      .from(crmContactTag)
+      .innerJoin(crmTag, eq(crmTag.id, crmContactTag.tagId))
+      .where(and(eq(crmContactTag.contactId, link.contactId), eq(crmTag.isActive, true)));
+    return [...new Set(rows.map((row) => row.key))].sort();
+  }
+
+  /**
+   * Phase 5.7 read surface: whether a segment tag key exists and is active.
+   * Used at promotion authoring time to validate CUSTOMER_SEGMENT references.
+   */
+  async segmentKeyExists(key: string): Promise<boolean> {
+    const [tag] = await this.db
+      .select({ id: crmTag.id })
+      .from(crmTag)
+      .where(and(eq(crmTag.key, key), eq(crmTag.isActive, true)))
+      .limit(1);
+    return Boolean(tag);
+  }
 }
