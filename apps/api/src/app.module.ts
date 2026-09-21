@@ -49,6 +49,7 @@ import { SupportModule } from "./modules/support/support.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { CmsModule } from "./modules/cms/cms.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { ProductionModule } from "./modules/production/production.module";
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
     NotificationsModule,
     CmsModule,
     AnalyticsModule,
+    ProductionModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },

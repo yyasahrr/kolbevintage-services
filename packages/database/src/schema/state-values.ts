@@ -917,6 +917,7 @@ export const APPROVAL_REQUEST_TYPES = [
   "BUSINESS_SETTING_CHANGE",
   "MEMBERSHIP_MANUAL_ACTIVATE",
   "MEMBERSHIP_TERMINATE",
+  "PRODUCTION_RECALL",
 ] as const;
 export const APPROVAL_REQUEST_STATUSES = [
   "pending",
@@ -1201,4 +1202,72 @@ export const ANALYTICS_REPORT_RUN_STATUSES = ["QUEUED", "RUNNING", "COMPLETED", 
 export const ANALYTICS_EXPORT_FORMATS = ["CSV"] as const;
 export const ANALYTICS_EXPORT_STATUSES = ["QUEUED", "PROCESSING", "COMPLETED", "FAILED", "EXPIRED"] as const;
 export const ANALYTICS_SOURCE_MODES = ["AUTHORITATIVE_LIVE"] as const;
+
+/* ── Phase 5.6 — Supplier Production / Samples / QC ─────────────────────────
+ * These values are the only states written by the production bounded context.
+ * Every critical transition is validated in the API and constrained in Postgres.
+ */
+
+export const PRODUCTION_JOB_STATUSES = ["draft", "planned", "in_progress", "blocked", "completed", "cancelled"] as const;
+export const PRODUCTION_HISTORY_EVENT_TYPES = [
+  "created",
+  "status_changed",
+  "milestone_changed",
+  "capacity_reserved",
+  "capacity_released",
+  "actual_units_recorded",
+  "sample_gate_checked",
+  "quality_gate_checked",
+  "handoff_ready",
+] as const;
+export const PRODUCTION_MILESTONE_STATUSES = ["pending", "in_progress", "completed", "skipped"] as const;
+export const PRODUCTION_MILESTONE_DEFINITION_STATUSES = ["active", "archived"] as const;
+export const SUPPLIER_CAPABILITY_STATUSES = ["active", "suspended", "archived"] as const;
+export const SUPPLIER_CAPACITY_PERIOD_STATUSES = ["open", "closed"] as const;
+export const SUPPLIER_CLOSURE_STATUSES = ["scheduled", "active", "cancelled"] as const;
+export const PRODUCTION_CAPACITY_RESERVATION_STATUSES = ["reserved", "released", "consumed"] as const;
+export const PRODUCTION_COMMAND_STATES = ["pending", "completed", "failed"] as const;
+export const PRODUCTION_EVENT_TYPES = [
+  "JOB_CREATED",
+  "JOB_STATUS_CHANGED",
+  "MILESTONE_CHANGED",
+  "CAPACITY_RESERVED",
+  "CAPACITY_RELEASED",
+  "SAMPLE_SUBMITTED",
+  "SAMPLE_REVIEWED",
+  "CHANGE_REQUEST_SUBMITTED",
+  "INSPECTION_SUBMITTED",
+  "DEFECT_RECORDED",
+  "LOT_CREATED",
+  "QUALITY_RELEASE_APPROVED",
+  "RECALL_SUBMITTED",
+  "RECALL_ACTIVATED",
+] as const;
+
+export const PRODUCTION_SAMPLE_TYPES = ["material", "fit", "pre_production", "final"] as const;
+export const PRODUCTION_SAMPLE_STATUSES = ["draft", "submitted", "under_review", "changes_requested", "rejected", "approved"] as const;
+export const PRODUCTION_SAMPLE_REVIEW_DECISIONS = ["approved", "rejected", "changes_requested"] as const;
+export const PRODUCTION_ARTIFACT_TYPES = ["image", "pdf", "measurement", "specification", "other"] as const;
+export const PRODUCTION_ARTIFACT_PROVIDERS = ["metadata_only"] as const;
+export const PRODUCTION_ARTIFACT_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf", "text/plain"] as const;
+
+export const PRODUCTION_CHANGE_TYPES = ["operational", "commercial", "delivery"] as const;
+export const PRODUCTION_CHANGE_STATUSES = ["draft", "submitted", "under_review", "approved", "rejected", "withdrawn"] as const;
+export const PRODUCTION_CHANGE_DECISIONS = ["approved", "rejected", "needs_information"] as const;
+export const PRODUCTION_CHANGE_OWNER_DOMAINS = ["orders", "offers", "shipping", "production"] as const;
+
+export const QUALITY_CHECKLIST_STATUSES = ["draft", "published", "archived"] as const;
+export const QUALITY_MEASUREMENT_TYPES = ["integer", "boolean", "text"] as const;
+export const QUALITY_INSPECTION_STATUSES = ["draft", "in_progress", "submitted", "accepted", "rejected", "rework_required", "cancelled"] as const;
+export const QUALITY_INSPECTION_DECISIONS = ["accepted", "rejected", "rework_required"] as const;
+export const QUALITY_DEFECT_SEVERITIES = ["minor", "major", "critical"] as const;
+export const QUALITY_DEFECT_STATUSES = ["open", "acknowledged", "rework", "accepted", "waived", "closed"] as const;
+export const QUALITY_REWORK_STATUSES = ["requested", "in_progress", "completed", "failed", "cancelled"] as const;
+export const PRODUCTION_LOT_STATUSES = ["open", "in_progress", "completed", "released", "recall_hold"] as const;
+export const PRODUCTION_LOT_TRACE_TYPES = ["purchase_order_item", "variant", "source_lot"] as const;
+export const QUALITY_RELEASE_STATUSES = ["pending", "ready", "approved", "rejected", "revoked"] as const;
+
+export const PRODUCTION_RECALL_SEVERITIES = ["low", "high", "critical", "global"] as const;
+export const PRODUCTION_RECALL_STATUSES = ["draft", "pending_approval", "approved", "active", "contained", "closed", "rejected", "cancelled"] as const;
+export const PRODUCTION_RECALL_SCOPE_TYPES = ["lot", "order_item", "variant", "global"] as const;
 

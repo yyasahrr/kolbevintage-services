@@ -179,6 +179,30 @@ export class OrderDomainError extends DomainError {
 }
 
 /** Phase 4.7.1 (B5) — the canonical shipping-facing view of a child order, served by Orders (single owner). */
+export type ProductionEligibilityContext = {
+  child: {
+    id: string;
+    orderCode: string;
+    wholesaleOrderId: string | null;
+    sellerId: string;
+    supplierId: string | null;
+    status: string;
+    version: number;
+    currency: string;
+    dueAt: Date | null;
+  };
+  items: Array<{
+    id: string;
+    wholesaleOrderItemId: string | null;
+    productId: string;
+    variantId: string | null;
+    quantity: number;
+    productName: string;
+    sku: string | null;
+  }>;
+  targetUnits: number;
+};
+
 export type ChildOrderShippingContext = {
   child: {
     id: string;
@@ -1993,6 +2017,63 @@ export class OrdersService {
    * `lock: true` takes `purchase_order FOR UPDATE` so concurrent shipment
    * commands on the same child serialize (deadlock-safe: child before shipment).
    */
+  /** Phase 5.6 — read-only owner contract for Production. Production never reads or writes order tables directly. */
+  async getProductionEligibility(input: { childOrderId: string; executor?: DbOrTx; lock?: boolean }): Promise<ProductionEligibilityContext> {
+    const tx = (input.executor as any) || this.db;
+    let childQuery = tx.select().from(purchaseOrder).where(eq(purchaseOrder.id, input.childOrderId)).limit(1);
+    if (input.lock) childQuery = childQuery.for("update");
+    const [child] = await childQuery;
+    if (!child) throw new OrderDomainError("ORDER_NOT_FOUND", `Child order ${input.childOrderId} not found`);
+    if (!child.wholesaleOrderId) throw new OrderDomainError("ORDER_NOT_PRODUCTION_ELIGIBLE", "Production requires a canonical wholesale parent order");
+    const sellerContext = await this.suppliersService.getSellerEligibility(child.sellerId, tx);
+    if (!sellerContext.supplier || child.supplierId !== sellerContext.supplier.id) throw new OrderDomainError("ORDER_SUPPLIER_LINK_INVALID", "Supplier child order is not linked to its canonical supplier seller");
+    const items = await tx.select().from(purchaseOrderItem).where(eq(purchaseOrderItem.purchaseOrderId, input.childOrderId));
+    const targetUnits = items.reduce((sum: number, item: any) => sum + Number(item.quantity), 0);
+    if (!Number.isSafeInteger(targetUnits) || targetUnits <= 0) {
+      throw new OrderDomainError("INVALID_ORDER_QUANTITY", "Child order has no positive integer production quantity");
+    }
+    return {
+      child: {
+        id: child.id,
+        orderCode: child.orderCode,
+        wholesaleOrderId: child.wholesaleOrderId ?? null,
+        sellerId: child.sellerId,
+        supplierId: child.supplierId ?? null,
+        status: child.status,
+        version: child.version,
+        currency: child.currency,
+        dueAt: child.dueAt ?? null,
+      },
+      items: items.map((item: any) => ({
+        id: item.id,
+        wholesaleOrderItemId: item.wholesaleOrderItemId ?? null,
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+        quantity: item.quantity,
+        productName: item.productName,
+        sku: item.sku ?? null,
+      })),
+      targetUnits,
+    };
+  }
+
+  /** Phase 5.6 — canonical supplier-scope assertion for lot trace and recall targets. */
+  async isProductionTargetInSupplierScope(input: { supplierId: string; purchaseOrderItemId?: string | null; variantId?: string | null; executor?: DbOrTx }): Promise<boolean> {
+    const tx = (input.executor as any) || this.db;
+    const target = input.purchaseOrderItemId
+      ? eq(purchaseOrderItem.id, input.purchaseOrderItemId)
+      : input.variantId
+        ? eq(purchaseOrderItem.variantId, input.variantId)
+        : undefined;
+    if (!target) return false;
+    const [row] = await tx.select({ id: purchaseOrderItem.id })
+      .from(purchaseOrderItem)
+      .innerJoin(purchaseOrder, eq(purchaseOrderItem.purchaseOrderId, purchaseOrder.id))
+      .where(and(eq(purchaseOrder.supplierId, input.supplierId), target))
+      .limit(1);
+    return Boolean(row);
+  }
+
   async getChildOrderShippingContext(input: { childOrderId: string; executor?: DbOrTx; lock?: boolean }): Promise<ChildOrderShippingContext> {
     const run = async (tx: any): Promise<ChildOrderShippingContext> => {
       const childResult = input.lock

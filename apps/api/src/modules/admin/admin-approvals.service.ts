@@ -256,6 +256,14 @@ export class AdminApprovalsService {
           break;
         }
 
+        case "PRODUCTION_RECALL": {
+          // Production owns recall execution. The shared Admin approval row still
+          // enforces maker/checker separation; the Production API performs the
+          // domain transition when it calls this service with autoExecute=false.
+          executionResult = { deferredTo: "production.recall", targetType: req.targetType, targetId: req.targetId };
+          break;
+        }
+
         default:
           throw new Error(`Unsupported approval requestType: ${req.requestType}`);
       }
