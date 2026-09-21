@@ -1,23 +1,32 @@
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module";
 import { AuditModule } from "../audit/audit.module";
-import { AdminModule } from "../admin/admin.module";
-import { NotificationTemplateService } from "./notification-template.service";
-import { NotificationPreferenceService } from "./notification-preference.service";
 import { NotificationEventService } from "./notification-event.service";
+import { NotificationPreferenceService } from "./notification-preference.service";
+import { NotificationTemplateService } from "./notification-template.service";
+import { InAppNotificationService } from "./in-app-notification.service";
+import { NotificationDeliveryService } from "./notification-delivery.service";
+import { FakeEmailProvider, FakeSmsProvider } from "./providers/test-providers";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, AdminModule],
-  controllers: [],
+  imports: [DatabaseModule, AuditModule],
   providers: [
     NotificationTemplateService,
     NotificationPreferenceService,
     NotificationEventService,
+    InAppNotificationService,
+    NotificationDeliveryService,
+    FakeSmsProvider,
+    FakeEmailProvider,
   ],
   exports: [
     NotificationTemplateService,
     NotificationPreferenceService,
     NotificationEventService,
+    InAppNotificationService,
+    NotificationDeliveryService,
+    FakeSmsProvider,
+    FakeEmailProvider,
   ],
 })
 export class NotificationsModule {}
