@@ -159,6 +159,12 @@ The pushed D checkpoint produced a real successful CI run:
 
 The run passed the repository's package typechecks/builds, live PostgreSQL schema equivalence, full API suite, frontend regression/build, and infrastructure verification. GitHub emitted only the repository's existing Node.js 20 action deprecation / future Ubuntu image annotations; no job failed.
 
+The follow-up audit-coverage hardening and report content were also validated by real CI at `14ff5118629ad594bbe842690f0530cd5200fedb`:
+
+- Run: `35657362844`
+- URL: https://github.com/yyasahrr/kolbevintage-services/actions/runs/35657362844
+- Result: all five jobs succeeded
+
 ## Explicit non-claims and next phase boundary
 
 - No real object storage, carrier, SMS, email, payment, or analytics provider integration was added.
