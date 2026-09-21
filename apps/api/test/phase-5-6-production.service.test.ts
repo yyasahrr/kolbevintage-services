@@ -125,15 +125,47 @@ describe("Phase 5.6 ProductionService ownership, idempotency and races", () => {
     await expect(production.listJobs(actor, { page: "1", limit: "1", status: "draft' OR 1=1 --" })).rejects.toThrowError(ProductionDomainError);
   });
 
-  it("does not turn commercial changes into a production write", async () => {
+  it("keeps commercial and delivery decisions in their owner workflows", async () => {
     const actor = { userId: ownerId, role: "supplier" as const };
     const jobs = await production.listJobs(actor, { page: 1, limit: 10 });
-    const job = jobs.items[0];
-    await expect(production.createChangeRequest(actor, job.id, {
-      changeType: "commercial",
+    const job = jobs.items.find((candidate: any) => candidate.purchaseOrderId === "p56_service_po");
+    const operational = await production.createChangeRequest(actor, job.id, {
+      changeType: "operational",
       ownerDomain: "production",
-      reason: "Do not mutate price here",
+      reason: "Move a production milestone",
+      idempotencyKey: "p56-operational-change-1",
+    });
+    const admin = { userId: "p56_service_admin", role: "admin" as const };
+    const needsInfo = await production.decideChangeRequest(admin, operational.change.id, { decision: "needs_information", notes: "Add the work-center reference", idempotencyKey: "p56-operational-decision-1" });
+    expect(needsInfo.change.status).toBe("under_review");
+
+    const commercial = await production.createChangeRequest(actor, job.id, {
+      changeType: "commercial",
+      ownerDomain: "orders",
+      reason: "Request an owner-domain price review",
       idempotencyKey: "p56-commercial-change-1",
-    })).rejects.toMatchObject({ code: "COMMERCIAL_OWNER_REQUIRED" });
+    });
+    await expect(production.decideChangeRequest(admin, commercial.change.id, { decision: "approved", idempotencyKey: "p56-commercial-decision-bad" })).rejects.toMatchObject({ code: "OWNER_DECISION_REFERENCE_REQUIRED" });
+    const approved = await production.decideChangeRequest(admin, commercial.change.id, { decision: "approved", decisionReference: "orders-change-123", idempotencyKey: "p56-commercial-decision-good" });
+    expect(approved.change.status).toBe("approved");
+    await expect(production.createChangeRequest(actor, job.id, {
+      changeType: "delivery",
+      ownerDomain: "production",
+      reason: "Do not mutate shipping here",
+      idempotencyKey: "p56-delivery-change-1",
+    })).rejects.toMatchObject({ code: "SHIPPING_OWNER_REQUIRED" });
+  });
+
+  it("accepts only private artifact metadata and replays artifact registration", async () => {
+    const actor = { userId: ownerId, role: "supplier" as const };
+    const jobs = await production.listJobs(actor, { page: 1, limit: 10 });
+    const job = jobs.items.find((candidate: any) => candidate.purchaseOrderId === "p56_service_po");
+    await expect(production.registerArtifact(actor, job.id, { artifactType: "image", mimeType: "image/png", objectKey: "production/p56-service/evidence.png", byteSize: 10, checksumSha256: "a".repeat(64), contentBase64: "not accepted", idempotencyKey: "p56-artifact-bad" })).rejects.toMatchObject({ code: "ARTIFACT_BYTES_NOT_ACCEPTED" });
+    const first = await production.registerArtifact(actor, job.id, { artifactType: "image", mimeType: "image/png", objectKey: "production/p56-service/evidence.png", byteSize: 10, checksumSha256: "a".repeat(64), idempotencyKey: "p56-artifact-good" });
+    const replay = await production.registerArtifact(actor, job.id, { artifactType: "image", mimeType: "image/png", objectKey: "production/p56-service/evidence.png", byteSize: 10, checksumSha256: "a".repeat(64), idempotencyKey: "p56-artifact-good" });
+    expect(first.artifact.id).toBe(replay.artifact.id);
+    expect(replay.replayed).toBe(true);
+    expect(first.artifact.private).toBe(true);
+    expect(first.artifact.storageProvider).toBe("metadata_only");
   });
 });

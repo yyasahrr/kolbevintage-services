@@ -714,11 +714,17 @@ export class ProductionService {
       if (!change) throw new ProductionDomainError("CHANGE_REQUEST_NOT_FOUND", "Change request not found", 404);
       const [job] = await tx.select().from(productionJob).where(eq(productionJob.id, change.jobId)).limit(1);
       if (!job) throw new ProductionDomainError("PRODUCTION_JOB_NOT_FOUND", "Production job not found", 404);
-      assertTransition(CHANGE_TRANSITIONS, change.status, decision === "needs_information" ? "under_review" : decision, "INVALID_CHANGE_TRANSITION");
-      if (decision === "approved" && (change.commercialImpact || change.deliveryImpact) && !decisionReference) throw new ProductionDomainError("OWNER_DECISION_REFERENCE_REQUIRED", "Commercial or delivery changes require the owning service decision reference", 422);
       const claim = await this.claimCommand(tx, "production_change_request", change.id, "production.change_decision", input.idempotencyKey, { changeId, decision, decisionReference, notes });
       if (claim.replayed) return { change, replayed: true };
+      if (decision === "approved" && (change.commercialImpact || change.deliveryImpact) && !decisionReference) throw new ProductionDomainError("OWNER_DECISION_REFERENCE_REQUIRED", "Commercial or delivery changes require the owning service decision reference", 422);
+      let decisionFromStatus = change.status;
+      if (change.status === "submitted" && decision !== "needs_information") {
+        assertTransition(CHANGE_TRANSITIONS, change.status, "under_review", "INVALID_CHANGE_TRANSITION");
+        await tx.update(productionChangeRequest).set({ status: "under_review", updatedAt: new Date() }).where(eq(productionChangeRequest.id, change.id));
+        decisionFromStatus = "under_review";
+      }
       const nextStatus = decision === "needs_information" ? "under_review" : decision;
+      assertTransition(CHANGE_TRANSITIONS, decisionFromStatus, nextStatus, "INVALID_CHANGE_TRANSITION");
       const [decisionRow] = await tx.insert(productionChangeDecision).values({ id: id("pdec"), changeRequestId: change.id, decision, decisionReference, notes, decidedBy: actor.userId }).returning();
       const [updated] = await tx.update(productionChangeRequest).set({ status: nextStatus, ownerDecisionReference: decisionReference, updatedAt: new Date() }).where(eq(productionChangeRequest.id, change.id)).returning();
       await this.recordAudit(tx, actor, "production.change_request_decided", "production_change_request", change.id, { decision, decisionReference, ownerDomain: change.ownerDomain });
