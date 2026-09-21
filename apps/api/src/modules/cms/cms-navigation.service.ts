@@ -4,7 +4,7 @@ import { cmsNavigation, cmsNavigationRevision, type KolbeDatabase } from "@kolbe
 import { ConflictError, NotFoundError, ValidationError } from "@kolbe/shared";
 import { KOLBE_DB } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
-import { makeCmsId, validateNavigationItems, validateRevisionStatusTransition, type CmsNavigationItem } from "./cms-validation";
+import { assertNoExecutableContent, makeCmsId, validateNavigationItems, validateRevisionStatusTransition, type CmsNavigationItem } from "./cms-validation";
 
 function navigationKey(value: unknown): string {
   if (typeof value !== "string" || !/^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}._:-]{0,119}$/u.test(value.normalize("NFKC").trim())) throw new ValidationError([{ field: "navigationKey", code: "NAVIGATION_KEY_INVALID" }]);
@@ -81,6 +81,12 @@ export class CmsNavigationService {
     });
   }
 
+  async getRevisionById(id: string) {
+    const [revision] = await this.db.select().from(cmsNavigationRevision).where(eq(cmsNavigationRevision.id, id)).limit(1);
+    if (!revision) throw new NotFoundError("CMS navigation revision", id);
+    return revision;
+  }
+
   async getByKey(key: string) {
     const [navigation] = await this.db.select().from(cmsNavigation).where(eq(cmsNavigation.navigationKey, navigationKey(key))).limit(1);
     if (!navigation) throw new NotFoundError("CMS navigation", key);
@@ -96,6 +102,8 @@ export class CmsNavigationService {
 
   private label(value: unknown): string {
     if (typeof value !== "string" || !value.trim() || value.length > 200) throw new ValidationError([{ field: "label", code: "LABEL_INVALID" }]);
-    return value.normalize("NFKC").trim();
+    const label = value.normalize("NFKC").trim();
+    assertNoExecutableContent(label, "label");
+    return label;
   }
 }

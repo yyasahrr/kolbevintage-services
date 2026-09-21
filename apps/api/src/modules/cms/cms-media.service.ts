@@ -5,7 +5,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@kolbe/shared";
 import { KOLBE_DB } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
 import { detectMediaSignature, makeObjectKey, sha256, type PublicMediaObject, type PublicMediaStorage } from "./public-media-storage";
-import { CMS_MEDIA_LIMITS, makeCmsId, validateMimeType } from "./cms-validation";
+import { assertNoExecutableContent, CMS_MEDIA_LIMITS, makeCmsId, validateMimeType } from "./cms-validation";
 
 export const CMS_PUBLIC_MEDIA_STORAGE = Symbol("CMS_PUBLIC_MEDIA_STORAGE");
 
@@ -102,7 +102,9 @@ export class CmsMediaService {
   private safeOptionalText(value: unknown, field: string, max: number): string | null {
     if (value === undefined || value === null || value === "") return null;
     if (typeof value !== "string" || value.length > max) throw new ValidationError([{ field, code: "TEXT_INVALID" }]);
-    return value.normalize("NFKC").trim();
+    const normalized = value.normalize("NFKC").trim();
+    assertNoExecutableContent(normalized, field);
+    return normalized;
   }
 
   private positiveOptional(value: unknown, field: string): number | null {

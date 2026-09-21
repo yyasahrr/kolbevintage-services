@@ -174,6 +174,10 @@ export class CmsAdminController {
   @RequireAdminPermission("cms:content:publish")
   publishArticle(@Param("id") id: string, @CurrentUser() user: Claims) { return this.publication.publishArticle(id, user.sub); }
 
+  @Post("publication/recover-stale")
+  @RequireAdminPermission("cms:content:publish")
+  recoverStalePublication(@Body() body: { ageMinutes?: number }) { return this.publication.recoverStaleSchedules(body?.ageMinutes); }
+
   @Post("article-revisions/:id/status")
   @RequireAdminPermission("cms:blog:manage")
   transitionArticleRevision(@Param("id") id: string, @Body() body: { status: string }, @CurrentUser() user: Claims) { return this.articles.transitionRevision(id, body.status, user.sub); }

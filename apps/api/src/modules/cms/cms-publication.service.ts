@@ -107,7 +107,15 @@ export class CmsPublicationService {
       if (existing) return existing;
       const [schedule] = await tx.insert(cmsPublicationSchedule).values({ id: makeCmsId("schedule"), targetType: target, [targetColumn]: revisionId, publishAt, unpublishAt, timezone: "UTC", status: "SCHEDULED", idempotencyKey: key, createdBy: actorId } as any).returning();
       const lifecycle: Record<string, unknown> = { status: "SCHEDULED" };
-      if (target !== "NAVIGATION_REVISION") { lifecycle.publishAt = publishAt; lifecycle.unpublishAt = unpublishAt; }
+      // Content revisions keep the unpublish timestamp on the durable schedule row;
+      // their revision table intentionally has no unpublish_at column. Page and
+      // article revisions retain both lifecycle timestamps for editorial display.
+      if (target === "PAGE_REVISION" || target === "ARTICLE_REVISION") {
+        lifecycle.publishAt = publishAt;
+        lifecycle.unpublishAt = unpublishAt;
+      } else if (target === "CONTENT_REVISION") {
+        lifecycle.publishAt = publishAt;
+      }
       await tx.update(targetTable as any).set(lifecycle as any).where(eq((targetTable as any).id, revisionId));
       await this.audit.record({ actorId, actorRole: "admin", action: "cms.revision.publication_scheduled", entityType: "cms_publication_schedule", entityId: schedule?.id ?? null, after: { targetType: target, revisionId, publishAt, unpublishAt } }, tx);
       return schedule;
@@ -168,7 +176,29 @@ export class CmsPublicationService {
 
   async recoverStaleSchedules(ageMinutes = 15) {
     const cutoff = new Date(Date.now() - Math.max(ageMinutes, 1) * 60_000);
-    return this.db.update(cmsPublicationSchedule).set({ status: "SCHEDULED", claimedAt: null, lastError: "Recovered stale processing claim" }).where(and(eq(cmsPublicationSchedule.status, "PROCESSING"), lte(cmsPublicationSchedule.claimedAt, cutoff))).returning({ id: cmsPublicationSchedule.id });
+    const locked = await this.jobLock.withSessionLock("job:cms:publication", async () => this.db.update(cmsPublicationSchedule)
+      .set({
+        // A PROCESSING row can belong either to publication or unpublication.
+        // Preserve that phase when recovering a crashed worker; otherwise an
+        // unpublication claim would accidentally publish the revision again.
+        status: sql`CASE WHEN ${cmsPublicationSchedule.executedAt} IS NULL THEN 'SCHEDULED' ELSE 'EXECUTED' END`,
+        claimedAt: null,
+        lastError: "Recovered stale processing claim",
+      })
+      .where(and(eq(cmsPublicationSchedule.status, "PROCESSING"), lte(cmsPublicationSchedule.claimedAt, cutoff)))
+      .returning({ id: cmsPublicationSchedule.id }));
+    const recovered = locked.result ?? [];
+    if (recovered.length) {
+      await this.audit.record({
+        actorId: "system",
+        actorRole: "system",
+        action: "cms.publication.stale_claim_recovered",
+        entityType: "cms_publication_schedule",
+        entityId: "cms_publication",
+        after: { count: recovered.length, ageMinutes },
+      });
+    }
+    return recovered;
   }
 
   async getPublishedPage(routePath: string) {

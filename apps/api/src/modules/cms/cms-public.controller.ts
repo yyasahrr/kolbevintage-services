@@ -60,4 +60,18 @@ export class CmsPublicController {
     const revision = await this.content.getRevisionById(revisionId);
     return { revision, preview: true, expiresWithToken: true };
   }
+
+  @Get("preview/navigation/:revisionId")
+  async previewNavigation(@Param("revisionId") revisionId: string, @Query("token") token: string) {
+    if (!this.preview.verify(token, "NAVIGATION_REVISION", revisionId)) throw new NotFoundException();
+    const revision = await this.navigation.getRevisionById(revisionId);
+    return { revision, preview: true, expiresWithToken: true };
+  }
+
+  @Get("preview/article/:revisionId")
+  async previewArticle(@Param("revisionId") revisionId: string, @Query("token") token: string) {
+    if (!this.preview.verify(token, "ARTICLE_REVISION", revisionId)) throw new NotFoundException();
+    const revision = await this.articles.getRevisionById(revisionId);
+    return { revision, preview: true, expiresWithToken: true };
+  }
 }

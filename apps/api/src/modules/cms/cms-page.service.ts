@@ -11,6 +11,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@kolbe/shared";
 import { KOLBE_DB } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
 import {
+  assertNoExecutableContent,
   assertUniqueRouteSafety,
   collectMediaReferences,
   makeCmsId,
@@ -57,7 +58,9 @@ function safeStableKey(value: unknown): string {
 
 function safeTitle(value: unknown): string {
   if (typeof value !== "string" || !value.trim() || value.length > 300) throw new ValidationError([{ field: "title", code: "TITLE_INVALID" }]);
-  return value.normalize("NFKC").trim();
+  const title = value.normalize("NFKC").trim();
+  assertNoExecutableContent(title, "title");
+  return title;
 }
 
 @Injectable()
@@ -74,6 +77,7 @@ export class CmsPageService {
     const title = safeTitle(input.title ?? stableKey);
     const blocks = validateBlocks(input.blocks ?? [], "blocks");
     const seoMetadata = validateSeo(input.seoMetadata ?? {}, "seoMetadata");
+    if (input.mediaIds !== undefined && (!Array.isArray(input.mediaIds) || input.mediaIds.some((id) => typeof id !== "string"))) throw new ValidationError([{ field: "mediaIds", code: "ARRAY_OF_IDS_REQUIRED" }]);
     const pageId = makeCmsId("page");
 
     try {
@@ -94,7 +98,7 @@ export class CmsPageService {
           seoMetadata,
           createdBy: input.createdBy ?? null,
           contentSchemaVersion: 1,
-          mediaRefs: collectMediaReferences({ blocks, seoMetadata }),
+          mediaRefs: [...collectMediaReferences({ blocks, seoMetadata }), ...(input.mediaIds ?? []).map((id) => ({ id, path: "mediaIds" }))],
         });
         await this.audit.record({
           actorId: input.createdBy ?? null,

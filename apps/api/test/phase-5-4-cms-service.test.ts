@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { cmsPageRevision } from "@kolbe/database";
+import { cmsContentRevision, cmsPageRevision } from "@kolbe/database";
+import { CmsContentService } from "../src/modules/cms/cms-content.service";
 import { CmsPageService } from "../src/modules/cms/cms-page.service";
 import { CmsPublicationService } from "../src/modules/cms/cms-publication.service";
 import { dropDatabase, ensurePostgres, migrateOrFail, recreateDatabase, urlFor } from "../../../packages/database/test/helpers";
@@ -10,6 +11,7 @@ import { dropDatabase, ensurePostgres, migrateOrFail, recreateDatabase, urlFor }
 const DB = "kolbe_phase_5_4_service_test";
 let pool: Pool;
 let pages: CmsPageService;
+let content: CmsContentService;
 let publication: CmsPublicationService;
 
 const audit = { record: async () => "audit_test" };
@@ -23,6 +25,7 @@ describe("Phase 5.4 CMS service lifecycle", () => {
     pool = new Pool({ connectionString: urlFor(DB) });
     const db = drizzle(pool);
     pages = new CmsPageService(db as any, audit as any);
+    content = new CmsContentService(db as any, audit as any);
     publication = new CmsPublicationService(db as any, audit as any, lock as any);
   }, 180_000);
 
@@ -47,5 +50,20 @@ describe("Phase 5.4 CMS service lifecycle", () => {
     await publication.publishPage(rollback.id, null);
     const [current] = await (pages as any).db.select().from(cmsPageRevision).where(eq(cmsPageRevision.id, rollback.id));
     expect(current.status).toBe("PUBLISHED");
+  });
+
+  it("stores durable UTC schedules without writing unsupported lifecycle columns to typed content revisions", async () => {
+    const created = await content.createDocument({
+      documentKey: "phase54-scheduled-content",
+      documentType: "HOME_CONFIGURATION",
+      payload: { mode: "scheduled" },
+    });
+    const publishAt = new Date(Date.now() + 5 * 60_000);
+    const unpublishAt = new Date(publishAt.getTime() + 5 * 60_000);
+    const schedule = await publication.scheduleRevision("CONTENT_REVISION", created.revision.id, publishAt, unpublishAt, "phase54-content-schedule", null);
+    expect(schedule.timezone).toBe("UTC");
+    const [revision] = await (content as any).db.select().from(cmsContentRevision).where(eq(cmsContentRevision.id, created.revision.id));
+    expect(revision.status).toBe("SCHEDULED");
+    expect(revision.publishAt).toEqual(publishAt);
   });
 });

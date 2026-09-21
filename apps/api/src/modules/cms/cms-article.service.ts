@@ -4,7 +4,7 @@ import { cmsArticle, cmsArticleRevision, cmsArticleRevisionTaxonomy, cmsArticleT
 import { ConflictError, NotFoundError, ValidationError } from "@kolbe/shared";
 import { KOLBE_DB } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
-import { collectMediaReferences, makeCmsId, normalizeSlug, validateRichBody, validateRevisionStatusTransition, validateSeo } from "./cms-validation";
+import { assertNoExecutableContent, collectMediaReferences, makeCmsId, normalizeSlug, validateRichBody, validateRevisionStatusTransition, validateSeo } from "./cms-validation";
 
 function articleKey(value: unknown): string {
   if (typeof value !== "string" || !/^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}._:-]{0,179}$/u.test(value.normalize("NFKC").trim())) throw new ValidationError([{ field: "articleKey", code: "ARTICLE_KEY_INVALID" }]);
@@ -17,7 +17,9 @@ function text(value: unknown, field: string, max: number, required = false): str
     return null;
   }
   if (typeof value !== "string" || value.length > max) throw new ValidationError([{ field, code: "TEXT_INVALID" }]);
-  return value.normalize("NFKC").trim();
+  const normalized = value.normalize("NFKC").trim();
+  assertNoExecutableContent(normalized, field);
+  return normalized;
 }
 
 @Injectable()
@@ -149,6 +151,12 @@ export class CmsArticleService {
       await this.audit.record({ actorId, actorRole: "admin", action: "cms.article.archived", entityType: "cms_article", entityId: id, before: { status: article.status }, after: { status: "ARCHIVED" } }, tx);
       return updated;
     });
+  }
+
+  async getRevisionById(id: string) {
+    const [revision] = await this.db.select().from(cmsArticleRevision).where(eq(cmsArticleRevision.id, id)).limit(1);
+    if (!revision) throw new NotFoundError("CMS article revision", id);
+    return revision;
   }
 
   async getPublishedBySlug(input: string) {

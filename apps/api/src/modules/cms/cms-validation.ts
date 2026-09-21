@@ -102,6 +102,18 @@ function ensureAllowedKeys(value: Record<string, unknown>, allowed: readonly str
   if (unknown.length) invalid(unknown.map((key) => ({ field: `${field}.${key}`, code: "UNKNOWN_FIELD" })), "Unknown CMS fields are rejected");
 }
 
+function ensureText(value: unknown, field: string, max: number, required = true): string | undefined {
+  if (value === undefined || value === null || value === "") {
+    if (required) invalid([{ field, code: "TEXT_REQUIRED" }]);
+    return undefined;
+  }
+  if (typeof value !== "string" || value.length > max) invalid([{ field, code: "TEXT_INVALID" }]);
+  const normalized = value.normalize("NFKC").trim();
+  if (required && !normalized) invalid([{ field, code: "TEXT_REQUIRED" }]);
+  assertNoExecutableContent(normalized, field);
+  return normalized;
+}
+
 /** Reject executable markup, script URLs, event attributes and prototype-pollution keys recursively. */
 export function assertNoExecutableContent(value: unknown, field = "content"): void {
   if (typeof value === "string") {
@@ -196,12 +208,36 @@ export function validateRichBody(input: unknown, field = "structuredBody"): unkn
   if (!Array.isArray(input)) invalid([{ field, code: "STRUCTURED_BODY_REQUIRED" }]);
   if (input.length > 500) invalid([{ field, code: "TOO_MANY_BODY_BLOCKS" }]);
   return input.map((raw, index) => {
-    const value = ensureObject(raw, `${field}[${index}]`); const type = typeof value.type === "string" ? value.type.toLowerCase() : "";
-    if (!BODY_BLOCK_KEYS[type]) invalid([{ field: `${field}[${index}].type`, code: "RICH_BLOCK_TYPE_FORBIDDEN" }]);
-    ensureAllowedKeys(value, BODY_BLOCK_KEYS[type], `${field}[${index}]`);
-    if (type === "link") value.to = validateInternalOrExternalUrl(value.to, `${field}[${index}].to`);
-    if (type === "heading" && (!Number.isInteger(Number(value.level)) || Number(value.level) < 2 || Number(value.level) > 4)) invalid([{ field: `${field}[${index}].level`, code: "HEADING_LEVEL_INVALID" }]);
-    assertNoExecutableContent(value, `${field}[${index}]`); return value;
+    const itemField = `${field}[${index}]`;
+    const value = ensureObject(raw, itemField);
+    const type = typeof value.type === "string" ? value.type.toLowerCase() : "";
+    if (!BODY_BLOCK_KEYS[type]) invalid([{ field: `${itemField}.type`, code: "RICH_BLOCK_TYPE_FORBIDDEN" }]);
+    ensureAllowedKeys(value, BODY_BLOCK_KEYS[type], itemField);
+    value.type = type;
+    if (type === "paragraph" || type === "heading" || type === "quote") {
+      value.text = ensureText(value.text, `${itemField}.text`, 20_000);
+    }
+    if (type === "heading") {
+      if (!Number.isInteger(Number(value.level)) || Number(value.level) < 2 || Number(value.level) > 4) invalid([{ field: `${itemField}.level`, code: "HEADING_LEVEL_INVALID" }]);
+      value.level = Number(value.level);
+    }
+    if (type === "image") {
+      if (typeof value.mediaId !== "string" || !/^[A-Za-z0-9_:-]{1,220}$/.test(value.mediaId)) invalid([{ field: `${itemField}.mediaId`, code: "MEDIA_ID_INVALID" }]);
+      value.altText = ensureText(value.altText, `${itemField}.altText`, 300, false);
+      value.caption = ensureText(value.caption, `${itemField}.caption`, 1_000, false);
+    }
+    if (type === "link") {
+      value.label = ensureText(value.label, `${itemField}.label`, 300);
+      value.to = validateInternalOrExternalUrl(value.to, `${itemField}.to`);
+    }
+    if (type === "list") {
+      if (value.ordered !== undefined && typeof value.ordered !== "boolean") invalid([{ field: `${itemField}.ordered`, code: "BOOLEAN_REQUIRED" }]);
+      if (!Array.isArray(value.items) || value.items.length > 100) invalid([{ field: `${itemField}.items`, code: "LIST_ITEMS_INVALID" }]);
+      value.items = value.items.map((entry, itemIndex) => ensureText(entry, `${itemField}.items[${itemIndex}]`, 2_000));
+    }
+    if (type === "quote") value.attribution = ensureText(value.attribution, `${itemField}.attribution`, 300, false);
+    assertNoExecutableContent(value, itemField);
+    return value;
   });
 }
 

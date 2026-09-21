@@ -1,7 +1,7 @@
 # Phase 5.4 CMS — bounded-context architecture audit
 
-**Status:** implemented on `arena/01a0c422-kolbevintage-services`  
-**Scope:** authoritative, versioned, auditable content and publication backend only  
+**Status:** implemented on `arena/01a0c422-kolbevintage-services`
+**Scope:** authoritative, versioned, auditable content and publication backend only
 **Migration:** `packages/database/migrations/0028_phase_5_4_cms_content_management.sql`
 
 ## 1. Authority and ownership
