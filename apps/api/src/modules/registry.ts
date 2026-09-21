@@ -94,7 +94,24 @@ export const MODULES: readonly ModuleDefinition[] = [
     phase: 3,
   },
   { name: "pricing", tables: [], dependsOn: ["offers"], status: "scaffolded", phase: 3 },
-  { name: "promotions", tables: [], dependsOn: ["pricing", "orders"], status: "planned", phase: 4 },
+  {
+    // Phase 5.7 — versioned promotions and the deterministic commercial engine.
+    // Reads owner facts through Catalog/Offers/VIP/CRM/Pricing services; writes
+    // only its own tables. Evaluation never touches orders/inventory/payments.
+    name: "promotions",
+    tables: [
+      "promotion",
+      "promotion_revision",
+      "promotion_target",
+      "promotion_coupon",
+      "promotion_coupon_redemption",
+      "promotion_usage",
+      "promotion_schedule",
+    ],
+    dependsOn: ["pricing", "offers", "vip", "catalog", "crm", "admin", "audit", "recovery"],
+    status: "live",
+    phase: 5,
+  },
   {
     name: "inventory",
     tables: ["product_variant_inventory", "inventory_reservation", "inventory_ledger", "command_idempotency"],

@@ -194,4 +194,11 @@ export {
   productionRecall,
   productionRecallScope,
   productionRecallApproval,
+  promotion,
+  promotionRevision,
+  promotionTarget,
+  promotionCoupon,
+  promotionCouponRedemption,
+  promotionUsage,
+  promotionSchedule,
 } from "./tables";

@@ -217,6 +217,18 @@ export class OffersService {
     return offer;
   }
 
+  /**
+   * Phase 5.7 — public read contract for promotion base-price revalidation.
+   * Returns the offer's pricing tiers ordered deterministically. Callers pass
+   * them to PricingService.resolvePrice; tiers never leave the server.
+   */
+  async listPricingTiersForResolution(offerId: string) {
+    return await this.db
+      .select()
+      .from(wholesalePricingTier)
+      .where(eq(wholesalePricingTier.offerId, offerId));
+  }
+
   async getPackageForOrder(packageId: string, offerId: string, executor?: any) {
     const db = (executor as any) || this.db;
     const [pkg] = await db.select().from(wholesalePackage).where(eq(wholesalePackage.id, packageId)).limit(1);

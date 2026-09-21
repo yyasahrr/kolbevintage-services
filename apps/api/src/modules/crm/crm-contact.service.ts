@@ -213,6 +213,36 @@ export class CrmContactService {
     };
   }
 
+  /**
+   * Phase 5.7 — public read contract for promotion segment resolution.
+   * Resolves the CRM contact (with stage + active tag keys) for a linked user
+   * account. Returns null when the user has no contact — callers fail closed.
+   */
+  async getContactByUserId(userId: string, linkType: "account_user" | "wholesale_account" = "account_user") {
+    const [link] = await this.db
+      .select()
+      .from(crmContactIdentityLink)
+      .where(and(eq(crmContactIdentityLink.userId, userId), eq(crmContactIdentityLink.linkType, linkType)))
+      .limit(1);
+    if (!link) return null;
+    const [contact] = await this.db
+      .select()
+      .from(crmContact)
+      .where(eq(crmContact.id, link.contactId))
+      .limit(1);
+    if (!contact) return null;
+    const tags = await this.db
+      .select({ key: crmTag.key })
+      .from(crmContactTag)
+      .innerJoin(crmTag, eq(crmTag.id, crmContactTag.tagId))
+      .where(and(eq(crmContactTag.contactId, contact.id), eq(crmTag.isActive, true)));
+    return {
+      contactId: contact.id,
+      stage: contact.stage,
+      tagKeys: tags.map((tag) => tag.key),
+    };
+  }
+
   async updateContact(contactId: string, patch: UpdateContactInput, actorId: string) {
     const existing = await this.getContact(contactId);
 

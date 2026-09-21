@@ -50,6 +50,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { CmsModule } from "./modules/cms/cms.module";
 import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { ProductionModule } from "./modules/production/production.module";
+import { PromotionsModule } from "./modules/promotions/promotions.module";
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { ProductionModule } from "./modules/production/production.module";
     CmsModule,
     AnalyticsModule,
     ProductionModule,
+    PromotionsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },

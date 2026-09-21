@@ -144,6 +144,19 @@ const STATE_COLUMNS: Array<{ table: string; column: string; values: readonly str
   { table: "order_event", column: "aggregate_type", values: sets.ORDER_AGGREGATE_TYPES, check: "order_event_aggregate_type_allowed" },
   { table: "order_event", column: "event_type", values: sets.ORDER_EVENT_TYPES, check: "order_event_event_type_allowed" },
   { table: "order_event", column: "actor_role", values: sets.ORDER_ACTOR_ROLES, check: "order_event_actor_role_allowed" },
+  { table: "promotion", column: "channel", values: sets.PROMOTION_CHANNELS, check: "promotion_channel_allowed" },
+  { table: "promotion", column: "status", values: sets.PROMOTION_STATUSES, check: "promotion_status_allowed" },
+  { table: "promotion_revision", column: "status", values: sets.PROMOTION_REVISION_STATUSES, check: "promotion_revision_status_allowed" },
+  { table: "promotion_revision", column: "benefit_type", values: sets.PROMOTION_BENEFIT_TYPES, check: "promotion_revision_benefit_type_allowed" },
+  { table: "promotion_revision", column: "benefit_scope", values: sets.PROMOTION_BENEFIT_SCOPES, check: "promotion_revision_benefit_scope_allowed" },
+  { table: "promotion_revision", column: "currency", values: sets.CURRENCIES, check: "promotion_revision_currency_allowed" },
+  { table: "promotion_revision", column: "stacking_policy", values: sets.PROMOTION_STACKING_POLICIES, check: "promotion_revision_stacking_allowed" },
+  { table: "promotion_target", column: "target_type", values: sets.PROMOTION_TARGET_TYPES, check: "promotion_target_type_allowed" },
+  { table: "promotion_coupon_redemption", column: "actor_type", values: sets.PROMOTION_REDEMPTION_ACTOR_TYPES, check: "promotion_coupon_redemption_actor_type_allowed" },
+  { table: "promotion_usage", column: "actor_type", values: sets.PROMOTION_REDEMPTION_ACTOR_TYPES, check: "promotion_usage_actor_type_allowed" },
+  { table: "promotion_schedule", column: "action", values: sets.PROMOTION_SCHEDULE_ACTIONS, check: "promotion_schedule_action_allowed" },
+  { table: "promotion_schedule", column: "status", values: sets.PROMOTION_SCHEDULE_STATUSES, check: "promotion_schedule_status_allowed" },
+  { table: "admin_role_permission", column: "action", values: sets.ADMIN_PERMISSION_ACTIONS, check: "admin_role_permission_action_allowed" },
 ];
 
 const sorted = (values: readonly string[]) => [...values].sort();

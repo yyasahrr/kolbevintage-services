@@ -221,6 +221,14 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "in_app_notification",
       "notification_provider_event",
       "notification_provider_config",
+      // Phase 5.7
+      "promotion",
+      "promotion_revision",
+      "promotion_target",
+      "promotion_coupon",
+      "promotion_coupon_redemption",
+      "promotion_usage",
+      "promotion_schedule",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);

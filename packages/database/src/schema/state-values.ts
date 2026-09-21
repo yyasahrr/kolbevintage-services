@@ -857,6 +857,13 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "production:quality:review",
   "production:release:decide",
   "production:recall:approve",
+  // Phase 5.7 — Promotions / Campaign / Commercial Engine
+  "promotion:view",
+  "promotion:create",
+  "promotion:edit",
+  "promotion:publish",
+  "promotion:pause",
+  "promotion:coupon:manage",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -1283,3 +1290,77 @@ export const PRODUCTION_RECALL_SEVERITIES = ["low", "high", "critical", "global"
 export const PRODUCTION_RECALL_STATUSES = ["draft", "pending_approval", "approved", "active", "contained", "closed", "rejected", "cancelled"] as const;
 export const PRODUCTION_RECALL_SCOPE_TYPES = ["lot", "order_item", "variant", "global"] as const;
 
+/* ── Phase 5.7 — Promotions / Campaign / Commercial Engine ──────────────────── */
+
+export const PROMOTION_CHANNELS = ["RETAIL", "WHOLESALE"] as const;
+export type PromotionChannel = (typeof PROMOTION_CHANNELS)[number];
+
+export const PROMOTION_STATUSES = [
+  "DRAFT",
+  "IN_REVIEW",
+  "SCHEDULED",
+  "ACTIVE",
+  "PAUSED",
+  "ENDED",
+  "ARCHIVED",
+] as const;
+export type PromotionStatus = (typeof PROMOTION_STATUSES)[number];
+
+export const PROMOTION_REVISION_STATUSES = ["DRAFT", "PUBLISHED", "SUPERSEDED"] as const;
+export type PromotionRevisionStatus = (typeof PROMOTION_REVISION_STATUSES)[number];
+
+/**
+ * Allowlisted eligibility dimensions. AND semantics across rows.
+ * DATE_WINDOW is intentionally NOT a target row: the commercial window is
+ * revision-level (starts_at/ends_at, part of the terms hash) so there is
+ * exactly one canonical window.
+ */
+export const PROMOTION_TARGET_TYPES = [
+  "PRODUCT",
+  "CATEGORY",
+  "OFFER",
+  "VIP_PLAN",
+  "VIP_ACCOUNT",
+  "CUSTOMER_SEGMENT",
+  "MIN_SUBTOTAL",
+  "MIN_QUANTITY",
+] as const;
+export type PromotionTargetType = (typeof PROMOTION_TARGET_TYPES)[number];
+
+/** Target types whose value is a foreign identity reference (value_text). */
+export const PROMOTION_REFERENCE_TARGET_TYPES = [
+  "PRODUCT",
+  "CATEGORY",
+  "OFFER",
+  "VIP_PLAN",
+  "VIP_ACCOUNT",
+  "CUSTOMER_SEGMENT",
+] as const;
+
+export const PROMOTION_BENEFIT_TYPES = [
+  "PERCENT_DISCOUNT",
+  "FIXED_AMOUNT_DISCOUNT",
+  "FREE_SHIPPING",
+] as const;
+export type PromotionBenefitType = (typeof PROMOTION_BENEFIT_TYPES)[number];
+
+export const PROMOTION_BENEFIT_SCOPES = ["ORDER", "LINE", "SHIPPING"] as const;
+export type PromotionBenefitScope = (typeof PROMOTION_BENEFIT_SCOPES)[number];
+
+export const PROMOTION_STACKING_POLICIES = ["EXCLUSIVE", "STACKABLE"] as const;
+export type PromotionStackingPolicy = (typeof PROMOTION_STACKING_POLICIES)[number];
+
+export const PROMOTION_SCHEDULE_ACTIONS = ["ACTIVATE", "END"] as const;
+export type PromotionScheduleAction = (typeof PROMOTION_SCHEDULE_ACTIONS)[number];
+
+export const PROMOTION_SCHEDULE_STATUSES = [
+  "SCHEDULED",
+  "CLAIMED",
+  "DONE",
+  "CANCELLED",
+  "FAILED",
+] as const;
+export type PromotionScheduleStatus = (typeof PROMOTION_SCHEDULE_STATUSES)[number];
+
+export const PROMOTION_REDEMPTION_ACTOR_TYPES = ["RETAIL_CUSTOMER", "WHOLESALE_ACCOUNT"] as const;
+export type PromotionRedemptionActorType = (typeof PROMOTION_REDEMPTION_ACTOR_TYPES)[number];

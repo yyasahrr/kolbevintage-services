@@ -103,6 +103,11 @@ export class AdminRbacService implements OnModuleInit {
           "wholesale:notes:view",
           "wholesale:notes:create",
           "wholesale:control_tower:view",
+          // Phase 5.7 — commercial ops is maker (draft/edit); publish/pause
+          // stay high-impact until maker/checker execution lands in 5.7-B.
+          "promotion:view",
+          "promotion:create",
+          "promotion:edit",
         ];
         for (const action of commOpsActions) {
           await this.db
@@ -146,6 +151,8 @@ export class AdminRbacService implements OnModuleInit {
           "wholesale:settings:view",
           "wholesale:notes:view",
           "wholesale:control_tower:view",
+          // Phase 5.7 — checkers can inspect promotions they will gate in 5.7-B.
+          "promotion:view",
         ];
         for (const action of approverActions) {
           await this.db

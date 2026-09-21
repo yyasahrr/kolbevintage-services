@@ -23,12 +23,12 @@ describe("فاز ۳.۸ — Legacy Removal & Clean Architecture", () => {
     expect(rows).toEqual([]);
   });
 
-  it("186 جدول پس از افزودن Supplier Production/QC به مرز Phase 5.6، در کنار همهٔ دامنه‌های قبلی", async () => {
+  it("193 جدول پس از افزودن Promotions/Commercial Engine به مرز Phase 5.7، در کنار همهٔ دامنه‌های قبلی", async () => {
     const { rows } = await withClient(DB, (client) =>
       client.query<{ count: string }>(`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`),
     );
-    // The Phase 5.5 metadata boundary adds 3 rebuildable analytics-owned tables to the 155-table Phase 5.4 schema.
-    expect(Number(rows[0].count)).toBe(186);
+    // The Phase 5.7 migration adds 7 promotion-owned tables to the 186-table Phase 5.6 schema.
+    expect(Number(rows[0].count)).toBe(193);
   });
 
   it("wholesale_order_item به canonical references اشاره می‌کند (Phase 4.2 evolved)", async () => {
