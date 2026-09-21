@@ -768,6 +768,32 @@ export const WHOLESALE_MEMBERSHIP_EVENT_TYPES = [
   "expired",
 ] as const;
 
+/** Phase 5.4 — CMS content, publication and public media state machines. */
+export const CMS_PAGE_TYPES = ["HOME", "STATIC", "LANDING", "EDITORIAL"] as const;
+export type CmsPageType = (typeof CMS_PAGE_TYPES)[number];
+
+export const CMS_PAGE_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_REVISION_STATUSES = ["DRAFT", "IN_REVIEW", "SCHEDULED", "PUBLISHED", "SUPERSEDED", "ARCHIVED"] as const;
+export type CmsRevisionStatus = (typeof CMS_REVISION_STATUSES)[number];
+
+export const CMS_DOCUMENT_TYPES = [
+  "HOME_CONFIGURATION",
+  "HEADER_CONFIGURATION",
+  "FOOTER_CONFIGURATION",
+  "HERO_CONFIGURATION",
+  "PROMOTIONAL_CONTENT_CONFIGURATION",
+] as const;
+export const CMS_DOCUMENT_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_DOCUMENT_REVISION_STATUSES = CMS_REVISION_STATUSES;
+
+export const CMS_NAVIGATION_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_TAXONOMY_KINDS = ["CATEGORY", "TAG"] as const;
+export const CMS_TAXONOMY_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_MEDIA_PROVIDERS = ["LOCAL_PUBLIC"] as const;
+export const CMS_MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"] as const;
+export const CMS_SCHEDULE_STATUSES = ["SCHEDULED", "PROCESSING", "EXECUTED", "CANCELLED", "FAILED"] as const;
+export const CMS_SCHEDULE_TARGET_TYPES = ["PAGE_REVISION", "CONTENT_REVISION", "NAVIGATION_REVISION", "ARTICLE_REVISION"] as const;
+
 export const ADMIN_PERMISSION_ACTIONS = [
   "wholesale:plan:view",
   "wholesale:plan:manage",
@@ -808,6 +834,16 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "notification:provider:view",
   "notification:preference:manage",
   "notification:report:view",
+  // Phase 5.4 — CMS / Content Management
+  "cms:content:view",
+  "cms:content:create",
+  "cms:content:edit",
+  "cms:content:publish",
+  "cms:content:archive",
+  "cms:navigation:manage",
+  "cms:media:manage",
+  "cms:seo:manage",
+  "cms:blog:manage",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */

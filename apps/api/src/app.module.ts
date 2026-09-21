@@ -47,6 +47,7 @@ import { RecoveryModule } from "./modules/recovery/recovery.module";
 import { CrmModule } from "./modules/crm/crm.module";
 import { SupportModule } from "./modules/support/support.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { CmsModule } from "./modules/cms/cms.module";
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     CrmModule,
     SupportModule,
     NotificationsModule,
+    CmsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },
