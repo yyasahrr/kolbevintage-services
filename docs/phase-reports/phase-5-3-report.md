@@ -55,6 +55,7 @@
 | Checkpoint B | `c979e56` | `feat(phase-5-3-b): add notification outbox delivery and retry engine` | 35571471328 | success |
 | Checkpoint C | `3db5cc9` | `feat(phase-5-3-c): add notification provider contracts and delivery receipts` | 35585018040 | success |
 | Checkpoint D | `e9a561e` | `feat(phase-5-3-d): wire domain notifications and admin messaging operations` | 35586098980 | success |
+| Final CI Record | `665cb82` | `docs: record phase 5.3 final CI` | 35587242525 | success |
 
 ---
 
