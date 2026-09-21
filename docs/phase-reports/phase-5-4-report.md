@@ -165,6 +165,8 @@ The final implementation checkpoint `70b2c8de1b8323d31dcb3429e700e00474cb6b6a` w
 
 Earlier checkpoint CI runs were cancelled by the workflow's branch concurrency policy when newer checkpoint pushes arrived. They are not used as final evidence.
 
+The comprehensive report was committed as `77041c8aaab6b0454e4a11d41ead3a776f27072e`, and its final documentation-only push also completed successfully in [CI run 35613187125](https://github.com/yyasahrr/kolbevintage-services/actions/runs/35613187125). That run passed all five workflow jobs (infra, shared, database, API, and frontend-next).
+
 ## 6. Checkpoint history and final-state checks
 
 Required checkpoint commits were created and pushed in order on the fixed session branch:
