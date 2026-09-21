@@ -71,11 +71,17 @@ export type AnalyticsFreshness = {
   sourceLastUpdatedAt: string | null;
 };
 
+export type AnalyticsBreakdownItem = {
+  key: string;
+  value: AnalyticsMetricValue;
+};
+
 export type AnalyticsMetricResult = {
   key: string;
   label: string;
   unit: "COUNT" | "INTEGER" | "IRR" | "RATIO";
   value: AnalyticsMetricValue;
+  breakdown?: AnalyticsBreakdownItem[];
   range: { startUtc: string; endUtc: string };
   comparison: {
     mode: AnalyticsComparison;
@@ -89,7 +95,10 @@ export type AnalyticsReportResult = {
   scope: AnalyticsScope;
   scopeId: string | null;
   timezone: string;
-  range: ResolvedAnalyticsRange & {
+  range: {
+    preset: AnalyticsDatePreset;
+    timezone: string;
+    comparison: AnalyticsComparison;
     startUtc: string;
     endUtc: string;
     comparisonStartUtc: string | null;

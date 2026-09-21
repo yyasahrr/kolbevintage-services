@@ -391,6 +391,10 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
       ],
       analytics: [
         "account_user",
+        "seller",
+        "supplier",
+        "supplier_member",
+        "settlement_journal",
         "retail_order",
         "retail_order_item",
         "wholesale_account",
