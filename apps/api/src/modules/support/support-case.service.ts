@@ -257,6 +257,7 @@ export class SupportCaseService {
       const term = `%${filter.search.trim()}%`;
       conditions.push(
         or(
+          ilike(supportCase.id, term),
           ilike(supportCase.publicReference, term),
           ilike(supportCase.subject, term),
         ),

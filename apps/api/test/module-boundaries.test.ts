@@ -362,6 +362,7 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "account_user",
         "wholesale_account",
         "supplier",
+        "supplier_member",
         "retail_order",
         "wholesale_order",
         "purchase_order",
