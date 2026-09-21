@@ -6,6 +6,7 @@ import { NotificationPreferenceService } from "./notification-preference.service
 import { NotificationTemplateService } from "./notification-template.service";
 import { InAppNotificationService } from "./in-app-notification.service";
 import { NotificationDeliveryService } from "./notification-delivery.service";
+import { NotificationReceiptService } from "./notification-receipt.service";
 import { FakeEmailProvider, FakeSmsProvider } from "./providers/test-providers";
 
 @Module({
@@ -16,6 +17,7 @@ import { FakeEmailProvider, FakeSmsProvider } from "./providers/test-providers";
     NotificationEventService,
     InAppNotificationService,
     NotificationDeliveryService,
+    NotificationReceiptService,
     FakeSmsProvider,
     FakeEmailProvider,
   ],
@@ -25,6 +27,7 @@ import { FakeEmailProvider, FakeSmsProvider } from "./providers/test-providers";
     NotificationEventService,
     InAppNotificationService,
     NotificationDeliveryService,
+    NotificationReceiptService,
     FakeSmsProvider,
     FakeEmailProvider,
   ],

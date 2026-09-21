@@ -8,6 +8,7 @@ import {
   SmsSendRequest,
   SmsSendResult,
 } from "../notification-provider.interface";
+import { NotificationProviderConfigurationError } from "../notifications.errors";
 
 @Injectable()
 export class FakeSmsProvider implements SmsProvider {
@@ -15,8 +16,15 @@ export class FakeSmsProvider implements SmsProvider {
   public sentMessages: Array<SmsSendRequest & { sentAt: Date; externalMessageId: string }> = [];
   public failureMode: "NONE" | "RETRYABLE" | "PERMANENT" = "NONE";
   public webhookSecret = "test_sms_webhook_secret_123";
+  public allowInProduction = false; // strictly false by default
 
   public async send(req: SmsSendRequest): Promise<SmsSendResult> {
+    if (process.env.NODE_ENV === "production" && !this.allowInProduction) {
+      throw new NotificationProviderConfigurationError(
+        "FakeSmsProvider is strictly forbidden in production. Connect a real verified SMS provider.",
+      );
+    }
+
     if (this.failureMode === "RETRYABLE") {
       return {
         success: false,
@@ -65,7 +73,12 @@ export class FakeSmsProvider implements SmsProvider {
       .createHmac("sha256", this.webhookSecret)
       .update(payload)
       .digest("hex");
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(sigBuf, expBuf);
   }
 
   public generateWebhookSignature(payload: string): string {
@@ -78,6 +91,7 @@ export class FakeSmsProvider implements SmsProvider {
   public clear(): void {
     this.sentMessages = [];
     this.failureMode = "NONE";
+    this.allowInProduction = false;
   }
 }
 
@@ -87,8 +101,15 @@ export class FakeEmailProvider implements EmailProvider {
   public sentEmails: Array<EmailSendRequest & { sentAt: Date; externalMessageId: string }> = [];
   public failureMode: "NONE" | "RETRYABLE" | "PERMANENT" = "NONE";
   public webhookSecret = "test_email_webhook_secret_456";
+  public allowInProduction = false; // strictly false by default
 
   public async send(req: EmailSendRequest): Promise<EmailSendResult> {
+    if (process.env.NODE_ENV === "production" && !this.allowInProduction) {
+      throw new NotificationProviderConfigurationError(
+        "FakeEmailProvider is strictly forbidden in production. Connect a real verified Email provider.",
+      );
+    }
+
     if (this.failureMode === "RETRYABLE") {
       return {
         success: false,
@@ -137,7 +158,12 @@ export class FakeEmailProvider implements EmailProvider {
       .createHmac("sha256", this.webhookSecret)
       .update(payload)
       .digest("hex");
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(sigBuf, expBuf);
   }
 
   public generateWebhookSignature(payload: string): string {
@@ -150,5 +176,6 @@ export class FakeEmailProvider implements EmailProvider {
   public clear(): void {
     this.sentEmails = [];
     this.failureMode = "NONE";
+    this.allowInProduction = false;
   }
 }

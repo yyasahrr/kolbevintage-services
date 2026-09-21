@@ -83,3 +83,16 @@ export class NotificationProviderUnavailableError extends DomainError {
     super(503, "NOTIFICATION_PROVIDER_UNAVAILABLE", `Provider '${providerKey}' is unavailable${reason ? `: ${reason}` : ""}.`);
   }
 }
+
+export class NotificationProviderConfigurationError extends DomainError {
+  constructor(message: string) {
+    super(500, "NOTIFICATION_PROVIDER_CONFIGURATION_ERROR", message);
+  }
+}
+
+export class NotificationDestinationInvalidError extends DomainError {
+  constructor(destination: string, reason?: string) {
+    super(400, "NOTIFICATION_DESTINATION_INVALID", `Invalid destination '${destination}'${reason ? `: ${reason}` : ""}.`);
+  }
+}
+
