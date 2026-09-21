@@ -844,6 +844,12 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "cms:media:manage",
   "cms:seo:manage",
   "cms:blog:manage",
+  // Phase 5.5 — Analytics & Reporting (read-only bounded context)
+  "analytics:dashboard:view",
+  "analytics:report:view",
+  "analytics:report:manage",
+  "analytics:export",
+  "analytics:reconciliation:view",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -1177,7 +1183,22 @@ export const NOTIFICATION_EVENT_KEYS = [
   "COMPLIANCE_ACTION_REQUIRED",
 ] as const;
 export type NotificationEventKey = (typeof NOTIFICATION_EVENT_KEYS)[number];
+/* ── Phase 5.5 — Analytics & Reporting ─────────────────────────────────────── */
 
+export const ANALYTICS_SCOPES = [
+  "PLATFORM",
+  "RETAIL",
+  "WHOLESALE",
+  "SUPPLIER",
+  "VIP_ACCOUNT",
+] as const;
+export type AnalyticsScope = (typeof ANALYTICS_SCOPES)[number];
 
+export const ANALYTICS_REPORT_TYPES = ["METRIC_SET", "SAVED_REPORT"] as const;
+export type AnalyticsReportType = (typeof ANALYTICS_REPORT_TYPES)[number];
 
+export const ANALYTICS_REPORT_RUN_STATUSES = ["QUEUED", "RUNNING", "COMPLETED", "FAILED"] as const;
+export const ANALYTICS_EXPORT_FORMATS = ["CSV"] as const;
+export const ANALYTICS_EXPORT_STATUSES = ["QUEUED", "PROCESSING", "COMPLETED", "FAILED", "EXPIRED"] as const;
+export const ANALYTICS_SOURCE_MODES = ["AUTHORITATIVE_LIVE"] as const;
 

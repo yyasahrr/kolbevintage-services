@@ -225,6 +225,12 @@ import {
   CMS_MEDIA_MIME_TYPES,
   CMS_SCHEDULE_STATUSES,
   CMS_SCHEDULE_TARGET_TYPES,
+  ANALYTICS_SCOPES,
+  ANALYTICS_REPORT_TYPES,
+  ANALYTICS_REPORT_RUN_STATUSES,
+  ANALYTICS_EXPORT_FORMATS,
+  ANALYTICS_EXPORT_STATUSES,
+  ANALYTICS_SOURCE_MODES,
 } from "./state-values";
 
 /** ستون‌های زمانی تکراری — یک‌بار تعریف می‌شوند تا همهٔ جداول یکدست بمانند. */
@@ -5156,6 +5162,112 @@ export const notificationProviderConfig = pgTable(
 
 
 
+
+/* ── Phase 5.5 — Analytics & Reporting (read-only operational metadata) ─────── */
+
+/**
+ * Analytics never owns business facts. These tables contain only validated
+ * report definitions and rebuildable execution/export metadata. All business
+ * metrics are read live from their authoritative bounded contexts.
+ */
+export const analyticsSavedReport = pgTable(
+  "analytics_saved_report",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    reportType: text("report_type").notNull().default("SAVED_REPORT"),
+    scope: text("scope").notNull(),
+    scopeId: text("scope_id"),
+    definition: jsonb("definition").notNull().default({}),
+    ownerId: text("owner_id").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("analytics_saved_report_type_allowed", "report_type", ANALYTICS_REPORT_TYPES),
+    stateCheck("analytics_saved_report_scope_allowed", "scope", ANALYTICS_SCOPES),
+    foreignKey({
+      name: "analytics_saved_report_owner_fk",
+      columns: [table.ownerId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("analytics_saved_report_owner_idx").on(table.ownerId, table.updatedAt),
+    index("analytics_saved_report_scope_idx").on(table.scope, table.scopeId),
+  ],
+);
+
+export const analyticsReportRun = pgTable(
+  "analytics_report_run",
+  {
+    id: text("id").primaryKey(),
+    reportType: text("report_type").notNull().default("METRIC_SET"),
+    scope: text("scope").notNull(),
+    scopeId: text("scope_id"),
+    definition: jsonb("definition").notNull().default({}),
+    status: text("status").notNull().default("QUEUED"),
+    sourceMode: text("source_mode").notNull().default("AUTHORITATIVE_LIVE"),
+    dataAsOf: timestamp("data_as_of", { withTimezone: true }),
+    result: jsonb("result"),
+    errorCode: text("error_code"),
+    requestedBy: text("requested_by").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("analytics_report_run_type_allowed", "report_type", ANALYTICS_REPORT_TYPES),
+    stateCheck("analytics_report_run_scope_allowed", "scope", ANALYTICS_SCOPES),
+    stateCheck("analytics_report_run_status_allowed", "status", ANALYTICS_REPORT_RUN_STATUSES),
+    stateCheck("analytics_report_run_source_mode_allowed", "source_mode", ANALYTICS_SOURCE_MODES),
+    foreignKey({
+      name: "analytics_report_run_requested_by_fk",
+      columns: [table.requestedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("analytics_report_run_requested_idx").on(table.requestedBy, table.createdAt),
+    index("analytics_report_run_status_idx").on(table.status, table.createdAt),
+  ],
+);
+
+export const analyticsExportJob = pgTable(
+  "analytics_export_job",
+  {
+    id: text("id").primaryKey(),
+    reportRunId: text("report_run_id").notNull(),
+    format: text("format").notNull().default("CSV"),
+    status: text("status").notNull().default("QUEUED"),
+    rowLimit: integer("row_limit").notNull().default(10000),
+    rowCount: integer("row_count"),
+    fileName: text("file_name").notNull(),
+    outputText: text("output_text"),
+    failureReason: text("failure_reason"),
+    requestedBy: text("requested_by").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("analytics_export_job_format_allowed", "format", ANALYTICS_EXPORT_FORMATS),
+    stateCheck("analytics_export_job_status_allowed", "status", ANALYTICS_EXPORT_STATUSES),
+    check("analytics_export_job_row_limit_positive", sql.raw(`"row_limit" > 0 AND "row_limit" <= 10000`)),
+    check("analytics_export_job_row_count_non_negative", sql.raw(`"row_count" IS NULL OR "row_count" >= 0`)),
+    foreignKey({
+      name: "analytics_export_job_run_fk",
+      columns: [table.reportRunId],
+      foreignColumns: [analyticsReportRun.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "analytics_export_job_requested_by_fk",
+      columns: [table.requestedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("analytics_export_job_requested_idx").on(table.requestedBy, table.createdAt),
+    index("analytics_export_job_status_expiry_idx").on(table.status, table.expiresAt),
+  ],
+);
 
 /* ── Phase 5.4 — CMS / Content Management ────────────────────────────────────
  * CMS owns editorial content and publication state only. It deliberately does

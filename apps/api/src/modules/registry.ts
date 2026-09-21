@@ -295,7 +295,15 @@ export const MODULES: readonly ModuleDefinition[] = [
   { name: "integrations", tables: [], dependsOn: ["audit"], status: "planned", phase: 6 },
   { name: "style-builder", tables: [], dependsOn: ["catalog", "customers"], status: "planned", phase: 6 },
   { name: "try-on", tables: [], dependsOn: ["files", "catalog"], status: "planned", phase: 6 },
-  { name: "analytics", tables: ["system_log"], dependsOn: [], status: "planned", phase: 6 },
+  {
+    // Phase 5.5 — read-only analytics owns only validated report and export metadata.
+    // Every business metric is read from its authoritative bounded context.
+    name: "analytics",
+    tables: ["system_log", "analytics_saved_report", "analytics_report_run", "analytics_export_job"],
+    dependsOn: ["auth", "admin", "orders", "payments", "shipping", "inventory", "settlement", "crm", "support", "notifications", "vip", "suppliers", "audit"],
+    status: "scaffolded",
+    phase: 5,
+  },
   { name: "audit", tables: ["audit_log"], dependsOn: [], status: "live", phase: 0 },
   {
     name: "admin",

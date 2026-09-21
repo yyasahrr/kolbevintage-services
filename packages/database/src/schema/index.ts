@@ -163,4 +163,7 @@ export {
   cmsArticleRevision,
   cmsArticleRevisionTaxonomy,
   cmsPublicationSchedule,
+  analyticsSavedReport,
+  analyticsReportRun,
+  analyticsExportJob,
 } from "./tables";
