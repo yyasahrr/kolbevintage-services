@@ -141,4 +141,13 @@ export {
   supportCaseSla,
   supportCaseEscalationHistory,
   supportCaseAction,
+  notificationEvent,
+  notificationTemplate,
+  notificationTemplateVersion,
+  notificationPreference,
+  notificationDelivery,
+  notificationDeliveryAttempt,
+  inAppNotification,
+  notificationProviderEvent,
+  notificationProviderConfig,
 } from "./tables";

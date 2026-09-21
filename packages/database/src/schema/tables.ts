@@ -193,6 +193,16 @@ import {
   SUPPORT_ESCALATION_SOURCES,
   SUPPORT_ACTION_TYPES,
   SUPPORT_ACTION_STATUSES,
+  NOTIFICATION_CHANNELS,
+  NOTIFICATION_RECIPIENT_TYPES,
+  NOTIFICATION_CATEGORIES,
+  NOTIFICATION_TEMPLATE_STATUSES,
+  NOTIFICATION_TEMPLATE_VERSION_STATUSES,
+  NOTIFICATION_DELIVERY_STATUSES,
+  NOTIFICATION_DELIVERY_ATTEMPT_STATUSES,
+  NOTIFICATION_PROVIDER_CONFIG_STATUSES,
+  NOTIFICATION_PROVIDER_EVENT_STATUSES,
+  NOTIFICATION_EVENT_KEYS,
   VARIANT_INVENTORY_STATUS,
   VIP_PLAN_STATUSES,
   VIP_SUBSCRIPTION_STATUSES,
@@ -4844,6 +4854,290 @@ export const supportCaseAction = pgTable(
     index("support_case_action_target_idx").on(table.targetDomain, table.targetId),
   ],
 );
+
+/* ── Phase 5.3 — Notifications & Messaging ──────────────────────────────────── */
+
+export const notificationEvent = pgTable(
+  "notification_event",
+  {
+    id: text("id").primaryKey(),
+    eventKey: text("event_key").notNull(),
+    sourceDomain: text("source_domain").notNull(),
+    sourceEntityType: text("source_entity_type").notNull(),
+    sourceEntityId: text("source_entity_id").notNull(),
+    sourceEventId: text("source_event_id").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    recipientScope: text("recipient_scope").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("notification_event_key_allowed", "event_key", NOTIFICATION_EVENT_KEYS),
+    stateCheck("notification_event_recipient_scope_allowed", "recipient_scope", NOTIFICATION_RECIPIENT_TYPES),
+    uniqueIndex("notification_event_source_unique_idx").on(table.sourceDomain, table.sourceEventId),
+    index("notification_event_key_idx").on(table.eventKey),
+    index("notification_event_source_idx").on(table.sourceDomain, table.sourceEntityType, table.sourceEntityId),
+    index("notification_event_occurred_idx").on(table.occurredAt),
+  ],
+);
+
+export const notificationTemplate = pgTable(
+  "notification_template",
+  {
+    id: text("id").primaryKey(),
+    templateKey: text("template_key").notNull(),
+    name: text("name").notNull(),
+    eventKey: text("event_key").notNull(),
+    channel: text("channel").notNull(),
+    locale: text("locale").notNull().default("fa-IR"),
+    category: text("category").notNull().default("TRANSACTIONAL"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("notification_template_event_key_allowed", "event_key", NOTIFICATION_EVENT_KEYS),
+    stateCheck("notification_template_channel_allowed", "channel", NOTIFICATION_CHANNELS),
+    stateCheck("notification_template_category_allowed", "category", NOTIFICATION_CATEGORIES),
+    stateCheck("notification_template_status_allowed", "status", NOTIFICATION_TEMPLATE_STATUSES),
+    uniqueIndex("notification_template_key_idx").on(table.templateKey),
+    index("notification_template_event_idx").on(table.eventKey, table.channel, table.status),
+  ],
+);
+
+export const notificationTemplateVersion = pgTable(
+  "notification_template_version",
+  {
+    id: text("id").primaryKey(),
+    templateId: text("template_id").notNull(),
+    version: integer("version").notNull(),
+    subject: text("subject"),
+    body: text("body").notNull(),
+    variablesSchema: jsonb("variables_schema").notNull().default([]),
+    status: text("status").notNull().default("DRAFT"),
+    createdBy: text("created_by"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("notification_template_version_status_allowed", "status", NOTIFICATION_TEMPLATE_VERSION_STATUSES),
+    foreignKey({
+      name: "notification_template_version_template_fk",
+      columns: [table.templateId],
+      foreignColumns: [notificationTemplate.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "notification_template_version_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "notification_template_version_published_by_fk",
+      columns: [table.publishedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    uniqueIndex("notification_template_version_unique_idx").on(table.templateId, table.version),
+    index("notification_template_version_status_idx").on(table.templateId, table.status),
+  ],
+);
+
+export const notificationPreference = pgTable(
+  "notification_preference",
+  {
+    id: text("id").primaryKey(),
+    recipientType: text("recipient_type").notNull(),
+    recipientId: text("recipient_id").notNull(),
+    category: text("category").notNull(),
+    eventKey: text("event_key").notNull().default("*"),
+    channel: text("channel").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    quietHoursStart: text("quiet_hours_start"),
+    quietHoursEnd: text("quiet_hours_end"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("notification_preference_recipient_type_allowed", "recipient_type", NOTIFICATION_RECIPIENT_TYPES),
+    stateCheck("notification_preference_category_allowed", "category", NOTIFICATION_CATEGORIES),
+    stateCheck("notification_preference_channel_allowed", "channel", NOTIFICATION_CHANNELS),
+    uniqueIndex("notification_preference_unique_idx").on(
+      table.recipientType,
+      table.recipientId,
+      table.category,
+      table.eventKey,
+      table.channel,
+    ),
+    index("notification_preference_recipient_idx").on(table.recipientType, table.recipientId),
+  ],
+);
+
+export const notificationDelivery = pgTable(
+  "notification_delivery",
+  {
+    id: text("id").primaryKey(),
+    eventId: text("event_id").notNull(),
+    recipientType: text("recipient_type").notNull(),
+    recipientId: text("recipient_id").notNull(),
+    channel: text("channel").notNull(),
+    templateVersionId: text("template_version_id"),
+    renderedSubject: text("rendered_subject"),
+    renderedBody: text("rendered_body").notNull(),
+    destinationMasked: text("destination_masked").notNull(),
+    destinationHash: text("destination_hash"),
+    status: text("status").notNull().default("PENDING"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull().defaultNow(),
+    firstAttemptAt: timestamp("first_attempt_at", { withTimezone: true }),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    providerKey: text("provider_key"),
+    providerMessageId: text("provider_message_id"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+    failureCategory: text("failure_category"),
+    failureDetail: text("failure_detail"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("notification_delivery_channel_allowed", "channel", NOTIFICATION_CHANNELS),
+    stateCheck("notification_delivery_recipient_type_allowed", "recipient_type", NOTIFICATION_RECIPIENT_TYPES),
+    stateCheck("notification_delivery_status_allowed", "status", NOTIFICATION_DELIVERY_STATUSES),
+    foreignKey({
+      name: "notification_delivery_event_fk",
+      columns: [table.eventId],
+      foreignColumns: [notificationEvent.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "notification_delivery_template_version_fk",
+      columns: [table.templateVersionId],
+      foreignColumns: [notificationTemplateVersion.id],
+    }).onDelete("restrict"),
+    uniqueIndex("notification_delivery_idempotency_idx").on(table.idempotencyKey),
+    index("notification_delivery_event_idx").on(table.eventId),
+    index("notification_delivery_recipient_idx").on(table.recipientType, table.recipientId),
+    index("notification_delivery_status_idx").on(table.status, table.scheduledAt),
+    index("notification_delivery_retry_idx").on(table.status, table.nextRetryAt),
+  ],
+);
+
+export const notificationDeliveryAttempt = pgTable(
+  "notification_delivery_attempt",
+  {
+    id: text("id").primaryKey(),
+    deliveryId: text("delivery_id").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    providerKey: text("provider_key").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    status: text("status").notNull(),
+    externalMessageId: text("external_message_id"),
+    errorCategory: text("error_category"),
+    errorDetail: text("error_detail"),
+    retryAfterSeconds: integer("retry_after_seconds"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("notification_delivery_attempt_status_allowed", "status", NOTIFICATION_DELIVERY_ATTEMPT_STATUSES),
+    foreignKey({
+      name: "notification_delivery_attempt_delivery_fk",
+      columns: [table.deliveryId],
+      foreignColumns: [notificationDelivery.id],
+    }).onDelete("restrict"),
+    uniqueIndex("notification_delivery_attempt_unique_idx").on(table.deliveryId, table.attemptNumber),
+    index("notification_delivery_attempt_delivery_idx").on(table.deliveryId),
+    index("notification_delivery_attempt_provider_idx").on(table.providerKey, table.startedAt),
+  ],
+);
+
+export const inAppNotification = pgTable(
+  "in_app_notification",
+  {
+    id: text("id").primaryKey(),
+    recipientType: text("recipient_type").notNull(),
+    recipientId: text("recipient_id").notNull(),
+    deliveryId: text("delivery_id"),
+    eventId: text("event_id"),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    relatedEntityType: text("related_entity_type"),
+    relatedEntityId: text("related_entity_id"),
+    actionUrl: text("action_url"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("in_app_notification_recipient_type_allowed", "recipient_type", NOTIFICATION_RECIPIENT_TYPES),
+    foreignKey({
+      name: "in_app_notification_delivery_fk",
+      columns: [table.deliveryId],
+      foreignColumns: [notificationDelivery.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "in_app_notification_event_fk",
+      columns: [table.eventId],
+      foreignColumns: [notificationEvent.id],
+    }).onDelete("restrict"),
+    index("in_app_notification_recipient_idx").on(table.recipientType, table.recipientId, table.readAt),
+    index("in_app_notification_created_idx").on(table.createdAt),
+  ],
+);
+
+export const notificationProviderEvent = pgTable(
+  "notification_provider_event",
+  {
+    id: text("id").primaryKey(),
+    providerKey: text("provider_key").notNull(),
+    externalEventId: text("external_event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    signatureVerified: boolean("signature_verified").notNull().default(false),
+    processingStatus: text("processing_status").notNull().default("RECEIVED"),
+    deliveryId: text("delivery_id"),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    errorMessage: text("error_message"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("notification_provider_event_status_allowed", "processing_status", NOTIFICATION_PROVIDER_EVENT_STATUSES),
+    foreignKey({
+      name: "notification_provider_event_delivery_fk",
+      columns: [table.deliveryId],
+      foreignColumns: [notificationDelivery.id],
+    }).onDelete("restrict"),
+    uniqueIndex("notification_provider_event_unique_idx").on(table.providerKey, table.externalEventId),
+    index("notification_provider_event_status_idx").on(table.providerKey, table.processingStatus),
+    index("notification_provider_event_delivery_idx").on(table.deliveryId),
+  ],
+);
+
+export const notificationProviderConfig = pgTable(
+  "notification_provider_config",
+  {
+    id: text("id").primaryKey(),
+    providerKey: text("provider_key").notNull(),
+    channel: text("channel").notNull(),
+    displayName: text("display_name").notNull(),
+    status: text("status").notNull().default("DISABLED"),
+    senderIdentity: text("sender_identity"),
+    isDefault: boolean("is_default").notNull().default(false),
+    publicSettings: jsonb("public_settings").notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("notification_provider_config_channel_allowed", "channel", NOTIFICATION_CHANNELS),
+    stateCheck("notification_provider_config_status_allowed", "status", NOTIFICATION_PROVIDER_CONFIG_STATUSES),
+    uniqueIndex("notification_provider_config_key_idx").on(table.providerKey),
+    index("notification_provider_config_channel_idx").on(table.channel, table.status, table.isDefault),
+  ],
+);
+
 
 
 

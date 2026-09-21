@@ -211,6 +211,16 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "support_case_sla",
       "support_case_escalation_history",
       "support_case_action",
+      // Phase 5.3
+      "notification_event",
+      "notification_template",
+      "notification_template_version",
+      "notification_preference",
+      "notification_delivery",
+      "notification_delivery_attempt",
+      "in_app_notification",
+      "notification_provider_event",
+      "notification_provider_config",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);
@@ -370,6 +380,14 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "admin_internal_note",
         "settlement_batch",
         "withdrawal_request",
+      ],
+      notifications: [
+        "account_user",
+        "wholesale_account",
+        "supplier",
+        "supplier_member",
+        "consent_event",
+        "audit_log",
       ],
       orders: [
         "wholesale_account",

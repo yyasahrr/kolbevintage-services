@@ -801,6 +801,13 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "support:sla:manage",
   "support:report:view",
   "support:sensitive:view",
+  "notification:template:view",
+  "notification:template:manage",
+  "notification:outbox:view",
+  "notification:outbox:retry",
+  "notification:provider:view",
+  "notification:preference:manage",
+  "notification:report:view",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -1025,6 +1032,116 @@ export const SUPPORT_ACTION_STATUSES = [
   "REJECTED",
 ] as const;
 export type SupportActionStatus = (typeof SUPPORT_ACTION_STATUSES)[number];
+
+/* ── Phase 5.3 — Notifications & Messaging ──────────────────────────────────── */
+
+export const NOTIFICATION_CHANNELS = [
+  "IN_APP",
+  "EMAIL",
+  "SMS",
+  "PUSH",
+] as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+
+export const NOTIFICATION_RECIPIENT_TYPES = [
+  "ACCOUNT_USER",
+  "VIP_ACCOUNT_MEMBER",
+  "SUPPLIER_MEMBER",
+  "ADMIN_USER",
+] as const;
+export type NotificationRecipientType = (typeof NOTIFICATION_RECIPIENT_TYPES)[number];
+
+export const NOTIFICATION_CATEGORIES = [
+  "TRANSACTIONAL",
+  "MARKETING",
+  "OPERATIONAL",
+  "SECURITY",
+] as const;
+export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
+
+export const NOTIFICATION_TEMPLATE_STATUSES = [
+  "ACTIVE",
+  "INACTIVE",
+  "ARCHIVED",
+] as const;
+export type NotificationTemplateStatus = (typeof NOTIFICATION_TEMPLATE_STATUSES)[number];
+
+export const NOTIFICATION_TEMPLATE_VERSION_STATUSES = [
+  "DRAFT",
+  "PUBLISHED",
+  "SUPERSEDED",
+  "ARCHIVED",
+] as const;
+export type NotificationTemplateVersionStatus = (typeof NOTIFICATION_TEMPLATE_VERSION_STATUSES)[number];
+
+export const NOTIFICATION_DELIVERY_STATUSES = [
+  "PENDING",
+  "QUEUED",
+  "PROCESSING",
+  "SENT",
+  "DELIVERED",
+  "FAILED_RETRYABLE",
+  "FAILED_PERMANENT",
+  "SUPPRESSED",
+  "CANCELLED",
+] as const;
+export type NotificationDeliveryStatus = (typeof NOTIFICATION_DELIVERY_STATUSES)[number];
+
+export const NOTIFICATION_DELIVERY_ATTEMPT_STATUSES = [
+  "SUCCESS",
+  "RETRYABLE_ERROR",
+  "PERMANENT_ERROR",
+] as const;
+export type NotificationDeliveryAttemptStatus = (typeof NOTIFICATION_DELIVERY_ATTEMPT_STATUSES)[number];
+
+export const NOTIFICATION_PROVIDER_CONFIG_STATUSES = [
+  "DISABLED",
+  "MISSING_CONFIGURATION",
+  "SANDBOX",
+  "CONFIGURED",
+  "PRODUCTION",
+] as const;
+export type NotificationProviderConfigStatus = (typeof NOTIFICATION_PROVIDER_CONFIG_STATUSES)[number];
+
+export const NOTIFICATION_PROVIDER_EVENT_STATUSES = [
+  "RECEIVED",
+  "PROCESSED",
+  "IGNORED",
+  "FAILED",
+] as const;
+export type NotificationProviderEventStatus = (typeof NOTIFICATION_PROVIDER_EVENT_STATUSES)[number];
+
+export const NOTIFICATION_EVENT_KEYS = [
+  "AUTH_SECURITY_ALERT",
+  "ORDER_CREATED",
+  "ORDER_CONFIRMED",
+  "ORDER_CANCELLED",
+  "ORDER_FULFILLMENT_UPDATED",
+  "SHIPMENT_CREATED",
+  "SHIPMENT_SHIPPED",
+  "SHIPMENT_DELIVERED",
+  "PAYMENT_PENDING",
+  "PAYMENT_CONFIRMED",
+  "PAYMENT_FAILED",
+  "REFUND_REQUESTED",
+  "REFUND_COMPLETED",
+  "VIP_MEMBERSHIP_ACTIVATED",
+  "VIP_MEMBERSHIP_EXPIRING",
+  "VIP_MEMBERSHIP_SUSPENDED",
+  "SUPPLIER_ORDER_CREATED",
+  "SUPPLIER_ORDER_ACTION_REQUIRED",
+  "SUPPORT_CASE_CREATED",
+  "SUPPORT_CASE_REPLIED",
+  "SUPPORT_CASE_STATUS_CHANGED",
+  "SETTLEMENT_AVAILABLE",
+  "WITHDRAWAL_REQUESTED",
+  "WITHDRAWAL_APPROVED",
+  "PAYOUT_SUBMITTED",
+  "PAYOUT_RECONCILIATION_REQUIRED",
+  "COMPLIANCE_ACTION_REQUIRED",
+] as const;
+export type NotificationEventKey = (typeof NOTIFICATION_EVENT_KEYS)[number];
+
 
 
 
