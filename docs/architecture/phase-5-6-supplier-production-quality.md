@@ -87,7 +87,8 @@ Production events are append-only facts with a source event id, supplier scope, 
 
 - Notifications: recipient scope and event key are factual; a notification dispatcher remains the owner of delivery.
 - Support: a change/quality/recall response can carry a support-case reference; Production does not create or update a support case.
-- Analytics: event names and source-owned facts are available for later read-only metrics; no dashboard KPI is fabricated here.
+- Notifications: the bounded `ProductionNotificationRelayService` reads committed production facts and invokes the existing Notifications dispatcher with factual supplier-member events. It is best-effort and failure-isolated; templates, provider delivery, and recipient preferences remain Notifications-owned.
+- Analytics: the Phase 5.5 metric dictionary/query layer exposes only source-backed production job, output, quality-release, defect, rework, and recall metrics. Analytics remains read-only and never stores a production KPI.
 - Audit: every command uses the existing Audit service in the same transaction where possible.
 - Shipping: an approved quality release exposes a `shippingHandoff` contract containing the canonical child order, production job, released lot IDs, and release id; no carrier/provider is called.
 
@@ -114,8 +115,8 @@ No supplier visual component, navigation entry, localStorage demo, or static cop
 - `profile` capacity concepts → supplier capabilities, periods, closures, and reservations;
 - `data.ts` and other demo records → fixtures only, never an authority.
 
-Full frontend cutover, upload UX, live notifications, support case creation, analytics dashboards, and shipping-provider wiring remain deferred and are not claimed by this phase.
+Full frontend cutover, upload UX, live notification presentation/templates/providers, support case creation, analytics dashboard redesign, and shipping-provider wiring remain deferred and are not claimed by this phase. The backend relay and read-only metric definitions are contracts only; they do not make browser localStorage or demo data authoritative.
 
 ## Planned migration accounting
 
-Migration `0030` contains the production-owned tables and the one additive CHECK update required to permit the existing Admin approval type `PRODUCTION_RECALL`. The final report will state exact PostgreSQL table, FK, and CHECK counts from the migrated database, not estimates. The migration is forward-only and all earlier files remain unchanged.
+Migration `0030` contains the production-owned tables plus additive owner-domain CHECK extensions for the existing `PRODUCTION_RECALL` approval type, production admin permissions, and factual production notification event keys. The final report will state exact PostgreSQL table, FK, and CHECK counts from the migrated database, not estimates. The migration is forward-only and all earlier files remain unchanged.

@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
+import { AdminPermissionGuard, RequireAdminPermission } from "../admin/admin-rbac.guard";
 import type { Claims } from "../../common/session";
 import { toApiJson } from "../../common/api-json";
 import { ProductionService } from "./production.service";
@@ -16,42 +17,54 @@ function key(one?: string, two?: string): string {
 }
 
 @Controller("admin/production")
+@UseGuards(AdminPermissionGuard)
 @Roles("admin")
 export class AdminProductionController {
   constructor(private readonly production: ProductionService) {}
 
   @Get("jobs")
+  @RequireAdminPermission("production:jobs:view")
   async jobs(@CurrentUser() claims: Claims, @Query("page") page?: string, @Query("limit") limit?: string, @Query("status") status?: string, @Query("supplierId") supplierId?: string) {
     return toApiJson(await this.production.listJobs(adminActor(claims), { page, limit, status, supplierId }));
   }
 
   @Post("milestone-definitions")
+  @RequireAdminPermission("production:config:manage")
   async createMilestone(@CurrentUser() claims: Claims, @Body() body: any) { return toApiJson({ definition: await this.production.createMilestoneDefinition(adminActor(claims), body || {}) }); }
 
   @Get("milestone-definitions")
+  @RequireAdminPermission("production:config:view")
   async milestones(@CurrentUser() claims: Claims) { return toApiJson({ definitions: await this.production.listMilestoneDefinitions(adminActor(claims)) }); }
 
   @Post("checklists")
+  @RequireAdminPermission("production:config:manage")
   async createChecklist(@CurrentUser() claims: Claims, @Body() body: any) { return toApiJson(await this.production.createChecklist(adminActor(claims), body || {})); }
 
   @Post("checklists/:id/publish")
+  @RequireAdminPermission("production:config:manage")
   async publishChecklist(@CurrentUser() claims: Claims, @Param("id") id: string, @Headers("idempotency-key") one: string, @Headers("Idempotency-Key") two: string) { return toApiJson(await this.production.publishChecklist(adminActor(claims), id, { idempotencyKey: key(one, two) })); }
 
   @Get("checklists")
+  @RequireAdminPermission("production:config:view")
   async listChecklists(@CurrentUser() claims: Claims, @Query("status") status?: string, @Query("page") page?: string, @Query("limit") limit?: string) { return toApiJson(await this.production.listChecklists(adminActor(claims), { status, page, limit })); }
 
   @Post("jobs/:jobId/samples/:sampleRevisionId/review")
+  @RequireAdminPermission("production:quality:review")
   async reviewSample(@CurrentUser() claims: Claims, @Param("jobId") jobId: string, @Param("sampleRevisionId") sampleRevisionId: string, @Body() body: any, @Headers("idempotency-key") one: string, @Headers("Idempotency-Key") two: string) { return toApiJson(await this.production.reviewSample(adminActor(claims), jobId, sampleRevisionId, { ...(body || {}), idempotencyKey: key(one, two) })); }
 
   @Post("change-requests/:id/decide")
+  @RequireAdminPermission("production:quality:review")
   async decideChange(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: any, @Headers("idempotency-key") one: string, @Headers("Idempotency-Key") two: string) { return toApiJson(await this.production.decideChangeRequest(adminActor(claims), id, { ...(body || {}), idempotencyKey: key(one, two) })); }
 
   @Post("quality-releases/:id/decide")
+  @RequireAdminPermission("production:release:decide")
   async decideRelease(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: any, @Headers("idempotency-key") one: string, @Headers("Idempotency-Key") two: string) { return toApiJson(await this.production.approveQualityRelease(adminActor(claims), id, { decision: body?.decision, note: body?.note, idempotencyKey: key(one, two) })); }
 
   @Post("recalls/:id/decide")
+  @RequireAdminPermission("production:recall:approve")
   async decideRecall(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: any, @Headers("idempotency-key") one: string, @Headers("Idempotency-Key") two: string) { return toApiJson(await this.production.approveRecall(adminActor(claims), id, { decision: body?.decision, notes: body?.notes, idempotencyKey: key(one, two) })); }
 
   @Post("recalls/:id/transition")
+  @RequireAdminPermission("production:recall:approve")
   async transitionRecall(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: any, @Headers("idempotency-key") one: string, @Headers("Idempotency-Key") two: string) { return toApiJson(await this.production.transitionRecall(adminActor(claims), id, body?.status, { reason: body?.reason, idempotencyKey: key(one, two) })); }
 }

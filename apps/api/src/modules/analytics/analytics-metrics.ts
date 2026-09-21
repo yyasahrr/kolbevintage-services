@@ -15,7 +15,8 @@ export type AnalyticsMetricCategory =
   | "settlement"
   | "crm"
   | "support"
-  | "notifications";
+  | "notifications"
+  | "production";
 
 export type AnalyticsMetricDefinition = {
   key: string;
@@ -45,6 +46,7 @@ const WHOLESALE_FINANCIAL = ["PLATFORM", "WHOLESALE", "VIP_ACCOUNT"] as Analytic
 const RETAIL = ["PLATFORM", "RETAIL"] as AnalyticsScope[];
 const SUPPLIER = ["PLATFORM", "SUPPLIER"] as AnalyticsScope[];
 const CRM = ["PLATFORM"] as AnalyticsScope[];
+const PRODUCTION = ["PLATFORM", "SUPPLIER"] as AnalyticsScope[];
 
 function metric(
   key: string,
@@ -134,6 +136,13 @@ export const ANALYTICS_METRICS: readonly AnalyticsMetricDefinition[] = [
   metric("notifications.delivered_count", "Notifications delivered", "Notification deliveries with status DELIVERED only.", "notifications", "COUNT", "One notification_delivery row", "Notifications", ["notification_delivery"], "notification_delivery.delivered_at", ["DELIVERED"], ["SENT", "FAILED_*", "SUPPRESSED", "CANCELLED"], "Refunds do not apply.", "Delivery is not inferred from sent state.", ALL, "notification_delivered_count", ["channel", "status"]),
   metric("notifications.failed_count", "Notification failures", "Permanent and retryable notification delivery failures.", "notifications", "COUNT", "One notification_delivery row", "Notifications", ["notification_delivery"], "notification_delivery.failed_at, fallback updated_at", ["FAILED_RETRYABLE", "FAILED_PERMANENT"], ["DELIVERED", "SENT"], "Refunds do not apply.", "Delivery failure is not a source business failure.", ALL, "notification_failed_count", ["channel", "status"]),
   metric("notifications.delivery_success_rate", "Notification delivery success rate", "Delivered deliveries divided by terminal attempted deliveries, preserved as a ratio and basis points.", "notifications", "RATIO", "delivered / (delivered + permanent failures)", "Notifications", ["notification_delivery"], "notification_delivery.delivered_at/failed_at", ["DELIVERED and FAILED_PERMANENT denominator"], ["pending/retryable/suppressed/cancelled"], "Refunds do not apply.", "Delivery state is never equated with source event state.", ALL, "notification_delivery_success_rate", ["channel"]),
+  metric("production.jobs_count", "Production jobs", "Production job extensions created from canonical supplier child orders.", "production", "COUNT", "One production_job row", "Production", ["production_job"], "production_job.created_at", ["all recorded production statuses"], [], "Refunds do not apply.", "Cancelled jobs remain factual production history.", PRODUCTION, "production_jobs_count", ["day", "status"]),
+  metric("production.completed_jobs_count", "Completed production jobs", "Production jobs whose server-owned status is completed.", "production", "COUNT", "One production_job row", "Production", ["production_job"], "production_job.completed_at", ["status = completed"], ["other statuses"], "Refunds do not apply.", "Cancelled jobs are not completed.", PRODUCTION, "production_completed_jobs_count", ["day"]),
+  metric("production.actual_units", "Actual production units", "Actual integer units recorded on production jobs; this is not inventory balance or shipment quantity.", "production", "INTEGER", "SUM(production_job.actual_units)", "Production", ["production_job"], "production_job.updated_at", ["server-recorded actual_units"], [], "Refunds do not apply.", "Cancellation does not rewrite recorded output.", PRODUCTION, "production_actual_units", ["day"]),
+  metric("production.quality_releases_count", "Approved quality releases", "Quality releases approved after the server-side quality gate.", "production", "COUNT", "One quality_release row", "Production / Quality", ["quality_release"], "quality_release.approved_at", ["status = approved"], ["pending", "rejected", "revoked"], "Refunds do not apply.", "A release is not a shipment or inventory mutation.", PRODUCTION, "production_quality_releases_count", ["day"]),
+  metric("production.defects_count", "Recorded production defects", "Quality defects recorded against production lots.", "production", "COUNT", "One quality_defect row", "Production / Quality", ["quality_defect"], "quality_defect.created_at", ["all recorded defect severities"], [], "Refunds do not apply.", "Closed defects remain quality history.", PRODUCTION, "production_defects_count", ["day", "status"]),
+  metric("production.rework_units", "Production rework units", "Integer rework quantities requested for production defects.", "production", "INTEGER", "SUM(quality_rework.quantity)", "Production / Quality", ["quality_rework"], "quality_rework.created_at", ["all recorded rework statuses"], [], "Refunds do not apply.", "Rework is not inventory adjustment or shipment quantity.", PRODUCTION, "production_rework_units", ["day", "status"]),
+  metric("production.recalls_count", "Production recalls", "Recall proposals recorded by Production; activation and containment remain explicit recall states.", "production", "COUNT", "One production_recall row", "Production / Quality", ["production_recall"], "production_recall.created_at", ["all recorded recall statuses"], [], "Refunds do not apply.", "A recall does not directly mutate Orders, Shipping, Inventory, or Settlement.", PRODUCTION, "production_recalls_count", ["day", "status"]),
 ] as const;
 
 export const ANALYTICS_METRIC_REGISTRY = new Map(ANALYTICS_METRICS.map((definition) => [definition.key, definition]));

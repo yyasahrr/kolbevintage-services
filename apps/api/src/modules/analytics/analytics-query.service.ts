@@ -361,6 +361,32 @@ export class AnalyticsQueryService {
           FROM notification_delivery nd
           WHERE ${this.time("COALESCE(nd.delivered_at, nd.failed_at, nd.updated_at)", range)}
             AND ${this.notificationScope("nd", scope, scopeId)}`);
+      case "production_jobs_count":
+        return this.count(sql`SELECT COUNT(*)::text AS value FROM production_job pj
+          WHERE ${this.time("pj.created_at", range)} AND ${this.productionScope("pj.supplier_id", scope, scopeId)}`);
+      case "production_completed_jobs_count":
+        return this.count(sql`SELECT COUNT(*)::text AS value FROM production_job pj
+          WHERE pj.status = 'completed' AND ${this.time("pj.completed_at", range)}
+            AND ${this.productionScope("pj.supplier_id", scope, scopeId)}`);
+      case "production_actual_units":
+        return this.count(sql`SELECT COALESCE(SUM(pj.actual_units), 0)::text AS value FROM production_job pj
+          WHERE ${this.time("pj.updated_at", range)} AND ${this.productionScope("pj.supplier_id", scope, scopeId)}`, "integer");
+      case "production_quality_releases_count":
+        return this.count(sql`SELECT COUNT(*)::text AS value FROM quality_release qr
+          INNER JOIN production_job pj ON pj.id = qr.job_id
+          WHERE qr.status = 'approved' AND ${this.time("qr.approved_at", range)}
+            AND ${this.productionScope("pj.supplier_id", scope, scopeId)}`);
+      case "production_defects_count":
+        return this.count(sql`SELECT COUNT(*)::text AS value FROM quality_defect qd
+          INNER JOIN production_job pj ON pj.id = qd.job_id
+          WHERE ${this.time("qd.created_at", range)} AND ${this.productionScope("pj.supplier_id", scope, scopeId)}`);
+      case "production_rework_units":
+        return this.count(sql`SELECT COALESCE(SUM(qr.quantity), 0)::text AS value FROM quality_rework qr
+          INNER JOIN production_job pj ON pj.id = qr.job_id
+          WHERE ${this.time("qr.created_at", range)} AND ${this.productionScope("pj.supplier_id", scope, scopeId)}`, "integer");
+      case "production_recalls_count":
+        return this.count(sql`SELECT COUNT(*)::text AS value FROM production_recall pr
+          WHERE ${this.time("pr.created_at", range)} AND ${this.productionScope("pr.supplier_id", scope, scopeId)}`);
       default:
         throw new AnalyticsValidationError(`Metric '${metric.key}' has no query implementation`);
     }
@@ -396,6 +422,12 @@ export class AnalyticsQueryService {
     if (scope === "PLATFORM") return sql`TRUE`;
     if (scope === "SUPPLIER") return sql`EXISTS (SELECT 1 FROM seller scope_seller WHERE scope_seller.id = ${sql.raw(`${alias}.seller_id`)} AND scope_seller.supplier_id = ${scopeId})`;
     throw new AnalyticsValidationError(`Inventory source cannot be queried with scope '${scope}'`);
+  }
+
+  private productionScope(column: string, scope: AnalyticsScope, scopeId: string | null): SQL {
+    if (scope === "PLATFORM") return sql`${sql.raw(column)} IS NOT NULL`;
+    if (scope === "SUPPLIER") return sql`${sql.raw(column)} = ${scopeId}`;
+    throw new AnalyticsValidationError(`Production source cannot be queried with scope '${scope}'`);
   }
 
   private supplierIdPredicate(column: string, scope: AnalyticsScope, scopeId: string | null): SQL {

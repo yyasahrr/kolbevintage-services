@@ -28,13 +28,16 @@ const ADMIN_OVERVIEW_METRICS = [
   "refunds.amount",
   "support.open_cases_count",
   "notifications.delivered_count",
+  "production.jobs_count",
+  "production.quality_releases_count",
+  "production.recalls_count",
 ];
 const ADMIN_RETAIL_METRICS = ["retail.orders_count", "retail.units_ordered", "retail.ordered_gmv", "retail.paid_orders_count", "retail.order_status_count"];
 const ADMIN_WHOLESALE_METRICS = ["wholesale.orders_count", "wholesale.units_ordered", "wholesale.ordered_gmv", "marketplace.child_orders_count", "marketplace.supplier_gmv"];
-const ADMIN_SUPPLIER_METRICS = ["supplier.child_orders_count", "supplier.order_units", "supplier.delivered_shipments_count", "settlement.pending_amount", "settlement.available_amount", "settlement.held_amount"];
+const ADMIN_SUPPLIER_METRICS = ["supplier.child_orders_count", "supplier.order_units", "supplier.delivered_shipments_count", "settlement.pending_amount", "settlement.available_amount", "settlement.held_amount", "production.jobs_count", "production.actual_units", "production.quality_releases_count", "production.defects_count", "production.recalls_count"];
 const ADMIN_VIP_METRICS = ["vip.active_memberships_count", "vip.orders_count", "vip.ordered_gmv"];
 const ADMIN_FINANCE_METRICS = ["payments.submitted_amount", "payments.confirmed_amount", "payments.failed_count", "refunds.amount", "refunds.count", "settlement.commission_earned"];
-const SUPPLIER_OVERVIEW_METRICS = ["supplier.child_orders_count", "supplier.order_units", "supplier.delivered_shipments_count", "inventory.available_units", "inventory.reserved_units", "settlement.pending_amount", "settlement.available_amount", "settlement.held_amount", "settlement.withdrawal_amount", "settlement.payout_submitted_amount", "settlement.bank_settled_amount"];
+const SUPPLIER_OVERVIEW_METRICS = ["supplier.child_orders_count", "supplier.order_units", "supplier.delivered_shipments_count", "inventory.available_units", "inventory.reserved_units", "settlement.pending_amount", "settlement.available_amount", "settlement.held_amount", "settlement.withdrawal_amount", "settlement.payout_submitted_amount", "settlement.bank_settled_amount", "production.jobs_count", "production.actual_units", "production.quality_releases_count", "production.defects_count", "production.rework_units", "production.recalls_count"];
 const VIP_OVERVIEW_METRICS = ["vip.active_memberships_count", "vip.orders_count", "vip.ordered_gmv", "wholesale.units_ordered", "support.open_cases_count", "notifications.delivered_count"];
 
 export type AnalyticsQuery = {

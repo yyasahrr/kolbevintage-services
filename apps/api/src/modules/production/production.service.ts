@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { and, asc, desc, eq, gt, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import {
   productionArtifact,
@@ -76,6 +76,7 @@ import {
   PRODUCTION_ALLOWED_SAMPLE_STATUSES,
 } from "./production.logic";
 import type { ProductionShippingHandoff } from "./production.contract";
+import { ProductionNotificationRelayService } from "./production-notification-relay.service";
 import {
   PRODUCTION_ARTIFACT_TYPES,
   PRODUCTION_CHANGE_DECISIONS,
@@ -148,6 +149,7 @@ export class ProductionService {
     @Inject(SuppliersService) private readonly suppliers: SuppliersService,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(AdminApprovalsService) private readonly approvals: AdminApprovalsService,
+    @Optional() @Inject(ProductionNotificationRelayService) private readonly notificationRelay?: ProductionNotificationRelayService,
   ) {}
 
   private async withTx<T>(executor: DbOrTx | undefined, work: (tx: any) => Promise<T>): Promise<T> {
@@ -234,7 +236,7 @@ export class ProductionService {
 
   private async emit(tx: any, input: { eventType: string; entityType: string; entityId: string; jobId?: string | null; supplierId: string; recipientScope?: string | null; recipientId?: string | null; payload?: unknown }): Promise<void> {
     if (!(PRODUCTION_EVENT_TYPES as readonly string[]).includes(input.eventType)) throw new ProductionDomainError("EVENT_TYPE_INVALID", "Production event type is not allowed");
-    await tx.insert(productionEvent).values({
+    const [event] = await tx.insert(productionEvent).values({
       id: id("pevt"),
       eventType: input.eventType,
       sourceEntityType: input.entityType,
@@ -244,7 +246,22 @@ export class ProductionService {
       recipientScope: input.recipientScope ?? null,
       recipientId: input.recipientId ?? null,
       payload: jsonSafe(input.payload ?? {}) as any,
-    }).onConflictDoNothing();
+    }).onConflictDoNothing().returning({ id: productionEvent.id });
+    if (event?.id) this.scheduleNotificationRelay(event.id);
+  }
+
+  private scheduleNotificationRelay(eventId: string): void {
+    if (!this.notificationRelay) return;
+    // The relay reads committed rows on a separate connection. Delayed,
+    // unref'd attempts avoid observing an uncommitted transaction while keeping
+    // the normal API response independent from notification delivery.
+    for (const delay of [25, 100, 500]) {
+      const timer = setTimeout(() => {
+        void this.notificationRelay?.relayEvent(eventId).catch(() => undefined);
+      }, delay);
+      const unref = (timer as unknown as { unref?: () => void }).unref;
+      unref?.call(timer);
+    }
   }
 
   private async recordAudit(tx: any, actor: ProductionActor | null, action: string, entityType: string, entityId: string, metadata?: unknown): Promise<void> {

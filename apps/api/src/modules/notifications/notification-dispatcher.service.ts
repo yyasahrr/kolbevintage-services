@@ -19,6 +19,7 @@ export interface DomainNotificationEventInput {
   category: NotificationCategory;
   channels: NotificationChannel[];
   payload: Record<string, unknown>;
+  occurredAt?: Date;
   scheduledAt?: Date;
 }
 
@@ -61,6 +62,7 @@ export class NotificationDispatcherService {
         sourceEventId: input.sourceEventId,
         recipientScope: input.recipientType,
         recipientId: input.recipientId,
+        occurredAt: input.occurredAt,
         payload: input.payload,
       });
 

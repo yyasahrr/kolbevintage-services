@@ -326,7 +326,7 @@ export const MODULES: readonly ModuleDefinition[] = [
       "production_recall_scope",
       "production_recall_approval",
     ],
-    dependsOn: ["orders", "suppliers", "supplier-team", "admin", "audit"],
+    dependsOn: ["orders", "suppliers", "supplier-team", "admin", "notifications", "audit"],
     status: "live",
     phase: 5,
   },

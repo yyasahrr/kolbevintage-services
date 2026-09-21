@@ -138,6 +138,7 @@ describe("Phase 5.6 PostgreSQL migration and invariants", () => {
       await client.query(`INSERT INTO production_event (id, event_type, source_entity_type, source_entity_id, job_id, supplier_id, payload) VALUES ('p56_event', 'JOB_CREATED', 'production_job', 'p56_job', 'p56_job', 'p56_supplier', '{}'::jsonb)`);
       await expect(client.query(`UPDATE production_event SET payload = '{"changed":true}'::jsonb WHERE id = 'p56_event'`)).rejects.toThrow();
       await expect(client.query(`DELETE FROM production_event WHERE id = 'p56_event'`)).rejects.toThrow();
+      await client.query(`INSERT INTO notification_event (id, event_key, source_domain, source_entity_type, source_entity_id, source_event_id, occurred_at, recipient_scope, payload) VALUES ('p56_notification_event', 'SUPPLIER_PRODUCTION_RECALL_ACTION_REQUIRED', 'production', 'production_recall', 'p56_recall', 'p56-event-member', now(), 'SUPPLIER_MEMBER', '{"severity":"critical"}'::jsonb)`);
     });
   });
 });

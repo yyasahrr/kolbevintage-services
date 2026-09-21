@@ -416,6 +416,11 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "support_case",
         "support_case_sla",
         "notification_delivery",
+        "production_job",
+        "quality_release",
+        "quality_defect",
+        "quality_rework",
+        "production_recall",
       ],
       orders: [
         "wholesale_account",

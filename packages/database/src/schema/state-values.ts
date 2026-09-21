@@ -850,6 +850,13 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "analytics:report:manage",
   "analytics:export",
   "analytics:reconciliation:view",
+  // Phase 5.6 — Supplier Production / Samples / QC
+  "production:jobs:view",
+  "production:config:view",
+  "production:config:manage",
+  "production:quality:review",
+  "production:release:decide",
+  "production:recall:approve",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -1182,6 +1189,11 @@ export const NOTIFICATION_EVENT_KEYS = [
   "PAYOUT_SUBMITTED",
   "PAYOUT_RECONCILIATION_REQUIRED",
   "COMPLIANCE_ACTION_REQUIRED",
+  // Phase 5.6 — factual production operations only; delivery remains Notifications-owned.
+  "SUPPLIER_PRODUCTION_JOB_CREATED",
+  "SUPPLIER_PRODUCTION_ACTION_REQUIRED",
+  "SUPPLIER_PRODUCTION_QUALITY_UPDATED",
+  "SUPPLIER_PRODUCTION_RECALL_ACTION_REQUIRED",
 ] as const;
 export type NotificationEventKey = (typeof NOTIFICATION_EVENT_KEYS)[number];
 /* ── Phase 5.5 — Analytics & Reporting ─────────────────────────────────────── */
