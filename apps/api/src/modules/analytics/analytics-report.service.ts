@@ -5,6 +5,7 @@ import {
   analyticsSavedReport,
 } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
+import { AuditService } from "../audit/audit.service";
 import {
   ANALYTICS_MAX_METRICS_PER_RUN,
   isAnalyticsComparison,
@@ -45,6 +46,7 @@ export class AnalyticsReportService {
   constructor(
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
     @Inject(AnalyticsQueryService) private readonly queries: AnalyticsQueryService,
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   async createSavedReport(
@@ -58,15 +60,27 @@ export class AnalyticsReportService {
     const normalizedType = reportType === "METRIC_SET" || reportType === "SAVED_REPORT" ? reportType : "SAVED_REPORT";
     const definition = this.normalizeDefinition(input, scope);
     const id = this.id("analytics_report");
-    const [row] = await this.db.insert(analyticsSavedReport).values({
-      id,
-      name: normalizedName,
-      reportType: normalizedType,
-      scope: scope.scope,
-      scopeId: scope.scopeId,
-      definition: definition as unknown as Record<string, unknown>,
-      ownerId,
-    }).returning();
+    let row: typeof analyticsSavedReport.$inferSelect | undefined;
+    await this.db.transaction(async (tx) => {
+      [row] = await tx.insert(analyticsSavedReport).values({
+        id,
+        name: normalizedName,
+        reportType: normalizedType,
+        scope: scope.scope,
+        scopeId: scope.scopeId,
+        definition: definition as unknown as Record<string, unknown>,
+        ownerId,
+      }).returning();
+      if (!row) throw new Error("Analytics saved report could not be created");
+      await this.audit.record({
+        actorId: ownerId,
+        actorRole: "analytics-owner",
+        action: "analytics:report:create",
+        entityType: "analytics_saved_report",
+        entityId: row.id,
+        after: { name: row.name, reportType: row.reportType, scope: row.scope, scopeId: row.scopeId, metricCount: definition.metricKeys.length },
+      }, tx);
+    });
     if (!row) throw new Error("Analytics saved report could not be created");
     return this.mapSavedReport(row);
   }
@@ -94,7 +108,17 @@ export class AnalyticsReportService {
 
   async deleteSavedReport(id: string, ownerId: string, scope: AnalyticsOwnerScope, includeAllOwned = false): Promise<void> {
     const report = await this.getSavedReport(id, ownerId, scope, includeAllOwned);
-    await this.db.delete(analyticsSavedReport).where(eq(analyticsSavedReport.id, report.id));
+    await this.db.transaction(async (tx) => {
+      await tx.delete(analyticsSavedReport).where(eq(analyticsSavedReport.id, report.id));
+      await this.audit.record({
+        actorId: ownerId,
+        actorRole: "analytics-owner",
+        action: "analytics:report:delete",
+        entityType: "analytics_saved_report",
+        entityId: report.id,
+        before: { name: report.name, scope: report.scope, scopeId: report.scopeId },
+      }, tx);
+    });
   }
 
   async runSavedReport(
@@ -121,14 +145,24 @@ export class AnalyticsReportService {
 
     try {
       const result = await this.queries.run(report.definition, runId);
-      await this.db.update(analyticsReportRun).set({
-        status: "COMPLETED",
-        sourceMode: "AUTHORITATIVE_LIVE",
-        dataAsOf: new Date(result.freshness.dataAsOf),
-        result: result as unknown as Record<string, unknown>,
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      }).where(and(eq(analyticsReportRun.id, runId), eq(analyticsReportRun.status, "RUNNING")));
+      await this.db.transaction(async (tx) => {
+        await tx.update(analyticsReportRun).set({
+          status: "COMPLETED",
+          sourceMode: "AUTHORITATIVE_LIVE",
+          dataAsOf: new Date(result.freshness.dataAsOf),
+          result: result as unknown as Record<string, unknown>,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(and(eq(analyticsReportRun.id, runId), eq(analyticsReportRun.status, "RUNNING")));
+        await this.audit.record({
+          actorId: requestedBy,
+          actorRole: "analytics-owner",
+          action: "analytics:report:run",
+          entityType: "analytics_report_run",
+          entityId: runId,
+          after: { reportId: report.id, scope: report.scope, scopeId: report.scopeId, dataAsOf: result.freshness.dataAsOf },
+        }, tx);
+      });
       return result;
     } catch (error) {
       await this.db.update(analyticsReportRun).set({
@@ -169,7 +203,8 @@ export class AnalyticsReportService {
     const comparison = typeof rawRange.comparison === "string" ? rawRange.comparison.toUpperCase() : undefined;
     if (preset && !isAnalyticsDatePreset(preset)) throw new AnalyticsValidationError(`Unsupported date preset '${String(rawRange.preset)}'`);
     if (comparison && !isAnalyticsComparison(comparison)) throw new AnalyticsValidationError(`Unsupported comparison '${String(rawRange.comparison)}'`);
-    const dimensions = raw.dimensions === undefined ? undefined : Array.isArray(raw.dimensions) ? raw.dimensions : [];
+    if (raw.dimensions !== undefined && !Array.isArray(raw.dimensions)) throw new AnalyticsValidationError("Report dimensions must be an array");
+    const dimensions = raw.dimensions === undefined ? undefined : raw.dimensions;
     if (dimensions?.some((item) => !isAnalyticsDimension(item))) throw new AnalyticsValidationError("Report dimensions are not allowlisted");
     const definition: AnalyticsDefinition = {
       metricKeys,

@@ -265,7 +265,7 @@ export class AnalyticsQueryService {
           SELECT COUNT(*)::text AS value
           FROM wholesale_membership wm
           WHERE wm.status = 'active'
-            AND ${this.time("wm.updated_at", range)}
+            AND wm.updated_at < ${range.endUtc}
             AND ${this.vipScope("wm.account_id", scope, scopeId)}
         `);
       case "vip_orders":
@@ -281,15 +281,15 @@ export class AnalyticsQueryService {
       case "inventory_on_hand":
         return this.inventory(sql`SELECT COALESCE(SUM(pvi.on_hand), 0)::text AS value
           FROM product_variant_inventory pvi
-          WHERE pvi.status = 'active' AND ${this.time("pvi.updated_at", range)} AND ${this.inventoryScope("pvi", scope, scopeId)}`);
+          WHERE pvi.status = 'active' AND pvi.updated_at < ${range.endUtc} AND ${this.inventoryScope("pvi", scope, scopeId)}`);
       case "inventory_reserved":
         return this.inventory(sql`SELECT COALESCE(SUM(pvi.reserved), 0)::text AS value
           FROM product_variant_inventory pvi
-          WHERE pvi.status = 'active' AND ${this.time("pvi.updated_at", range)} AND ${this.inventoryScope("pvi", scope, scopeId)}`);
+          WHERE pvi.status = 'active' AND pvi.updated_at < ${range.endUtc} AND ${this.inventoryScope("pvi", scope, scopeId)}`);
       case "inventory_available":
         return this.inventory(sql`SELECT COALESCE(SUM(pvi.on_hand - pvi.reserved), 0)::text AS value
           FROM product_variant_inventory pvi
-          WHERE pvi.status = 'active' AND ${this.time("pvi.updated_at", range)} AND ${this.inventoryScope("pvi", scope, scopeId)}`);
+          WHERE pvi.status = 'active' AND pvi.updated_at < ${range.endUtc} AND ${this.inventoryScope("pvi", scope, scopeId)}`);
       case "payment_submitted_amount":
         return this.money(sql`SELECT COALESCE(SUM(p.amount), 0)::text AS value
           FROM payment p INNER JOIN wholesale_order wo ON wo.id = p.wholesale_order_id
@@ -334,11 +334,11 @@ export class AnalyticsQueryService {
           WHERE t.status = 'OPEN' AND t.due_at IS NOT NULL AND t.due_at < ${dataAsOf}`);
       case "support_open_cases":
         return this.count(sql`SELECT COUNT(*)::text AS value FROM support_case sc
-          WHERE ${this.time("sc.opened_at", range)} AND sc.status NOT IN ('RESOLVED', 'CLOSED') AND ${this.supportScope("sc", scope, scopeId)}`);
+          WHERE sc.opened_at < ${range.endUtc} AND sc.status NOT IN ('RESOLVED', 'CLOSED') AND ${this.supportScope("sc", scope, scopeId)}`);
       case "support_sla_breaches":
         return this.count(sql`SELECT COUNT(*)::text AS value
           FROM support_case sc INNER JOIN support_case_sla sla ON sla.case_id = sc.id
-          WHERE ${this.time("sc.opened_at", range)} AND sc.status NOT IN ('RESOLVED', 'CLOSED')
+          WHERE sc.opened_at < ${range.endUtc} AND sc.status NOT IN ('RESOLVED', 'CLOSED')
             AND ((sla.first_response_due_at < ${dataAsOf} AND sla.first_response_at IS NULL)
               OR (sla.resolution_due_at < ${dataAsOf} AND sla.resolved_at IS NULL))
             AND ${this.supportScope("sc", scope, scopeId)}`);
@@ -470,7 +470,7 @@ export class AnalyticsQueryService {
       WHERE sa.account_type = ${accountType}
         AND sa.status = 'active'
         ${supplierPredicate}
-        AND ${this.time("sp.created_at", range)}
+        AND sp.created_at < ${range.endUtc}
     `);
     const amount = parseInteger(rows[0]?.value);
     return { value: (amount < 0n ? 0n : amount).toString() };

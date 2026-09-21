@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, lt } from "drizzle-orm";
 import { analyticsExportJob, analyticsReportRun } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
+import { AuditService } from "../audit/audit.service";
 import {
   ANALYTICS_EXPORT_TTL_SECONDS,
   ANALYTICS_MAX_EXPORT_ROWS,
@@ -22,6 +23,7 @@ export class AnalyticsExportService {
   constructor(
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
     @Inject(AnalyticsReportService) private readonly reports: AnalyticsReportService,
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   async requestExport(
@@ -42,16 +44,28 @@ export class AnalyticsExportService {
     const selected = metrics.slice(offset, offset + rowLimit);
     const jobId = this.id("analytics_export");
     const expiresAt = new Date(Date.now() + ANALYTICS_EXPORT_TTL_SECONDS * 1000);
-    const [job] = await this.db.insert(analyticsExportJob).values({
-      id: jobId,
-      reportRunId,
-      format: "CSV",
-      status: "QUEUED",
-      rowLimit,
-      fileName: `analytics-${reportRunId}-${page}.csv`,
-      requestedBy,
-      expiresAt,
-    }).returning();
+    let job: typeof analyticsExportJob.$inferSelect | undefined;
+    await this.db.transaction(async (tx) => {
+      [job] = await tx.insert(analyticsExportJob).values({
+        id: jobId,
+        reportRunId,
+        format: "CSV",
+        status: "QUEUED",
+        rowLimit,
+        fileName: `analytics-${reportRunId}-${page}.csv`,
+        requestedBy,
+        expiresAt,
+      }).returning();
+      if (!job) throw new Error("Analytics export job could not be created");
+      await this.audit.record({
+        actorId: requestedBy,
+        actorRole: "analytics-owner",
+        action: "analytics:export:create",
+        entityType: "analytics_export_job",
+        entityId: job.id,
+        after: { reportRunId, rowLimit, page, expiresAt: expiresAt.toISOString() },
+      }, tx);
+    });
     if (!job) throw new Error("Analytics export job could not be created");
 
     await this.processClaimedJob(job.id, metrics, offset, rowLimit, page);

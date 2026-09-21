@@ -301,7 +301,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     name: "analytics",
     tables: ["system_log", "analytics_saved_report", "analytics_report_run", "analytics_export_job"],
     dependsOn: ["auth", "admin", "orders", "payments", "shipping", "inventory", "settlement", "crm", "support", "notifications", "vip", "suppliers", "audit"],
-    status: "scaffolded",
+    status: "live",
     phase: 5,
   },
   { name: "audit", tables: ["audit_log"], dependsOn: [], status: "live", phase: 0 },

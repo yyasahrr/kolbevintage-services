@@ -231,6 +231,9 @@ export function resolveAnalyticsRange(input: AnalyticsRangeInput = {}, now = new
 
   let startUtc: Date;
   let endUtc: Date;
+  if ((input.startUtc || input.endUtc) && preset !== "CUSTOM") {
+    throw new Error("Explicit UTC instants require the CUSTOM analytics preset");
+  }
   if (preset === "CUSTOM" && input.startUtc && input.endUtc) {
     startUtc = requireUtcInstant(input.startUtc, "startUtc");
     endUtc = requireUtcInstant(input.endUtc, "endUtc");

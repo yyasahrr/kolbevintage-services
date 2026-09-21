@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { toApiJson } from "../../common/api-json";
@@ -6,7 +6,6 @@ import { AdminPermissionGuard, RequireAdminPermission } from "../admin/admin-rba
 import { AnalyticsExportService, type AnalyticsExportRequest } from "./analytics-export.service";
 import { AnalyticsReportService } from "./analytics-report.service";
 import { AnalyticsScopeService } from "./analytics-scope.service";
-import type { AnalyticsOwnerScope } from "./analytics-report.service";
 import type { AnalyticsQuery } from "./analytics.controller";
 
 export type SavedReportBody = {
@@ -83,6 +82,8 @@ export class AdminAnalyticsReportController {
 
   @Get("exports/:id/download")
   @RequireAdminPermission("analytics:export")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", "attachment; filename=analytics-export.csv")
   async download(@CurrentUser() claims: Claims, @Param("id") id: string, @Query() query: AnalyticsQuery) {
     const scope = await this.scopes.resolveAdmin(query.scope, query.scopeId);
     return this.exports.downloadExport(id, actorId(claims), scope, true);
@@ -142,6 +143,8 @@ export class SupplierAnalyticsReportController {
   }
 
   @Get("exports/:id/download")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", "attachment; filename=analytics-export.csv")
   async download(@CurrentUser() claims: Claims, @Param("id") id: string, @Query() query: AnalyticsQuery) {
     const scope = await this.scopes.resolveSupplier(actorId(claims), query.scope, query.scopeId);
     return this.exports.downloadExport(id, actorId(claims), scope);
@@ -201,6 +204,8 @@ export class VipAnalyticsReportController {
   }
 
   @Get("exports/:id/download")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", "attachment; filename=analytics-export.csv")
   async download(@CurrentUser() claims: Claims, @Param("id") id: string, @Query() query: AnalyticsQuery) {
     const scope = await this.scopes.resolveVip(actorId(claims), query.scope, query.scopeId);
     return this.exports.downloadExport(id, actorId(claims), scope);
