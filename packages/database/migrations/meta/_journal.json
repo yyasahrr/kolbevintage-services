@@ -197,6 +197,20 @@
       "when": 1790050000000,
       "tag": "0027_phase_5_3_notifications_messaging",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790100000000,
+      "tag": "0028_phase_5_4_cms_content_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790150000000,
+      "tag": "0029_phase_5_5_analytics_reporting",
+      "breakpoints": true
     }
   ]
 }

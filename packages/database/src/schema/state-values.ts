@@ -768,6 +768,32 @@ export const WHOLESALE_MEMBERSHIP_EVENT_TYPES = [
   "expired",
 ] as const;
 
+/** Phase 5.4 — CMS content, publication and public media state machines. */
+export const CMS_PAGE_TYPES = ["HOME", "STATIC", "LANDING", "EDITORIAL"] as const;
+export type CmsPageType = (typeof CMS_PAGE_TYPES)[number];
+
+export const CMS_PAGE_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_REVISION_STATUSES = ["DRAFT", "IN_REVIEW", "SCHEDULED", "PUBLISHED", "SUPERSEDED", "ARCHIVED"] as const;
+export type CmsRevisionStatus = (typeof CMS_REVISION_STATUSES)[number];
+
+export const CMS_DOCUMENT_TYPES = [
+  "HOME_CONFIGURATION",
+  "HEADER_CONFIGURATION",
+  "FOOTER_CONFIGURATION",
+  "HERO_CONFIGURATION",
+  "PROMOTIONAL_CONTENT_CONFIGURATION",
+] as const;
+export const CMS_DOCUMENT_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_DOCUMENT_REVISION_STATUSES = CMS_REVISION_STATUSES;
+
+export const CMS_NAVIGATION_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_TAXONOMY_KINDS = ["CATEGORY", "TAG"] as const;
+export const CMS_TAXONOMY_STATUSES = ["ACTIVE", "ARCHIVED"] as const;
+export const CMS_MEDIA_PROVIDERS = ["LOCAL_PUBLIC"] as const;
+export const CMS_MEDIA_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"] as const;
+export const CMS_SCHEDULE_STATUSES = ["SCHEDULED", "PROCESSING", "EXECUTED", "CANCELLED", "FAILED"] as const;
+export const CMS_SCHEDULE_TARGET_TYPES = ["PAGE_REVISION", "CONTENT_REVISION", "NAVIGATION_REVISION", "ARTICLE_REVISION"] as const;
+
 export const ADMIN_PERMISSION_ACTIONS = [
   "wholesale:plan:view",
   "wholesale:plan:manage",
@@ -808,6 +834,22 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "notification:provider:view",
   "notification:preference:manage",
   "notification:report:view",
+  // Phase 5.4 — CMS / Content Management
+  "cms:content:view",
+  "cms:content:create",
+  "cms:content:edit",
+  "cms:content:publish",
+  "cms:content:archive",
+  "cms:navigation:manage",
+  "cms:media:manage",
+  "cms:seo:manage",
+  "cms:blog:manage",
+  // Phase 5.5 — Analytics & Reporting (read-only bounded context)
+  "analytics:dashboard:view",
+  "analytics:report:view",
+  "analytics:report:manage",
+  "analytics:export",
+  "analytics:reconciliation:view",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
@@ -1141,7 +1183,22 @@ export const NOTIFICATION_EVENT_KEYS = [
   "COMPLIANCE_ACTION_REQUIRED",
 ] as const;
 export type NotificationEventKey = (typeof NOTIFICATION_EVENT_KEYS)[number];
+/* ── Phase 5.5 — Analytics & Reporting ─────────────────────────────────────── */
 
+export const ANALYTICS_SCOPES = [
+  "PLATFORM",
+  "RETAIL",
+  "WHOLESALE",
+  "SUPPLIER",
+  "VIP_ACCOUNT",
+] as const;
+export type AnalyticsScope = (typeof ANALYTICS_SCOPES)[number];
 
+export const ANALYTICS_REPORT_TYPES = ["METRIC_SET", "SAVED_REPORT"] as const;
+export type AnalyticsReportType = (typeof ANALYTICS_REPORT_TYPES)[number];
 
+export const ANALYTICS_REPORT_RUN_STATUSES = ["QUEUED", "RUNNING", "COMPLETED", "FAILED"] as const;
+export const ANALYTICS_EXPORT_FORMATS = ["CSV"] as const;
+export const ANALYTICS_EXPORT_STATUSES = ["QUEUED", "PROCESSING", "COMPLETED", "FAILED", "EXPIRED"] as const;
+export const ANALYTICS_SOURCE_MODES = ["AUTHORITATIVE_LIVE"] as const;
 

@@ -151,7 +151,7 @@ describe("Phase 4.9.1 — Checkpoint B: Operational Proof & Closeout", () => {
       expect(restoreResult.success).toBe(true);
       expect(restoreResult.checksumVerified).toBe(true);
       if (restoreResult.tablesCount !== undefined) {
-        expect(restoreResult.tablesCount).toBe(142);
+        expect(restoreResult.tablesCount).toBe(158);
       }
 
       // 5. Verify restored data and invariants in target database
@@ -163,7 +163,7 @@ describe("Phase 4.9.1 — Checkpoint B: Operational Proof & Closeout", () => {
           FROM information_schema.tables
           WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
         `);
-        expect(countRes.rows[0].c).toBe(142);
+        expect(countRes.rows[0].c).toBe(158);
 
         const userRes = await dstClient.query(`SELECT * FROM account_user WHERE id = '${testUserId}'`);
         expect(userRes.rows.length).toBe(1);

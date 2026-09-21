@@ -29,3 +29,6 @@ backend/.kolbe-db-ready
 
 # لایه Drizzle
 packages/*/dist/
+
+# CMS public-media development storage (metadata remains in PostgreSQL)
+var/cms-public-media/

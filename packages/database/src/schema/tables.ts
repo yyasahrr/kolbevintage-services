@@ -212,6 +212,25 @@ import {
   WHOLESALE_PROFORMA_STATUSES,
   WHOLESALE_REQUEST_STATUSES,
   WHOLESALE_REVISION_BUYER_RESPONSES,
+  CMS_PAGE_TYPES,
+  CMS_PAGE_STATUSES,
+  CMS_REVISION_STATUSES,
+  CMS_DOCUMENT_TYPES,
+  CMS_DOCUMENT_STATUSES,
+  CMS_DOCUMENT_REVISION_STATUSES,
+  CMS_NAVIGATION_STATUSES,
+  CMS_TAXONOMY_KINDS,
+  CMS_TAXONOMY_STATUSES,
+  CMS_MEDIA_PROVIDERS,
+  CMS_MEDIA_MIME_TYPES,
+  CMS_SCHEDULE_STATUSES,
+  CMS_SCHEDULE_TARGET_TYPES,
+  ANALYTICS_SCOPES,
+  ANALYTICS_REPORT_TYPES,
+  ANALYTICS_REPORT_RUN_STATUSES,
+  ANALYTICS_EXPORT_FORMATS,
+  ANALYTICS_EXPORT_STATUSES,
+  ANALYTICS_SOURCE_MODES,
 } from "./state-values";
 
 /** ستون‌های زمانی تکراری — یک‌بار تعریف می‌شوند تا همهٔ جداول یکدست بمانند. */
@@ -5142,3 +5161,582 @@ export const notificationProviderConfig = pgTable(
 
 
 
+
+
+/* ── Phase 5.5 — Analytics & Reporting (read-only operational metadata) ─────── */
+
+/**
+ * Analytics never owns business facts. These tables contain only validated
+ * report definitions and rebuildable execution/export metadata. All business
+ * metrics are read live from their authoritative bounded contexts.
+ */
+export const analyticsSavedReport = pgTable(
+  "analytics_saved_report",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    reportType: text("report_type").notNull().default("SAVED_REPORT"),
+    scope: text("scope").notNull(),
+    scopeId: text("scope_id"),
+    definition: jsonb("definition").notNull().default({}),
+    ownerId: text("owner_id").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("analytics_saved_report_type_allowed", "report_type", ANALYTICS_REPORT_TYPES),
+    stateCheck("analytics_saved_report_scope_allowed", "scope", ANALYTICS_SCOPES),
+    foreignKey({
+      name: "analytics_saved_report_owner_fk",
+      columns: [table.ownerId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("analytics_saved_report_owner_idx").on(table.ownerId, table.updatedAt),
+    index("analytics_saved_report_scope_idx").on(table.scope, table.scopeId),
+  ],
+);
+
+export const analyticsReportRun = pgTable(
+  "analytics_report_run",
+  {
+    id: text("id").primaryKey(),
+    reportType: text("report_type").notNull().default("METRIC_SET"),
+    scope: text("scope").notNull(),
+    scopeId: text("scope_id"),
+    definition: jsonb("definition").notNull().default({}),
+    status: text("status").notNull().default("QUEUED"),
+    sourceMode: text("source_mode").notNull().default("AUTHORITATIVE_LIVE"),
+    dataAsOf: timestamp("data_as_of", { withTimezone: true }),
+    result: jsonb("result"),
+    errorCode: text("error_code"),
+    requestedBy: text("requested_by").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("analytics_report_run_type_allowed", "report_type", ANALYTICS_REPORT_TYPES),
+    stateCheck("analytics_report_run_scope_allowed", "scope", ANALYTICS_SCOPES),
+    stateCheck("analytics_report_run_status_allowed", "status", ANALYTICS_REPORT_RUN_STATUSES),
+    stateCheck("analytics_report_run_source_mode_allowed", "source_mode", ANALYTICS_SOURCE_MODES),
+    foreignKey({
+      name: "analytics_report_run_requested_by_fk",
+      columns: [table.requestedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("analytics_report_run_requested_idx").on(table.requestedBy, table.createdAt),
+    index("analytics_report_run_status_idx").on(table.status, table.createdAt),
+  ],
+);
+
+export const analyticsExportJob = pgTable(
+  "analytics_export_job",
+  {
+    id: text("id").primaryKey(),
+    reportRunId: text("report_run_id").notNull(),
+    format: text("format").notNull().default("CSV"),
+    status: text("status").notNull().default("QUEUED"),
+    rowLimit: integer("row_limit").notNull().default(10000),
+    rowCount: integer("row_count"),
+    fileName: text("file_name").notNull(),
+    outputText: text("output_text"),
+    failureReason: text("failure_reason"),
+    requestedBy: text("requested_by").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("analytics_export_job_format_allowed", "format", ANALYTICS_EXPORT_FORMATS),
+    stateCheck("analytics_export_job_status_allowed", "status", ANALYTICS_EXPORT_STATUSES),
+    check("analytics_export_job_row_limit_positive", sql.raw(`"row_limit" > 0 AND "row_limit" <= 10000`)),
+    check("analytics_export_job_row_count_non_negative", sql.raw(`"row_count" IS NULL OR "row_count" >= 0`)),
+    foreignKey({
+      name: "analytics_export_job_run_fk",
+      columns: [table.reportRunId],
+      foreignColumns: [analyticsReportRun.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "analytics_export_job_requested_by_fk",
+      columns: [table.requestedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("analytics_export_job_requested_idx").on(table.requestedBy, table.createdAt),
+    index("analytics_export_job_status_expiry_idx").on(table.status, table.expiresAt),
+  ],
+);
+
+/* ── Phase 5.4 — CMS / Content Management ────────────────────────────────────
+ * CMS owns editorial content and publication state only. It deliberately does
+ * not copy Catalog products, prices, inventory, orders, legal acceptance or
+ * promotion rules into these documents. Cross-domain references are strings in
+ * validated block payloads and are resolved by the owning service at read time.
+ */
+
+export const cmsPage = pgTable(
+  "cms_page",
+  {
+    id: text("id").primaryKey(),
+    stableKey: text("stable_key").notNull().unique(),
+    pageType: text("page_type").notNull(),
+    routePath: text("route_path").notNull().unique(),
+    currentPublishedRevisionId: text("current_published_revision_id"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("cms_page_type_allowed", "page_type", CMS_PAGE_TYPES),
+    stateCheck("cms_page_status_allowed", "status", CMS_PAGE_STATUSES),
+    index("cms_page_type_status_idx").on(table.pageType, table.status),
+    index("cms_page_route_idx").on(table.routePath),
+    foreignKey({
+      name: "cms_page_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsPageRevision = pgTable(
+  "cms_page_revision",
+  {
+    id: text("id").primaryKey(),
+    pageId: text("page_id").notNull(),
+    version: integer("version").notNull(),
+    title: text("title").notNull(),
+    blocks: jsonb("blocks").notNull().default([]),
+    seoMetadata: jsonb("seo_metadata").notNull().default({}),
+    contentSchemaVersion: integer("content_schema_version").notNull().default(1),
+    status: text("status").notNull().default("DRAFT"),
+    publishAt: timestamp("publish_at", { withTimezone: true }),
+    unpublishAt: timestamp("unpublish_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    sourceRevisionId: text("source_revision_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("cms_page_revision_status_allowed", "status", CMS_REVISION_STATUSES),
+    check("cms_page_revision_version_positive", sql.raw(`"version" > 0`)),
+    check("cms_page_revision_schema_version_positive", sql.raw(`"content_schema_version" > 0`)),
+    uniqueIndex("cms_page_revision_page_version_unique").on(table.pageId, table.version),
+    uniqueIndex("cms_page_revision_one_published").on(table.pageId).where(sql`"status" = 'PUBLISHED'`),
+    index("cms_page_revision_page_status_idx").on(table.pageId, table.status),
+    index("cms_page_revision_publish_at_idx").on(table.status, table.publishAt),
+    foreignKey({
+      name: "cms_page_revision_page_fk",
+      columns: [table.pageId],
+      foreignColumns: [cmsPage.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_page_revision_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_page_revision_published_by_fk",
+      columns: [table.publishedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_page_revision_source_fk",
+      columns: [table.sourceRevisionId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsContentDocument = pgTable(
+  "cms_content_document",
+  {
+    id: text("id").primaryKey(),
+    documentKey: text("document_key").notNull().unique(),
+    documentType: text("document_type").notNull(),
+    currentPublishedRevisionId: text("current_published_revision_id"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("cms_content_document_type_allowed", "document_type", CMS_DOCUMENT_TYPES),
+    stateCheck("cms_content_document_status_allowed", "status", CMS_DOCUMENT_STATUSES),
+    foreignKey({
+      name: "cms_content_document_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("cms_content_document_type_status_idx").on(table.documentType, table.status),
+  ],
+);
+
+export const cmsContentRevision = pgTable(
+  "cms_content_revision",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id").notNull(),
+    version: integer("version").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    status: text("status").notNull().default("DRAFT"),
+    publishAt: timestamp("publish_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    sourceRevisionId: text("source_revision_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("cms_content_revision_status_allowed", "status", CMS_DOCUMENT_REVISION_STATUSES),
+    check("cms_content_revision_version_positive", sql.raw(`"version" > 0`)),
+    uniqueIndex("cms_content_revision_document_version_unique").on(table.documentId, table.version),
+    uniqueIndex("cms_content_revision_one_published").on(table.documentId).where(sql`"status" = 'PUBLISHED'`),
+    index("cms_content_revision_document_status_idx").on(table.documentId, table.status),
+    index("cms_content_revision_publish_at_idx").on(table.status, table.publishAt),
+    foreignKey({
+      name: "cms_content_revision_document_fk",
+      columns: [table.documentId],
+      foreignColumns: [cmsContentDocument.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_content_revision_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_content_revision_published_by_fk",
+      columns: [table.publishedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_content_revision_source_fk",
+      columns: [table.sourceRevisionId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsNavigation = pgTable(
+  "cms_navigation",
+  {
+    id: text("id").primaryKey(),
+    navigationKey: text("navigation_key").notNull().unique(),
+    label: text("label").notNull(),
+    currentPublishedRevisionId: text("current_published_revision_id"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("cms_navigation_status_allowed", "status", CMS_NAVIGATION_STATUSES),
+    foreignKey({
+      name: "cms_navigation_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("cms_navigation_status_idx").on(table.status),
+  ],
+);
+
+export const cmsNavigationRevision = pgTable(
+  "cms_navigation_revision",
+  {
+    id: text("id").primaryKey(),
+    navigationId: text("navigation_id").notNull(),
+    version: integer("version").notNull(),
+    items: jsonb("items").notNull().default([]),
+    status: text("status").notNull().default("DRAFT"),
+    createdBy: text("created_by"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    sourceRevisionId: text("source_revision_id"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("cms_navigation_revision_status_allowed", "status", CMS_REVISION_STATUSES),
+    check("cms_navigation_revision_version_positive", sql.raw(`"version" > 0`)),
+    uniqueIndex("cms_navigation_revision_navigation_version_unique").on(table.navigationId, table.version),
+    uniqueIndex("cms_navigation_revision_one_published").on(table.navigationId).where(sql`"status" = 'PUBLISHED'`),
+    index("cms_navigation_revision_navigation_status_idx").on(table.navigationId, table.status),
+    foreignKey({
+      name: "cms_navigation_revision_navigation_fk",
+      columns: [table.navigationId],
+      foreignColumns: [cmsNavigation.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_navigation_revision_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_navigation_revision_published_by_fk",
+      columns: [table.publishedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_navigation_revision_source_fk",
+      columns: [table.sourceRevisionId],
+      foreignColumns: [table.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsMediaAsset = pgTable(
+  "cms_media_asset",
+  {
+    id: text("id").primaryKey(),
+    storageProvider: text("storage_provider").notNull(),
+    objectKey: text("object_key").notNull().unique(),
+    originalFilename: text("original_filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    byteSize: bigint("byte_size", { mode: "bigint" }).notNull(),
+    checksumSha256: text("checksum_sha256").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    durationMs: integer("duration_ms"),
+    altText: text("alt_text"),
+    caption: text("caption"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => [
+    stateCheck("cms_media_asset_provider_allowed", "storage_provider", CMS_MEDIA_PROVIDERS),
+    stateCheck("cms_media_asset_mime_allowed", "mime_type", CMS_MEDIA_MIME_TYPES),
+    check("cms_media_asset_size_positive", sql.raw(`"byte_size" > 0`)),
+    check("cms_media_asset_checksum_format", sql.raw(`length("checksum_sha256") = 64`)),
+    check("cms_media_asset_dimensions_positive", sql.raw(`("width" IS NULL OR "width" > 0) AND ("height" IS NULL OR "height" > 0) AND ("duration_ms" IS NULL OR "duration_ms" > 0)`)),
+    index("cms_media_asset_created_idx").on(table.createdAt),
+    index("cms_media_asset_archived_idx").on(table.archivedAt),
+    foreignKey({
+      name: "cms_media_asset_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsMediaUsage = pgTable(
+  "cms_media_usage",
+  {
+    id: text("id").primaryKey(),
+    mediaAssetId: text("media_asset_id").notNull(),
+    revisionType: text("revision_type").notNull(),
+    revisionId: text("revision_id").notNull(),
+    fieldPath: text("field_path").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("cms_media_usage_unique").on(table.mediaAssetId, table.revisionType, table.revisionId, table.fieldPath),
+    index("cms_media_usage_revision_idx").on(table.revisionType, table.revisionId),
+    foreignKey({
+      name: "cms_media_usage_asset_fk",
+      columns: [table.mediaAssetId],
+      foreignColumns: [cmsMediaAsset.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsArticle = pgTable(
+  "cms_article",
+  {
+    id: text("id").primaryKey(),
+    articleKey: text("article_key").notNull().unique(),
+    currentPublishedRevisionId: text("current_published_revision_id"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("cms_article_status_allowed", "status", CMS_PAGE_STATUSES),
+    foreignKey({
+      name: "cms_article_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    index("cms_article_status_idx").on(table.status),
+  ],
+);
+
+export const cmsArticleTaxonomy = pgTable(
+  "cms_article_taxonomy",
+  {
+    id: text("id").primaryKey(),
+    taxonomyKey: text("taxonomy_key").notNull().unique(),
+    slug: text("slug").notNull().unique(),
+    label: text("label").notNull(),
+    kind: text("kind").notNull().default("CATEGORY"),
+    parentId: text("parent_id"),
+    status: text("status").notNull().default("ACTIVE"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("cms_article_taxonomy_kind_allowed", "kind", CMS_TAXONOMY_KINDS),
+    stateCheck("cms_article_taxonomy_status_allowed", "status", CMS_TAXONOMY_STATUSES),
+    foreignKey({ name: "cms_article_taxonomy_parent_fk", columns: [table.parentId], foreignColumns: [table.id] }).onDelete("restrict"),
+    foreignKey({ name: "cms_article_taxonomy_created_by_fk", columns: [table.createdBy], foreignColumns: [accountUser.id] }).onDelete("restrict"),
+    index("cms_article_taxonomy_kind_status_idx").on(table.kind, table.status),
+  ],
+);
+
+export const cmsArticleRevision = pgTable(
+  "cms_article_revision",
+  {
+    id: text("id").primaryKey(),
+    articleId: text("article_id").notNull(),
+    version: integer("version").notNull(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    excerpt: text("excerpt").notNull().default(""),
+    category: text("category"),
+    coverMediaId: text("cover_media_id"),
+    structuredBody: jsonb("structured_body").notNull().default([]),
+    authorDisplayName: text("author_display_name"),
+    authorId: text("author_id"),
+    readTimeMinutes: integer("read_time_minutes"),
+    isPinned: boolean("is_pinned").notNull().default(false),
+    isFeatured: boolean("is_featured").notNull().default(false),
+    seoMetadata: jsonb("seo_metadata").notNull().default({}),
+    status: text("status").notNull().default("DRAFT"),
+    publishAt: timestamp("publish_at", { withTimezone: true }),
+    unpublishAt: timestamp("unpublish_at", { withTimezone: true }),
+    createdBy: text("created_by"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    stateCheck("cms_article_revision_status_allowed", "status", CMS_REVISION_STATUSES),
+    check("cms_article_revision_version_positive", sql.raw(`"version" > 0`)),
+    check("cms_article_revision_read_time_positive", sql.raw(`"read_time_minutes" IS NULL OR "read_time_minutes" > 0`)),
+    uniqueIndex("cms_article_revision_article_version_unique").on(table.articleId, table.version),
+    uniqueIndex("cms_article_revision_one_published").on(table.articleId).where(sql`"status" = 'PUBLISHED'`),
+    uniqueIndex("cms_article_revision_published_slug_unique").on(table.slug).where(sql`"status" = 'PUBLISHED'`),
+    index("cms_article_revision_article_status_idx").on(table.articleId, table.status),
+    index("cms_article_revision_slug_idx").on(table.slug),
+    index("cms_article_revision_publish_at_idx").on(table.status, table.publishAt),
+    foreignKey({
+      name: "cms_article_revision_article_fk",
+      columns: [table.articleId],
+      foreignColumns: [cmsArticle.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_article_revision_cover_media_fk",
+      columns: [table.coverMediaId],
+      foreignColumns: [cmsMediaAsset.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_article_revision_author_fk",
+      columns: [table.authorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_article_revision_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_article_revision_published_by_fk",
+      columns: [table.publishedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const cmsArticleRevisionTaxonomy = pgTable(
+  "cms_article_revision_taxonomy",
+  {
+    id: text("id").primaryKey(),
+    articleRevisionId: text("article_revision_id").notNull(),
+    taxonomyId: text("taxonomy_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex("cms_article_revision_taxonomy_unique").on(table.articleRevisionId, table.taxonomyId),
+    index("cms_article_revision_taxonomy_term_idx").on(table.taxonomyId),
+    foreignKey({ name: "cms_article_revision_taxonomy_revision_fk", columns: [table.articleRevisionId], foreignColumns: [cmsArticleRevision.id] }).onDelete("restrict"),
+    foreignKey({ name: "cms_article_revision_taxonomy_term_fk", columns: [table.taxonomyId], foreignColumns: [cmsArticleTaxonomy.id] }).onDelete("restrict"),
+  ],
+);
+
+export const cmsPublicationSchedule = pgTable(
+  "cms_publication_schedule",
+  {
+    id: text("id").primaryKey(),
+    targetType: text("target_type").notNull(),
+    pageRevisionId: text("page_revision_id"),
+    contentRevisionId: text("content_revision_id"),
+    navigationRevisionId: text("navigation_revision_id"),
+    articleRevisionId: text("article_revision_id"),
+    publishAt: timestamp("publish_at", { withTimezone: true }).notNull(),
+    unpublishAt: timestamp("unpublish_at", { withTimezone: true }),
+    timezone: text("timezone").notNull().default("UTC"),
+    status: text("status").notNull().default("SCHEDULED"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    executedAt: timestamp("executed_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdBy: text("created_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    stateCheck("cms_publication_schedule_target_allowed", "target_type", CMS_SCHEDULE_TARGET_TYPES),
+    stateCheck("cms_publication_schedule_status_allowed", "status", CMS_SCHEDULE_STATUSES),
+    check("cms_publication_schedule_attempt_non_negative", sql.raw(`"attempt_count" >= 0`)),
+    check("cms_publication_schedule_unpublish_after_publish", sql.raw(`"unpublish_at" IS NULL OR "unpublish_at" > "publish_at"`)),
+    check("cms_publication_schedule_one_target", sql.raw(`(("page_revision_id" IS NOT NULL)::int + ("content_revision_id" IS NOT NULL)::int + ("navigation_revision_id" IS NOT NULL)::int + ("article_revision_id" IS NOT NULL)::int) = 1`)),
+    uniqueIndex("cms_publication_schedule_page_target_unique").on(table.pageRevisionId).where(sql`"page_revision_id" IS NOT NULL AND "status" IN ('SCHEDULED','PROCESSING')`),
+    uniqueIndex("cms_publication_schedule_content_target_unique").on(table.contentRevisionId).where(sql`"content_revision_id" IS NOT NULL AND "status" IN ('SCHEDULED','PROCESSING')`),
+    uniqueIndex("cms_publication_schedule_navigation_target_unique").on(table.navigationRevisionId).where(sql`"navigation_revision_id" IS NOT NULL AND "status" IN ('SCHEDULED','PROCESSING')`),
+    uniqueIndex("cms_publication_schedule_article_target_unique").on(table.articleRevisionId).where(sql`"article_revision_id" IS NOT NULL AND "status" IN ('SCHEDULED','PROCESSING')`),
+    index("cms_publication_schedule_due_idx").on(table.status, table.publishAt),
+    foreignKey({
+      name: "cms_publication_schedule_page_fk",
+      columns: [table.pageRevisionId],
+      foreignColumns: [cmsPageRevision.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_publication_schedule_content_fk",
+      columns: [table.contentRevisionId],
+      foreignColumns: [cmsContentRevision.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_publication_schedule_navigation_fk",
+      columns: [table.navigationRevisionId],
+      foreignColumns: [cmsNavigationRevision.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_publication_schedule_article_fk",
+      columns: [table.articleRevisionId],
+      foreignColumns: [cmsArticleRevision.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "cms_publication_schedule_created_by_fk",
+      columns: [table.createdBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+// The four published pointers are intentionally represented as nullable scalar
+// columns above and constrained by migration 0028 after all tables exist. This
+// avoids a TypeScript declaration cycle while retaining explicit database FKs.
