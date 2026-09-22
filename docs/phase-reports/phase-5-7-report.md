@@ -277,7 +277,11 @@ the suite exits 0.
 
 ## Closeout CI evidence
 
-Closeout commit CI: pending — recorded in the follow-up `docs: record phase
-5.7 final CI` commit after the report push goes green.
+Report commit `062fb3f42cec6c9b1b0f99de97b4026e7635f4a0` (`docs: phase 5.7
+comprehensive report`): run `35689349520` — SUCCESS.
+URL: https://github.com/yyasahrr/kolbevintage-services/actions/runs/35689349520
+
+This evidence was committed as `docs: record phase 5.7 final CI`, pushed,
+and its own CI run was awaited to SUCCESS before closeout.
 
 Phase 5.8 Retail Commerce Core Backend has NOT started.
