@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
-import { product, productRating } from "@kolbe/database";
+import { RATING_STATUSES, product, productRating } from "@kolbe/database";
 import { DomainError } from "@kolbe/shared";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
@@ -221,6 +221,49 @@ export class RatingsService {
       SELECT r.*, ${key} AS "cursor_key" FROM "product_rating" AS r
       WHERE r."product_id" = ${productId} AND r."status" IN ('visible', 'flagged')
       ${keyset}
+      ORDER BY ${key} DESC, r."id" ASC
+      LIMIT ${limit + 1}
+    `);
+    const rows = ((result as any).rows ?? []) as Array<Record<string, unknown>>;
+    const kept = rows.slice(0, limit);
+    const nextCursor =
+      rows.length > limit
+        ? this.encodeCursor(String(kept[kept.length - 1].cursor_key), kept[kept.length - 1].id as string)
+        : null;
+    return { reviews: kept.map((row) => this.presentRow(row)), nextCursor };
+  }
+
+  /**
+   * Phase 5.11-A — staff moderation queue (Retail Admin control plane).
+   * Unlike the public list, this sees ALL statuses (including `hidden`) and
+   * filters by product/status; keyset on (created_at DESC, id ASC). The
+   * caller owns the permission check (retail:review:view).
+   */
+  async listReviewsForModeration(
+    query: { productId?: unknown; status?: unknown; limit?: unknown; cursor?: unknown } = {},
+  ): Promise<{ reviews: Array<Record<string, unknown>>; nextCursor: string | null }> {
+    const limit = this.clampLimit(query.limit);
+    const status = typeof query.status === "string" && query.status !== "" ? query.status : null;
+    if (status && !(RATING_STATUSES as readonly string[]).includes(status)) {
+      throw new DomainError(400, "REVIEW_STATUS_INVALID", `unknown review status '${status}'`);
+    }
+    const key = sql`(EXTRACT(EPOCH FROM r."created_at") * 1000000)::bigint`;
+    let cursorKeyset = sql``;
+    if (query.cursor !== undefined && query.cursor !== null) {
+      const cursor = this.decodeCursor(query.cursor);
+      if (!cursor) throw new DomainError(400, "REVIEW_CURSOR_INVALID", "review cursor is malformed");
+      cursorKeyset = sql`AND (${key} < ${cursor.key} OR (${key} = ${cursor.key} AND r."id" > ${cursor.id}))`;
+    }
+    const productId =
+      typeof query.productId === "string" && query.productId !== "" ? query.productId : null;
+    const statusFilter = status ? sql`AND r."status" = ${status}` : sql``;
+    const productFilter = productId ? sql`AND r."product_id" = ${productId}` : sql``;
+    const result = await this.db.execute(sql`
+      SELECT r.*, ${key} AS "cursor_key" FROM "product_rating" AS r
+      WHERE true
+      ${productFilter}
+      ${statusFilter}
+      ${cursorKeyset}
       ORDER BY ${key} DESC, r."id" ASC
       LIMIT ${limit + 1}
     `);

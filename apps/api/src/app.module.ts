@@ -45,6 +45,7 @@ import { SettlementReadinessModule } from "./modules/settlement-readiness/settle
 import { SettlementModule } from "./modules/settlement/settlement.module";
 import { RatingsModule } from "./modules/ratings/ratings.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { RetailAdminModule } from "./modules/retail-admin/retail-admin.module";
 import { RecoveryModule } from "./modules/recovery/recovery.module";
 import { CrmModule } from "./modules/crm/crm.module";
 import { SupportModule } from "./modules/support/support.module";
@@ -90,6 +91,7 @@ import { PromotionsModule } from "./modules/promotions/promotions.module";
     AnalyticsModule,
     ProductionModule,
     PromotionsModule,
+    RetailAdminModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: DomainExceptionFilter },

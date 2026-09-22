@@ -96,6 +96,32 @@ export class RetailReturnsRepository {
   }
 
   /**
+   * Phase 5.11-A — staff return queue. Fixed parameterized filters (status /
+   * order), keyset on (created_at DESC, id DESC). Returns at most `limit + 1`
+   * rows so the caller can detect a next page.
+   */
+  async listForAdmin(
+    filters: { status?: string | null; orderId?: string | null },
+    limit: number,
+    cursor: [string, string] | null,
+    executor?: any,
+  ) {
+    const ex = (executor as any) ?? this.db;
+    const conditions: any[] = [];
+    if (filters.status) conditions.push(eq(retailReturnRequest.status, filters.status));
+    if (filters.orderId) conditions.push(eq(retailReturnRequest.orderId, filters.orderId));
+    if (cursor) {
+      conditions.push(sql`(${retailReturnRequest.createdAt}, ${retailReturnRequest.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})`);
+    }
+    return ex
+      .select()
+      .from(retailReturnRequest)
+      .where(sql.join(conditions.length ? conditions : [sql`true`], sql` AND `))
+      .orderBy(sql`${retailReturnRequest.createdAt} DESC, ${retailReturnRequest.id} DESC`)
+      .limit(limit + 1);
+  }
+
+  /**
    * Customer return list page. Keyset on (created_at DESC, id DESC),
    * mirroring the order-history seam. Returns at most `limit + 1` rows.
    */

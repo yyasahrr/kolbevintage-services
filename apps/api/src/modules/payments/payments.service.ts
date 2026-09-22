@@ -2763,6 +2763,163 @@ export class PaymentsService {
     });
   }
 
+  /**
+   * Phase 5.11-A — Retail Admin payment truth (READ seam).
+   * Retail-side payment rows only (`retail_order_id` set), fixed
+   * parameterized filters, keyset on (created_at DESC, id DESC). Admin
+   * projections intentionally include the external reference (reconcilers
+   * need it); the buyer projection keeps masking it.
+   */
+  async listRetailPaymentsForAdmin(input: {
+    retailOrderId?: string | null;
+    status?: string | null;
+    limit?: number;
+    cursor?: [string, string] | null;
+  }): Promise<Array<Record<string, unknown>>> {
+    const db = this.db as any;
+    const conditions: any[] = [isNotNull(payment.retailOrderId)];
+    if (input.retailOrderId) conditions.push(eq(payment.retailOrderId, input.retailOrderId));
+    if (input.status) conditions.push(eq(payment.status, input.status));
+    if (input.cursor) {
+      conditions.push(sql`(${payment.createdAt}, ${payment.id}) < (${input.cursor[0]}::timestamptz, ${input.cursor[1]})`);
+    }
+    const limit = input.limit ?? 20;
+    const rows = await db
+      .select()
+      .from(payment)
+      .where(sql.join(conditions, sql` AND `))
+      .orderBy(sql`${payment.createdAt} DESC, ${payment.id} DESC`)
+      .limit(limit + 1);
+    return rows.map((p: any) => ({
+      id: p.id,
+      paymentReference: p.paymentReference,
+      retailOrderId: p.retailOrderId,
+      method: p.method,
+      provider: p.provider,
+      providerReference: p.providerReference,
+      status: p.status,
+      amount: (p.amount || 0).toString(),
+      currency: p.currency,
+      externalReference: p.externalReference,
+      submittedBy: p.submittedBy,
+      submittedAt: p.submittedAt,
+      verifiedBy: p.verifiedBy,
+      verifiedAt: p.verifiedAt,
+      failureReason: p.failureReason ?? null,
+      version: p.version,
+      createdAt: p.createdAt,
+    }));
+  }
+
+  /**
+   * Phase 5.11-A — Retail Admin refund truth (READ seam).
+   * Retail-side refund rows only (`retail_order_id` set), fixed
+   * parameterized filters, keyset on (created_at DESC, id DESC).
+   */
+  async listRetailRefundsForAdmin(input: {
+    retailOrderId?: string | null;
+    status?: string | null;
+    limit?: number;
+    cursor?: [string, string] | null;
+  }): Promise<Array<Record<string, unknown>>> {
+    const db = this.db as any;
+    const conditions: any[] = [isNotNull(refund.retailOrderId)];
+    if (input.retailOrderId) conditions.push(eq(refund.retailOrderId, input.retailOrderId));
+    if (input.status) conditions.push(eq(refund.status, input.status));
+    if (input.cursor) {
+      conditions.push(sql`(${refund.createdAt}, ${refund.id}) < (${input.cursor[0]}::timestamptz, ${input.cursor[1]})`);
+    }
+    const limit = input.limit ?? 20;
+    const rows = await db
+      .select()
+      .from(refund)
+      .where(sql.join(conditions, sql` AND `))
+      .orderBy(sql`${refund.createdAt} DESC, ${refund.id} DESC`)
+      .limit(limit + 1);
+    return rows.map((r: any) => ({
+      id: r.id,
+      refundReference: r.refundReference,
+      retailOrderId: r.retailOrderId,
+      paymentId: r.paymentId,
+      amount: (r.amount || 0).toString(),
+      currency: r.currency,
+      reasonCode: r.reasonCode,
+      reason: r.reason ?? null,
+      status: r.status,
+      requestedAt: r.requestedAt,
+      approvedAt: r.approvedAt,
+      completedAt: r.completedAt,
+      externalReference: r.externalReference,
+      version: r.version,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /**
+   * Phase 5.11-A — Retail Admin payment by id (READ seam). Throws a 404
+   * domain error for unknown ids AND for wholesale-side rows (retail
+   * isolation: wholesale payments are invisible to the retail admin).
+   */
+  async getRetailPaymentById(paymentId: string): Promise<Record<string, unknown>> {
+    const db = this.db as any;
+    const [row] = await db
+      .select()
+      .from(payment)
+      .where(and(eq(payment.id, paymentId), isNotNull(payment.retailOrderId)))
+      .limit(1);
+    if (!row) throw new FinanceDomainError("PAYMENT_NOT_FOUND", `retail payment ${paymentId} not found`);
+    return {
+      id: row.id,
+      paymentReference: row.paymentReference,
+      retailOrderId: row.retailOrderId,
+      method: row.method,
+      provider: row.provider,
+      providerReference: row.providerReference,
+      status: row.status,
+      amount: (row.amount || 0).toString(),
+      currency: row.currency,
+      externalReference: row.externalReference,
+      submittedBy: row.submittedBy,
+      submittedAt: row.submittedAt,
+      verifiedBy: row.verifiedBy,
+      verifiedAt: row.verifiedAt,
+      failureReason: row.failureReason ?? null,
+      version: row.version,
+      createdAt: row.createdAt,
+    };
+  }
+
+  /**
+   * Phase 5.11-A — Retail Admin refund by id (READ seam). 404 for unknown
+   * ids and for wholesale-side rows (retail isolation).
+   */
+  async getRetailRefundById(refundId: string): Promise<Record<string, unknown>> {
+    const db = this.db as any;
+    const [row] = await db
+      .select()
+      .from(refund)
+      .where(and(eq(refund.id, refundId), isNotNull(refund.retailOrderId)))
+      .limit(1);
+    if (!row) throw new FinanceDomainError("REFUND_NOT_FOUND", `retail refund ${refundId} not found`);
+    return {
+      id: row.id,
+      refundReference: row.refundReference,
+      retailOrderId: row.retailOrderId,
+      paymentId: row.paymentId,
+      amount: (row.amount || 0).toString(),
+      currency: row.currency,
+      reasonCode: row.reasonCode,
+      reason: row.reason ?? null,
+      status: row.status,
+      requestedAt: row.requestedAt,
+      approvedAt: row.approvedAt,
+      completedAt: row.completedAt,
+      externalReference: row.externalReference,
+      version: row.version,
+      createdAt: row.createdAt,
+    };
+  }
+
   async getIssuedProformaForChild(childOrderId: string, executor: DbOrTx) {
     const tx = executor as any;
     const [proforma] = await tx.select().from(wholesaleProforma).where(and(eq(wholesaleProforma.childOrderId, childOrderId), eq(wholesaleProforma.status, "issued"))).limit(1).for("update");

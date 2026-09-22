@@ -1,0 +1,15 @@
+-- Phase 5.11 (Checkpoint A) — Retail Admin & Operations control plane.
+--
+-- Additive only: the closed permission catalog (ADMIN_PERMISSION_ACTIONS in
+-- packages/database/src/schema/state-values.ts) gains the 20 narrowly-scoped
+-- `retail:*` actions that back the `admin/retail/*` surface. The DB-level
+-- CHECK is replaced in the same drop/add style used by 0025–0031 so that
+-- unknown permission strings can never be granted (fail-closed).
+--
+-- No new business tables: Admin Retail is an orchestrator. The retail admin
+-- role model is created in code (AdminRbacService) on top of these actions;
+-- super-admin / bootstrap compatibility re-grants the whole catalog as before.
+
+ALTER TABLE "admin_role_permission" DROP CONSTRAINT IF EXISTS "admin_role_permission_action_allowed";
+--> statement-breakpoint
+ALTER TABLE "admin_role_permission" ADD CONSTRAINT "admin_role_permission_action_allowed" CHECK ("action" IN ('wholesale:plan:view', 'wholesale:plan:manage', 'wholesale:membership:view', 'wholesale:membership:manage', 'wholesale:membership:override', 'wholesale:approval:view', 'wholesale:approval:create', 'wholesale:approval:decide', 'wholesale:settings:view', 'wholesale:settings:manage', 'wholesale:notes:view', 'wholesale:notes:create', 'wholesale:control_tower:view', 'crm:customer:view', 'crm:customer:manage', 'crm:stage:manage', 'crm:assign:manage', 'crm:activity:create', 'crm:task:manage', 'crm:tag:manage', 'crm:export', 'crm:sensitive:view', 'support:case:view', 'support:case:reply', 'support:case:assign', 'support:case:priority', 'support:case:resolve', 'support:internal_note:create', 'support:attachment:view', 'support:sla:manage', 'support:report:view', 'support:sensitive:view', 'notification:template:view', 'notification:template:manage', 'notification:outbox:view', 'notification:outbox:retry', 'notification:provider:view', 'notification:preference:manage', 'notification:report:view', 'cms:content:view', 'cms:content:create', 'cms:content:edit', 'cms:content:publish', 'cms:content:archive', 'cms:navigation:manage', 'cms:media:manage', 'cms:seo:manage', 'cms:blog:manage', 'analytics:dashboard:view', 'analytics:report:view', 'analytics:report:manage', 'analytics:export', 'analytics:reconciliation:view', 'production:jobs:view', 'production:config:view', 'production:config:manage', 'production:quality:review', 'production:release:decide', 'production:recall:approve', 'promotion:view', 'promotion:create', 'promotion:edit', 'promotion:publish', 'promotion:pause', 'promotion:coupon:manage', 'retail:dashboard:view', 'retail:order:view', 'retail:order:manage', 'retail:payment:view', 'retail:payment:reconcile', 'retail:shipment:view', 'retail:shipment:manage', 'retail:return:view', 'retail:return:manage', 'retail:refund:view', 'retail:refund:request', 'retail:refund:approve', 'retail:inventory:view', 'retail:inventory:adjust', 'retail:customer:view', 'retail:customer:manage', 'retail:review:view', 'retail:review:moderate', 'retail:catalog:view', 'retail:report:view'));

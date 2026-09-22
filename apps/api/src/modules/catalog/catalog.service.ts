@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, sql, inArray } from "drizzle-orm";
-import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory } from "@kolbe/database";
+import { desc, eq, and, ilike, or, sql, inArray } from "drizzle-orm";
+import { PRODUCT_STATUSES, product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { DomainError } from "@kolbe/shared";
 import { ProductComplianceService } from "../compliance/product-compliance.service";
@@ -257,6 +257,55 @@ export class CatalogService {
 
   async listProducts() {
     return this.db.select().from(product).limit(100);
+  }
+
+  /**
+   * Phase 5.11-A — Retail Admin product operations list (READ seam, owner
+   * `catalog`). Fixed parameterized filters (status / search over name+slug),
+   * keyset on (updated_at DESC, id DESC). Returns at most `limit + 1` rows so
+   * the caller can page. All catalog products are visible (ops view spans the
+   * full lifecycle); the retail surface is what the caller projects.
+   */
+  async listProductsForAdmin(input: {
+    status?: string | null;
+    search?: string | null;
+    limit?: number;
+    cursor?: [string, string] | null;
+  }): Promise<Array<Record<string, unknown>>> {
+    const db = this.db as any;
+    const limit = input.limit ?? 20;
+    const conditions: any[] = [];
+    const status = typeof input.status === "string" && input.status !== "" ? input.status : null;
+    if (status && !(PRODUCT_STATUSES as readonly string[]).includes(status)) {
+      throw new DomainError(400, "PRODUCT_STATUS_INVALID", `unknown product status '${status}'`);
+    }
+    if (status) conditions.push(eq(product.status, status));
+    const search = typeof input.search === "string" ? input.search.trim() : "";
+    if (search) {
+      const term = `%${search.slice(0, 80)}%`;
+      conditions.push(or(ilike(product.name, term), ilike(product.slug, term))!);
+    }
+    if (input.cursor) {
+      conditions.push(sql`(${product.updatedAt}, ${product.id}) < (${input.cursor[0]}::timestamptz, ${input.cursor[1]})`);
+    }
+    const rows = (await db
+      .select()
+      .from(product)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(product.updatedAt), desc(product.id))
+      .limit(limit + 1)) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      sku: row.sku,
+      name: row.name,
+      slug: row.slug,
+      ownerType: row.ownerType,
+      isKolbeExclusive: row.isKolbeExclusive,
+      status: row.status,
+      salesCount: row.salesCount,
+      createdAt: new Date(row.createdAt).toISOString(),
+      updatedAt: new Date(row.updatedAt).toISOString(),
+    }));
   }
 
   async listRetailProducts() {
@@ -891,6 +940,30 @@ export class CatalogService {
       .select()
       .from(productVariant)
       .where(and(eq(productVariant.productId, productId), eq(productVariant.status, "active")));
+  }
+
+  /**
+   * Phase 5.11-A — batch variant lookup (READ seam, owner `catalog`).
+   * Used by the Retail Admin low-stock list to annotate variant ids with
+   * product/sku facts. Returns a Map<variantId, row>; unknown ids absent.
+   */
+  async findVariantsByIds(variantIds: string[]): Promise<Map<string, Record<string, unknown>>> {
+    const out = new Map<string, Record<string, unknown>>();
+    if (variantIds.length === 0) return out;
+    const rows = (await (this.db as any)
+      .select()
+      .from(productVariant)
+      .where(inArray(productVariant.id, variantIds))) as any[];
+    for (const row of rows) {
+      out.set(row.id, {
+        variantId: row.id,
+        productId: row.productId,
+        sku: row.sku,
+        attributes: row.attributes ?? {},
+        status: row.status,
+      });
+    }
+    return out;
   }
 
   /** Primary display image for an order snapshot: variant media wins, else product media. */

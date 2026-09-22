@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, gte, lte, sql } from "drizzle-orm";
 import { orderEvent, retailOrder, retailOrderEvent, retailOrderItem } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../../database/database.module";
 
@@ -58,6 +58,61 @@ export class RetailOrdersRepository {
       .select()
       .from(retailOrder)
       .where(sql.join(conditions, sql` AND `))
+      .orderBy(sql`${retailOrder.createdAt} DESC, ${retailOrder.id} DESC`)
+      .limit(limit + 1);
+  }
+
+  /**
+   * Phase 5.11-A — staff operations list. Filters are fixed, parameterized
+   * Drizzle conditions (status / payment state / customer identity / order
+   * code / created range); `shipmentStatus` filters on the order's LATEST
+   * retail-side shipment status (a real fact, evaluated in a correlated
+   * EXISTS — no arbitrary SQL, no offset pagination). Keyset on
+   * (created_at DESC, id DESC), same cursor shape as the customer history.
+   */
+  async listForAdmin(
+    filters: {
+      status?: string | null;
+      paymentStatus?: string | null;
+      customerId?: string | null;
+      customerPhone?: string | null;
+      orderCode?: string | null;
+      shipmentStatus?: string | null;
+      dateFrom?: Date | null;
+      dateTo?: Date | null;
+    },
+    limit: number,
+    cursor: [string, string] | null,
+    executor?: any,
+  ) {
+    const ex = (executor as any) ?? this.db;
+    const conditions: any[] = [];
+    if (filters.status) conditions.push(eq(retailOrder.orderStatus, filters.status));
+    if (filters.paymentStatus) conditions.push(eq(retailOrder.paymentStatus, filters.paymentStatus));
+    if (filters.customerId) conditions.push(eq(retailOrder.customerId, filters.customerId));
+    if (filters.customerPhone) conditions.push(eq(retailOrder.phone, filters.customerPhone));
+    if (filters.orderCode) conditions.push(eq(retailOrder.orderCode, filters.orderCode));
+    if (filters.dateFrom) conditions.push(gte(retailOrder.createdAt, filters.dateFrom));
+    if (filters.dateTo) conditions.push(lte(retailOrder.createdAt, filters.dateTo));
+    if (filters.shipmentStatus) {
+      conditions.push(
+        sql`EXISTS (
+          SELECT 1 FROM "shipment" AS s
+          WHERE s."retail_order_id" = ${retailOrder.id}
+            AND s."status" = ${filters.shipmentStatus}
+            AND s."created_at" = (
+              SELECT MAX(s2."created_at") FROM "shipment" AS s2 WHERE s2."retail_order_id" = ${retailOrder.id}
+            )
+        )`,
+      );
+    }
+    if (cursor) {
+      conditions.push(sql`(${retailOrder.createdAt}, ${retailOrder.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})`);
+    }
+    return ex
+      .select()
+      .from(retailOrder)
+      .where(sql.join(conditions.length ? conditions : [sql`true`], sql` AND `))
       .orderBy(sql`${retailOrder.createdAt} DESC, ${retailOrder.id} DESC`)
       .limit(limit + 1);
   }

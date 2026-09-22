@@ -373,6 +373,20 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
       // 5.10-C: ratings verifies purchases by reading order rows
       // (read-only; writers stay in orders, pinned by the D10 guards).
       ratings: ["product_rating", "supplier_rating", "transaction_rating", "product", "supplier", "product_variant", "retail_order", "retail_order_item", "wholesale_order", "wholesale_order_item"],
+      // 5.11-A: the retail control plane owns NO tables; these are the
+      // bounded read-only aggregates behind admin/retail/overview (control
+      // tower). Every other read goes through an owner-domain service seam;
+      // all writes are delegated to owner commands (orders/retail, payments,
+      // shipping, inventory, ratings, catalog, auth). B adds the suspicious
+      // flag read on the order aggregate; nothing else is widened.
+      "retail-admin": [
+        "retail_order",
+        "retail_return_request",
+        "shipment",
+        "refund",
+        "product_variant_inventory",
+        "product_rating",
+      ],
       crm: [
         "account_user",
         "admin_internal_note",
@@ -471,6 +485,10 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "rfq",
         "fulfillment_exception",
         "fulfillment_replacement_request",
+        // 5.11-A: the retail admin order list filters on the order's LATEST
+        // retail-side shipment status (read-only correlated EXISTS in the
+        // retail orders repository). The shipment writer stays in shipping.
+        "shipment",
       ],
       fulfillment: [
         "purchase_order",

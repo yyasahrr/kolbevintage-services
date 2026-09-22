@@ -1,7 +1,14 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { RETAIL_PAYMENT_METHODS } from "@kolbe/database";
-import { MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
+import { RETAIL_PAYMENT_METHODS, RETAIL_PAYMENT_STATUSES } from "@kolbe/database";
+import {
+  MAX_MONEY,
+  NotFoundError,
+  RETAIL_ORDER_STATUSES,
+  RETAIL_ORDER_TRANSITIONS,
+  RETAIL_SHIPMENT_STATUSES,
+  RETAIL_SHIPPING_RULES,
+} from "@kolbe/shared";
 import { KOLBE_DB, type KolbeDatabase } from "../../../database/database.module";
 import { AuditService } from "../../audit/audit.service";
 import { CatalogDomainError } from "../../catalog/catalog.logic";
@@ -713,6 +720,80 @@ export class RetailOrdersService {
         createdAt: new Date(row.createdAt).toISOString(),
       })),
       nextCursor: (rows as any[]).length > limit && last ? encodeRetailHistoryCursor(new Date(last.createdAt).toISOString(), last.id) : null,
+    };
+  }
+
+  /**
+   * Phase 5.11-A — staff operations list (Retail Admin control plane).
+   * Owner-domain read: fixed parameterized filters, keyset cursor, safe
+   * projection (money as strings). The Retail Admin layer permission-checks
+   * before calling; this method is identity-agnostic by design (it lists
+   * ALL retail orders for staff — customer scoping is the caller's job).
+   */
+  async adminListRetailOrders(
+    input: {
+      status?: unknown;
+      paymentStatus?: unknown;
+      customerId?: unknown;
+      customerPhone?: unknown;
+      orderCode?: unknown;
+      shipmentStatus?: unknown;
+      dateFrom?: unknown;
+      dateTo?: unknown;
+      limit?: unknown;
+      cursor?: unknown;
+    },
+  ): Promise<{ orders: Array<Record<string, unknown>>; nextCursor: string | null; hasMore: boolean }> {
+    const limit = typeof input.limit === "number" && Number.isInteger(input.limit) ? input.limit : 20;
+    if (limit < 1 || limit > 100) {
+      throw new RetailDomainError("RETAIL_ADMIN_LIMIT_INVALID", "limit must be between 1 and 100");
+    }
+    const knownStatus = (value: unknown) => (typeof value === "string" && value !== "" ? value : null);
+    const status = knownStatus(input.status);
+    const paymentStatus = knownStatus(input.paymentStatus);
+    const shipmentStatus = knownStatus(input.shipmentStatus);
+    if (status && !(RETAIL_ORDER_STATUSES as readonly string[]).includes(status)) {
+      throw new RetailDomainError("RETAIL_ADMIN_FILTER_INVALID", `unknown retail order status '${status}'`);
+    }
+    if (paymentStatus && !(RETAIL_PAYMENT_STATUSES as readonly string[]).includes(paymentStatus)) {
+      throw new RetailDomainError("RETAIL_ADMIN_FILTER_INVALID", `unknown payment status '${paymentStatus}'`);
+    }
+    if (shipmentStatus && !(RETAIL_SHIPMENT_STATUSES as readonly string[]).includes(shipmentStatus)) {
+      throw new RetailDomainError("RETAIL_ADMIN_FILTER_INVALID", `unknown shipment status '${shipmentStatus}'`);
+    }
+    const textFilter = (value: unknown, max: number) =>
+      typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, max) : null;
+    const customerId = textFilter(input.customerId, 64);
+    const customerPhone = textFilter(input.customerPhone, 32);
+    const orderCode = textFilter(input.orderCode, 64);
+    const dateFrom = input.dateFrom instanceof Date && !Number.isNaN(input.dateFrom.getTime()) ? input.dateFrom : null;
+    const dateTo = input.dateTo instanceof Date && !Number.isNaN(input.dateTo.getTime()) ? input.dateTo : null;
+    const cursor =
+      input.cursor === undefined || input.cursor === null ? null : decodeRetailHistoryCursor(input.cursor);
+    const rows = (await this.repo.listForAdmin(
+      { status, paymentStatus, customerId, customerPhone, orderCode, shipmentStatus, dateFrom, dateTo },
+      limit,
+      cursor,
+    )) as any[];
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      orders: page.map((row) => ({
+        id: row.id,
+        orderCode: row.orderCode,
+        status: row.orderStatus,
+        paymentStatus: row.paymentStatus,
+        payMethod: row.payMethod,
+        customerId: row.customerId ?? null,
+        customerName: row.customerName,
+        phone: row.phone,
+        grandTotal: BigInt(row.totalAmount).toString(),
+        currency: row.currency,
+        version: row.version,
+        createdAt: new Date(row.createdAt).toISOString(),
+      })),
+      nextCursor: rows.length > limit && last ? encodeRetailHistoryCursor(new Date(last.createdAt).toISOString(), last.id) : null,
+      hasMore: rows.length > limit,
     };
   }
 

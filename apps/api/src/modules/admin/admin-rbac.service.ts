@@ -7,9 +7,15 @@ import {
   accountUser,
 } from "@kolbe/database";
 import { ADMIN_PERMISSION_ACTIONS } from "@kolbe/database";
+import { DomainError } from "@kolbe/shared";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
 import { AdminPermissionDeniedError } from "./admin.errors";
+// Re-exported on the service surface so cross-module callers (e.g. the
+// Phase 5.11 retail-admin control plane) can import the typed error without
+// reaching into `admin.errors.ts` (module public surface rule, pinned by
+// module-boundaries.test.ts).
+export { AdminPermissionDeniedError } from "./admin.errors";
 
 export interface CreateRoleInput {
   name: string;
@@ -196,6 +202,12 @@ export class AdminRbacService implements OnModuleInit {
   }
 
   async assignPermissionsToRole(roleId: string, actions: string[], actorId: string) {
+    // Phase 5.11-A — fail closed on unknown permissions: only actions from
+    // the closed catalog (DB CHECK + shared constant) may be granted.
+    const unknown = actions.filter((action) => !(ADMIN_PERMISSION_ACTIONS as readonly string[]).includes(action));
+    if (unknown.length > 0) {
+      throw new DomainError(400, "UNKNOWN_PERMISSION_ACTION", `unknown permission action '${unknown[0]}' (not in the permission catalog)`);
+    }
     // Validate role
     const [role] = await this.db
       .select()

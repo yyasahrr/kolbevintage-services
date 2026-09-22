@@ -405,6 +405,46 @@ export class InventoryService {
     return { ...inv, available: calculateAvailable(inv as any) };
   }
 
+  /**
+   * Phase 5.11-A — Retail Admin low-stock list (READ seam, owner `inventory`).
+   * SELLER-SCOPED (retail operational truth = the given seller's own stock —
+   * supplier stock stays isolated), availability-based (`on_hand - reserved`),
+   * with a hard cap (default 1000) so the control tower cannot be flooded by
+   * a huge catalog. Read-only: no locks, no mutation.
+   */
+  async listLowStockForAdmin(input: {
+    sellerId: string;
+    minAvailable?: number | null;
+    limit?: number;
+  }): Promise<Array<Record<string, unknown>>> {
+    const db = this.db as any;
+    const minAvailable =
+      typeof input.minAvailable === "number" && Number.isFinite(input.minAvailable) ? Math.floor(input.minAvailable) : 0;
+    const limit =
+      typeof input.limit === "number" && Number.isFinite(input.limit) ? Math.min(Math.max(Math.floor(input.limit), 1), 1000) : 1000;
+    const rows = (await db
+      .select({
+        variantId: productVariantInventory.variantId,
+        onHand: productVariantInventory.onHand,
+        reserved: productVariantInventory.reserved,
+      })
+      .from(productVariantInventory)
+      .where(
+        and(
+          eq(productVariantInventory.sellerId, input.sellerId),
+          sql`${productVariantInventory.onHand} - ${productVariantInventory.reserved} <= ${minAvailable}`,
+        ),
+      )
+      .orderBy(sql`(${productVariantInventory.onHand} - ${productVariantInventory.reserved}) ASC`)
+      .limit(limit)) as any[];
+    return rows.map((row) => ({
+      variantId: row.variantId,
+      onHand: BigInt(row.onHand).toString(),
+      reserved: BigInt(row.reserved).toString(),
+      available: (BigInt(row.onHand) - BigInt(row.reserved)).toString(),
+    }));
+  }
+
   async listInventoriesForSeller(sellerId: string, requester: Requester, executor?: DbOrTx) {
     assertSupplierOwnsInventory(requester.sellerId || "", sellerId, requester.role);
     if (requester.role === "supplier") {

@@ -892,6 +892,32 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "promotion:publish",
   "promotion:pause",
   "promotion:coupon:manage",
+  // Phase 5.11 — Retail Admin & Operations control plane.
+  // Every action maps to a real endpoint on the `admin/retail/*` surface:
+  // views (A), owner-delegated commands (B), operational reporting (C).
+  // Admin is an orchestrator — these grant coordination rights, never
+  // direct ownership of order/payment/inventory/shipment/return/refund/review
+  // tables (those owners stay authoritative; see phase-5-11 architecture doc).
+  "retail:dashboard:view",
+  "retail:order:view",
+  "retail:order:manage",
+  "retail:payment:view",
+  "retail:payment:reconcile",
+  "retail:shipment:view",
+  "retail:shipment:manage",
+  "retail:return:view",
+  "retail:return:manage",
+  "retail:refund:view",
+  "retail:refund:request",
+  "retail:refund:approve",
+  "retail:inventory:view",
+  "retail:inventory:adjust",
+  "retail:customer:view",
+  "retail:customer:manage",
+  "retail:review:view",
+  "retail:review:moderate",
+  "retail:catalog:view",
+  "retail:report:view",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */

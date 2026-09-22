@@ -302,6 +302,13 @@
       "when": 1791177600000,
       "tag": "0042_phase_5_10_c_review_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791264000000,
+      "tag": "0043_phase_5_11_retail_admin_operations",
+      "breakpoints": true
     }
   ]
 }

@@ -430,6 +430,36 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: "live",
     phase: 5,
   },
+  {
+    // Phase 5.11 — Retail Admin & Operations control plane (orchestrator).
+    // Owns NO tables: every write is delegated to an owner-domain command
+    // (orders/retail, payments, shipping, inventory, ratings, auth/crm);
+    // reads are owner-service seams plus bounded read-only aggregates for the
+    // control tower and operational lists (pinned by READ_EXCEPTIONS in the
+    // module-boundaries test). The admin/retail/* surface is permission-gated
+    // through AdminRbacService with the closed retail:* catalog.
+    name: "retail-admin",
+    tables: [],
+    dependsOn: [
+      "auth",
+      "admin",
+      "audit",
+      "catalog",
+      "offers",
+      "pricing",
+      "orders",
+      "payments",
+      "shipping",
+      "inventory",
+      "ratings",
+      "crm",
+      "support",
+      "analytics",
+      "notifications",
+    ],
+    status: "live",
+    phase: 5,
+  },
   { name: "files", tables: [], dependsOn: [], status: "planned", phase: 6 },
   // 5.10-C: product reviews live (supplier/transaction ratings dormant)
   {

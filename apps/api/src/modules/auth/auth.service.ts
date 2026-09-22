@@ -17,8 +17,8 @@
 
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { eq, and, gte, desc } from "drizzle-orm";
-import { accountUser, loginAttempt, supplierMember, supplier, userSession } from "@kolbe/database";
+import { desc, eq, and, gte, ilike, or, sql } from "drizzle-orm";
+import { ACCOUNT_ROLES, ACCOUNT_STATUSES, accountUser, loginAttempt, supplierMember, supplier, userSession } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { CONFIG_TOKEN, type AppConfig } from "../../config/configuration";
 import { SessionVerifier, type Role } from "../../common/session";
@@ -361,6 +361,76 @@ export class AuthService {
       });
     if (!updated) throw new DomainError(404, "CUSTOMER_PROFILE_NOT_FOUND", "customer profile not found");
     return { ...updated, role: updated.role ?? "customer" };
+  }
+
+  /**
+   * Phase 5.11-A — Retail Admin customer listing (READ seam, owner `auth`).
+   *
+   * Security: the projection is a fixed SAFE field list. `password_hash`,
+   * `salt`, `totp_secret` and session material are structurally absent and
+   * never joined back — the D10-style static guard pins this. Keyset on
+   * (created_at DESC, id DESC); filters are fixed parameterized conditions.
+   */
+  async listAccountsForAdmin(input: {
+    search?: string | null;
+    role?: string | null;
+    status?: string | null;
+    limit?: number;
+    cursor?: [string, string] | null;
+  }): Promise<Array<Record<string, unknown>>> {
+    const db = this.db as any;
+    const limit = input.limit ?? 20;
+    const conditions: any[] = [];
+    const role = typeof input.role === "string" && input.role !== "" ? input.role : null;
+    if (role && !(ACCOUNT_ROLES as readonly string[]).includes(role)) {
+      throw new DomainError(400, "ACCOUNT_ROLE_INVALID", `unknown role '${role}'`);
+    }
+    if (role) conditions.push(eq(accountUser.role, role));
+    const status = typeof input.status === "string" && input.status !== "" ? input.status : null;
+    if (status && !(ACCOUNT_STATUSES as readonly string[]).includes(status)) {
+      throw new DomainError(400, "ACCOUNT_STATUS_INVALID", `unknown status '${status}'`);
+    }
+    if (status) conditions.push(eq(accountUser.status, status));
+    const search = typeof input.search === "string" ? input.search.trim() : "";
+    if (search) {
+      const term = `%${search.slice(0, 80)}%`;
+      conditions.push(
+        or(
+          ilike(accountUser.email, term),
+          ilike(accountUser.displayName, term),
+          ilike(accountUser.phone, term),
+          eq(accountUser.id, search.slice(0, 64)),
+        )!,
+      );
+    }
+    if (input.cursor) {
+      conditions.push(sql`(${accountUser.createdAt}, ${accountUser.id}) < (${input.cursor[0]}::timestamptz, ${input.cursor[1]})`);
+    }
+    const rows = (await db
+      .select({
+        id: accountUser.id,
+        email: accountUser.email,
+        displayName: accountUser.displayName,
+        phone: accountUser.phone,
+        role: accountUser.role,
+        status: accountUser.status,
+        lastLoginAt: accountUser.lastLoginAt,
+        createdAt: accountUser.createdAt,
+      })
+      .from(accountUser)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(accountUser.createdAt), desc(accountUser.id))
+      .limit(limit + 1)) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      displayName: row.displayName ?? null,
+      phone: row.phone ?? null,
+      role: row.role,
+      status: row.status,
+      lastLoginAt: row.lastLoginAt ? new Date(row.lastLoginAt).toISOString() : null,
+      createdAt: new Date(row.createdAt).toISOString(),
+    }));
   }
 
   async supplierContext(userId: string): Promise<{ supplierId: string; displayName: string; legalName: string } | null> {

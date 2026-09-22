@@ -232,6 +232,47 @@ export class RetailReturnsService {
     };
   }
 
+  /**
+   * Phase 5.11-A — staff return queue (Retail Admin control plane).
+   * Owner-domain read: fixed parameterized filters (status / order), keyset
+   * cursor, safe projection. Identity-agnostic by design (all retail
+   * returns for staff); the caller owns the permission check.
+   */
+  async listRetailReturnsForAdmin(
+    input: { status?: unknown; orderId?: unknown; limit?: unknown; cursor?: unknown },
+  ): Promise<{ returns: Array<Record<string, unknown>>; nextCursor: string | null; hasMore: boolean }> {
+    const limit = typeof input.limit === "number" && Number.isInteger(input.limit) ? input.limit : 20;
+    if (limit < 1 || limit > 100) {
+      throw new RetailDomainError("RETAIL_ADMIN_LIMIT_INVALID", "limit must be between 1 and 100");
+    }
+    const status = typeof input.status === "string" && input.status !== "" ? input.status : null;
+    if (status && !(RETAIL_RETURN_STATUSES as readonly string[]).includes(status)) {
+      throw new RetailDomainError("RETAIL_ADMIN_FILTER_INVALID", `unknown return status '${status}'`);
+    }
+    const orderId = typeof input.orderId === "string" && input.orderId.trim() !== "" ? input.orderId.trim().slice(0, 64) : null;
+    const cursor =
+      input.cursor === undefined || input.cursor === null ? null : this.decodeCursor(input.cursor);
+    const rows = (await this.repo.listForAdmin({ status, orderId }, limit, cursor)) as any[];
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      returns: page.map((row) => ({
+        id: row.id,
+        orderId: row.orderId,
+        customerId: row.customerId,
+        status: row.status,
+        reason: row.reason,
+        note: row.note ?? null,
+        supportCaseId: row.supportCaseId ?? null,
+        inspectionDecision: row.inspectionDecision ?? null,
+        version: row.version,
+        createdAt: new Date(row.createdAt).toISOString(),
+      })),
+      nextCursor: rows.length > limit && last ? this.encodeCursor(new Date(last.createdAt).toISOString(), last.id) : null,
+      hasMore: rows.length > limit,
+    };
+  }
+
   /** Return detail (owner or admin). Lines enriched with order-line facts. */
   async getRetailReturn(viewer: { userId: string; role: string }, returnId: string): Promise<RetailReturnView> {
     const request = await this.repo.findRequestById(returnId);

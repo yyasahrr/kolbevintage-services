@@ -766,6 +766,78 @@ export class ShippingService {
     return this.withExecutor(executor, async (tx) => tx.select().from(shipment).where(eq(shipment.retailOrderId, retailOrderId)).orderBy(asc(shipment.createdAt)));
   }
 
+  /**
+   * Phase 5.11-A — Retail Admin shipment queue (READ seam). Retail-side rows
+   * only (`retail_order_id` IS NOT NULL — wholesale rows are invisible),
+   * fixed parameterized filters, keyset on (created_at DESC, id DESC).
+   * Returns at most `limit + 1` rows so the caller can page.
+   */
+  async listRetailShipmentsForAdmin(input: {
+    retailOrderId?: string | null;
+    status?: string | null;
+    limit?: number;
+    cursor?: [string, string] | null;
+  }): Promise<Array<Record<string, unknown>>> {
+    const db = this.db as any;
+    const conditions: any[] = [sql`${shipment.retailOrderId} IS NOT NULL`];
+    if (input.retailOrderId) conditions.push(eq(shipment.retailOrderId, input.retailOrderId));
+    if (input.status) conditions.push(eq(shipment.status, input.status));
+    if (input.cursor) {
+      conditions.push(sql`(${shipment.createdAt}, ${shipment.id}) < (${input.cursor[0]}::timestamptz, ${input.cursor[1]})`);
+    }
+    const limit = input.limit ?? 20;
+    const rows = (await db
+      .select()
+      .from(shipment)
+      .where(and(...conditions))
+      .orderBy(sql`${shipment.createdAt} DESC, ${shipment.id} DESC`)
+      .limit(limit + 1)) as any[];
+    return rows.map((row) => ({
+      id: row.id,
+      shipmentCode: row.shipmentCode,
+      retailOrderId: row.retailOrderId,
+      provider: row.provider,
+      status: row.status,
+      trackingCode: row.trackingCode ?? null,
+      trackingUrl: row.trackingUrl ?? null,
+      externalReference: row.externalReference ?? null,
+      failureReason: row.failureReason ?? null,
+      handedOverAt: row.handedOverAt ?? null,
+      shippedAt: row.shippedAt ?? null,
+      deliveredAt: row.deliveredAt ?? null,
+      createdAt: new Date(row.createdAt).toISOString(),
+    }));
+  }
+
+  /**
+   * Phase 5.11-A — per-order LATEST retail shipment status for operational
+   * lists (a real fact; orders with no shipment are absent from the map).
+   * Owner read: retail-side rows only, bounded by the page's order ids.
+   */
+  async latestRetailShipmentStatusesByOrderIds(retailOrderIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (retailOrderIds.length === 0) return out;
+    const db = this.db as any;
+    const rows = (await db
+      .select({
+        retailOrderId: shipment.retailOrderId,
+        status: shipment.status,
+        createdAt: shipment.createdAt,
+      })
+      .from(shipment)
+      .where(inArray(shipment.retailOrderId, retailOrderIds))) as any[];
+    const latest = new Map<string, { status: string; createdAt: Date }>();
+    for (const row of rows) {
+      if (row.retailOrderId == null) continue;
+      const seen = latest.get(row.retailOrderId);
+      if (!seen || row.createdAt.getTime() >= seen.createdAt.getTime()) {
+        latest.set(row.retailOrderId, { status: row.status, createdAt: row.createdAt });
+      }
+    }
+    for (const [orderId, value] of latest) out.set(orderId, value.status);
+    return out;
+  }
+
   async findRetailShipmentByProviderRef(input: { provider: string; externalReference?: string | null; trackingCode?: string | null }, executor?: DbOrTx) {
     return this.withExecutor(executor, async (tx) => {
       if (input.externalReference) {
