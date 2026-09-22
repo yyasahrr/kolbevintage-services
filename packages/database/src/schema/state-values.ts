@@ -340,7 +340,8 @@ export const SUPPORT_TICKET_PRIORITIES = ["low", "normal", "high"] as const;
  * ساخته نشود. افزودن وضعیت‌های پرداخت واقعی (captured/refunded…) کار فاز ۵ است و
  * با همان مهاجرت خواهد آمد.
  */
-export const RETAIL_PAYMENT_STATUSES = ["unpaid", "pending_cod"] as const;
+/** Phase 5.8-B — `paid` is written only by verified-payment orchestration (never by checkout). */
+export const RETAIL_PAYMENT_STATUSES = ["unpaid", "pending_cod", "paid"] as const;
 
 /**
  * روش‌های پرداخت خرده‌فروشی و عمده.
@@ -449,6 +450,9 @@ export const ORDER_EVENT_TYPES = [
   "shipping.shipment_failed",
   // Phase 5.8 — canonical Retail checkout fact (aggregate `retail_order`).
   "retail_order.created",
+  // Phase 5.8-B — payment + cancellation facts (relay + audit).
+  "retail_order.paid",
+  "retail_order.cancelled",
 ] as const;
 
 /** Phase 4.2 — نقش عامل در تاریخچه/رویداد */
@@ -1212,6 +1216,10 @@ export const NOTIFICATION_EVENT_KEYS = [
   "SUPPLIER_PRODUCTION_ACTION_REQUIRED",
   "SUPPLIER_PRODUCTION_QUALITY_UPDATED",
   "SUPPLIER_PRODUCTION_RECALL_ACTION_REQUIRED",
+  // Phase 5.8-B — retail transactional relay (sourceDomain `retail`).
+  "RETAIL_ORDER_CREATED",
+  "RETAIL_ORDER_PAID",
+  "RETAIL_ORDER_CANCELLED",
 ] as const;
 export type NotificationEventKey = (typeof NOTIFICATION_EVENT_KEYS)[number];
 /* ── Phase 5.5 — Analytics & Reporting ─────────────────────────────────────── */

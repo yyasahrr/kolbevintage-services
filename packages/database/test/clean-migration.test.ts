@@ -360,7 +360,7 @@ describe("مهاجرت روی دیتابیس خالی (گام ۱.۲)", () => {
       ["awaiting_payment", "cancelled", "completed", "confirmed", "draft", "fulfillment", "processing", "shipped"].sort(),
     );
     expect(checkValuesFromDefinition(String(checkFor("retail_order", "retail_order_payment_status_allowed")?.definition))).toEqual(
-      ["pending_cod", "unpaid"],
+      ["paid", "pending_cod", "unpaid"],
     );
   });
 });

@@ -14,6 +14,7 @@ import {
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { PaymentsRepository, type DbOrTx } from "./payments.repository";
 import { AuditService } from "../audit/audit.service";
+import { PaymentProviderRegistry } from "./payment-provider.registry";
 import { DomainError } from "@kolbe/shared";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -166,6 +167,7 @@ export class PaymentsService {
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
     @Inject(PaymentsRepository) private readonly repository: PaymentsRepository,
     @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(PaymentProviderRegistry) private readonly providerRegistry: PaymentProviderRegistry,
   ) {}
 
   private async withExecutor<T>(executor: DbOrTx | undefined, work: (tx: DbOrTx) => Promise<T>): Promise<T> {
@@ -2573,6 +2575,499 @@ export class PaymentsService {
   async getRefundLines(refundId: string, executor?: DbOrTx) {
     return this.withExecutor(executor, async (tx: any) => {
       const result = await tx.execute(sql`SELECT * FROM refund_line WHERE refund_id = ${refundId} ORDER BY created_at ASC, id ASC`);
+      return result.rows || [];
+    });
+  }
+
+  // ── Retail payment rows (Phase 5.8 Checkpoint B) ───────────────────────────
+  //
+  // Same `payment` table, provider registry, idempotency journal and audit as
+  // wholesale — no second payment authority. These primitives are deliberately
+  // order-agnostic (retailOrderId/amount/currency arrive as inputs and are
+  // never re-derived here); payability, total matching, paid marking and
+  // stock confirmation live in RetailOrdersService, which owns the retail
+  // tables. No proforma allocation and no finance ledger posting happen on
+  // this path: retail has no proformas, and retail finance posting is out of
+  // Checkpoint B scope. Idempotency reuses the wholesale command vocabulary
+  // (`payments.create_online_intent` / `payments.submit_transfer` /
+  // `payments.verify`); the `rOrder` scope (vs wholesale `wOrder`) and the
+  // payment PK keep retail journals disjoint without a second vocabulary.
+
+  /** TxA of the retail online intent: persist the pending row (provider call runs outside any lock). */
+  async createRetailPaymentIntentRow(input: {
+    retailOrderId: string;
+    buyerUserId: string | null;
+    amount: string;
+    currency: string;
+    providerName?: string;
+    idempotencyKey: string;
+    callbackUrl?: string;
+    actorRole?: string;
+    executor?: DbOrTx;
+  }): Promise<{ payment: any; isNew: boolean; replayed: boolean }> {
+    let amountBigInt: bigint;
+    try {
+      amountBigInt = BigInt(input.amount);
+    } catch {
+      throw new FinanceDomainError("INVALID_AMOUNT", `Amount ${input.amount} invalid, must be decimal string bigint`);
+    }
+    if (amountBigInt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
+    const providerName = (input.providerName || process.env.RETAIL_PAYMENT_PROVIDER || "manual").toLowerCase();
+    const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase();
+    const mode = (process.env.PAYMENT_PROVIDER_MODE || "disabled").toLowerCase();
+    if (nodeEnv === "production" && (providerName === "fake" || mode === "fake")) {
+      throw new FinanceDomainError("PROVIDER_NOT_ALLOWED", "Fake provider prohibited in production", 403);
+    }
+
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const { commandIdempotency } = await import("@kolbe/database");
+      const requestHash = hashRequest({ retailOrderId: input.retailOrderId, amount: input.amount, currency: input.currency, provider: providerName, method: "online" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "rOrder"),
+            eq(commandIdempotency.scopeId, input.retailOrderId),
+            eq(commandIdempotency.commandType, "payments.create_online_intent"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== requestHash) throw new FinanceDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
+        if (existingIdem.state === "completed") {
+          const existingPayment = await tx.select().from(payment).where(eq(payment.id, existingIdem.resultResourceId)).limit(1);
+          return { payment: existingPayment[0], isNew: false, replayed: true };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "rOrder",
+          scopeId: input.retailOrderId,
+          commandType: "payments.create_online_intent",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          state: "pending",
+          createdAt: await this.getDbNow(tx),
+          updatedAt: await this.getDbNow(tx),
+        });
+      }
+
+      const [existingPaymentByKey] = await tx
+        .select()
+        .from(payment)
+        .where(and(eq(payment.retailOrderId, input.retailOrderId), eq(payment.idempotencyKey, input.idempotencyKey)))
+        .limit(1);
+      if (existingPaymentByKey) {
+        return { payment: existingPaymentByKey, isNew: false, replayed: true };
+      }
+
+      const now = await this.getDbNow(tx);
+      const pid = paymentId();
+      let pref = generatePaymentReference();
+      let pay: any = null;
+      let attempts = 0;
+      while (attempts < 5) {
+        try {
+          const [inserted] = await tx
+            .insert(payment)
+            .values({
+              id: pid,
+              paymentReference: pref,
+              wholesaleOrderId: null,
+              retailOrderId: input.retailOrderId,
+              method: "online",
+              provider: providerName,
+              status: "pending",
+              amount: amountBigInt as any,
+              currency: input.currency,
+              externalReference: null,
+              providerReference: null,
+              providerState: "created",
+              redirectUrl: input.callbackUrl || null,
+              providerPayloadHash: null,
+              lastProviderCallAt: null,
+              providerAttempts: 0,
+              submittedBy: input.buyerUserId,
+              submittedAt: now,
+              idempotencyKey: input.idempotencyKey,
+              requestHash,
+              version: 0,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          pay = inserted;
+          break;
+        } catch (e: any) {
+          if (e?.code === "23505" && e?.message?.includes("payment_reference")) {
+            attempts++;
+            pref = generatePaymentReference();
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!pay) throw new FinanceDomainError("PAYMENT_REFERENCE_COLLISION", "Payment reference collision", 409);
+
+      await this.auditService.record(
+        {
+          actorId: input.buyerUserId,
+          actorRole: input.actorRole || "buyer",
+          action: "payment.provider_intent_created",
+          entityType: "payment",
+          entityId: pid,
+          after: { retailOrderId: input.retailOrderId, amount: amountBigInt.toString(), currency: input.currency, provider: providerName, method: "online" },
+          metadata: { idempotencyKey: input.idempotencyKey, provider: providerName },
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: pid, resultPayload: sanitizeForJsonb(pay) as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "rOrder"),
+            eq(commandIdempotency.scopeId, input.retailOrderId),
+            eq(commandIdempotency.commandType, "payments.create_online_intent"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { payment: pay, isNew: true, replayed: false };
+    });
+  }
+
+  /**
+   * Drive the provider `createIntent` for a retail pending row. Holds NO lock
+   * while the provider runs (TxB persists the result in its own transaction),
+   * mirroring the wholesale orchestrator split.
+   */
+  async executeRetailProviderIntent(input: { paymentId: string; buyerUserId?: string | null; idempotencyKey?: string; callbackUrl?: string }) {
+    const payResult = await (this.db as any).execute(sql`SELECT * FROM payment WHERE id = ${input.paymentId} LIMIT 1`);
+    const pay = payResult.rows?.[0];
+    if (!pay || !pay.retail_order_id) throw new FinanceDomainError("PAYMENT_NOT_FOUND", `Retail payment ${input.paymentId} not found`);
+    if (pay.status !== "pending") {
+      throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot run provider intent from ${pay.status}`);
+    }
+    const provider = this.providerRegistry.resolve(pay.provider);
+    let providerResult: any;
+    try {
+      providerResult = await provider.createIntent({
+        amount: BigInt(pay.amount),
+        currency: pay.currency,
+        orderId: pay.retail_order_id,
+        paymentId: pay.id,
+        buyerUserId: input.buyerUserId ?? pay.submitted_by ?? undefined,
+        idempotencyKey: input.idempotencyKey,
+        callbackUrl: input.callbackUrl ?? pay.redirect_url ?? undefined,
+        method: "online",
+      } as any);
+    } catch (e: any) {
+      await this.persistProviderIntentResult({ paymentId: pay.id, providerResult: null, error: e?.message || "provider error" });
+      throw new FinanceDomainError("PROVIDER_ERROR", `Provider ${pay.provider} failed: ${e?.message || "provider error"}`, 502);
+    }
+    return this.persistProviderIntentResult({ paymentId: pay.id, providerResult });
+  }
+
+  /** Retail evidence row: manual-transfer reference or collection reference for cash-on-delivery. */
+  async submitRetailPaymentEvidenceRow(input: {
+    retailOrderId: string;
+    buyerUserId: string | null;
+    amount: string;
+    currency: string;
+    rail: string;
+    evidenceReference: string;
+    bankReference?: string;
+    idempotencyKey: string;
+    actorRole?: string;
+    executor?: DbOrTx;
+  }): Promise<{ payment: any; isNew: boolean; replayed: boolean }> {
+    if (!["manual_transfer", "cod"].includes(input.rail)) {
+      throw new FinanceDomainError("INVALID_PAYMENT_METHOD", `Rail ${input.rail} is not a retail evidence rail`);
+    }
+    let amountBigInt: bigint;
+    try {
+      amountBigInt = BigInt(input.amount);
+    } catch {
+      throw new FinanceDomainError("INVALID_AMOUNT", `Amount ${input.amount} invalid, must be decimal string bigint`);
+    }
+    if (amountBigInt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
+    if (!input.evidenceReference || input.evidenceReference.trim().length === 0) {
+      throw new FinanceDomainError("EVIDENCE_REQUIRED", "evidenceReference required for retail payment evidence");
+    }
+
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const { commandIdempotency } = await import("@kolbe/database");
+      const requestHash = hashRequest({ retailOrderId: input.retailOrderId, amount: input.amount, currency: input.currency, rail: input.rail, bankReference: input.bankReference, evidenceReference: input.evidenceReference });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "rOrder"),
+            eq(commandIdempotency.scopeId, input.retailOrderId),
+            eq(commandIdempotency.commandType, "payments.submit_transfer"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== requestHash) throw new FinanceDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
+        if (existingIdem.state === "completed") {
+          const existingPayment = await tx.select().from(payment).where(eq(payment.id, existingIdem.resultResourceId)).limit(1);
+          return { payment: existingPayment[0], isNew: false, replayed: true };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "rOrder",
+          scopeId: input.retailOrderId,
+          commandType: "payments.submit_transfer",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          state: "pending",
+          createdAt: await this.getDbNow(tx),
+          updatedAt: await this.getDbNow(tx),
+        });
+      }
+
+      const [existingPaymentByKey] = await tx
+        .select()
+        .from(payment)
+        .where(and(eq(payment.retailOrderId, input.retailOrderId), eq(payment.idempotencyKey, input.idempotencyKey)))
+        .limit(1);
+      if (existingPaymentByKey) {
+        return { payment: existingPaymentByKey, isNew: false, replayed: true };
+      }
+
+      const now = await this.getDbNow(tx);
+      const pid = paymentId();
+      let pref = generatePaymentReference();
+      let pay: any = null;
+      let attempts = 0;
+      while (attempts < 5) {
+        try {
+          const [inserted] = await tx
+            .insert(payment)
+            .values({
+              id: pid,
+              paymentReference: pref,
+              wholesaleOrderId: null,
+              retailOrderId: input.retailOrderId,
+              method: input.rail,
+              provider: "manual",
+              status: "evidence_submitted",
+              amount: amountBigInt as any,
+              currency: input.currency,
+              externalReference: input.bankReference || input.evidenceReference || null,
+              submittedBy: input.buyerUserId,
+              submittedAt: now,
+              idempotencyKey: input.idempotencyKey,
+              requestHash,
+              version: 0,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          pay = inserted;
+          break;
+        } catch (e: any) {
+          if (e?.code === "23505" && e?.message?.includes("payment_reference")) {
+            attempts++;
+            pref = generatePaymentReference();
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!pay) throw new FinanceDomainError("PAYMENT_REFERENCE_COLLISION", "Payment reference collision", 409);
+
+      await this.auditService.record(
+        {
+          actorId: input.buyerUserId,
+          actorRole: input.actorRole || "buyer",
+          action: "payment.evidence_submitted",
+          entityType: "payment",
+          entityId: pid,
+          after: { retailOrderId: input.retailOrderId, amount: amountBigInt.toString(), currency: input.currency, method: input.rail },
+          metadata: { idempotencyKey: input.idempotencyKey },
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: pid, resultPayload: sanitizeForJsonb(pay) as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "rOrder"),
+            eq(commandIdempotency.scopeId, input.retailOrderId),
+            eq(commandIdempotency.commandType, "payments.submit_transfer"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { payment: pay, isNew: true, replayed: false };
+    });
+  }
+
+  /**
+   * Verify a retail payment ROW (status + evidence only). No ledger posting
+   * and no proforma allocation exist on this path — the caller (retail
+   * orchestration) marks the order paid and confirms stock in the same
+   * transaction via the `executor` parameter.
+   */
+  async verifyRetailPaymentRow(input: {
+    paymentId: string;
+    /** Human verifier (FK account_user). `null` for system-driven verification. */
+    adminUserId: string | null;
+    externalReference: string;
+    idempotencyKey: string;
+    actorRole?: string;
+    reason?: string;
+    expectedVersion?: number;
+    executor?: DbOrTx;
+  }) {
+    if (!input.externalReference || input.externalReference.trim().length === 0) {
+      throw new FinanceDomainError("EXTERNAL_REFERENCE_REQUIRED", "externalReference required for verification");
+    }
+    if (!["admin", "finance", "system"].includes(input.actorRole || "")) {
+      throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may verify payments", 403);
+    }
+
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const payResult = await tx.execute(sql`SELECT * FROM payment WHERE id = ${input.paymentId} FOR UPDATE`);
+      const pay = payResult.rows?.[0];
+      if (!pay) throw new FinanceDomainError("PAYMENT_NOT_FOUND", `Payment ${input.paymentId} not found`);
+      if (!pay.retail_order_id) throw new FinanceDomainError("RETAIL_PAYMENT_EXPECTED", `Payment ${input.paymentId} is not a retail payment`, 400);
+
+      if (input.expectedVersion !== undefined && pay.version !== input.expectedVersion) {
+        throw new FinanceDomainError("VERSION_CONFLICT", `Version conflict expected ${input.expectedVersion} got ${pay.version}`);
+      }
+
+      if (pay.status === "verified") {
+        return { payment: pay, replayed: true };
+      }
+      if (!["evidence_submitted", "pending"].includes(pay.status)) {
+        throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot verify from ${pay.status}`);
+      }
+
+      const { commandIdempotency } = await import("@kolbe/database");
+      const requestHash = hashRequest({ paymentId: input.paymentId, externalReference: input.externalReference, action: "verify_retail" });
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "payment"),
+            eq(commandIdempotency.scopeId, input.paymentId),
+            eq(commandIdempotency.commandType, "payments.verify"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== requestHash) throw new FinanceDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused with different payload", 409);
+        if (existingIdem.state === "completed") {
+          return { payment: pay, replayed: true, payload: existingIdem.resultPayload };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "payment",
+          scopeId: input.paymentId,
+          commandType: "payments.verify",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          state: "pending",
+          createdAt: await this.getDbNow(tx),
+          updatedAt: await this.getDbNow(tx),
+        });
+      }
+
+      const now = await this.getDbNow(tx);
+      const [verified] = await tx
+        .update(payment)
+        .set({
+          status: "verified",
+          verifiedBy: input.actorRole === "system" ? null : input.adminUserId,
+          verifiedAt: now,
+          externalReference: input.externalReference,
+          providerState: "success",
+          version: pay.version + 1,
+          updatedAt: now,
+        })
+        .where(eq(payment.id, input.paymentId))
+        .returning();
+
+      await this.auditService.record(
+        {
+          actorId: input.adminUserId,
+          actorRole: input.actorRole || "admin",
+          action: "payment.verified",
+          entityType: "payment",
+          entityId: input.paymentId,
+          before: { status: pay.status },
+          after: { status: "verified", externalReference: "***masked***", amount: pay.amount.toString() },
+          metadata: { retailOrderId: pay.retail_order_id, idempotencyKey: input.idempotencyKey, referencePresent: true },
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: verified.id, resultPayload: sanitizeForJsonb(verified) as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "payment"),
+            eq(commandIdempotency.scopeId, input.paymentId),
+            eq(commandIdempotency.commandType, "payments.verify"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return { payment: verified, replayed: false };
+    });
+  }
+
+  /** Hygiene after a retail verification: stale sibling pendings are cancelled (idempotent). */
+  async cancelPendingRetailPayments(input: { retailOrderId: string; exceptPaymentId?: string; actorId?: string | null; executor?: DbOrTx }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const rows = await tx.execute(
+        sql`UPDATE payment SET status = 'cancelled', updated_at = NOW()
+            WHERE retail_order_id = ${input.retailOrderId}
+              AND status IN ('pending', 'evidence_submitted')
+              ${input.exceptPaymentId ? sql`AND id <> ${input.exceptPaymentId}` : sql``}
+            RETURNING id`,
+      );
+      const ids = (rows.rows || []).map((row: any) => row.id);
+      if (ids.length > 0) {
+        await this.auditService.record(
+          {
+            actorId: input.actorId ?? null,
+            actorRole: "system",
+            action: "payment.cancelled",
+            entityType: "payment",
+            entityId: ids[0],
+            after: { retailOrderId: input.retailOrderId, cancelledIds: ids },
+          },
+          tx,
+        );
+      }
+      return { cancelled: ids.length, ids };
+    });
+  }
+
+  /** Retail payment rows for one order (orchestration + read models; no wholesale coupling). */
+  async listRetailPayments(retailOrderId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`SELECT * FROM payment WHERE retail_order_id = ${retailOrderId} ORDER BY created_at ASC, id ASC`);
       return result.rows || [];
     });
   }

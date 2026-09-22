@@ -902,6 +902,16 @@ export class InventoryService {
     return this.confirmReservation({ ...input, reason: input.reason ?? `retail confirm ${input.reservationId}` });
   }
 
+  /** Active reservations hanging off one allocation (retail order id travels here as free text). */
+  async listActiveReservationsByAllocation(allocationId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      return (tx as any)
+        .select()
+        .from(inventoryReservation)
+        .where(and(eq(inventoryReservation.allocationId, allocationId), eq(inventoryReservation.status, "active")));
+    });
+  }
+
   // ── Expiration ─────────────────────────────────────────────────────────────
   async findExpiredReservations(limit = 100, executor?: DbOrTx) {
     const db = (executor as any) || this.db;

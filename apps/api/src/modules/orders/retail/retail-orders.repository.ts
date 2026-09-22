@@ -84,4 +84,15 @@ export class RetailOrdersRepository {
       .returning();
     return updated ?? null;
   }
+
+  /** Checkpoint B: paid marking is a versioned write owned by verified-payment orchestration. */
+  async markPaid(orderId: string, executor?: any) {
+    const ex = (executor as any) ?? this.db;
+    const [updated] = await ex
+      .update(retailOrder)
+      .set({ paymentStatus: "paid", version: sql`${retailOrder.version} + 1`, updatedAt: new Date() })
+      .where(eq(retailOrder.id, orderId))
+      .returning();
+    return updated ?? null;
+  }
 }

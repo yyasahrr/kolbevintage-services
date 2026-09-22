@@ -144,6 +144,12 @@ export const MODULES: readonly ModuleDefinition[] = [
     // promotions/crm/orders module imports it back (see the architecture-freeze
     // acyclicity guard). "compliance" below is the in-transaction legal-binding
     // edge and is genuinely acyclic.
+    // Phase 5.8-B: same treatment for payments + notifications (retail
+    // payment rows and the notification relay). Declaring them here would
+    // assert orders -> payments -> orders and
+    // orders -> notifications -> admin -> orders cycles that do not exist in
+    // the Nest graph (RetailOrdersModule is imported by nobody but
+    // app.module).
     dependsOn: ["vip", "pricing", "offers", "inventory", "suppliers", "catalog", "audit", "compliance"],
     status: "scaffolded",
     phase: 4,

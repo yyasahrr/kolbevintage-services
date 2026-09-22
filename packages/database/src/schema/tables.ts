@@ -1922,7 +1922,10 @@ export const inventoryReservation = pgTable(
     index("inventory_reservation_order_item").on(table.orderItemId),
     index("inventory_reservation_child_order").on(table.childOrderId),
     uniqueIndex("inventory_reservation_idempotency_unique").on(table.sellerId, table.idempotencyKey).where(sql`${table.idempotencyKey} IS NOT NULL`),
-    uniqueIndex("inventory_reservation_allocation_unique").on(table.allocationId, table.sellerId, table.variantId).where(sql`${table.allocationId} IS NOT NULL`),
+    // Phase 5.8-B — one ACTIVE hold per (allocation, seller, variant). Terminal
+    // history (expired/confirmed/released) must survive so verify can
+    // re-reserve a lapsed hold without rewriting history.
+    uniqueIndex("inventory_reservation_allocation_unique").on(table.allocationId, table.sellerId, table.variantId).where(sql`${table.allocationId} IS NOT NULL AND ${table.status} = 'active'`),
     // Phase 4.2 — invariant (order_item_id, variant_id, seller_id) unique for active canonical allocation
     uniqueIndex("inventory_reservation_order_item_variant_seller_unique")
       .on(table.orderItemId, table.variantId, table.sellerId)
@@ -2321,7 +2324,9 @@ export const payment = pgTable(
   {
     id: text("id").primaryKey(),
     paymentReference: text("payment_reference").notNull().unique(),
-    wholesaleOrderId: text("wholesale_order_id").notNull(),
+    wholesaleOrderId: text("wholesale_order_id"),
+    /** Phase 5.8-B — retail linkage. Exactly one order side is set (see `payment_single_order_side`). */
+    retailOrderId: text("retail_order_id"),
     method: text("method").notNull(),
     provider: text("provider").notNull().default("manual"),
     status: text("status").notNull().default("pending"),
@@ -2347,6 +2352,7 @@ export const payment = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    check("payment_single_order_side", sql`("wholesale_order_id" IS NULL) <> ("retail_order_id" IS NULL)`),
     stateCheck("payment_status_allowed", "status", PAYMENT_STATUSES),
     stateCheck("payment_method_allowed", "method", PAYMENT_METHODS),
     stateCheck("payment_currency_allowed", "currency", CURRENCIES),
@@ -2356,16 +2362,25 @@ export const payment = pgTable(
     uniqueIndex("payment_order_idempotency_unique")
       .on(table.wholesaleOrderId, table.idempotencyKey)
       .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    uniqueIndex("payment_retail_order_idempotency_unique")
+      .on(table.retailOrderId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     /** Phase 4.7.1 (A5) — a provider reference identifies exactly one payment per provider. */
     uniqueIndex("payment_provider_reference_unique")
       .on(table.provider, table.providerReference)
       .where(sql`${table.providerReference} IS NOT NULL`),
     index("payment_order_created").on(table.wholesaleOrderId, table.createdAt),
+    index("payment_retail_order_created").on(table.retailOrderId, table.createdAt),
     index("payment_status_created").on(table.status, table.createdAt),
     foreignKey({
       name: "payment_order_fk",
       columns: [table.wholesaleOrderId],
       foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "payment_retail_order_fk",
+      columns: [table.retailOrderId],
+      foreignColumns: [retailOrder.id],
     }).onDelete("restrict"),
     foreignKey({
       name: "payment_submitted_by_fk",

@@ -7,6 +7,7 @@ import { AuditService } from "../../audit/audit.service";
 import { ComplianceService } from "../../compliance/compliance.service";
 import { InventoryService } from "../../inventory/inventory.service";
 import { OffersService } from "../../offers/offers.service";
+import { PaymentsService } from "../../payments/payments.service";
 import { RetailPricingService } from "../../pricing/retail-pricing.service";
 import { RETAIL_PRICING_RESOLVER } from "../../promotions/promotions.contract";
 import { PromotionCouponService } from "../../promotions/promotion-coupon.service";
@@ -157,6 +158,7 @@ export class RetailOrdersService {
     @Inject(PromotionUsageService) private readonly usage: PromotionUsageService,
     @Inject(PromotionCouponService) private readonly coupons: PromotionCouponService,
     @Inject(InventoryService) private readonly inventory: InventoryService,
+    @Inject(PaymentsService) private readonly payments: PaymentsService,
     @Inject(ComplianceService) private readonly compliance: ComplianceService,
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
@@ -591,12 +593,13 @@ export class RetailOrdersService {
     orderId: string,
     toStatus: unknown,
     actor: { actorId: string | null; actorRole: string; reason?: string },
+    executor?: any,
   ): Promise<RetailOrderView> {
     const to = typeof toStatus === "string" ? toStatus : "";
     if (!(RETAIL_ORDER_STATUSES as readonly string[]).includes(to)) {
       throw new RetailDomainError("RETAIL_TRANSITION_INVALID", "unknown retail order status");
     }
-    return this.db.transaction(async (tx) => {
+    const run = async (tx: any) => {
       const order = await this.repo.findByIdForUpdate(orderId, tx);
       if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
       const allowed = (RETAIL_ORDER_TRANSITIONS as Record<string, readonly string[]>)[order.orderStatus] ?? [];
@@ -635,7 +638,9 @@ export class RetailOrdersService {
         tx,
       );
       return this.presentOrder(tx, orderId, false);
-    });
+    };
+    if (executor) return run(executor);
+    return this.db.transaction(async (tx) => run(tx));
   }
 
   private async presentOrder(tx: any, orderId: string, replayed: boolean): Promise<RetailOrderView> {
@@ -676,8 +681,8 @@ export class RetailOrdersService {
       payment: {
         method: order.payMethod,
         status: order.paymentStatus,
-        collected: false,
-        requiresManualSettlement: order.payMethod !== "cod",
+        collected: order.paymentStatus === "paid",
+        requiresManualSettlement: order.paymentStatus !== "paid" && order.payMethod !== "cod",
       },
       legal: {
         mode: order.legalSnapshotId ? "enforce" : "off",
@@ -695,5 +700,264 @@ export class RetailOrdersService {
       })),
       createdAt: new Date(order.createdAt).toISOString(),
     };
+  }
+
+  // ── Checkpoint B: payment orchestration + inventory lifecycle (service-level;
+  // Checkpoint D owns the HTTP surface). All multi-write flows are atomic: a
+  // stock shortfall or payability failure rolls the payment row back too.
+
+  /** Payable = a live order that is not already paid. */
+  private assertPayable(order: { orderStatus: string; paymentStatus: string }) {
+    if (order.orderStatus === "cancelled" || order.orderStatus === "returned") {
+      throw new RetailDomainError("RETAIL_ORDER_NOT_PAYABLE", `order in status ${order.orderStatus} cannot take payment`);
+    }
+    if (order.paymentStatus === "paid") {
+      throw new RetailDomainError("RETAIL_ALREADY_PAID", "order is already paid");
+    }
+  }
+
+  private systemRequester() {
+    return { userId: "system", role: "system", principalType: "system" as const };
+  }
+
+  /**
+   * Gateway online intent (TxA row + lock-free provider call + TxB persist).
+   * Only `gateway` orders take this path; cash-on-delivery and manual flows
+   * submit evidence instead.
+   */
+  async createPaymentIntent(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { idempotencyKey: string; providerName?: string; callbackUrl?: string },
+  ): Promise<{ payment: any; replayed: boolean }> {
+    const created = await this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      this.assertPayable(order);
+      if (order.payMethod !== "gateway") {
+        throw new RetailDomainError("RETAIL_INTENT_METHOD_UNSUPPORTED", `online intent is not supported for ${order.payMethod}`);
+      }
+      const existing = await this.payments.listRetailPayments(orderId, tx);
+      if (existing.some((row: any) => row.status === "verified")) {
+        throw new RetailDomainError("RETAIL_ALREADY_PAID", "order already has a verified payment");
+      }
+      return this.payments.createRetailPaymentIntentRow(
+        {
+          retailOrderId: orderId,
+          buyerUserId: order.customerId ?? null,
+          amount: BigInt(order.totalAmount).toString(),
+          currency: order.currency ?? "IRR",
+          providerName: input.providerName,
+          idempotencyKey: input.idempotencyKey,
+          callbackUrl: input.callbackUrl,
+          actorRole: actor.actorRole,
+          executor: tx,
+        },
+      );
+    });
+    if (created.replayed && created.payment?.providerReference) return { payment: created.payment, replayed: true };
+    const payment = await this.payments.executeRetailProviderIntent({
+      paymentId: created.payment.id,
+      buyerUserId: created.payment.submitted_by ?? null,
+      idempotencyKey: input.idempotencyKey,
+      callbackUrl: input.callbackUrl,
+    });
+    return { payment, replayed: created.replayed };
+  }
+
+  /** Manual evidence: transfer/bank reference, or the collection reference for cash-on-delivery. */
+  async submitPaymentEvidence(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { rail: string; amount: string; evidenceReference: string; bankReference?: string; idempotencyKey: string },
+  ): Promise<{ payment: any; replayed: boolean }> {
+    return this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      this.assertPayable(order);
+      // Rail honesty without naming every retail method: cash-on-delivery
+      // orders evidence on the cod rail, everything else on manual_transfer.
+      const expectedRail = order.payMethod === "cod" ? "cod" : "manual_transfer";
+      if (input.rail !== expectedRail) {
+        throw new RetailDomainError("RETAIL_EVIDENCE_RAIL_MISMATCH", `rail ${input.rail} does not match pay method ${order.payMethod}`);
+      }
+      let claimed: bigint;
+      try {
+        claimed = BigInt(input.amount);
+      } catch {
+        throw new RetailDomainError("RETAIL_AMOUNT_MISMATCH", "evidence amount must be a decimal string");
+      }
+      if (claimed !== BigInt(order.totalAmount)) {
+        throw new RetailDomainError("RETAIL_AMOUNT_MISMATCH", "evidence amount must equal the order total exactly (no partial payments)");
+      }
+      const existing = await this.payments.listRetailPayments(orderId, tx);
+      if (existing.some((row: any) => row.status === "verified")) {
+        throw new RetailDomainError("RETAIL_ALREADY_PAID", "order already has a verified payment");
+      }
+      return this.payments.submitRetailPaymentEvidenceRow({
+        retailOrderId: orderId,
+        buyerUserId: order.customerId ?? null,
+        amount: claimed.toString(),
+        currency: order.currency ?? "IRR",
+        rail: input.rail,
+        evidenceReference: input.evidenceReference,
+        bankReference: input.bankReference,
+        idempotencyKey: input.idempotencyKey,
+        actorRole: actor.actorRole,
+        executor: tx,
+      });
+    });
+  }
+
+  /**
+   * Verify a retail payment: row verification + paid marking + sibling
+   * hygiene + stock confirmation + paid fact, atomically. A stock shortfall
+   * fails the whole verification (payment row included) — fail closed.
+   */
+  async verifyPayment(
+    paymentId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { externalReference: string; idempotencyKey: string; expectedVersion?: number; reason?: string },
+  ): Promise<{ view: RetailOrderView; payment: any; replayed: boolean }> {
+    return this.db.transaction(async (tx) => {
+      const { payment, replayed } = await this.payments.verifyRetailPaymentRow({
+        paymentId,
+        adminUserId: actor.actorId,
+        externalReference: input.externalReference,
+        idempotencyKey: input.idempotencyKey,
+        actorRole: actor.actorRole,
+        reason: input.reason,
+        expectedVersion: input.expectedVersion,
+        executor: tx,
+      });
+      const orderId = (payment as any).retail_order_id ?? (payment as any).retailOrderId;
+      if (replayed) {
+        return { view: await this.presentOrder(tx, orderId, false), payment, replayed: true };
+      }
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      this.assertPayable(order);
+      if (BigInt((payment as any).amount) !== BigInt(order.totalAmount)) {
+        throw new RetailDomainError("RETAIL_AMOUNT_MISMATCH", "verified amount does not equal the order total");
+      }
+      await this.repo.markPaid(orderId, tx);
+      await this.payments.cancelPendingRetailPayments({ retailOrderId: orderId, exceptPaymentId: paymentId, actorId: actor.actorId, executor: tx });
+      await this.confirmRetailStock(orderId, paymentId, tx);
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: orderId,
+          eventType: "retail_order.paid",
+          payload: {
+            order_code: order.orderCode,
+            payment_id: paymentId,
+            amount: BigInt(order.totalAmount).toString(),
+            currency: order.currency ?? "IRR",
+            method: order.payMethod,
+          },
+          actorId: actor.actorId,
+          actorRole: null,
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          actorId: actor.actorId ?? "system",
+          actorRole: actor.actorRole,
+          action: "retail_order.paid",
+          entityType: "retail_order",
+          entityId: orderId,
+          before: { payment_status: order.paymentStatus },
+          after: { payment_status: "paid", payment_id: paymentId },
+        },
+        tx,
+      );
+      return { view: await this.presentOrder(tx, orderId, false), payment, replayed: false };
+    });
+  }
+
+  /** Confirm one order's KOLBE stock, re-reserving lines whose hold lapsed (expiry reaps the hold, never the order). */
+  private async confirmRetailStock(orderId: string, paymentId: string, tx: any) {
+    const sellerId = await this.offers.ensureSeller(null, "KOLBE");
+    const requester = this.systemRequester();
+    const items = await this.repo.findItemsByOrderId(orderId, tx);
+    const active = await this.inventory.listActiveReservationsByAllocation(orderId, tx);
+    for (const item of items) {
+      const held = active.find((row: any) => row.variantId === item.variantId);
+      let reservationId = held?.id as string | undefined;
+      if (!reservationId) {
+        const inv = await this.inventory.getVariantInventory(item.variantId, sellerId, requester, tx);
+        const available = (inv?.available as number) ?? 0;
+        if (available < item.quantity) {
+          throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `line ${item.id}: insufficient KOLBE stock to confirm`);
+        }
+        const created = await this.inventory.reserveRetail({
+          variantId: item.variantId,
+          sellerId,
+          quantity: item.quantity,
+          allocationId: orderId,
+          requester,
+          reason: `retail verify re-reserve -> ${orderId}`,
+          idempotencyKey: `${paymentId}:verify:${item.variantId}`,
+          expiresInMinutes: RETAIL_RESERVATION_TTL_MINUTES,
+          executor: tx,
+        });
+        reservationId = (created as any)?.id;
+        if (!reservationId) throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `line ${item.id}: re-reserve failed`);
+      }
+      await this.inventory.confirmRetail({
+        reservationId,
+        requester,
+        reason: `retail verify confirm -> ${orderId}`,
+        idempotencyKey: `${paymentId}:confirm:${item.variantId}`,
+        executor: tx,
+      });
+    }
+  }
+
+  /**
+   * Cancel an unpaid order: status transition + hold release + cancelled fact,
+   * atomically. Paid orders are rejected — money movement needs the future
+   * refund flow, and a silent release would strand a paid customer.
+   */
+  async cancelRetailOrder(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string; reason?: string },
+  ): Promise<RetailOrderView> {
+    return this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      if (order.paymentStatus === "paid") {
+        throw new RetailDomainError("RETAIL_CANCEL_PAID_FORBIDDEN", "paid orders cannot be cancelled without a refund");
+      }
+      await this.transitionOrder(orderId, "cancelled", actor, tx);
+      const requester = this.systemRequester();
+      const active = await this.inventory.listActiveReservationsByAllocation(orderId, tx);
+      for (const reservation of active) {
+        await this.inventory.releaseRetail({
+          reservationId: reservation.id,
+          requester,
+          reason: actor.reason ?? `retail cancel release -> ${orderId}`,
+          idempotencyKey: `${orderId}:cancel:${reservation.id}`,
+          executor: tx,
+        });
+      }
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: orderId,
+          eventType: "retail_order.cancelled",
+          payload: { order_code: order.orderCode, reason: actor.reason ?? null },
+          actorId: actor.actorId,
+          actorRole: null,
+          idempotencyKey: null,
+        },
+        tx,
+      );
+      return this.presentOrder(tx, orderId, false);
+    });
   }
 }

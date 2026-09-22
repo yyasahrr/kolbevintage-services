@@ -22,13 +22,19 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_OFFER_AMBIGUOUS" ||
       code === "RETAIL_MONETARY_OVERFLOW" ||
       code === "RETAIL_PROMOTION_BASE_MISMATCH" ||
-      code === "RETAIL_TOTALS_MISMATCH"
+      code === "RETAIL_TOTALS_MISMATCH" ||
+      code === "RETAIL_ORDER_NOT_PAYABLE" ||
+      code === "RETAIL_INTENT_METHOD_UNSUPPORTED" ||
+      code === "RETAIL_EVIDENCE_RAIL_MISMATCH" ||
+      code === "RETAIL_AMOUNT_MISMATCH"
     ) {
       status = 422;
     } else if (
       code === "RETAIL_IDEMPOTENCY_CONFLICT" ||
       code === "RETAIL_INSUFFICIENT_STOCK" ||
-      code === "RETAIL_ORDER_CODE_COLLISION"
+      code === "RETAIL_ORDER_CODE_COLLISION" ||
+      code === "RETAIL_ALREADY_PAID" ||
+      code === "RETAIL_CANCEL_PAID_FORBIDDEN"
     ) {
       status = 409;
     } else if (code === "RETAIL_ORDER_FORBIDDEN") {

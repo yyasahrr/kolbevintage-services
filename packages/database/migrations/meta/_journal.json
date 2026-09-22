@@ -239,6 +239,20 @@
       "when": 1790350000000,
       "tag": "0033_phase_5_8_retail_commerce_core",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790400000000,
+      "tag": "0034_phase_5_8_b_retail_payment_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790486400000,
+      "tag": "0035_phase_5_8_b_hold_unique_template_keys",
+      "breakpoints": true
     }
   ]
 }

@@ -536,3 +536,104 @@ shape in `checkout` + `proxy"translates the Nest 201…"` + 22-code map
 test + drift-pin) ✓. Net behavioral delta: **zero removed, two
 strengthened, two added** (facts spy, off-mode) — plus 36 net-new
 proxy/pricing/promotions/security/migration tests around them.
+
+## 18. Checkpoint B as-built (payment orchestration + inventory lifecycle + relay)
+
+**Surface (service-level; D owns HTTP).** `RetailOrdersService`
+(`orders/retail/retail-orders.service.ts`) gains `createPaymentIntent`,
+`submitPaymentEvidence`, `verifyPayment`, `cancelRetailOrder`, plus
+private `confirmRetailStock`. No controller routes were added: B is
+exercised service-level over HTTP-created orders, and the admin/customer
+HTTP surface (callbacks, status reads) is Checkpoint D work.
+
+**Payment split (no second authority).** `PaymentsService`
+(`payments/payments.service.ts`) owns six order-agnostic row primitives
+(`createRetailPaymentIntentRow`, `executeRetailProviderIntent`,
+`submitRetailPaymentEvidenceRow`, `verifyRetailPaymentRow`,
+`cancelPendingRetailPayments`, `listRetailPayments`) on the shared
+`payment` table through the shared provider registry and the shared
+`command_idempotency` journal. Retail orchestration owns payability,
+total matching, paid marking (`retail-orders.repository.ts#markPaid`,
+versioned), sibling hygiene, stock, facts, and audit. No retail SQL or
+ledger lives in Payments; no proforma/ledger posting exists on the
+retail path.
+
+**Rules.** Payable = not cancelled/returned and not paid
+(`RETAIL_ORDER_NOT_PAYABLE`, `RETAIL_ALREADY_PAID`). Gateway-only
+intents (`RETAIL_INTENT_METHOD_UNSUPPORTED` otherwise) run TxA row →
+lock-free provider call → TxB persist; unknown/disabled providers fail
+inside `executeRetailProviderIntent` while the pending row survives.
+Evidence is rail-honest (`cod` rail for `cod` orders, `manual_transfer`
+otherwise; `RETAIL_EVIDENCE_RAIL_MISMATCH`) and exact-to-the-rial
+(`RETAIL_AMOUNT_MISMATCH`, no partials). Verification is one atomic
+transaction: row verify → paid mark → sibling cancel → stock confirm →
+`retail_order.paid` fact → audit; a stock shortfall rolls the payment
+row back too (`RETAIL_INSUFFICIENT_STOCK`, fail closed). Only
+admin/finance/system verify (`ROLE_NOT_ALLOWED` otherwise). Paid orders
+cannot cancel (`RETAIL_CANCEL_PAID_FORBIDDEN`); unpaid cancel
+transitions, releases every active hold, and writes
+`retail_order.cancelled` atomically. Presenter:
+`requiresManualSettlement = !paid && payMethod !== 'cod'`,
+`collected = paid`. Contract mapping (`retail-orders.contract.ts`):
+422 for NOT_PAYABLE/INTENT_UNSUPPORTED/RAIL_MISMATCH/AMOUNT_MISMATCH,
+409 for INSUFFICIENT_STOCK/ALREADY_PAID/CANCEL_PAID_FORBIDDEN.
+
+**Inventory lifecycle.** New `InventoryService.
+listActiveReservationsByAllocation`; checkout still reserves under the
+order id with the 7-day TTL. Expiry (`releaseExpiredReservations`)
+reaps the hold, never the order; verify re-reserves lapsed lines
+(availability-checked) and confirms. Confirm decrements both `on_hand`
+and `reserved`.
+
+**Relay.** `RetailNotificationRelayService`
+(`orders/retail/retail-notification-relay.service.ts`) polls
+`order_event` (`aggregate_type = retail_order`) and maps
+created/paid/cancelled → `RETAIL_ORDER_*` transactional IN_APP
+dispatches with `sourceEventId` dedup. Unknown fact types and orders
+without an account holder are skipped, never mis-mapped; the relay
+never writes notification tables directly and never runs inside a
+Retail transaction. Delivery requires a published template **at
+enqueue time** (`getActivePublishedVersion` inside `enqueueDelivery`;
+render is strict on `{{variables}}`), so retail templates are seeded
+data, and relay payloads keep sensitive keys out of the top level
+(denylist is substring-matched there; money travels nested in
+`totals`).
+
+**Schema.** Migration `0034` (payment retail link + `restrict` FK,
+`payment_single_order_side`, retail idempotency/created indexes, `paid`
+status, 3 relay keys on `notification_event`, `retail_order.paid` +
+`retail_order.cancelled` facts) and `0035` (allocation uniqueness
+scoped to the active hold; `notification_template` twin CHECK for the
+retail keys), with `gen-0035-snapshot.mjs` (`--check` clean), journal
+idx 35 (36 entries), 194 tables. Migrations 0000–0034 frozen.
+
+**Test-found fixes (all inside B, none committed before).**
+1. The retail primitives first invented `payments.create_retail_intent`
+/ `submit_retail_evidence` / `verify_retail` command types, which the
+`COMMAND_TYPES` CHECK rejects. Fixed by reusing the wholesale
+vocabulary (`create_online_intent` / `submit_transfer` / `verify`):
+`rOrder` vs `wOrder` scopes and the payment PK keep the journals
+disjoint — one vocabulary, no second authority.
+2. Re-reserve after expiry collided with the total
+`inventory_reservation_allocation_unique` index (Phase 4.1). Fixed by
+migration 0035: the predicate is now allocation-non-null AND
+`status = 'active'` — the anti-double-hold guarantee is preserved
+while terminal rows survive as history.
+3. Migration 0034 extended the `notification_event` key CHECK but not
+the `notification_template` twin, so no retail template could ever be
+created and every relayed delivery failed at enqueue. Fixed by
+migration 0035. Systemic note: the shape guard compares snapshot-vs-DB
+(the 0034 snapshot faithfully recorded the drifted state), nothing
+compares the `tables.ts` catalog CHECK values against the live DB —
+catalog-vs-DB CHECK verification is future hardening, not B scope.
+
+**Coverage.** New `apps/api/test/phase-5-8-b-retail-payment.test.ts`
+(24 tests: intent/execute/replay/key-reuse/COD-refusal/unknown-provider
+containment, evidence happy/exactness/rail/COD/replay, atomic verify +
+fact + sibling hygiene, verify replay, paid-blocks-new-payments,
+gateway-verify, role refusal, cancel happy/refusals, expiry reaps
+hold-only, re-reserve on verify, fail-closed shortfall, 3 relay
+mappings + dedup, unknown/guest skips) and two migration tests for
+0035 (active-hold uniqueness incl. live predicate pin, template key
+acceptance). A-suite regression: zero — the four API suites, four
+frontend suites, and database suite all pass unmodified.
