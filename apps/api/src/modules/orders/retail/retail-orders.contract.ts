@@ -32,7 +32,12 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_SHIPMENT_NOT_READY" ||
       code === "RETAIL_RETURN_ORDER_NOT_DELIVERED" ||
       code === "RETAIL_RETURN_QUANTITY_EXCEEDED" ||
-      code === "RETAIL_RETURN_NOT_RESTOCKABLE"
+      code === "RETAIL_RETURN_NOT_RESTOCKABLE" ||
+      code === "RETAIL_REFUND_UNPAID" ||
+      code === "RETAIL_REFUND_LINES_FORBIDDEN" ||
+      code === "RETAIL_REFUND_LINES_REQUIRED" ||
+      code === "RETAIL_REFUND_NOT_READY" ||
+      code === "RETAIL_REFUND_LINE_UNKNOWN"
     ) {
       status = 422;
     } else if (code === "RETAIL_WEBHOOK_UNAUTHENTICATED" || code === "RETAIL_GUEST_CAPABILITY_MISSING") {
@@ -45,7 +50,8 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_CANCEL_PAID_FORBIDDEN" ||
       code === "RETAIL_SHIPMENT_QUANTITY_EXCEEDED" ||
       code === "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS" ||
-      code === "RETAIL_CANCEL_ROUTES_TO_RETURN"
+      code === "RETAIL_CANCEL_ROUTES_TO_RETURN" ||
+      code === "RETAIL_REFUND_ROUTES_TO_CANCEL"
     ) {
       status = 409;
     } else if (
@@ -59,6 +65,7 @@ export class RetailDomainError extends DomainError {
     } else if (
       code === "RETAIL_ORDER_NOT_FOUND" ||
       code === "RETAIL_RETURN_NOT_FOUND" ||
+      code === "RETAIL_REFUND_EXPECTED" ||
       code === "RETAIL_PRODUCT_NOT_FOUND" ||
       code === "RETAIL_VARIANT_NOT_FOUND"
     ) {

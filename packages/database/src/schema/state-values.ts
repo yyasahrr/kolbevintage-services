@@ -465,6 +465,9 @@ export const ORDER_EVENT_TYPES = [
   "retail_order.shipment_created",
   "retail_order.shipment_handed_over",
   "retail_order.shipment_delivered",
+  // Phase 5.9-C — retail refund facts (aggregate `retail_order`).
+  "retail_order.refund_requested",
+  "retail_order.refund_completed",
 ] as const;
 
 /** Phase 4.2 — نقش عامل در تاریخچه/رویداد */

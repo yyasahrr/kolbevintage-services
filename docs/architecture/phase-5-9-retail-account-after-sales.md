@@ -348,3 +348,175 @@ account/profile access.
 - Count-only updates: 195→198 tables (3 suites), journal 38→39/idx 38.
 - `typecheck:all` clean; full `test:all` **1453/1453** green
   (23 shared + 123 database + 1152 api + 155 frontend).
+
+## 9. Checkpoint C design (retail refunds on the generic engine)
+
+### C0 scope locks
+- ONE engine: the payments-owned `refund` / `refund_allocation` /
+  `refund_line` tables + the `requested → approved → processing →
+  completed` machine grow a retail side. No second refund model, no
+  live provider claim, fake stays banned in production (refunds
+  complete only on real external evidence, as today).
+- Service seam only (staff file/approve/complete; no Admin UI — 5.11;
+  no new customer HTTP in C). The one customer-visible change: the B
+  `refundPending` flag resolves truthfully as refunds complete.
+- Wholesale regression zero by construction (wholesale writer paths
+  stay byte-identical; every C branch is side-conditional) + by proof
+  (full suite green, wholesale finance suites untouched).
+
+### C1 schema evolution (migration 0039, ALTERs only, zero new tables)
+- `refund`: +`retail_order_id` nullable; `wholesale_order_id` →
+  nullable (existing rows all valued); CHECK
+  `refund_single_order_side` (boolean-XOR on IS NULL); FK
+  `refund_retail_order_fk` → retail_order restrict; partial unique
+  `refund_retail_order_idempotency_unique(retail_order_id,
+  idempotency_key)`; index `refund_retail_order_created`. The old
+  wholesale partial unique is untouched (NULL wholesale sides never
+  collide under PG NULL semantics).
+- `refund_line`: +`retail_order_item_id` nullable;
+  `wholesale_order_item_id` → nullable; CHECK
+  `refund_line_single_item_side`; FK → retail_order_item restrict;
+  partial unique `refund_line_refund_retail_item_unique(refund_id,
+  retail_order_item_id)`. Old wholesale unique untouched (same NULL
+  argument).
+- `financial_ledger_entry`: +`retail_order_id` nullable; `order_id` →
+  nullable; CHECK `financial_ledger_single_order_side`; FK → retail
+  order restrict; index. Rationale: the completion OUT is part of the
+  refund; a retail OUT that must cite a wholesale FK would lie.
+- `order_event`: CHECK evolution (DROP + re-ADD, the 5.8 precedent)
+  appending `retail_order.refund_requested` /
+  `retail_order.refund_completed` facts.
+
+### C2 retail creation rules (new `createRetailRefund`, wholesale method untouched)
+- Actors admin/finance; locks verified retail payments (`FOR UPDATE`).
+- Basis = immutable `retail_order_item`: stored line rows carry
+  (item, units, unitPrice=line.unit_price, lineTotal=unit×units) —
+  integral by construction, CHECK-safe. Units guard per line
+  (refunded units across live refunds ≤ ordered units).
+- Amount honesty (the honesty window — recon correction: the first
+  draft assumed per-line nets are stored; they are NOT for ORDER-scope
+  promos, which live only at order level while `line_total` keeps the
+  gross). Staff asserts the post-promotion header amount; the service
+  requires `lower ≤ amount ≤ upper` with
+  `lower = lineFloor − orderLevelDiscount` and
+  `upper = lineCeil − (coversAll ? orderLevelDiscount : 0)`,
+  where `lineFloor/lineCeil` are the per-line floored/ceiled unit
+  pro-ratas of the stored post-line-promo nets and
+  `orderLevelDiscount = promotion_discount_total − Σ line
+  promotion_discount` (the unattributed slice the engine never assigns
+  to lines, so any attribution summing to it is honest). Refunding
+  every unit of every line pins the attribution exactly; anything
+  partial leaves it to staff inside the bound. The human decides dust
+  and attribution, the machine bounds both. Plus: amount ≤
+  verified-paid − live-refunded (only collected/verified money; COD
+  counts once its collection evidence verifies — verified rows exist
+  for every rail).
+- Journal ordering (deliberate retail/wholesale difference): the retail
+  writer checks idempotency BEFORE the live-state checks (ceiling,
+  units), so a replay returns the existing refund even though its own
+  live row now consumes the ceiling/units. The wholesale writer checks
+  money first (pre-existing behavior, kept byte-identical).
+- No-lines (whole-order) refunds ONLY for `cancelled` orders, amount
+  == ceiling exactly (nothing delivered; no double-refund possible).
+  Delivered/returned orders REQUIRE lines.
+- Allocations FIFO over locked verified payments (retail has no
+  payment_allocation lineage; contributed = amount − drawn by live
+  retail refunds); `REFUND_ALLOCATION_MISMATCH` when unmappable.
+- Idempotency scope `rOrder` (scope_type is CHECK-free); replay
+  returns the existing refund; key reuse with a different hash → 409.
+
+### C3 machine + orchestration
+- `approveRefund`/`failRefund`: side-agnostic (audit metadata orderId
+  becomes `wholesale ?? retail` — identical for wholesale rows).
+- `completeRefund`: same evidence + idempotency + versioning; ledger
+  OUT branches on side (wholesale FK vs retail FK). Audit carries the
+  side's order id.
+- Retail orchestration on `RetailOrdersService` (mirrors the
+  verifyPayment split: order-side policy here, money-side in
+  PaymentsService): `requestRetailRefund` (gates: paid money exists,
+  cancelled→whole-only, else lines), `approveRetailRefund`,
+  `completeRetailRefund` (each emitting the §C1 cross-aggregate
+  facts), + `sumCompletedRetailRefunds` seam in PaymentsService so
+  `refundPending` resolves to `paid && cancelled &&
+  (total − completedRefunded > 0)` without cross-module table reads.
+
+### C4 test plan
+- NEW `packages/database/test/phase-5-9-c-migration.test.ts` (0039:
+  XOR CHECKs fire both ways, NULL-side uniques don't collide,
+  ledger side, event CHECK evolution).
+- NEW `apps/api/test/phase-5-9-c-retail-refunds.test.ts`: full
+  cancel→refund→completed cycle (flag resolves, ledger OUT,
+  allocations, facts); return→line-refund with promotion gap inside
+  the dust window + outside rejected; over-ceiling/over-units/
+  unpaid/COD-uncollected rejections; replay idempotency; key-reuse
+  409; evidence-required completion; wholesale writer byte-identical
+  (a wholesale refund filed in-suite passes through the old path
+  untouched — plus the untouched wholesale suites).
+- Count-only updates: tables stay 198 (ALTERs only), journal
+  39→40 entries / idx 39.
+
+## 10. Checkpoint C as-built (retail refunds on the generic engine)
+
+### What shipped
+- Migration 0039 (ALTER-only, zero new tables; 198 tables stand):
+  `refund` / `refund_line` / `financial_ledger_entry` each carry a
+  nullable wholesale side + a nullable retail side behind a
+  boolean-XOR CHECK, with retail FKs (restrict), retail partial
+  uniques and retail indexes; `order_event` gains
+  `retail_order.refund_requested` / `retail_order.refund_completed`.
+  Snapshot + journal idx 39 via `scripts/gen-0039-snapshot.mjs`
+  (`--check` green).
+- Money side (`PaymentsService`, single-writer preserved):
+  new `createRetailRefund` (the wholesale `createRefund` is
+  byte-identical), the `requested → approved → processing →
+  completed` machine reused with a ledger-OUT side-branch + audit
+  `orderId` null-coalesce (wholesale-identical values), and the
+  `sumCompletedRetailRefunds` seam. Idempotency journals first (see
+  §9-C2: deliberate retail/wholesale ordering difference).
+- Retail side (`RetailOrdersService`): `requestRetailRefund` (state
+  gates: cancelled→whole-only, delivered/returned→lines-required,
+  placed/confirmed/packed→routes-to-cancel, shipped→not-ready;
+  unpaid→refused; locked line basis + order merchandise context),
+  `approveRetailRefund` / `completeRetailRefund` /
+  `failRetailRefund` (retail-side gate + machine delegation; the two
+  cross-aggregate facts commit atomically with filing/completion).
+  `presentOrder.payment.refundPending` resolves truthfully
+  (`paid && cancelled && total − completedRefunded > 0`, SUM skipped
+  for uncancelled/unpaid views). New `RETAIL_REFUND_*` codes in the
+  retail contract. No new customer HTTP; no relay change (refund
+  facts are recorded, not notified — Admin/notification surface is
+  5.11 scope).
+- Design correction during build (§9-C2 updated in place): the
+  first window draft assumed per-line nets are stored; ORDER-scope
+  promos live only at order level, so the window is
+  `[lineFloor − orderLevelDiscount,
+  lineCeil − (coversAll ? orderLevelDiscount : 0)]`. The engine
+  never attributes order discounts to lines, so partial refunds
+  leave attribution to staff inside the bound while full-merchandise
+  refunds pin it exactly.
+
+### Gates
+- `typecheck:all` clean (4 workspaces).
+- `test:all` 1466/1466 = 1453 (B head) + 13 new, zero regressions:
+  shared 23, database 127 (+4 migration C), api 1161 (+9 refunds),
+  frontend 155.
+- New suites: `packages/database/test/phase-5-9-c-migration.test.ts`
+  (XOR both ways, retail FKs/uniques, append-only-aware ledger
+  proofs, fact CHECK, restrict pins) and
+  `apps/api/test/phase-5-9-c-retail-refunds.test.ts` (whole-order
+  cycle, replay + key-reuse 409, honesty window in/out + exact
+  full-merchandise pin, ceiling/exactness, unpaid + COD-uncollected
+  vs COD-verified, state gates, evidence + machine order + once-ness,
+  staff-only + retail-side gate, wholesale writer untouched incl.
+  the surviving wholesale partial unique).
+- Standing invariant: zero file deletions; the only edits to
+  existing suites are count pins (tables stay 198; journal
+  39→40 entries / idx 39) and their comments.
+
+### Observed but deliberately untouched
+- `wholesale_order.status` has a baseline DB default `'pending'`
+  that its own status CHECK (from `WHOLESALE_ORDER_STATUSES`,
+  `draft…`) rejects — status-less wholesale inserts always fail.
+  Pre-existing, wholesale-owned, out of C scope; the C wholesale
+  fixture passes `status: "draft"` explicitly. Not changed: C must
+  not move wholesale behavior.

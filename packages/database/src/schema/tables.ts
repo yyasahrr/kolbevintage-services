@@ -2620,7 +2620,9 @@ export const financialLedgerEntry = pgTable(
   "financial_ledger_entry",
   {
     id: text("id").primaryKey(),
-    orderId: text("order_id").notNull(),
+    /** Phase 5.9-C: wholesale side; exactly one side is set (XOR with `retail_order_id`). */
+    orderId: text("order_id"),
+    retailOrderId: text("retail_order_id"),
     childOrderId: text("child_order_id"),
     paymentId: text("payment_id"),
     refundId: text("refund_id"),
@@ -2634,12 +2636,14 @@ export const financialLedgerEntry = pgTable(
     metadata: jsonb("metadata").notNull().default({}),
   },
   (table) => [
+    check("financial_ledger_single_order_side", sql.raw(`("order_id" IS NULL) <> ("retail_order_id" IS NULL)`)),
     stateCheck("financial_ledger_entry_type_allowed", "entry_type", FINANCIAL_LEDGER_ENTRY_TYPES),
     stateCheck("financial_ledger_direction_allowed", "direction", FINANCIAL_LEDGER_DIRECTIONS),
     stateCheck("financial_ledger_currency_allowed", "currency", CURRENCIES),
     // amount >0 enforced via CHECK raw
     check("financial_ledger_amount_positive", sql.raw(`"amount" > 0`)),
     index("financial_ledger_order_created").on(table.orderId, table.createdAt),
+    index("financial_ledger_retail_order_created").on(table.retailOrderId, table.createdAt),
     index("financial_ledger_child_created").on(table.childOrderId, table.createdAt),
     index("financial_ledger_payment_created").on(table.paymentId, table.createdAt),
     index("financial_ledger_refund_created").on(table.refundId, table.createdAt),
@@ -2647,6 +2651,11 @@ export const financialLedgerEntry = pgTable(
       name: "financial_ledger_order_fk",
       columns: [table.orderId],
       foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "financial_ledger_retail_order_fk",
+      columns: [table.retailOrderId],
+      foreignColumns: [retailOrder.id],
     }).onDelete("restrict"),
     foreignKey({
       name: "financial_ledger_child_fk",
@@ -2671,7 +2680,9 @@ export const refund = pgTable(
   {
     id: text("id").primaryKey(),
     refundReference: text("refund_reference").notNull().unique(),
-    wholesaleOrderId: text("wholesale_order_id").notNull(),
+    /** Phase 5.9-C: exactly one side is set (XOR with `retail_order_id`). */
+    wholesaleOrderId: text("wholesale_order_id"),
+    retailOrderId: text("retail_order_id"),
     childOrderId: text("child_order_id"),
     fulfillmentExceptionId: text("fulfillment_exception_id"),
     paymentId: text("payment_id"),
@@ -2691,6 +2702,7 @@ export const refund = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    check("refund_single_order_side", sql.raw(`("wholesale_order_id" IS NULL) <> ("retail_order_id" IS NULL)`)),
     stateCheck("refund_status_allowed", "status", REFUND_STATUSES),
     stateCheck("refund_currency_allowed", "currency", CURRENCIES),
     moneyCheck("refund_amount_range", "amount"),
@@ -2699,13 +2711,22 @@ export const refund = pgTable(
     uniqueIndex("refund_order_idempotency_unique")
       .on(table.wholesaleOrderId, table.idempotencyKey)
       .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    uniqueIndex("refund_retail_order_idempotency_unique")
+      .on(table.retailOrderId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     index("refund_order_created").on(table.wholesaleOrderId, table.createdAt),
+    index("refund_retail_order_created").on(table.retailOrderId, table.createdAt),
     index("refund_child_created").on(table.childOrderId, table.createdAt),
     index("refund_status_created").on(table.status, table.createdAt),
     foreignKey({
       name: "refund_order_fk",
       columns: [table.wholesaleOrderId],
       foreignColumns: [wholesaleOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_retail_order_fk",
+      columns: [table.retailOrderId],
+      foreignColumns: [retailOrder.id],
     }).onDelete("restrict"),
     foreignKey({
       name: "refund_child_fk",
@@ -2768,7 +2789,9 @@ export const refundLine = pgTable(
   {
     id: text("id").primaryKey(),
     refundId: text("refund_id").notNull(),
-    wholesaleOrderItemId: text("wholesale_order_item_id").notNull(),
+    /** Phase 5.9-C: exactly one side is set (XOR with `retail_order_item_id`). */
+    wholesaleOrderItemId: text("wholesale_order_item_id"),
+    retailOrderItemId: text("retail_order_item_id"),
     quantity: integer("quantity").notNull(),
     unitPrice: bigint("unit_price", { mode: "bigint" }).notNull(),
     lineTotal: bigint("line_total", { mode: "bigint" }).notNull(),
@@ -2776,12 +2799,17 @@ export const refundLine = pgTable(
     createdAt: createdAt(),
   },
   (table) => [
+    check("refund_line_single_item_side", sql.raw(`("wholesale_order_item_id" IS NULL) <> ("retail_order_item_id" IS NULL)`)),
     positiveQuantityCheck("refund_line_quantity_positive", "quantity"),
     moneyCheck("refund_line_unit_price_range", "unit_price"),
     check("refund_line_total_matches", sql.raw(`"line_total" = "unit_price" * "quantity"`)),
     stateCheck("refund_line_currency_allowed", "currency", CURRENCIES),
     uniqueIndex("refund_line_refund_item_unique").on(table.refundId, table.wholesaleOrderItemId),
+    uniqueIndex("refund_line_refund_retail_item_unique")
+      .on(table.refundId, table.retailOrderItemId)
+      .where(sql`${table.retailOrderItemId} IS NOT NULL`),
     index("refund_line_item").on(table.wholesaleOrderItemId),
+    index("refund_line_retail_item").on(table.retailOrderItemId),
     foreignKey({
       name: "refund_line_refund_fk",
       columns: [table.refundId],
@@ -2791,6 +2819,11 @@ export const refundLine = pgTable(
       name: "refund_line_item_fk",
       columns: [table.wholesaleOrderItemId],
       foreignColumns: [wholesaleOrderItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "refund_line_retail_item_fk",
+      columns: [table.retailOrderItemId],
+      foreignColumns: [retailOrderItem.id],
     }).onDelete("restrict"),
   ],
 );

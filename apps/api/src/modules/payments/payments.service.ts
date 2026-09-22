@@ -1937,6 +1937,408 @@ export class PaymentsService {
     });
   }
 
+  /**
+   * Phase 5.9-C — file a refund against a RETAIL order on the generic engine.
+   *
+   * The wholesale `createRefund` above is byte-identical and stays the only
+   * path for wholesale rows; this method is the only path for retail rows
+   * (single-writer per side, one machine, one ledger).
+   *
+   * Money rules (all enforced here, inside one transaction):
+   *  - The staff ASSERTS the post-promotion header amount; the service never
+   *    derives retail money because promotions are not invertible. The header
+   *    must land inside the machine-computed honesty window (below), and
+   *    within the verified-paid ceiling.
+   *  - Stored line rows carry the immutable PRE-promotion basis
+   *    (unit_price x units — CHECK-integral); the asserted net lives only in
+   *    the header, the allocations and the audit row.
+   *  - Empty `lines` = whole-order refund; the header must equal the ceiling
+   *    exactly. (That it may only happen on cancelled orders is order-state
+   *    policy and lives in RetailOrdersService, which owns the retail tables.)
+   *  - Only collected/verified money leaves (COD counts once its collection
+   *    evidence verifies — every rail produces verified rows); allocations
+   *    map the refund FIFO onto locked verified payments (retail has no
+   *    payment_allocation lineage).
+   *
+   * The honesty window. Line-level promotion math is exact per line (the
+   * stored `line_total` is already net of line promos; only unit pro-rating
+   * can dust). Order-level discounts, however, are stored ONLY at order
+   * level (the promotion engine never attributes them to lines), so no
+   * canonical per-line net exists for that slice: any attribution summing to
+   * the order-level discount is honest. The window is therefore
+   *   [lineFloor - orderLevelDiscount, lineCeil - (coversAll ? orderLevelDiscount : 0)]
+   * where lineFloor/lineCeil are the per-line floored/ceiled unit pro-ratas.
+   * Refunding every unit of every line pins the attribution exactly (nothing
+   * kept, so the whole order discount belongs to the refunded goods);
+   * anything partial leaves the attribution to staff inside the bound. The
+   * human decides dust and attribution; the machine bounds both.
+   */
+  async createRetailRefund(input: {
+    retailOrderId: string;
+    /** Decimal string, staff-asserted post-promotion amount. Always required. */
+    amount: string;
+    currency?: string;
+    reasonCode?: string;
+    reason?: string;
+    /** Exact (item, units) basis with the immutable snapshots the retail
+        orchestrator read (locked) in the same transaction. */
+    lines?: Array<{
+      retailOrderItemId: string;
+      quantity: number;
+      orderedQuantity: number;
+      /** Gross pre-promotion unit price (`retail_order_item.unit_price`). */
+      unitPrice: string;
+      /** Stored post-line-promo line total (`retail_order_item.line_total`). */
+      lineTotal: string;
+      /** Stored line-level promo slice (`retail_order_item.promotion_discount`). */
+      promotionDiscount: string;
+    }>;
+    /** Order-level merchandise context (required with lines): the locked
+        order totals plus the sum of EVERY line's promotion_discount and
+        whether the request covers every unit of every line. */
+    orderMerchandise?: {
+      itemsTotal: string;
+      promotionDiscountTotal: string;
+      linesPromotionTotal: string;
+      coversAllMerchandise: boolean;
+    };
+    actorUserId: string;
+    actorRole?: string;
+    idempotencyKey: string;
+    executor?: DbOrTx;
+  }) {
+    if (!["admin", "finance"].includes(input.actorRole || "")) {
+      throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may create refunds", 403);
+    }
+    const requestedLines = (input.lines || []).map((l) => ({
+      retailOrderItemId: String(l.retailOrderItemId || ""),
+      quantity: Number(l.quantity),
+      orderedQuantity: Number(l.orderedQuantity),
+      unitPrice: String(l.unitPrice ?? ""),
+      lineTotal: String(l.lineTotal ?? ""),
+      promotionDiscount: String(l.promotionDiscount ?? ""),
+    }));
+    for (const l of requestedLines) {
+      if (!l.retailOrderItemId) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line requires retailOrderItemId");
+      if (!Number.isInteger(l.quantity) || l.quantity <= 0) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line quantity must be a positive integer");
+      if (!Number.isInteger(l.orderedQuantity) || l.orderedQuantity <= 0) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line orderedQuantity must be a positive integer");
+      if (l.quantity > l.orderedQuantity) throw new FinanceDomainError("REFUND_LINE_QUANTITY_EXCEEDED", `Refund line quantity ${l.quantity} exceeds ordered ${l.orderedQuantity}`);
+      let unitPrice: bigint;
+      let lineTotal: bigint;
+      let linePromo: bigint;
+      try {
+        unitPrice = BigInt(l.unitPrice);
+        lineTotal = BigInt(l.lineTotal);
+        linePromo = BigInt(l.promotionDiscount);
+      } catch {
+        throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line basis must be bigint decimal strings");
+      }
+      if (unitPrice < 0n || lineTotal < 0n || linePromo < 0n) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Refund line basis must be non-negative");
+      // The stored line equation (base = unit x qty, net = base - promo),
+      // re-checked fail-closed (the database enforces it too).
+      if (lineTotal + linePromo !== unitPrice * BigInt(l.orderedQuantity)) {
+        throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", `Line ${l.retailOrderItemId}: stored line equation does not balance`);
+      }
+    }
+    if (new Set(requestedLines.map((l) => l.retailOrderItemId)).size !== requestedLines.length) {
+      throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Duplicate retailOrderItemId in refund lines");
+    }
+    let amountBigInt: bigint;
+    try {
+      amountBigInt = BigInt(input.amount);
+    } catch {
+      throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be bigint decimal string");
+    }
+    if (amountBigInt <= 0n) throw new FinanceDomainError("INVALID_AMOUNT", "Amount must be >0");
+    if (requestedLines.length > 0 && !input.orderMerchandise) {
+      throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Line refunds require the order merchandise context");
+    }
+
+    const requestHash = hashRequest({
+      retailOrderId: input.retailOrderId,
+      amount: amountBigInt.toString(),
+      reasonCode: input.reasonCode,
+      lines: requestedLines.map((l) => `${l.retailOrderItemId}:${l.quantity}`).sort(),
+    });
+
+    return this.withExecutor(input.executor, async (tx: any) => {
+      // ── Serialize refund creation per order: lock the verified source payments ──
+      const lockedPaymentsResult = await tx.execute(sql`
+        SELECT * FROM payment WHERE retail_order_id = ${input.retailOrderId} AND status = 'verified' ORDER BY verified_at ASC, id ASC FOR UPDATE
+      `);
+      const verifiedPayments: any[] = lockedPaymentsResult.rows || [];
+
+      // ── Idempotency FIRST (before every live-state check): a replay must
+      // return the existing refund even though its own live row now consumes
+      // the ceiling and the units it once claimed. ──
+      const { commandIdempotency } = await import("@kolbe/database");
+      const [existingIdem] = await tx
+        .select()
+        .from(commandIdempotency)
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "rOrder"),
+            eq(commandIdempotency.scopeId, input.retailOrderId),
+            eq(commandIdempotency.commandType, "refunds.create"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (existingIdem) {
+        if (existingIdem.requestHash !== requestHash) throw new FinanceDomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key reused", 409);
+        if (existingIdem.state === "completed") {
+          const [existingRefund] = await tx.select().from(refund).where(eq(refund.id, existingIdem.resultResourceId)).limit(1);
+          return { refund: existingRefund, replayed: true };
+        }
+      } else {
+        await tx.insert(commandIdempotency).values({
+          id: `cid_${randomUUID().replaceAll("-", "")}`,
+          scopeType: "rOrder",
+          scopeId: input.retailOrderId,
+          commandType: "refunds.create",
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          state: "pending",
+          createdAt: await this.getDbNow(tx),
+          updatedAt: await this.getDbNow(tx),
+        });
+      }
+
+      const [existingRefundByKey] = await tx.select().from(refund).where(and(eq(refund.retailOrderId, input.retailOrderId), eq(refund.idempotencyKey, input.idempotencyKey))).limit(1);
+      if (existingRefundByKey) return { refund: existingRefundByKey, replayed: true };
+
+      // ── Per-line units guard (live refunds of this order, completed included) ──
+      const resolvedLines: Array<{ retailOrderItemId: string; quantity: number; unitPrice: bigint; lineTotal: bigint }> = [];
+      let lineFloor = 0n;
+      let lineCeil = 0n;
+      for (const line of requestedLines) {
+        const refundedQtyResult = await tx.execute(sql`
+          SELECT COALESCE(SUM(rl.quantity),0) as sum FROM refund_line rl
+          JOIN refund r ON r.id = rl.refund_id
+          WHERE rl.retail_order_item_id = ${line.retailOrderItemId} AND r.retail_order_id = ${input.retailOrderId} AND r.status IN ('requested','approved','processing','completed')
+        `);
+        const alreadyRefundedQty = Number(refundedQtyResult.rows?.[0]?.sum || 0);
+        if (line.quantity + alreadyRefundedQty > line.orderedQuantity) {
+          throw new FinanceDomainError(
+            "REFUND_LINE_QUANTITY_EXCEEDED",
+            `Item ${line.retailOrderItemId}: requested ${line.quantity} + already refunded ${alreadyRefundedQty} exceeds ordered ${line.orderedQuantity}`,
+          );
+        }
+        const unitPrice = BigInt(line.unitPrice);
+        const lineNet = BigInt(line.lineTotal);
+        const ordered = BigInt(line.orderedQuantity);
+        const units = BigInt(line.quantity);
+        // Unit pro-rata of the stored post-line-promo net, floored/ceiled in
+        // integer math. Exactly divisible nets collapse to the exact amount.
+        lineFloor += (lineNet * units) / ordered;
+        lineCeil += (lineNet * units + ordered - 1n) / ordered;
+        resolvedLines.push({
+          retailOrderItemId: line.retailOrderItemId,
+          quantity: line.quantity,
+          unitPrice,
+          lineTotal: unitPrice * units,
+        });
+      }
+
+      // ── The honesty window (lines only; whole-order refunds skip to the ceiling) ──
+      if (resolvedLines.length > 0) {
+        const merch = input.orderMerchandise as { itemsTotal: string; promotionDiscountTotal: string; linesPromotionTotal: string; coversAllMerchandise: boolean };
+        let itemsTotal: bigint;
+        let promoTotal: bigint;
+        let linesPromo: bigint;
+        try {
+          itemsTotal = BigInt(merch.itemsTotal);
+          promoTotal = BigInt(merch.promotionDiscountTotal);
+          linesPromo = BigInt(merch.linesPromotionTotal);
+        } catch {
+          throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Order merchandise context must be bigint decimal strings");
+        }
+        if (itemsTotal < 0n || promoTotal < 0n || linesPromo < 0n) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Order merchandise context must be non-negative");
+        if (promoTotal > itemsTotal) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Order promotion discount exceeds the merchandise total");
+        const orderLevelDiscount = promoTotal - linesPromo;
+        if (orderLevelDiscount < 0n) throw new FinanceDomainError("REFUND_LINE_BASIS_MISMATCH", "Line promotion slices exceed the order promotion total");
+        const lower = lineFloor - orderLevelDiscount;
+        const upper = lineCeil - (merch.coversAllMerchandise ? orderLevelDiscount : 0n);
+        if (amountBigInt < lower || amountBigInt > upper) {
+          throw new FinanceDomainError(
+            "REFUND_LINE_BASIS_MISMATCH",
+            `Asserted amount ${amountBigInt.toString()} is outside the machine-computed window [${lower.toString()}, ${upper.toString()}]`,
+          );
+        }
+      }
+
+      // ── Refundable ceiling: verified-paid minus live retail refunds ──
+      const verifiedPaid = verifiedPayments.reduce((sum, pay) => sum + BigInt(pay.amount || 0), 0n);
+      const liveRefundResult = await tx.execute(sql`
+        SELECT COALESCE(SUM(amount),0) as sum FROM refund
+        WHERE retail_order_id = ${input.retailOrderId} AND status IN ('requested','approved','processing','completed')
+      `);
+      const liveRefunded = BigInt(liveRefundResult.rows?.[0]?.sum || 0);
+      const ceiling = verifiedPaid - liveRefunded;
+      if (amountBigInt > ceiling) {
+        throw new FinanceDomainError(
+          "REFUND_EXCEEDS_ALLOCATED",
+          `Refund ${amountBigInt.toString()} exceeds the collected money of retail order ${input.retailOrderId} (${ceiling.toString()})`,
+          409,
+        );
+      }
+      if (resolvedLines.length === 0 && amountBigInt !== ceiling) {
+        throw new FinanceDomainError(
+          "REFUND_LINE_BASIS_MISMATCH",
+          `Whole-order refunds must equal the outstanding ceiling exactly (${ceiling.toString()}), got ${amountBigInt.toString()}`,
+        );
+      }
+
+      // ── A13 (retail): map the refund FIFO onto locked verified payments ──
+      // Capacity of a payment = what it contributed minus what earlier live
+      // retail refunds of this order already drew from it (retail has no
+      // payment_allocation lineage, so contributed is the full payment).
+      const plannedAllocations: Array<{ paymentId: string; amount: bigint; currency: string }> = [];
+      let remaining = amountBigInt;
+      for (const pay of verifiedPayments) {
+        if (remaining <= 0n) break;
+        const drawnResult = await tx.execute(sql`
+          SELECT COALESCE(SUM(ra.amount),0) as sum FROM refund_allocation ra
+          JOIN refund r ON r.id = ra.refund_id
+          WHERE ra.payment_id = ${pay.id} AND r.retail_order_id = ${input.retailOrderId} AND r.status IN ('requested','approved','processing','completed')
+        `);
+        const capacity = BigInt(pay.amount || 0) - BigInt(drawnResult.rows?.[0]?.sum || 0);
+        if (capacity <= 0n) continue;
+        const take = remaining < capacity ? remaining : capacity;
+        plannedAllocations.push({ paymentId: pay.id, amount: take, currency: pay.currency });
+        remaining -= take;
+      }
+      const plannedSum = plannedAllocations.reduce((sum, a) => sum + a.amount, 0n);
+      if (remaining !== 0n || plannedSum !== amountBigInt) {
+        throw new FinanceDomainError(
+          "REFUND_ALLOCATION_MISMATCH",
+          `Refund ${amountBigInt.toString()} cannot be mapped onto verified source payments (mappable ${plannedSum.toString()})`,
+        );
+      }
+      const currency = input.currency || plannedAllocations[0]?.currency || "IRR";
+      if (plannedAllocations.some((a) => a.currency !== currency)) {
+        throw new FinanceDomainError("CURRENCY_MISMATCH", "Refund currency differs from its source payments");
+      }
+
+      const now = await this.getDbNow(tx);
+      const rid = refundId();
+      let rref = generateRefundReference();
+      let created: any = null;
+      let attempts = 0;
+      while (attempts < 5) {
+        try {
+          const [inserted] = await tx
+            .insert(refund)
+            .values({
+              id: rid,
+              refundReference: rref,
+              wholesaleOrderId: null,
+              retailOrderId: input.retailOrderId,
+              paymentId: plannedAllocations.length === 1 ? plannedAllocations[0].paymentId : null,
+              amount: amountBigInt as any,
+              currency,
+              reasonCode: input.reasonCode || null,
+              reason: input.reason || null,
+              status: "requested",
+              requestedAt: now,
+              idempotencyKey: input.idempotencyKey,
+              requestHash,
+              version: 0,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          created = inserted;
+          break;
+        } catch (e: any) {
+          if (e?.code === "23505" && e?.message?.includes("refund_reference")) {
+            attempts++;
+            rref = generateRefundReference();
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!created) throw new FinanceDomainError("REFUND_REFERENCE_COLLISION", "Refund reference collision", 409);
+
+      for (const alloc of plannedAllocations) {
+        await tx.insert(refundAllocation).values({
+          id: refundAllocationId(),
+          refundId: rid,
+          paymentId: alloc.paymentId,
+          amount: alloc.amount as any,
+          currency,
+          createdAt: now,
+        });
+      }
+      for (const line of resolvedLines) {
+        await tx.insert(refundLine).values({
+          id: refundLineId(),
+          refundId: rid,
+          wholesaleOrderItemId: null,
+          retailOrderItemId: line.retailOrderItemId,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice as any,
+          lineTotal: line.lineTotal as any,
+          currency,
+          createdAt: now,
+        });
+      }
+
+      await this.auditService.record(
+        {
+          actorId: input.actorUserId,
+          actorRole: input.actorRole || "admin",
+          action: "refund.requested",
+          entityType: "refund",
+          entityId: rid,
+          after: {
+            retailOrderId: input.retailOrderId,
+            amount: amountBigInt.toString(),
+            sourcePayments: plannedAllocations.map((a) => ({ paymentId: a.paymentId, amount: a.amount.toString() })),
+            lines: resolvedLines.map((l) => ({ retailOrderItemId: l.retailOrderItemId, quantity: l.quantity, lineTotal: l.lineTotal.toString() })),
+          },
+          metadata: { idempotencyKey: input.idempotencyKey },
+        },
+        tx,
+      );
+
+      await tx
+        .update(commandIdempotency)
+        .set({ state: "completed", resultResourceId: rid, resultPayload: sanitizeForJsonb(created) as any, completedAt: now, updatedAt: now })
+        .where(
+          and(
+            eq(commandIdempotency.scopeType, "rOrder"),
+            eq(commandIdempotency.scopeId, input.retailOrderId),
+            eq(commandIdempotency.commandType, "refunds.create"),
+            eq(commandIdempotency.idempotencyKey, input.idempotencyKey),
+          ),
+        );
+
+      return {
+        refund: created,
+        allocations: plannedAllocations.map((a) => ({ paymentId: a.paymentId, amount: a.amount })),
+        lines: resolvedLines,
+        replayed: false,
+      };
+    });
+  }
+
+  /**
+   * Phase 5.9-C — completed (money-left-the-building) retail refunds of one
+   * order. The seam through which retail read models resolve `refundPending`
+   * without reading payments-owned tables.
+   */
+  async sumCompletedRetailRefunds(retailOrderId: string, executor?: DbOrTx): Promise<bigint> {
+    return this.withExecutor(executor, async (tx: any) => {
+      const result = await tx.execute(sql`
+        SELECT COALESCE(SUM(amount),0) as sum FROM refund WHERE retail_order_id = ${retailOrderId} AND status = 'completed'
+      `);
+      return BigInt(result.rows?.[0]?.sum || 0);
+    });
+  }
+
   async approveRefund(input: { refundId: string; adminUserId: string; idempotencyKey: string; reason?: string; actorRole?: string; executor?: DbOrTx }) {
     if (!["admin", "finance"].includes(input.actorRole || "")) {
       throw new FinanceDomainError("ROLE_NOT_ALLOWED", "Only admin/finance may approve refunds", 403);
@@ -1995,7 +2397,7 @@ export class PaymentsService {
           entityId: input.refundId,
           before: { status: refRow.status },
           after: { status: "approved" },
-          metadata: { orderId: refRow.wholesale_order_id },
+          metadata: { orderId: refRow.wholesale_order_id ?? refRow.retail_order_id },
         },
         tx,
       );
@@ -2072,9 +2474,12 @@ export class PaymentsService {
         .returning();
 
       const ledgerEntryId = ledgerId();
+      // Phase 5.9-C — the OUT cites exactly one order side (XOR CHECK).
+      // Wholesale rows keep orderId and pass NULL retailOrderId (unchanged).
       await tx.insert(financialLedgerEntry).values({
         id: ledgerEntryId,
-        orderId: refRow.wholesale_order_id,
+        orderId: refRow.wholesale_order_id ?? null,
+        retailOrderId: refRow.retail_order_id ?? null,
         childOrderId: refRow.child_order_id,
         refundId: input.refundId,
         paymentId: refRow.payment_id,
@@ -2097,7 +2502,7 @@ export class PaymentsService {
           entityId: input.refundId,
           before: { status: refRow.status },
           after: { status: "completed", referencePresent: true },
-          metadata: { orderId: refRow.wholesale_order_id, ledgerId: ledgerEntryId },
+          metadata: { orderId: refRow.wholesale_order_id ?? refRow.retail_order_id, ledgerId: ledgerEntryId },
         },
         tx,
       );
@@ -2149,7 +2554,7 @@ export class PaymentsService {
           entityId: input.refundId,
           before: { status: refRow.status },
           after: { status: "processing" },
-          metadata: { orderId: refRow.wholesale_order_id },
+          metadata: { orderId: refRow.wholesale_order_id ?? refRow.retail_order_id },
         },
         tx,
       );
@@ -2184,7 +2589,7 @@ export class PaymentsService {
           entityType: "refund",
           entityId: input.refundId,
           after: { status: "failed", reason: input.reason },
-          metadata: { orderId: refRow.wholesale_order_id },
+          metadata: { orderId: refRow.wholesale_order_id ?? refRow.retail_order_id },
         },
         tx,
       );

@@ -29,7 +29,7 @@ describe("فاز ۳.۸ — Legacy Removal & Clean Architecture", () => {
     );
     // The Phase 5.7 migration adds 7 promotion-owned tables to the 186-table Phase 5.6 schema;
     // 5.8 adds one more (194) and 5.9-A adds customer_address (195).
-    expect(Number(rows[0].count)).toBe(198); // 5.9-B adds the 3 return tables
+    expect(Number(rows[0].count)).toBe(198); // 5.9-B adds the 3 return tables; 5.9-C alters in place
   });
 
   it("wholesale_order_item به canonical references اشاره می‌کند (Phase 4.2 evolved)", async () => {

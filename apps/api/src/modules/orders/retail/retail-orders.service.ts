@@ -843,6 +843,15 @@ export class RetailOrdersService {
     const events = await this.repo.findEventsByOrderId(orderId, tx);
     const created = events.find((event: any) => event.orderVersion === 0);
     const money = (value: bigint | string | number): string => BigInt(value).toString();
+    // Phase 5.9-C: the B flag resolves truthfully — cancelled + paid stays
+    // pending only while collected money still exceeds completed refunds.
+    // The SUM is scoped to completed rows via the payments seam (no
+    // cross-module table reads); uncancelled/unpaid views skip the query.
+    let refundPending = order.paymentStatus === "paid" && order.orderStatus === "cancelled";
+    if (refundPending) {
+      const refunded = await this.payments.sumCompletedRetailRefunds(order.id, tx);
+      refundPending = BigInt(order.totalAmount) - refunded > 0n;
+    }
     return {
       id: order.id,
       orderCode: order.orderCode,
@@ -876,9 +885,10 @@ export class RetailOrdersService {
         status: order.paymentStatus,
         collected: order.paymentStatus === "paid",
         requiresManualSettlement: order.paymentStatus !== "paid" && order.payMethod !== "cod",
-        // Phase 5.9-B: money collected but goods never shipped — the refund
-        // obligation Checkpoint C settles. Never true for unpaid cancels.
-        refundPending: order.paymentStatus === "paid" && order.orderStatus === "cancelled",
+        // Phase 5.9-B filed the obligation; 5.9-C settles it: pending only
+        // while collected money exceeds completed refunds. Never true for
+        // unpaid cancels.
+        refundPending,
       },
       legal: {
         mode: order.legalSnapshotId ? "enforce" : "off",
@@ -1396,6 +1406,220 @@ export class RetailOrdersService {
       }
       return this.presentOrder(tx, orderId, false);
     });
+  }
+
+  // ── Phase 5.9 Checkpoint C: retail refunds on the generic engine ──
+  // Retail is the orchestrator (order-state gates, line-basis reads, the
+  // cross-aggregate facts); PaymentsService owns every money rule, the
+  // refund rows and the ledger OUT. Staff-only: filing, approving and
+  // completing move money, so customers never call these (no customer HTTP
+  // in C — the buyer sees the outcome as `refundPending` resolving).
+
+  /**
+   * File a retail refund: state gates + locked line basis here, money rules
+   * in PaymentsService, `retail_order.refund_requested` fact on first filing
+   * (replays return the existing refund with zero new facts).
+   */
+  async requestRetailRefund(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { amount: string; lines?: Array<{ retailOrderItemId: string; quantity: number }>; reason?: string; idempotencyKey: string },
+  ): Promise<{ view: RetailOrderView; refund: any; replayed: boolean }> {
+    const key = parseIdempotencyKey(input.idempotencyKey);
+    this.assertStaff(actor);
+    const requestedLines = (input.lines || []).map((l) => ({ retailOrderItemId: String((l as any)?.retailOrderItemId || ""), quantity: Number((l as any)?.quantity) }));
+    return this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      if (order.paymentStatus !== "paid") {
+        throw new RetailDomainError("RETAIL_REFUND_UNPAID", `refunds require collected money (payment ${order.paymentStatus})`);
+      }
+      // Order-state gates: cancelled orders refund whole-or-nothing;
+      // delivered/returned orders refund by line; anything still moving
+      // through the warehouse cannot refund (pre-ship orders cancel first,
+      // in-transit orders wait for delivery — money must never leave while
+      // goods are still on their way to the buyer).
+      if (order.orderStatus === "cancelled") {
+        if (requestedLines.length > 0) {
+          throw new RetailDomainError("RETAIL_REFUND_LINES_FORBIDDEN", "cancelled orders refund whole-or-nothing (no lines)");
+        }
+      } else if (order.orderStatus === "delivered" || order.orderStatus === "returned") {
+        if (requestedLines.length === 0) {
+          throw new RetailDomainError("RETAIL_REFUND_LINES_REQUIRED", `refunds on ${order.orderStatus} orders require lines`);
+        }
+      } else if (order.orderStatus === "shipped") {
+        throw new RetailDomainError("RETAIL_REFUND_NOT_READY", "order is in transit; refund after delivery (via a return if needed)");
+      } else {
+        throw new RetailDomainError("RETAIL_REFUND_ROUTES_TO_CANCEL", `order is ${order.orderStatus}; cancel it and the refund follows whole-order`);
+      }
+      const items = await this.repo.findItemsByOrderId(orderId, tx);
+      const basisById = new Map<string, { quantity: number; unitPrice: string; lineTotal: string; promotionDiscount: string }>();
+      for (const item of items as any[]) {
+        basisById.set(String(item.id), {
+          quantity: Number(item.quantity),
+          unitPrice: BigInt(item.unitPrice).toString(),
+          lineTotal: BigInt(item.lineTotal).toString(),
+          promotionDiscount: BigInt(item.promotionDiscount).toString(),
+        });
+      }
+      const basisLines = requestedLines.map((l) => {
+        const basis = basisById.get(l.retailOrderItemId);
+        if (!basis) throw new RetailDomainError("RETAIL_REFUND_LINE_UNKNOWN", `line ${l.retailOrderItemId} is not on order ${orderId}`);
+        return { retailOrderItemId: l.retailOrderItemId, quantity: l.quantity, orderedQuantity: basis.quantity, unitPrice: basis.unitPrice, lineTotal: basis.lineTotal, promotionDiscount: basis.promotionDiscount };
+      });
+      // Order-level merchandise context for the honesty window: the locked
+      // order totals, the line-promo slices summed over EVERY line (so the
+      // money side can isolate the unattributed order-level discount), and
+      // whether this request covers every unit of every line (which pins
+      // that attribution exactly — nothing kept, nothing to split).
+      const requestedById = new Map(basisLines.map((l) => [l.retailOrderItemId, l.quantity]));
+      const coversAllMerchandise =
+        basisLines.length > 0 &&
+        (items as any[]).every((item: any) => requestedById.get(String(item.id)) === Number(item.quantity));
+      const linesPromotionTotal = (items as any[]).reduce((sum: bigint, item: any) => sum + BigInt(item.promotionDiscount), 0n);
+      const { refund, replayed } = await this.payments.createRetailRefund({
+        retailOrderId: orderId,
+        amount: input.amount,
+        reason: input.reason,
+        lines: basisLines,
+        orderMerchandise: {
+          itemsTotal: BigInt(order.itemsTotal).toString(),
+          promotionDiscountTotal: BigInt(order.promotionDiscountTotal).toString(),
+          linesPromotionTotal: linesPromotionTotal.toString(),
+          coversAllMerchandise,
+        },
+        actorUserId: actor.actorId as string,
+        actorRole: actor.actorRole,
+        idempotencyKey: key,
+        executor: tx,
+      });
+      if (replayed) {
+        return { view: await this.presentOrder(tx, orderId, false), refund, replayed: true };
+      }
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: orderId,
+          eventType: "retail_order.refund_requested",
+          payload: {
+            order_code: order.orderCode,
+            refund_id: refund.id,
+            amount: BigInt(refund.amount).toString(),
+            currency: refund.currency ?? "IRR",
+            lines: basisLines.map((l) => ({ retail_order_item_id: l.retailOrderItemId, quantity: l.quantity })),
+          },
+          actorId: actor.actorId,
+          actorRole: null,
+          idempotencyKey: key,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          actorId: actor.actorId ?? "system",
+          actorRole: actor.actorRole,
+          action: "retail_order.refund_requested",
+          entityType: "retail_order",
+          entityId: orderId,
+          after: { refund_id: refund.id, amount: BigInt(refund.amount).toString(), lines: basisLines.length },
+        },
+        tx,
+      );
+      return { view: await this.presentOrder(tx, orderId, false), refund, replayed: false };
+    });
+  }
+
+  /**
+   * Approve a retail refund. The retail-side gate (this refund really is a
+   * retail-side row) lives here; the machine transition in PaymentsService.
+   */
+  async approveRetailRefund(
+    refundId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { idempotencyKey: string; reason?: string },
+  ): Promise<{ refund: any; replayed: boolean }> {
+    const key = parseIdempotencyKey(input.idempotencyKey);
+    this.assertStaff(actor);
+    const row = await this.payments.getRefundRowById(refundId);
+    if (!row || !row.retail_order_id) throw new RetailDomainError("RETAIL_REFUND_EXPECTED", `refund ${refundId} is not a retail refund`);
+    return this.payments.approveRefund({ refundId, adminUserId: actor.actorId as string, idempotencyKey: key, reason: input.reason, actorRole: actor.actorRole });
+  }
+
+  /**
+   * Complete a retail refund against real external evidence, then append the
+   * `retail_order.refund_completed` fact atomically (the fact and the ledger
+   * OUT commit together; replays append nothing).
+   */
+  async completeRetailRefund(
+    refundId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { externalReference: string; idempotencyKey: string },
+  ): Promise<{ view: RetailOrderView; refund: any; replayed: boolean }> {
+    const key = parseIdempotencyKey(input.idempotencyKey);
+    this.assertStaff(actor);
+    const row = await this.payments.getRefundRowById(refundId);
+    if (!row || !row.retail_order_id) throw new RetailDomainError("RETAIL_REFUND_EXPECTED", `refund ${refundId} is not a retail refund`);
+    const retailOrderId = String(row.retail_order_id);
+    return this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(retailOrderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      const { refund, replayed } = await this.payments.completeRefund({
+        refundId,
+        adminUserId: actor.actorId as string,
+        externalReference: input.externalReference,
+        idempotencyKey: key,
+        actorRole: actor.actorRole,
+        executor: tx,
+      });
+      if (replayed) {
+        return { view: await this.presentOrder(tx, retailOrderId, false), refund, replayed: true };
+      }
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: retailOrderId,
+          eventType: "retail_order.refund_completed",
+          payload: {
+            order_code: order.orderCode,
+            refund_id: refundId,
+            amount: BigInt(refund.amount).toString(),
+            currency: refund.currency ?? "IRR",
+            reference_present: true,
+          },
+          actorId: actor.actorId,
+          actorRole: null,
+          idempotencyKey: key,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          actorId: actor.actorId ?? "system",
+          actorRole: actor.actorRole,
+          action: "retail_order.refund_completed",
+          entityType: "retail_order",
+          entityId: retailOrderId,
+          after: { refund_id: refundId, amount: BigInt(refund.amount).toString() },
+        },
+        tx,
+      );
+      return { view: await this.presentOrder(tx, retailOrderId, false), refund, replayed: false };
+    });
+  }
+
+  /** Fail a retail refund (provider/staff-reported failure). No fact — a failed refund moves no money. */
+  async failRetailRefund(
+    refundId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { reason: string; idempotencyKey: string },
+  ): Promise<{ refund: any; replayed: boolean }> {
+    const key = parseIdempotencyKey(input.idempotencyKey);
+    this.assertStaff(actor);
+    const row = await this.payments.getRefundRowById(refundId);
+    if (!row || !row.retail_order_id) throw new RetailDomainError("RETAIL_REFUND_EXPECTED", `refund ${refundId} is not a retail refund`);
+    return this.payments.failRefund({ refundId, adminUserId: actor.actorId as string, reason: input.reason, idempotencyKey: key, actorRole: actor.actorRole });
   }
 
   // ── Checkpoint C: fulfillment lifecycle + shipment orchestration
