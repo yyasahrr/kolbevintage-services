@@ -119,6 +119,16 @@ export class PaymentProviderEventService {
     await dbTx.execute(sql`UPDATE payment_provider_event SET status = 'ignored', failure_reason = ${String(reason).slice(0, 500)}, updated_at = NOW() WHERE id = ${eventId}`);
   }
 
+  /**
+   * Phase 5.8-B — release a claimed event back to `received` (provider says
+   * "pending": not terminal, no mutation happened, a later redelivery must
+   * be able to claim and reprocess it). Only the claim holder calls this.
+   */
+  async releaseToReceived(eventId: string, executor?: DbOrTx) {
+    const dbTx = this.getDb(executor) as any;
+    await dbTx.execute(sql`UPDATE payment_provider_event SET status = 'received', updated_at = NOW() WHERE id = ${eventId} AND status = 'processing'`);
+  }
+
   sanitizeMetadata(metadata: any): any {
     if (!metadata || typeof metadata !== "object") return {};
     const allowed = ["paymentId", "amount", "currency", "status", "reference", "provider", "eventType", "externalReference", "paymentReference", "providerReference", "refundId", "childOrderId", "orderId", "amountString", "identity", "reason"];

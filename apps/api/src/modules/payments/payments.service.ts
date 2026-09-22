@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNotNull } from "drizzle-orm";
 import {
   wholesaleProforma,
   wholesaleProformaLine,
@@ -3069,6 +3069,67 @@ export class PaymentsService {
     return this.withExecutor(executor, async (tx: any) => {
       const result = await tx.execute(sql`SELECT * FROM payment WHERE retail_order_id = ${retailOrderId} ORDER BY created_at ASC, id ASC`);
       return result.rows || [];
+    });
+  }
+
+  /** Retail-owned lookup by provider reference (provider callbacks resolve here; wholesale rows never match). */
+  async findRetailPaymentByProviderRef(input: { provider: string; providerReference: string; executor?: DbOrTx }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const [row] = await tx
+        .select()
+        .from(payment)
+        .where(
+          and(
+            eq(payment.provider, input.provider),
+            eq(payment.providerReference, input.providerReference),
+            isNotNull(payment.retailOrderId),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    });
+  }
+
+  /**
+   * Fail a retail payment ROW (provider-verified failure or provider
+   * cancellation). Terminal rows are rejected, never rewritten; the caller
+   * (retail orchestration) owns everything downstream of the failure.
+   */
+  async failRetailPaymentRow(input: { paymentId: string; reason: string; actorRole?: string; executor?: DbOrTx }) {
+    return this.withExecutor(input.executor, async (tx: any) => {
+      const payResult = await tx.execute(sql`SELECT * FROM payment WHERE id = ${input.paymentId} FOR UPDATE`);
+      const pay = payResult.rows?.[0];
+      if (!pay) throw new FinanceDomainError("PAYMENT_NOT_FOUND", `Payment ${input.paymentId} not found`);
+      if (!pay.retail_order_id) throw new FinanceDomainError("RETAIL_PAYMENT_EXPECTED", `Payment ${input.paymentId} is not a retail payment`, 400);
+      if (!["pending", "evidence_submitted"].includes(pay.status)) {
+        throw new FinanceDomainError("INVALID_STATUS_TRANSITION", `Cannot fail from ${pay.status}`);
+      }
+      const now = await this.getDbNow(tx);
+      const [failed] = await tx
+        .update(payment)
+        .set({
+          status: "failed",
+          failureReason: input.reason.slice(0, 500),
+          providerState: "failed",
+          version: pay.version + 1,
+          updatedAt: now,
+        })
+        .where(eq(payment.id, input.paymentId))
+        .returning();
+      await this.auditService.record(
+        {
+          actorId: null,
+          actorRole: input.actorRole || "system",
+          action: "payment.failed",
+          entityType: "payment",
+          entityId: input.paymentId,
+          before: { status: pay.status },
+          after: { status: "failed", amount: pay.amount.toString() },
+          metadata: { retailOrderId: pay.retail_order_id, reason: input.reason.slice(0, 500) },
+        },
+        tx,
+      );
+      return { payment: failed };
     });
   }
 }

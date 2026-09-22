@@ -26,9 +26,12 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_ORDER_NOT_PAYABLE" ||
       code === "RETAIL_INTENT_METHOD_UNSUPPORTED" ||
       code === "RETAIL_EVIDENCE_RAIL_MISMATCH" ||
-      code === "RETAIL_AMOUNT_MISMATCH"
+      code === "RETAIL_AMOUNT_MISMATCH" ||
+      code === "RETAIL_PROVIDER_EVENT_REJECTED"
     ) {
       status = 422;
+    } else if (code === "RETAIL_WEBHOOK_UNAUTHENTICATED") {
+      status = 401;
     } else if (
       code === "RETAIL_IDEMPOTENCY_CONFLICT" ||
       code === "RETAIL_INSUFFICIENT_STOCK" ||

@@ -637,3 +637,29 @@ mappings + dedup, unknown/guest skips) and two migration tests for
 0035 (active-hold uniqueness incl. live predicate pin, template key
 acceptance). A-suite regression: zero — the four API suites, four
 frontend suites, and database suite all pass unmodified.
+
+### 18.1 B-fixup (provider callbacks, ownership, method policies)
+
+`handleRetailProviderCallback` (`RetailOrdersService`) reuses the
+wholesale provider-event machinery instead of inventing retail
+webhooks: adapter authenticate + normalize (`parseWebhook`, pure),
+inbox dedupe + atomic claim on `(provider, external_event_id)`, and
+server-to-server `queryStatus` as the ONLY success truth — the event
+is a trigger, never evidence. Outcomes: `paid` (routes through the
+atomic `verifyPayment`), `failed` (new `failRetailPaymentRow`
+primitive; order unpaid, hold kept for retry), `pending` (claim
+released via new `releaseToReceived` for redelivery, nothing
+mutated), `replayed`/`inflight`. Terminal conflicts (success vs
+failed, failure vs verified) are `RETAIL_PROVIDER_EVENT_REJECTED`
+(422), never rewrites; bad signatures persist `ignored` and throw
+`RETAIL_WEBHOOK_UNAUTHENTICATED` (401); unknown references and
+amount/currency mismatches fail the event without touching commerce.
+No migration: the inbox carries no wholesale key. Payment actions
+are owner-checked (`RETAIL_ORDER_FORBIDDEN` reuse): customer/vip must
+own the order, staff/system bypass, guests are refused here (D
+defines guest payment capability). COD pays on collection-proof
+verify (hold at checkout, confirm at verify); wallet/installment
+take no gateway intents and claim no provider success
+(retail-only). Fake stays test-only: registry construction and
+`resolve("fake")` both explode in production (pinned by unit
+tests). 19 tests in `phase-5-8-b-retail-callback.test.ts`.

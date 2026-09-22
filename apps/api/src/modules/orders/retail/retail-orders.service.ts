@@ -7,7 +7,9 @@ import { AuditService } from "../../audit/audit.service";
 import { ComplianceService } from "../../compliance/compliance.service";
 import { InventoryService } from "../../inventory/inventory.service";
 import { OffersService } from "../../offers/offers.service";
-import { PaymentsService } from "../../payments/payments.service";
+import { PaymentProviderEventService } from "../../payments/payment-provider-event.service";
+import { PaymentProviderRegistry } from "../../payments/payment-provider.registry";
+import { FinanceDomainError, PaymentsService } from "../../payments/payments.service";
 import { RetailPricingService } from "../../pricing/retail-pricing.service";
 import { RETAIL_PRICING_RESOLVER } from "../../promotions/promotions.contract";
 import { PromotionCouponService } from "../../promotions/promotion-coupon.service";
@@ -159,6 +161,8 @@ export class RetailOrdersService {
     @Inject(PromotionCouponService) private readonly coupons: PromotionCouponService,
     @Inject(InventoryService) private readonly inventory: InventoryService,
     @Inject(PaymentsService) private readonly payments: PaymentsService,
+    @Inject(PaymentProviderRegistry) private readonly providerRegistry: PaymentProviderRegistry,
+    @Inject(PaymentProviderEventService) private readonly providerEvents: PaymentProviderEventService,
     @Inject(ComplianceService) private readonly compliance: ComplianceService,
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
@@ -721,6 +725,23 @@ export class RetailOrdersService {
   }
 
   /**
+   * Payment actions are owner-checked: a customer/vip actor must own the
+   * order. Staff/system bypass. Guests carry no identity, so guest orders
+   * cannot be driven here — Checkpoint D defines guest payment capability
+   * on the HTTP surface instead of guessing at this layer.
+   */
+  private assertOrderOwner(order: { customerId: string | null }, actor: { actorId: string | null; actorRole: string }) {
+    if (actor.actorRole === "customer" || actor.actorRole === "vip") {
+      if (!actor.actorId || !order.customerId || actor.actorId !== order.customerId) {
+        throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", "this order belongs to another customer");
+      }
+      return;
+    }
+    if (actor.actorRole === "admin" || actor.actorRole === "finance" || actor.actorRole === "system") return;
+    throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", `role ${actor.actorRole} cannot drive retail payment actions`);
+  }
+
+  /**
    * Gateway online intent (TxA row + lock-free provider call + TxB persist).
    * Only `gateway` orders take this path; cash-on-delivery and manual flows
    * submit evidence instead.
@@ -734,6 +755,7 @@ export class RetailOrdersService {
       const order = await this.repo.findByIdForUpdate(orderId, tx);
       if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
       this.assertPayable(order);
+      this.assertOrderOwner(order, actor);
       if (order.payMethod !== "gateway") {
         throw new RetailDomainError("RETAIL_INTENT_METHOD_UNSUPPORTED", `online intent is not supported for ${order.payMethod}`);
       }
@@ -775,6 +797,7 @@ export class RetailOrdersService {
       const order = await this.repo.findByIdForUpdate(orderId, tx);
       if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
       this.assertPayable(order);
+      this.assertOrderOwner(order, actor);
       // Rail honesty without naming every retail method: cash-on-delivery
       // orders evidence on the cod rail, everything else on manual_transfer.
       const expectedRail = order.payMethod === "cod" ? "cod" : "manual_transfer";
@@ -914,6 +937,144 @@ export class RetailOrdersService {
         idempotencyKey: `${paymentId}:confirm:${item.variantId}`,
         executor: tx,
       });
+    }
+  }
+
+  /**
+   * Retail provider callback (B10): inbox-first, server-to-server truth.
+   *
+   * Reuses the wholesale provider-event machinery: the adapter authenticates
+   * and normalizes (`parseWebhook`, pure), the inbox dedupes on
+   * (provider, external_event_id), and an atomic claim decides the single
+   * processor. The event is only a TRIGGER — `queryStatus` over the
+   * provider channel is the truth, so a forged or stale event payload can
+   * never mark an order paid, and a success event for a failed payment (or
+   * vice versa) is a conflict rejection, never a rewrite. Outcomes:
+   * `paid` (routed through the atomic `verifyPayment`), `failed` (row
+   * failed, order and stock untouched), `pending` (claim released for a
+   * later redelivery, nothing mutated), `replayed` (terminal inbox state),
+   * `inflight` (another delivery holds the claim). Service-level; the HTTP
+   * webhook route is Checkpoint D.
+   */
+  async handleRetailProviderCallback(
+    providerName: string,
+    raw: { headers: Record<string, string | string[] | undefined>; body: unknown },
+  ): Promise<{
+    outcome: "paid" | "failed" | "pending" | "replayed" | "inflight";
+    view?: RetailOrderView;
+    paymentId?: string | null;
+    inboxEventId: string;
+    replayed: boolean;
+  }> {
+    const provider = this.providerRegistry.resolve(providerName);
+    if (!provider.supportsWebhooks) {
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", `provider ${provider.name} has no server-to-server callback channel`);
+    }
+    const normalized = provider.parseWebhook({ headers: raw.headers, body: raw.body });
+
+    const recorded = await this.providerEvents.recordEvent({
+      provider: provider.name,
+      externalEventId: normalized.externalEventId,
+      externalPaymentReference: normalized.providerReference,
+      eventType: normalized.eventType,
+      safeMetadata: normalized.safeMetadata,
+    });
+    const inboxEventId = recorded.id as string;
+    const claimed = await this.providerEvents.claim(inboxEventId);
+    if (!claimed) {
+      const current = await this.providerEvents.getEventById(inboxEventId);
+      const status = (current as any)?.status as string | undefined;
+      if (status === "processed" || status === "ignored" || status === "failed") {
+        return { outcome: "replayed", inboxEventId, replayed: true };
+      }
+      return { outcome: "inflight", inboxEventId, replayed: true };
+    }
+
+    if (!normalized.authenticated) {
+      await this.providerEvents.markIgnored(inboxEventId, normalized.rejectionReason || "webhook authentication failed");
+      throw new RetailDomainError("RETAIL_WEBHOOK_UNAUTHENTICATED", "provider webhook signature is invalid");
+    }
+    if (!normalized.providerReference) {
+      await this.providerEvents.markFailed(inboxEventId, "missing provider reference");
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "webhook carries no provider reference");
+    }
+    const payment = await this.payments.findRetailPaymentByProviderRef({ provider: provider.name, providerReference: normalized.providerReference });
+    if (!payment) {
+      await this.providerEvents.markFailed(inboxEventId, "unknown provider reference");
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "no retail payment matches this provider reference");
+    }
+    const terminal = payment.status === "verified" || payment.status === "failed" || payment.status === "cancelled";
+    const eventSaysFailure = normalized.eventType === "payment.failed" || normalized.eventType === "payment.cancelled";
+    if (terminal) {
+      const agrees = (payment.status === "verified" && !eventSaysFailure) || (payment.status !== "verified" && eventSaysFailure);
+      if (!agrees) {
+        await this.providerEvents.markFailed(inboxEventId, `terminal conflict: payment ${payment.status}, event ${normalized.eventType}`);
+        throw new RetailDomainError(
+          "RETAIL_PROVIDER_EVENT_REJECTED",
+          `provider event ${normalized.eventType} conflicts with terminal payment ${payment.status}`,
+        );
+      }
+      await this.providerEvents.markProcessed(inboxEventId);
+      if (payment.status === "verified") {
+        const view = await this.presentOrder(this.db, payment.retailOrderId, false);
+        return { outcome: "paid", view, paymentId: payment.id, inboxEventId, replayed: true };
+      }
+      return { outcome: "failed", paymentId: payment.id, inboxEventId, replayed: true };
+    }
+
+    let query: any;
+    try {
+      query = await provider.queryStatus({ paymentId: payment.id, providerReference: normalized.providerReference });
+    } catch (error: any) {
+      await this.providerEvents.releaseToReceived(inboxEventId);
+      throw new FinanceDomainError("PROVIDER_ERROR", `Provider ${provider.name} status query failed: ${error?.message || "provider error"}`, 502);
+    }
+    const state = String(query?.state || query?.status || "").toLowerCase();
+    if (state === "pending") {
+      await this.providerEvents.releaseToReceived(inboxEventId);
+      return { outcome: "pending", paymentId: payment.id, inboxEventId, replayed: false };
+    }
+    if (state === "failed") {
+      await this.payments.failRetailPaymentRow({
+        paymentId: payment.id,
+        reason: `provider ${normalized.eventType}: ${provider.name} reports failure`,
+        actorRole: "system",
+      });
+      await this.providerEvents.markProcessed(inboxEventId);
+      return { outcome: "failed", paymentId: payment.id, inboxEventId, replayed: false };
+    }
+    if (state !== "success") {
+      await this.providerEvents.markFailed(inboxEventId, `provider reports ${state || "unknown"} for a claimed reference`);
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", `provider cannot confirm this payment (${state || "unknown"})`);
+    }
+    if (query.amount === undefined || query.amount === null) {
+      await this.providerEvents.markFailed(inboxEventId, "provider confirmed without an amount");
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "provider confirmation carries no amount");
+    }
+    if (BigInt(query.amount) !== BigInt(payment.amount)) {
+      await this.providerEvents.markFailed(inboxEventId, "provider captured amount differs from the payment row");
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "provider amount does not match the payment amount");
+    }
+    if (String(query.currency) !== String(payment.currency)) {
+      await this.providerEvents.markFailed(inboxEventId, "provider currency differs from the payment row");
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "provider currency does not match the payment currency");
+    }
+    try {
+      const { view } = await this.verifyPayment(
+        payment.id,
+        { actorId: null, actorRole: "system" },
+        { externalReference: normalized.providerReference, idempotencyKey: `cb:${inboxEventId}` },
+      );
+      await this.providerEvents.markProcessed(inboxEventId);
+      return { outcome: "paid", view, paymentId: payment.id, inboxEventId, replayed: false };
+    } catch (error: any) {
+      // A cancelled/insolvent order racing a captured payment is operator
+      // work (refund lives in 5.9): record the event failure, then surface
+      // the orchestration error instead of swallowing it.
+      if (error?.code !== "RETAIL_PROVIDER_EVENT_REJECTED") {
+        await this.providerEvents.markFailed(inboxEventId, `orchestration refused: ${error?.code || error?.message || "unknown"}`);
+      }
+      throw error;
     }
   }
 
