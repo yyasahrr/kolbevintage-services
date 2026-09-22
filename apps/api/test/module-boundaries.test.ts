@@ -231,6 +231,10 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "promotion_schedule",
       // Phase 5.9
       "customer_address",
+      // Phase 5.9-B
+      "retail_return_request",
+      "retail_return_item",
+      "retail_return_event",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);

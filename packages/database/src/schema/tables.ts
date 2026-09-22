@@ -162,8 +162,11 @@ import {
   QUOTE_STATUSES,
   RATING_STATUSES,
   REFUND_STATUSES,
+  RETAIL_INSPECTION_DECISION_VALUES,
   RETAIL_ORDER_ACTOR_ROLES,
   RETAIL_ORDER_STATUS_VALUES,
+  RETAIL_RETURN_REASON_VALUES,
+  RETAIL_RETURN_STATUS_VALUES,
   RETAIL_PAYMENT_METHODS,
   RETAIL_PAYMENT_STATUSES,
   RFQ_STATUSES,
@@ -1119,6 +1122,115 @@ export const retailOrderEvent = pgTable(
     }).onDelete("restrict"),
     foreignKey({
       name: "retail_order_event_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/* ── مرجوعی خرده‌فروشی (فاز ۵.۹-B) ──────────────────────────────────────────────── */
+
+export const retailReturnRequest = pgTable(
+  "retail_return_request",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    customerId: text("customer_id").notNull(),
+    status: text("status").notNull(),
+    reason: text("reason").notNull(),
+    note: text("note"),
+    /** Loose cross-module pointer (no FK): support owns its lifecycle. */
+    supportCaseId: text("support_case_id"),
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    inspectedAt: timestamp("inspected_at", { withTimezone: true }),
+    inspectionDecision: text("inspection_decision"),
+    version: integer("version").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("retail_return_request_order_created").on(table.orderId, table.createdAt),
+    index("retail_return_request_customer_created").on(table.customerId, table.createdAt),
+    index("retail_return_request_support_case").on(table.supportCaseId),
+    stateCheck("retail_return_request_status_allowed", "status", RETAIL_RETURN_STATUS_VALUES),
+    stateCheck("retail_return_request_reason_allowed", "reason", RETAIL_RETURN_REASON_VALUES),
+    check(
+      "retail_return_request_inspection_allowed",
+      sql.raw(`"inspection_decision" IS NULL OR "inspection_decision" IN (${RETAIL_INSPECTION_DECISION_VALUES.map((v) => `'${v}'`).join(", ")})`),
+    ),
+    quantityCheck("retail_return_request_version_non_negative", "version"),
+    foreignKey({
+      name: "retail_return_request_order_fk",
+      columns: [table.orderId],
+      foreignColumns: [retailOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_return_request_customer_fk",
+      columns: [table.customerId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const retailReturnItem = pgTable(
+  "retail_return_item",
+  {
+    id: text("id").primaryKey(),
+    returnId: text("return_id").notNull(),
+    orderItemId: text("order_item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("retail_return_item_return").on(table.returnId),
+    uniqueIndex("retail_return_item_return_line_unique").on(table.returnId, table.orderItemId),
+    positiveQuantityCheck("retail_return_item_quantity_positive", "quantity"),
+    foreignKey({
+      name: "retail_return_item_return_fk",
+      columns: [table.returnId],
+      foreignColumns: [retailReturnRequest.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_return_item_order_item_fk",
+      columns: [table.orderItemId],
+      foreignColumns: [retailOrderItem.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const retailReturnEvent = pgTable(
+  "retail_return_event",
+  {
+    id: text("id").primaryKey(),
+    returnId: text("return_id").notNull(),
+    /** NULL یعنی نبودِ وضعیت قبلی (رویداد ثبت). */
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    actorId: text("actor_id"),
+    /** Free text: customer/vip filers and admin/finance/system staff all act here. */
+    actorRole: text("actor_role"),
+    reason: text("reason"),
+    metadata: jsonb("metadata").notNull().default({}),
+    returnVersion: integer("return_version").notNull().default(0),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("retail_return_event_return_created").on(table.returnId, table.createdAt),
+    uniqueIndex("retail_return_event_return_version_unique").on(table.returnId, table.returnVersion),
+    check(
+      "retail_return_event_from_status_allowed",
+      sql.raw(`"from_status" IS NULL OR "from_status" IN (${RETAIL_RETURN_STATUS_VALUES.map((v) => `'${v}'`).join(", ")})`),
+    ),
+    stateCheck("retail_return_event_to_status_allowed", "to_status", RETAIL_RETURN_STATUS_VALUES),
+    quantityCheck("retail_return_event_return_version_non_negative", "return_version"),
+    foreignKey({
+      name: "retail_return_event_return_fk",
+      columns: [table.returnId],
+      foreignColumns: [retailReturnRequest.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_return_event_actor_fk",
       columns: [table.actorId],
       foreignColumns: [accountUser.id],
     }).onDelete("restrict"),

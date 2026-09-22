@@ -8,6 +8,7 @@ import { CustomerAccountService } from "./customer-account.service";
 import { CustomerAddressRepository } from "./customer-address.repository";
 import { CustomerAddressService } from "./customer-address.service";
 import { CustomerOrderHistoryService } from "./customer-order-history.service";
+import { CustomerReturnService } from "./customer-return.service";
 import { GuestOrderAccessGuard } from "./guest-order-access.guard";
 import { GuestOrderAccessService } from "./guest-order-access.service";
 
@@ -25,9 +26,10 @@ import { GuestOrderAccessService } from "./guest-order-access.service";
     CustomerAddressRepository,
     CustomerAddressService,
     CustomerOrderHistoryService,
+    CustomerReturnService,
     GuestOrderAccessGuard,
     GuestOrderAccessService,
   ],
-  exports: [CustomerAccountService, CustomerAddressService, CustomerOrderHistoryService, GuestOrderAccessService],
+  exports: [CustomerAccountService, CustomerAddressService, CustomerOrderHistoryService, CustomerReturnService, GuestOrderAccessService],
 })
 export class CustomerAccountModule {}

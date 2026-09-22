@@ -876,6 +876,9 @@ export class RetailOrdersService {
         status: order.paymentStatus,
         collected: order.paymentStatus === "paid",
         requiresManualSettlement: order.paymentStatus !== "paid" && order.payMethod !== "cod",
+        // Phase 5.9-B: money collected but goods never shipped — the refund
+        // obligation Checkpoint C settles. Never true for unpaid cancels.
+        refundPending: order.paymentStatus === "paid" && order.orderStatus === "cancelled",
       },
       legal: {
         mode: order.legalSnapshotId ? "enforce" : "off",
@@ -1289,17 +1292,33 @@ export class RetailOrdersService {
       // owner-or-staff like every other retail action (guests carry no
       // identity; guest-order capability is a 5.9 HTTP decision).
       this.assertOrderOwner(order, actor);
-      if (order.paymentStatus === "paid") {
-        throw new RetailDomainError("RETAIL_CANCEL_PAID_FORBIDDEN", "paid orders cannot be cancelled without a refund");
+      // Phase 5.9-B: cancel is idempotent — an already-cancelled order
+      // returns its view with zero further side effects.
+      if (order.orderStatus === "cancelled") {
+        return this.presentOrder(tx, orderId, false);
       }
       const shipments = await this.shipping.listRetailShipments(orderId, tx);
-      const inFlight = (shipments as any[]).filter((row) => ["handed_over", "in_transit", "delivered"].includes(row.status));
+      const inFlight = (shipments as any[]).filter((row) => ["handed_over", "in_transit"].includes(row.status));
       if (inFlight.length > 0) {
         throw new RetailDomainError(
           "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS",
           `shipment ${inFlight[0].shipmentCode} is already ${inFlight[0].status}; cancel is refused once freight leaves the warehouse`,
         );
       }
+      // Phase 5.9-B: delivered orders route to the returns flow (the buyer
+      // holds the goods; cancelling the commercial record would lie).
+      const delivered = (shipments as any[]).filter((row) => row.status === "delivered");
+      if (delivered.length > 0) {
+        throw new RetailDomainError(
+          "RETAIL_CANCEL_ROUTES_TO_RETURN",
+          `shipment ${delivered[0].shipmentCode} is already delivered; file a return instead of cancelling`,
+        );
+      }
+      // Phase 5.9-B: paid pre-handoff cancels are ACCEPTED (retiring
+      // RETAIL_CANCEL_PAID_FORBIDDEN) and land in a truthful
+      // refund-required state: cancelled + paid, money untouched here,
+      // the refund itself settled by Checkpoint C.
+      const refundPending = order.paymentStatus === "paid";
       await this.transitionOrder(orderId, "cancelled", actor, tx);
       const requester = this.systemRequester();
       // COD confirms the shipped slice at shipment time; cancelling a
@@ -1350,13 +1369,31 @@ export class RetailOrdersService {
           aggregateType: "retail_order",
           aggregateId: orderId,
           eventType: "retail_order.cancelled",
-          payload: { order_code: order.orderCode, reason: actor.reason ?? null },
+          payload: { order_code: order.orderCode, reason: actor.reason ?? null, refund_pending: refundPending },
           actorId: actor.actorId,
           actorRole: null,
           idempotencyKey: null,
         },
         tx,
       );
+      if (refundPending) {
+        await this.audit.record(
+          {
+            actorId: actor.actorId ?? "system",
+            actorRole: actor.actorRole,
+            action: "retail_order.cancel_pending_refund",
+            entityType: "retail_order",
+            entityId: orderId,
+            after: {
+              order_code: order.orderCode,
+              payment_status: order.paymentStatus,
+              refund_pending: true,
+              settled_by: "checkpoint_c_refund",
+            },
+          },
+          tx,
+        );
+      }
       return this.presentOrder(tx, orderId, false);
     });
   }

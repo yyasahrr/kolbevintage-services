@@ -137,6 +137,53 @@ export const RETAIL_ORDER_TRANSITIONS: TransitionTable<RetailOrderStatus> = {
 };
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   Phase 5.9-B — مرجوعی خرده‌فروشی (first-class return aggregate)
+   REQUESTED → APPROVED → RECEIVED → INSPECTED → RESTOCKED
+   received ≠ inspected ≠ restocked; WITHDRAWN is customer-only (enforced by
+   the withdrawing seam, not by this table alone).
+   ──────────────────────────────────────────────────────────────────────────── */
+export const RETAIL_RETURN_STATUSES = [
+  "REQUESTED",
+  "APPROVED",
+  "RECEIVED",
+  "INSPECTED",
+  "RESTOCKED",
+  "REJECTED",
+  "WITHDRAWN",
+] as const;
+export type RetailReturnStatus = (typeof RETAIL_RETURN_STATUSES)[number];
+
+export const RETAIL_RETURN_TRANSITIONS: TransitionTable<RetailReturnStatus> = {
+  REQUESTED: ["APPROVED", "REJECTED", "WITHDRAWN"],
+  APPROVED: ["RECEIVED", "REJECTED", "WITHDRAWN"],
+  RECEIVED: ["INSPECTED"],
+  INSPECTED: ["RESTOCKED", "REJECTED"],
+  RESTOCKED: [],
+  REJECTED: [],
+  WITHDRAWN: [],
+};
+
+/** Customer-facing return reasons (filing-time, immutable). */
+export const RETAIL_RETURN_REASONS = [
+  "DAMAGED",
+  "WRONG_ITEM",
+  "SIZE_FIT",
+  "QUALITY_ISSUE",
+  "CHANGED_MIND",
+  "OTHER",
+] as const;
+export type RetailReturnReason = (typeof RETAIL_RETURN_REASONS)[number];
+
+/** Staff inspection decisions; only RESTOCKABLE may proceed to RESTOCKED. */
+export const RETAIL_INSPECTION_DECISIONS = [
+  "RESTOCKABLE",
+  "DAMAGED",
+  "INCOMPLETE",
+  "NOT_AS_DESCRIBED",
+] as const;
+export type RetailInspectionDecision = (typeof RETAIL_INSPECTION_DECISIONS)[number];
+
+/* ─────────────────────────────────────────────────────────────────────────────
    پرداخت — مستقل از سفارش (قاعدهٔ A11: دامنه‌های جدا)
    ──────────────────────────────────────────────────────────────────────────── */
 export const PAYMENT_STATUSES = [

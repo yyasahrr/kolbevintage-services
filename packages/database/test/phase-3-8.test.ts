@@ -23,13 +23,13 @@ describe("فاز ۳.۸ — Legacy Removal & Clean Architecture", () => {
     expect(rows).toEqual([]);
   });
 
-  it("195 جدول پس از افزودن Phase 5.9-A (customer_address) به مرز Phase 5.8، در کنار همهٔ دامنه‌های قبلی", async () => {
+  it("198 جدول پس از افزودن Phase 5.9-B (مرجوعی) به مرز Phase 5.9-A، در کنار همهٔ دامنه‌های قبلی", async () => {
     const { rows } = await withClient(DB, (client) =>
       client.query<{ count: string }>(`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`),
     );
     // The Phase 5.7 migration adds 7 promotion-owned tables to the 186-table Phase 5.6 schema;
     // 5.8 adds one more (194) and 5.9-A adds customer_address (195).
-    expect(Number(rows[0].count)).toBe(195);
+    expect(Number(rows[0].count)).toBe(198); // 5.9-B adds the 3 return tables
   });
 
   it("wholesale_order_item به canonical references اشاره می‌کند (Phase 4.2 evolved)", async () => {

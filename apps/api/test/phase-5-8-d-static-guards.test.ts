@@ -133,6 +133,22 @@ describe("Phase 5.8-D10 static guards", () => {
       );
       expect(gate, `${name} must call assertOrderOwner/assertStaff`).toBeLessThan(Number.POSITIVE_INFINITY);
     }
+    // Phase 5.9-B: the returns seam carries the same gate discipline in
+    // its own file (owner-or-staff for filing, customer-only withdrawal,
+    // staff-only transitions).
+    const returnsBody = read(path.join(SRC, "modules", "orders", "retail", "retail-returns.service.ts"));
+    for (const name of ["fileRetailReturn", "withdrawRetailReturn", "transitionRetailReturn"]) {
+      const start = returnsBody.indexOf(`async ${name}(`);
+      expect(start, `${name} exists`).toBeGreaterThan(-1);
+      const window = returnsBody.slice(start, start + 4000);
+      const gate = Math.min(
+        ...["assertReturnOwner", "assertReturnCustomer", "assertStaff"].map((fn) => {
+          const at = window.indexOf(fn);
+          return at === -1 ? Number.POSITIVE_INFINITY : at;
+        }),
+      );
+      expect(gate, `${name} must call a return gate`).toBeLessThan(Number.POSITIVE_INFINITY);
+    }
   });
 
   it("D10.8 requires fail-closed provider modes: fake providers never resolve in production", () => {

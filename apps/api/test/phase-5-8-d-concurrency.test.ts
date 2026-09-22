@@ -322,16 +322,19 @@ describe("Phase 5.8-D7 concurrency", () => {
     expect(formed.paymentStatus).toBe("paid");
   });
 
-  it("D7.6 converges two cancellers on one unpaid order: one cancel, one full refund of holds", async () => {
+  it("D7.6 (5.9-B) converges two cancellers on one unpaid order: both succeed, one cancel, one full refund of holds", async () => {
     const before = await stockOf();
     await checkoutAs("R6", tokens.custA, "ra-six");
     const [first, second] = await Promise.allSettled([
       retailOrders.cancelRetailOrder(ids.R6, buyerA()),
       retailOrders.cancelRetailOrder(ids.R6, buyerA()),
     ]);
-    expect([first.status, second.status].sort()).toEqual(["fulfilled", "rejected"]);
-    const rejected = first.status === "rejected" ? first.reason : (second as PromiseRejectedResult).reason;
-    expect(rejected?.code ?? rejected?.response?.code).toBe("RETAIL_TRANSITION_INVALID");
+    // B makes cancel idempotent: the loser converges to success instead of
+    // TRANSITION_INVALID. Every single-side-effect assertion below holds.
+    expect([first.status, second.status].sort()).toEqual(["fulfilled", "fulfilled"]);
+    for (const settled of [first, second] as PromiseFulfilledResult<any>[]) {
+      expect(settled.value.status).toBe("cancelled");
+    }
     // The winner's cancel releases the active hold in full: exactly one released row, shelf fully restored.
     const holds = await reservationRows(ids.R6);
     expect(holds).toHaveLength(1);

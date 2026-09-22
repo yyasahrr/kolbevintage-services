@@ -348,7 +348,7 @@ describe("Phase 5.8-B retail payment + inventory lifecycle", () => {
     });
     expect(replayed).toBe(false);
     expect(payment.status).toBe("verified");
-    expect(view.payment).toEqual({ method: "gateway", status: "paid", collected: true, requiresManualSettlement: false });
+    expect(view.payment).toEqual({ method: "gateway", status: "paid", collected: true, requiresManualSettlement: false, refundPending: false });
     const after = await stockOf(ids.v1);
     expect(after.onHand).toBe(before.onHand - 2);
     expect(after.reserved).toBe(before.reserved - 2);
@@ -434,9 +434,31 @@ describe("Phase 5.8-B retail payment + inventory lifecycle", () => {
     expect(await factRows(ids.G5, "retail_order.cancelled")).toHaveLength(1);
   });
 
-  it("refuses to cancel paid or already-cancelled orders", async () => {
-    await expectCode(retailOrders.cancelRetailOrder(ids.G2, { ...buyer(), reason: "too late" }), "RETAIL_CANCEL_PAID_FORBIDDEN");
-    await expectCode(retailOrders.cancelRetailOrder(ids.G5, { ...buyer(), reason: "again" }), "RETAIL_TRANSITION_INVALID");
+  it("5.9-B: paid cancel lands refund-pending with money untouched; recancel is an idempotent no-op", async () => {
+    // G2 was paid in full; B accepts the cancel into a truthful
+    // refund-required state (Checkpoint C settles the actual refund).
+    const paidBefore = await paymentRows(ids.G2);
+    expect(paidBefore.length).toBeGreaterThan(0);
+    const view = await retailOrders.cancelRetailOrder(ids.G2, { ...buyer(), reason: "too late" });
+    expect(view.status).toBe("cancelled");
+    expect(view.payment).toMatchObject({ status: "paid", collected: true, refundPending: true });
+    // No money movement: the payment rows are identical (BigInt-safe compare).
+    const shape = (rows: unknown) => JSON.stringify(rows, (_key, value) => (typeof value === "bigint" ? `bigint:${value.toString()}` : value instanceof Date ? `date:${value.toISOString()}` : value));
+    expect(shape(await paymentRows(ids.G2))).toBe(shape(paidBefore));
+    const facts = await factRows(ids.G2, "retail_order.cancelled");
+    expect(facts).toHaveLength(1);
+    expect((facts[0] as any).payload.refund_pending).toBe(true);
+    // Recancel: idempotent success, zero further side effects.
+    const stockBefore = await stockOf(ids.v1);
+    const again = await retailOrders.cancelRetailOrder(ids.G2, { ...buyer(), reason: "again" });
+    expect(again.status).toBe("cancelled");
+    expect(again.payment.refundPending).toBe(true);
+    expect(await factRows(ids.G2, "retail_order.cancelled")).toHaveLength(1);
+    expect(await stockOf(ids.v1)).toEqual(stockBefore);
+    // G5 (unpaid, already cancelled above): same idempotent no-op, never refund-pending.
+    const g5 = await retailOrders.cancelRetailOrder(ids.G5, { ...buyer(), reason: "again" });
+    expect(g5.status).toBe("cancelled");
+    expect(g5.payment.refundPending).toBe(false);
   });
 
   it("expiry reaps the hold but never the order", async () => {

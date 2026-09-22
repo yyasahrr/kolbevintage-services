@@ -25,7 +25,10 @@
 import {
   CHILD_ORDER_STATUSES,
   MAX_MONEY,
+  RETAIL_INSPECTION_DECISIONS,
   RETAIL_ORDER_STATUSES,
+  RETAIL_RETURN_REASONS,
+  RETAIL_RETURN_STATUSES,
   WHOLESALE_ORDER_STATUSES,
 } from "@kolbe/shared";
 
@@ -369,6 +372,10 @@ export const WHOLESALE_ORDER_STATUS_VALUES = WHOLESALE_ORDER_STATUSES;
 /** `purchase_order` همان «سفارش فرزند تأمین‌کننده» است (ADR-004). */
 export const PURCHASE_ORDER_STATUS_VALUES = CHILD_ORDER_STATUSES;
 export const RETAIL_ORDER_STATUS_VALUES = RETAIL_ORDER_STATUSES;
+/** Phase 5.9-B — CHECK values for the first-class return aggregate. */
+export const RETAIL_RETURN_STATUS_VALUES = RETAIL_RETURN_STATUSES;
+export const RETAIL_RETURN_REASON_VALUES = RETAIL_RETURN_REASONS;
+export const RETAIL_INSPECTION_DECISION_VALUES = RETAIL_INSPECTION_DECISIONS;
 
 /**
  * Phase 5.8 — کنشگران رویداد سفارش خرده‌فروشی (`retail_order_event.actor_role`).

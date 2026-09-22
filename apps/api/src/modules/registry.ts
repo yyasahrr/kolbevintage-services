@@ -145,6 +145,10 @@ export const MODULES: readonly ModuleDefinition[] = [
       "retail_order",
       "retail_order_item",
       "retail_order_event",
+      // Phase 5.9-B: first-class return aggregate (retail slice).
+      "retail_return_request",
+      "retail_return_item",
+      "retail_return_event",
     ],
     // Phase 5.8-A: the retail slice consumes the promotions evaluation engine
     // through the bounded RetailOrdersModule (orders/retail), deliberately NOT
@@ -163,6 +167,9 @@ export const MODULES: readonly ModuleDefinition[] = [
     // Phase 5.8-C: same treatment for shipping (retail shipment rows live
     // in the shipping tables; the Nest edge is RetailOrdersModule ->
     // ShippingModule, never back).
+    // Phase 5.9-B: same treatment for support (filed returns open a case
+    // in-transaction; the Nest edge is RetailOrdersModule -> SupportModule,
+    // never back — SupportModule is a Database/Audit/Admin leaf).
     dependsOn: ["vip", "pricing", "offers", "inventory", "suppliers", "catalog", "audit", "compliance"],
     status: "scaffolded",
     phase: 4,

@@ -220,7 +220,7 @@ describe("Phase 5.8-B retail provider callbacks + ownership", () => {
     const result = await callback(intent.providerReference, "payment.success", eventId);
     expect(result.outcome).toBe("paid");
     expect(result.replayed).toBe(false);
-    expect(result.view?.payment).toEqual({ method: "gateway", status: "paid", collected: true, requiresManualSettlement: false });
+    expect(result.view?.payment).toEqual({ method: "gateway", status: "paid", collected: true, requiresManualSettlement: false, refundPending: false });
     const rows = await paymentRows(ids.W1);
     expect(rows.find((row: any) => row.id === intent.id)?.status).toBe("verified");
     const after = await stockOf();
@@ -356,7 +356,7 @@ describe("Phase 5.8-B retail provider callbacks + ownership", () => {
 
   it("pays COD on collection proof: hold at checkout, confirm at verify (B12)", async () => {
     const body = await checkoutAs("COD1", { payMethod: "cod" });
-    expect(body.payment).toEqual({ method: "cod", status: "pending_cod", collected: false, requiresManualSettlement: false });
+    expect(body.payment).toEqual({ method: "cod", status: "pending_cod", collected: false, requiresManualSettlement: false, refundPending: false });
     expect(await inventory.listActiveReservationsByAllocation(ids.COD1)).toHaveLength(1);
     const before = await stockOf();
     const { payment } = await retailOrders.submitPaymentEvidence(ids.COD1, buyerA(), {
@@ -366,7 +366,7 @@ describe("Phase 5.8-B retail provider callbacks + ownership", () => {
       idempotencyKey: makeId("ev"),
     });
     const { view } = await retailOrders.verifyPayment(payment.id, admin(), { externalReference: "BANK-COD-1", idempotencyKey: makeId("verify") });
-    expect(view.payment).toEqual({ method: "cod", status: "paid", collected: true, requiresManualSettlement: false });
+    expect(view.payment).toEqual({ method: "cod", status: "paid", collected: true, requiresManualSettlement: false, refundPending: false });
     const after = await stockOf();
     expect(after.onHand).toBe(before.onHand - 2);
     expect(after.reserved).toBe(before.reserved - 2);
@@ -374,7 +374,7 @@ describe("Phase 5.8-B retail provider callbacks + ownership", () => {
 
   it("keeps wallet/installment truthful and retail-only (B8/B24)", async () => {
     const wallet = await checkoutAs("WAL1", { payMethod: "wallet" });
-    expect(wallet.payment).toEqual({ method: "wallet", status: "unpaid", collected: false, requiresManualSettlement: true });
+    expect(wallet.payment).toEqual({ method: "wallet", status: "unpaid", collected: false, requiresManualSettlement: true, refundPending: false });
     await expectCode(retailOrders.createPaymentIntent(ids.WAL1, buyerA(), { idempotencyKey: makeId("intent"), providerName: "fake" }), "RETAIL_INTENT_METHOD_UNSUPPORTED");
     const { payment } = await retailOrders.submitPaymentEvidence(ids.WAL1, buyerA(), {
       rail: "manual_transfer",
@@ -387,7 +387,7 @@ describe("Phase 5.8-B retail provider callbacks + ownership", () => {
     const [row] = (await paymentRows(ids.WAL1)).filter((r: any) => r.id === payment.id) as any[];
     expect(row.wholesaleOrderId).toBeNull();
     const installment = await checkoutAs("INS1", { payMethod: "installment" });
-    expect(installment.payment).toEqual({ method: "installment", status: "unpaid", collected: false, requiresManualSettlement: true });
+    expect(installment.payment).toEqual({ method: "installment", status: "unpaid", collected: false, requiresManualSettlement: true, refundPending: false });
     await expectCode(retailOrders.createPaymentIntent(ids.INS1, buyerA(), { idempotencyKey: makeId("intent"), providerName: "fake" }), "RETAIL_INTENT_METHOD_UNSUPPORTED");
   });
 

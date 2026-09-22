@@ -102,14 +102,15 @@ export class SupportCaseService {
     return "SUP-" + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString("hex").toUpperCase();
   }
 
-  async createCase(input: CreateCaseInput): Promise<typeof supportCase.$inferSelect> {
+  async createCase(input: CreateCaseInput, executor?: any): Promise<typeof supportCase.$inferSelect> {
+    const ex = (executor as any) ?? this.db;
     const caseId = `case_${crypto.randomUUID()}`;
     const publicRef = await this.generatePublicReference();
     const priority = input.priority ?? "NORMAL";
     const source = input.source ?? "PORTAL";
     const now = new Date();
 
-    const [created] = await this.db
+    const [created] = await ex
       .insert(supportCase)
       .values({
         id: caseId,
@@ -138,7 +139,7 @@ export class SupportCaseService {
           ? "ADMIN"
           : (input.requesterType as SupportAuthorType);
 
-    await this.db.insert(supportCaseStatusHistory).values({
+    await ex.insert(supportCaseStatusHistory).values({
       id: `scsh_${crypto.randomUUID()}`,
       caseId,
       fromStatus: "OPEN",
@@ -152,7 +153,7 @@ export class SupportCaseService {
 
     // Optional initial message
     if (input.initialMessage && input.initialMessage.trim().length > 0) {
-      await this.db.insert(supportMessage).values({
+      await ex.insert(supportMessage).values({
         id: `smsg_${crypto.randomUUID()}`,
         caseId,
         authorType,
@@ -168,7 +169,7 @@ export class SupportCaseService {
     // Optional initial domain relations
     if (input.relations && input.relations.length > 0) {
       for (const rel of input.relations) {
-        await this.db.insert(supportCaseRelation).values({
+        await ex.insert(supportCaseRelation).values({
           id: `screl_${crypto.randomUUID()}`,
           caseId,
           relationType: rel.relationType,
@@ -181,18 +182,21 @@ export class SupportCaseService {
       }
     }
 
-    await this.audit.record({
-      action: "support.case.created",
+    await this.audit.record(
+      {
+        action: "support.case.created",
       entityType: "support_case",
       entityId: caseId,
       actorId: input.requesterUserId ?? "system",
       actorRole: input.requesterType,
-      metadata: {
-        publicReference: publicRef,
-        category: input.category,
-        priority,
+        metadata: {
+          publicReference: publicRef,
+          category: input.category,
+          priority,
+        },
       },
-    });
+      ex,
+    );
 
     return created;
   }

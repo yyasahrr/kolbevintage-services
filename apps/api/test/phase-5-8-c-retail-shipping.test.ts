@@ -664,9 +664,13 @@ describe("Phase 5.8-C retail shipping + fulfillment lifecycle", () => {
     expect(await factRows(ids.CC21, "retail_order.cancelled")).toHaveLength(1);
   });
 
-  it("C22 replays cancel harmlessly: stable state, single fact", async () => {
+  it("C22 (5.9-B) replays cancel idempotently: success, stable state, single fact", async () => {
     const before = await stockOf(ids.v1);
-    await expectCode(retailOrders.cancelRetailOrder(ids.CC21, { actorId: users.custA, actorRole: "customer" }), "RETAIL_TRANSITION_INVALID");
+    // B makes the replay succeed (idempotent) instead of throwing: every
+    // stability assertion below is preserved verbatim.
+    const replayed = await retailOrders.cancelRetailOrder(ids.CC21, { actorId: users.custA, actorRole: "customer" });
+    expect(replayed.status).toBe("cancelled");
+    expect(replayed.payment.refundPending).toBe(false);
     expect(await factRows(ids.CC21, "retail_order.cancelled")).toHaveLength(1);
     const [shipment] = await shipmentRows(ids.CC21);
     expect((shipment as any).status).toBe("cancelled");
@@ -675,16 +679,35 @@ describe("Phase 5.8-C retail shipping + fulfillment lifecycle", () => {
     expect(after.reserved).toBe(before.reserved);
   });
 
-  it("C23 refuses paid cancel without money movement", async () => {
+  it("C23 (5.9-B) accepts paid cancel into refund-pending without money movement", async () => {
     await checkoutAs("PC23");
     await payOrderGateway("PC23");
-    await expectCode(retailOrders.cancelRetailOrder(ids.PC23, { actorId: users.custA, actorRole: "customer" }), "RETAIL_CANCEL_PAID_FORBIDDEN");
-    const view = await retailOrders.getRetailOrder({ userId: users.custA, role: "customer" }, ids.PC23);
-    expect(view.status).toBe("placed");
-    expect(view.payment.status).toBe("paid");
+    const before = await db.select().from(schema.payment).where(eq(schema.payment.retailOrderId, ids.PC23));
+    expect(before).toHaveLength(1);
+    const view = await retailOrders.cancelRetailOrder(ids.PC23, { actorId: users.custA, actorRole: "customer" });
+    expect(view.status).toBe("cancelled");
+    expect(view.payment).toMatchObject({ status: "paid", refundPending: true });
+    // Money untouched: the verified payment row is identical, so the
+    // refund Checkpoint C settles later is computed on honest state.
     const payments = await db.select().from(schema.payment).where(eq(schema.payment.retailOrderId, ids.PC23));
     expect(payments).toHaveLength(1);
     expect((payments[0] as any).status).toBe("verified");
+    const shape = (rows: unknown) => JSON.stringify(rows, (_key, value) => (typeof value === "bigint" ? `bigint:${value.toString()}` : value instanceof Date ? `date:${value.toISOString()}` : value));
+    expect(shape(payments)).toBe(shape(before));
+    const facts = await factRows(ids.PC23, "retail_order.cancelled");
+    expect(facts).toHaveLength(1);
+    expect((facts[0] as any).payload.refund_pending).toBe(true);
+    const pending = await db
+      .select()
+      .from(schema.auditLog)
+      .where(
+        and(
+          eq(schema.auditLog.entityType, "retail_order"),
+          eq(schema.auditLog.entityId, ids.PC23),
+          eq(schema.auditLog.action, "retail_order.cancel_pending_refund"),
+        ),
+      );
+    expect(pending).toHaveLength(1);
   });
 
   it("C24 cannot touch wholesale shipments from retail paths", async () => {

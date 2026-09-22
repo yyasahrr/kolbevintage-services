@@ -210,7 +210,7 @@ describe("Phase 5.8-A retail order checkout", () => {
     expect(body.totals).toEqual({ itemsTotal: "500000", promotionDiscountTotal: "0", shippingTotal: "89000", grandTotal: "589000" });
     expect(body.lines).toHaveLength(1);
     expect(body.lines[0]).toMatchObject({ productId: ids.p1, variantId: ids.v1, quantity: 2, unitPrice: "250000", baseLineTotal: "500000", promotionDiscount: "0", lineTotal: "500000" });
-    expect(body.payment).toEqual({ method: "gateway", status: "unpaid", collected: false, requiresManualSettlement: true });
+    expect(body.payment).toEqual({ method: "gateway", status: "unpaid", collected: false, requiresManualSettlement: true, refundPending: false });
     expect(body.legal).toEqual({ mode: "off", snapshotId: null });
     expect(body.priceVersion).toMatch(/^rpv1\.[0-9a-f]{16}$/);
     expect(body.promotionTermsHash).toMatch(/^[0-9a-f]{64}$/);
@@ -486,10 +486,10 @@ describe("Phase 5.8-A retail order checkout", () => {
 
   it("keeps payment honest: COD is pending (never collected), providers stay unpaid", async () => {
     const cod = await postOrder(orderBody({ payMethod: "cod" }), { token: tokens.custA }).expect(201);
-    expect(cod.body.payment).toEqual({ method: "cod", status: "pending_cod", collected: false, requiresManualSettlement: false });
+    expect(cod.body.payment).toEqual({ method: "cod", status: "pending_cod", collected: false, requiresManualSettlement: false, refundPending: false });
     expect(cod.body.totals.shippingTotal).toBe("0");
     const gateway = await postOrder(orderBody({ payMethod: "gateway" }), { token: tokens.custA }).expect(201);
-    expect(gateway.body.payment).toEqual({ method: "gateway", status: "unpaid", collected: false, requiresManualSettlement: true });
+    expect(gateway.body.payment).toEqual({ method: "gateway", status: "unpaid", collected: false, requiresManualSettlement: true, refundPending: false });
     const db = drizzle(pool, { schema: schema as any });
     expect(await db.select().from(schema.payment)).toHaveLength(0);
     expect(await db.select().from(schema.shipment)).toHaveLength(0);

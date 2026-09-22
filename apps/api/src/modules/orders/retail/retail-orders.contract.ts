@@ -29,7 +29,10 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_AMOUNT_MISMATCH" ||
       code === "RETAIL_PROVIDER_EVENT_REJECTED" ||
       code === "RETAIL_FULFILLMENT_NOT_READY" ||
-      code === "RETAIL_SHIPMENT_NOT_READY"
+      code === "RETAIL_SHIPMENT_NOT_READY" ||
+      code === "RETAIL_RETURN_ORDER_NOT_DELIVERED" ||
+      code === "RETAIL_RETURN_QUANTITY_EXCEEDED" ||
+      code === "RETAIL_RETURN_NOT_RESTOCKABLE"
     ) {
       status = 422;
     } else if (code === "RETAIL_WEBHOOK_UNAUTHENTICATED" || code === "RETAIL_GUEST_CAPABILITY_MISSING") {
@@ -41,11 +44,13 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_ALREADY_PAID" ||
       code === "RETAIL_CANCEL_PAID_FORBIDDEN" ||
       code === "RETAIL_SHIPMENT_QUANTITY_EXCEEDED" ||
-      code === "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS"
+      code === "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS" ||
+      code === "RETAIL_CANCEL_ROUTES_TO_RETURN"
     ) {
       status = 409;
     } else if (
       code === "RETAIL_ORDER_FORBIDDEN" ||
+      code === "RETAIL_RETURN_FORBIDDEN" ||
       code === "RETAIL_GUEST_CAPABILITY_REQUIRED" ||
       code === "RETAIL_GUEST_CAPABILITY_INVALID" ||
       code === "RETAIL_GUEST_CAPABILITY_REVOKED"
@@ -53,6 +58,7 @@ export class RetailDomainError extends DomainError {
       status = 403;
     } else if (
       code === "RETAIL_ORDER_NOT_FOUND" ||
+      code === "RETAIL_RETURN_NOT_FOUND" ||
       code === "RETAIL_PRODUCT_NOT_FOUND" ||
       code === "RETAIL_VARIANT_NOT_FOUND"
     ) {
@@ -134,7 +140,7 @@ export type RetailOrderView = {
   address: Record<string, string>;
   totals: RetailOrderTotalsView;
   lines: RetailOrderLineView[];
-  payment: { method: string; status: string; collected: boolean; requiresManualSettlement: boolean };
+  payment: { method: string; status: string; collected: boolean; requiresManualSettlement: boolean; refundPending: boolean };
   legal: { mode: "off" | "enforce"; snapshotId: string | null };
   priceVersion: string | null;
   promotionTermsHash: string | null;
@@ -146,4 +152,42 @@ export type RetailOrderView = {
    * replay, never included in reads.
    */
   guestCapability?: string;
+};
+
+/** Phase 5.9-B — one filed return line (input). */
+export type RetailReturnLineInput = {
+  orderItemId: string;
+  quantity: number;
+};
+
+/** Phase 5.9-B — return detail view (request + lines + history). */
+export type RetailReturnView = {
+  id: string;
+  orderId: string;
+  orderCode: string;
+  status: string;
+  reason: string;
+  note: string | null;
+  supportCaseId: string | null;
+  receivedAt: string | null;
+  inspectedAt: string | null;
+  inspectionDecision: string | null;
+  version: number;
+  items: Array<{
+    id: string;
+    orderItemId: string;
+    sku: string | null;
+    productName: string | null;
+    quantity: number;
+  }>;
+  history: Array<{
+    fromStatus: string | null;
+    toStatus: string;
+    actorRole: string | null;
+    reason: string | null;
+    returnVersion: number;
+    createdAt: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
 };
