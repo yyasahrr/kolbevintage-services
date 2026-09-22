@@ -133,6 +133,14 @@ describe("Phase 5.8-D10 static guards", () => {
       );
       expect(gate, `${name} must call assertOrderOwner/assertStaff`).toBeLessThan(Number.POSITIVE_INFINITY);
     }
+    // Phase 5.9-C/D: the refund mutators carry the money-act gate
+    // (assertRefundStaff: admin/finance + identity) in the same file.
+    for (const name of ["requestRetailRefund", "approveRetailRefund", "completeRetailRefund", "failRetailRefund"]) {
+      const start = body.indexOf(`async ${name}(`);
+      expect(start, `${name} exists`).toBeGreaterThan(-1);
+      const window = body.slice(start, start + 4000);
+      expect(window, `${name} must call assertRefundStaff`).toContain("assertRefundStaff");
+    }
     // Phase 5.9-B: the returns seam carries the same gate discipline in
     // its own file (owner-or-staff for filing, customer-only withdrawal,
     // staff-only transitions).

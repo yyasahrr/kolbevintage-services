@@ -1408,6 +1408,19 @@ export class RetailOrdersService {
     });
   }
 
+  /**
+   * Phase 5.9-D — refund acts are money acts, so the gate matches the money
+   * owner (PaymentsService: admin/finance) exactly, plus a non-null staff
+   * identity. Deliberately NOT `assertStaff`: fulfillment's admin/system
+   * rule would admit `system` (no system-driven refund path exists — it
+   * would only die later with a confusing finance 403) and refuse `finance`
+   * (which verifies money-in and refunds wholesale-side alike).
+   */
+  private assertRefundStaff(actor: { actorId: string | null; actorRole: string }) {
+    if ((actor.actorRole === "admin" || actor.actorRole === "finance") && actor.actorId) return;
+    throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", `role ${actor.actorRole} cannot drive retail refund actions`);
+  }
+
   // ── Phase 5.9 Checkpoint C: retail refunds on the generic engine ──
   // Retail is the orchestrator (order-state gates, line-basis reads, the
   // cross-aggregate facts); PaymentsService owns every money rule, the
@@ -1426,7 +1439,7 @@ export class RetailOrdersService {
     input: { amount: string; lines?: Array<{ retailOrderItemId: string; quantity: number }>; reason?: string; idempotencyKey: string },
   ): Promise<{ view: RetailOrderView; refund: any; replayed: boolean }> {
     const key = parseIdempotencyKey(input.idempotencyKey);
-    this.assertStaff(actor);
+    this.assertRefundStaff(actor);
     const requestedLines = (input.lines || []).map((l) => ({ retailOrderItemId: String((l as any)?.retailOrderItemId || ""), quantity: Number((l as any)?.quantity) }));
     return this.db.transaction(async (tx) => {
       const order = await this.repo.findByIdForUpdate(orderId, tx);
@@ -1540,7 +1553,7 @@ export class RetailOrdersService {
     input: { idempotencyKey: string; reason?: string },
   ): Promise<{ refund: any; replayed: boolean }> {
     const key = parseIdempotencyKey(input.idempotencyKey);
-    this.assertStaff(actor);
+    this.assertRefundStaff(actor);
     const row = await this.payments.getRefundRowById(refundId);
     if (!row || !row.retail_order_id) throw new RetailDomainError("RETAIL_REFUND_EXPECTED", `refund ${refundId} is not a retail refund`);
     return this.payments.approveRefund({ refundId, adminUserId: actor.actorId as string, idempotencyKey: key, reason: input.reason, actorRole: actor.actorRole });
@@ -1557,7 +1570,7 @@ export class RetailOrdersService {
     input: { externalReference: string; idempotencyKey: string },
   ): Promise<{ view: RetailOrderView; refund: any; replayed: boolean }> {
     const key = parseIdempotencyKey(input.idempotencyKey);
-    this.assertStaff(actor);
+    this.assertRefundStaff(actor);
     const row = await this.payments.getRefundRowById(refundId);
     if (!row || !row.retail_order_id) throw new RetailDomainError("RETAIL_REFUND_EXPECTED", `refund ${refundId} is not a retail refund`);
     const retailOrderId = String(row.retail_order_id);
@@ -1616,7 +1629,7 @@ export class RetailOrdersService {
     input: { reason: string; idempotencyKey: string },
   ): Promise<{ refund: any; replayed: boolean }> {
     const key = parseIdempotencyKey(input.idempotencyKey);
-    this.assertStaff(actor);
+    this.assertRefundStaff(actor);
     const row = await this.payments.getRefundRowById(refundId);
     if (!row || !row.retail_order_id) throw new RetailDomainError("RETAIL_REFUND_EXPECTED", `refund ${refundId} is not a retail refund`);
     return this.payments.failRefund({ refundId, adminUserId: actor.actorId as string, reason: input.reason, idempotencyKey: key, actorRole: actor.actorRole });

@@ -520,3 +520,98 @@ account/profile access.
   Pre-existing, wholesale-owned, out of C scope; the C wholesale
   fixture passes `status: "draft"` explicitly. Not changed: C must
   not move wholesale behavior.
+
+## 11. Checkpoint D as-built (authority audits + failure/concurrency/security + static guards)
+
+**Verdict: no migration, no new HTTP routes, one surgical hardening.**
+D froze the A/B/C surface by auditing every write authority
+(D1–D5), proving races and failures converge (D6–D7), attacking
+the trust boundary (D8), ruling out a namespace migration (D11),
+and pinning the audit verdicts as executable static guards (D10).
+The staff refund HTTP surface stays deliberately absent (see §9
+scope): service-level RBAC (`assertRefundStaff` / owner checks) is
+the enforcement point, and D8 proves it at the seam and over HTTP
+where routes exist.
+
+**Authority audits (all confined, zero code change).** D1:
+customer-account writes are confined to the `customerAddress`
+repository; the profile path mutates only via AuthService. D2:
+return-table writes live only in the retail-returns repository +
+service and the retail registry; nothing else names them. D3: all
+refund/ledger writes are the 12 `payments.service.ts` sites the C
+engine added — retail names appear in none of them; retail calls
+`createRetailRefund` and never touches ledger rows. D5: the guest
+reader is a single GET with zero service writes. D9: the legacy
+retail compat proxy is untouched and write-free; nothing legacy
+was removed or weakened (standing invariant holds: zero file
+deletions across the whole phase).
+
+**No-migration verdict (D11).** The retail return tables and the
+C-extended refund/ledger rows share no namespace with wholesale:
+refund uniqueness is the per-side partial uniques (`refund` /
+`refund_wholesale_order_id`), ledger once-ness is the appendix
+unique, and retail vs wholesale linkage stays side-pinned. D10
+pins the schema: 198 tables, no new D migration, retail uniques
+untouched.
+
+**Hardening found by D (1, regression-free).** The four retail
+refund mutators moved from `assertStaff` (admin/system, no
+identity check) to a new `assertRefundStaff` (admin/finance with
+a non-null identity). Refund acts are money acts, so the gate now
+matches the money owner exactly: finance verifies money-in and
+refunds wholesale, and there was no honest reason finance could
+not refund retail — while `system` used to pass the retail gate
+only to die on a confusing downstream finance 403. The C suite
+is unaffected (it acts as admin; the code is unchanged).
+
+**Deliberately deferred (documented, money-safe).** Return filing
+carries no idempotency key: the advisory lock plus the encumbered
+re-read converges racing filings (D7 proves it), and a double file
+is money-safe downstream because the refund units guard caps
+payout per line. A key migration would buy staff convenience only,
+so D stays migration-free like 5.8-D; convergence is pinned
+instead of keys.
+
+**Failure injection (D6, 8 tests).** Refunds price from stored
+basis after the promo dies mid-flight; failed refunds are
+terminal for completion yet refileable with a fresh key; same-key
+refile after a fail returns the failed row (the journal wins);
+double completion converges on first-evidence-wins with a single
+OUT; the evidence boundary holds (3 chars refused, 4 accepted);
+the relay skips refund facts with commerce untouched; rejected
+filings persist nothing (no case, no rows); a restock with a
+nulled variant fails closed (INSPECTED kept, stock untouched) and
+un-wedges on repair.
+
+**Concurrency (D7, 7 tests).** Same-key double filing collapses
+to one row + one replay + one fact; racing whole-filings converge
+(one requested, loser `REFUND_EXCEEDS_ALLOCATED`); racing
+line-filings converge on the same units (loser
+`REFUND_LINE_QUANTITY_EXCEEDED`, never over-drawn); racing
+completions converge on one OUT with first evidence kept; racing
+approve + fail ends in exactly one honest state either order;
+racing return filings never over-encumber a line (loser
+`RETAIL_RETURN_QUANTITY_EXCEEDED`); racing withdraw + approve
+converges (exactly one wins).
+
+**Security (D8, 8 tests).** Finance drives the full refund cycle
+(wholesale parity); system and null identities are refused on all
+four refund acts with the row untouched; customers are refused on
+completion and failure (filing/approval were pinned in C); no
+customer HTTP exists for refunds (404 even for admins); return
+withdrawal is owner-only over HTTP (cross-owner 403, anonymous
+401, row untouched); the customer namespace is buyer-only
+(`@Roles("customer", "vip")` refuses even admins at HTTP — staff
+filing lives at the service seam and pins the order owner); staff
+identity is fungible on refunds (any staffer advances another's
+filing); cross-order line ids are rejected with the same code as
+ghost ids, so line ids cannot be probed across orders.
+
+**Coverage.** New `phase-5-9-d-failure-injection.test.ts` (8),
+`phase-5-9-d-concurrency.test.ts` (7),
+`phase-5-9-d-security.test.ts` (8), and
+`phase-5-9-d-static-guards.test.ts` (8: write confinement,
+money-act gate, guest GET-only, schema pins, error vocabulary);
+the 5.8 guard file keeps its 8 tests with the refund-mutator
+assertion extended in place. A/B/C regression: zero — full
+`test:all` green, counts pinned below.
