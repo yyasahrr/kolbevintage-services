@@ -4,6 +4,7 @@ import { RETAIL_PAYMENT_METHODS } from "@kolbe/database";
 import { MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
 import { KOLBE_DB, type KolbeDatabase } from "../../../database/database.module";
 import { AuditService } from "../../audit/audit.service";
+import { CatalogDomainError } from "../../catalog/catalog.logic";
 import { ComplianceService } from "../../compliance/compliance.service";
 import { InventoryService } from "../../inventory/inventory.service";
 import { OffersService } from "../../offers/offers.service";
@@ -49,9 +50,18 @@ function text(value: unknown, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
+// Checkpoint D hardening: free-text DISPLAY fields (contact name, address
+// lines) are persisted and re-rendered by admin UIs, exports, and future
+// notification channels, so angle brackets are stripped at the trust
+// boundary. Identifiers keep strict `text()` — sanitizing them could
+// collapse an attack string onto a real id.
+function displayText(value: unknown, maxLength: number): string {
+  return text(value, maxLength).replace(/[<>]/g, "");
+}
+
 function parseContact(input: unknown): ParsedContact {
   const record = (input ?? {}) as Record<string, unknown>;
-  const name = text(record.name, 160);
+  const name = displayText(record.name, 160);
   const phone = text(record.phone, 32);
   const email = text(record.email, 254) || null;
   if (!name) throw new RetailDomainError("RETAIL_CUSTOMER_NAME_REQUIRED", "customer name is required");
@@ -68,7 +78,7 @@ function parseContact(input: unknown): ParsedContact {
 
 function parseAddress(input: unknown): ParsedAddress {
   const record = (input ?? {}) as Record<string, unknown>;
-  const field = (key: string, maxLength: number) => text(record[key], maxLength);
+  const field = (key: string, maxLength: number) => displayText(record[key], maxLength);
   const province = field("province", 64);
   const city = field("city", 64);
   const address = field("address", 512);
@@ -429,17 +439,28 @@ export class RetailOrdersService {
       if (available < line.quantity) {
         throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `line ${line.lineId}: insufficient KOLBE stock`);
       }
-      await this.inventory.reserveRetail({
-        variantId: line.variantId,
-        sellerId,
-        quantity: line.quantity,
-        allocationId: orderId,
-        requester,
-        reason: `retail checkout reserve -> ${orderCode}`,
-        idempotencyKey: `${key}:inv:${line.lineId}`,
-        expiresInMinutes: RETAIL_RESERVATION_TTL_MINUTES,
-        executor: tx,
-      });
+      // Checkpoint D hardening: the pre-flight above and this reserve are
+      // not atomic — a racing checkout can claim the last units between
+      // them. Map the reserve shortfall to the same retail code so the loser
+      // always fails 409, never 500.
+      try {
+        await this.inventory.reserveRetail({
+          variantId: line.variantId,
+          sellerId,
+          quantity: line.quantity,
+          allocationId: orderId,
+          requester,
+          reason: `retail checkout reserve -> ${orderCode}`,
+          idempotencyKey: `${key}:inv:${line.lineId}`,
+          expiresInMinutes: RETAIL_RESERVATION_TTL_MINUTES,
+          executor: tx,
+        });
+      } catch (error) {
+        if (error instanceof CatalogDomainError && (error as any).code === "INSUFFICIENT_AVAILABLE") {
+          throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `line ${line.lineId}: insufficient KOLBE stock`);
+        }
+        throw error;
+      }
     }
 
     const paymentStatus = payMethod === "cod" ? "pending_cod" : "unpaid";
@@ -1122,6 +1143,10 @@ export class RetailOrdersService {
     return this.db.transaction(async (tx) => {
       const order = await this.repo.findByIdForUpdate(orderId, tx);
       if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      // Checkpoint D hardening: cancel mutates commerce, so it is
+      // owner-or-staff like every other retail action (guests carry no
+      // identity; guest-order capability is a 5.9 HTTP decision).
+      this.assertOrderOwner(order, actor);
       if (order.paymentStatus === "paid") {
         throw new RetailDomainError("RETAIL_CANCEL_PAID_FORBIDDEN", "paid orders cannot be cancelled without a refund");
       }
@@ -1660,6 +1685,16 @@ export class RetailOrdersService {
         throw new ShippingDomainError("SHIPMENT_ORDER_MISMATCH", `Shipment ${shipmentId} is not a retail shipment`);
       }
       const orderId = locked.retailOrderId as string;
+      // Checkpoint D hardening: a parcel may be LABELLED before pack, but
+      // custody transfer demands a packed (or already shipped, for later
+      // parcels) order. Handing off pre-pack used to succeed silently at the
+      // parcel level while the order never advanced — and the consumed
+      // handoff then wedged the order (no path from packed to shipped).
+      const preCheck = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!preCheck) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      if (preCheck.orderStatus !== "packed" && preCheck.orderStatus !== "shipped") {
+        throw new RetailDomainError("RETAIL_SHIPMENT_NOT_READY", `order must be packed before handoff (is ${preCheck.orderStatus})`);
+      }
       let claim;
       try {
         claim = await this.shipping.claimCommand(tx, { ...scope, requestHash: canonicalHash({ to: "handed_over" }) });

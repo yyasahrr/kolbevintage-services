@@ -808,3 +808,104 @@ tests: linkage + predicate rejections, item linkage + uniqueness,
 twin key acceptance, fact acceptance). B regression: zero — full
 `test:all` green (23 shared + 115 database + 1094 api + 153 next =
 1385).
+
+## 20. Checkpoint D as-built (authority audits + failure/concurrency/security + static guards)
+
+**Verdict: no migration, no new HTTP routes, four surgical hardenings.**
+D froze the B/C surface by auditing every write authority (D1–D5),
+proving races and failures converge (D6–D7), attacking the trust
+boundary (D8), ruling out a namespace migration (D11), and pinning the
+audit verdicts as executable static guards (D10). The operator HTTP
+surface stays deferred (see §14): service-level RBAC (`assertStaff` /
+owner checks) is the enforcement point, and D8 proves it at the seam.
+
+**Authority audits (all clean, zero code change).** D1: every
+`retail_order*` write is confined to `retail-orders.repository.ts`;
+the Next `kolbe-api.ts` retail handler is a translate-and-forward
+compat proxy (no writes). D2: `retail-pricing.ts` is translation +
+channel policy only (no price computation); the phase-4-5 adapter
+money mapping is wholesale-BFF display. D3: inventory mutations go
+only through `InventoryService`; the two `database.ts` INSERTs are a
+production-gated demo seed (`ON CONFLICT DO NOTHING`, non-retail).
+D4: `paymentStatus` is written only by the payment row owner
+(`markPaid` path); Nest returns `collected:false` plus the real
+status and never fabricates `pending_gateway`. D5: `shipment*` writes
+are confined to `shipping.service.ts`. D9: no legacy removal is
+justified — the pricing translator, the compat proxy route, and the
+gated seed all stay; D10.4 pins them write-free.
+
+**No-migration verdict (D11).** Retail and wholesale namespaces do
+not collide: `shipment_event` uniqueness is `(provider,
+externalEventId)`, `retail_order` idempotency is its own unique key,
+and wholesale allocations use the `alloc_*` namespace with order
+linkage while retail reserves use `rord_*` with a null wholesale
+order id (the API shape separates them: `reserveRetail` takes no
+order parameter). Prefix discipline is deliberately app-level — DDL
+must not hardcode id factories — so D10.5 asserts no migration
+mentions a retail prefix. The `wholesale_order` default-vs-CHECK
+drift spotted during the audit is wholesale-owned and deferred to
+the wholesale owner.
+
+**Failure injection (D6, 8 tests).** Carrier outage parks as
+pending + failed command and resumes on the same key with no second
+parcel; tracking outage parks a re-claimable inbox failure and
+applies on redelivery; handoff on a never-finalized parcel is
+refused; pre-handoff scans are ignored without auto-advance;
+unauthenticated/unknown-provider tracking persists nothing; cancel
+after handoff is refused with both sides intact; a relay batch with
+no templates fails safely with commerce untouched; a COD shipment
+with a released hold and a bare shelf fails closed with no parcel
+and nothing resurrected.
+
+**Concurrency (D7, 7 tests).** Same-key double checkout converges
+(advisory lock: one 201 + one 200 replay, one active hold); racing
+confirms/cancels converge (one winner, loser
+`RETAIL_TRANSITION_INVALID`); racing ship-all converges (one parcel,
+loser `RETAIL_SHIPMENT_QUANTITY_EXCEEDED`, single COD settlement:
+released original + one confirmed re-cut); two buyers racing the
+last stock converge (one 201, loser 409, shelf never negative);
+double-submitted evidence and double verify converge (one row, one
+paid fact, exactly one `replayed:true`).
+
+**Security (D8, 11 tests).** Cross-owner reads refused over HTTP
+and at the seam (403 `RETAIL_ORDER_FORBIDDEN`); cross-owner cancel,
+evidence, and intent refused (IDOR writes, nothing persisted);
+every staff action (confirm/pack/create/handoff/manual-tracking)
+refused from customer tokens; verify refused from non-staff roles;
+drifted amounts and wrong rails refused with zero payment rows;
+backward tracking kept as an ignored fact (never applied, never
+resurrected); unsigned callbacks kept as ignored facts while
+unknown providers are refused before the inbox; confirmed-order
+parcel creation pinned legal with handoff still fenced; staff
+identity pinned fungible (any admin may hand off; the fence is the
+role); markup in contact fields stripped at the trust boundary;
+foreign line ids rejected and carrier scans bound to their own
+parcel.
+
+**Hardenings found by D (4, all regression-free).** (1) Cancel now
+gates on `assertOrderOwner` — it was the only commerce mutator
+without an owner/staff gate. (2) Handoff now requires a packed (or
+already shipped, for later parcels) order: pre-pack handoff used to
+succeed silently at the parcel level while the order never
+advanced, and the consumed handoff then wedged the order (no path
+from packed to shipped) — now `RETAIL_SHIPMENT_NOT_READY`. (3)
+Free-text display fields (contact name, address lines) strip angle
+brackets at the trust boundary; identifiers keep strict parsing so
+an attack string can never collapse onto a real id. (4) The
+checkout reserve shortfall maps to `RETAIL_INSUFFICIENT_STOCK`:
+the pre-flight and the reserve are not atomic, and a racing loser
+used to leak a 500 instead of the honest 409.
+
+**Coverage.** New `phase-5-8-d-failure-injection.test.ts` (8),
+`phase-5-8-d-concurrency.test.ts` (7),
+`phase-5-8-d-security.test.ts` (11), and
+`phase-5-8-d-static-guards.test.ts` (8: repository-only retail
+writes, shipping-service-only shipment writes, payment-owner-only
+status mutation, write-free legacy surface, prefix-free DDL,
+frozen order machine, owner-or-staff gate on all 8 mutators,
+fake-provider production refusal). B/C/A regression: zero — full
+`test:all` green (23 shared + 115 database + 1128 api + 153 next =
+1419). One transient load-flaky wholesale e2e
+(`phase-4-7-1-cross-domain`, passes standalone and on rerun) is
+unrelated: it runs before any D file and no D change touches a
+shared path.
