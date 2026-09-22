@@ -4,8 +4,8 @@ import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { Client, Pool } from "pg";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "../../packages/database/src/schema/tables";
 import { RETAIL_NEST_ERROR_MAP } from "../../frontend-next/server/retail-pricing";
@@ -231,11 +231,16 @@ describe("Phase 5.8-A retail order checkout", () => {
     expect(order.amountSource).toBe("server");
     // Frozen legacy mirrors.
     expect(order.paymentMethod).toBe(order.payMethod);
+    expect(order.payMethod).toBe("gateway");
+    expect(order.paymentStatus).toBe("unpaid");
     expect(order.fulfillmentStatus).toBe("processing");
     expect(Array.isArray(order.lines)).toBe(true);
     const items = await db.select().from(schema.retailOrderItem).where(eq(schema.retailOrderItem.orderId, ids.order1));
     expect(items).toHaveLength(1);
     expect(items[0].variantId).toBe(ids.v1);
+    expect(items[0].productId).toBe(ids.p1);
+    expect(items[0].productName).toBe("Order Product One");
+    expect(String(items[0].unitPrice)).toBe("250000");
     expect(BigInt(items[0].baseLineTotal)).toBe(BigInt(items[0].unitPrice) * BigInt(items[0].quantity));
     expect(BigInt(items[0].lineTotal)).toBe(BigInt(items[0].baseLineTotal) - BigInt(items[0].promotionDiscount));
     const events = await db.select().from(schema.retailOrderEvent).where(eq(schema.retailOrderEvent.orderId, ids.order1));
@@ -375,9 +380,76 @@ describe("Phase 5.8-A retail order checkout", () => {
       expect(typeof bound.body.legal.snapshotId).toBe("string");
       const [stored] = await db.select().from(schema.retailOrder).where(eq(schema.retailOrder.id, bound.body.id));
       expect(stored.legalSnapshotId).toBe(bound.body.legal.snapshotId);
+      // Audit records the gate outcome (re-homed 4.7.5 pin).
+      const [created] = await db
+        .select()
+        .from(schema.auditLog)
+        .where(and(eq(schema.auditLog.action, "retail_order.created"), eq(schema.auditLog.entityId, bound.body.id)));
+      expect((created.after as any).legal_gate).toBe("enforce");
+      expect((created.after as any).legal_snapshot_id).toBe(bound.body.legal.snapshotId);
+      // Snapshot + per-document acceptances are bound to the order code.
+      const [snap] = await db
+        .select()
+        .from(schema.transactionComplianceSnapshot)
+        .where(eq(schema.transactionComplianceSnapshot.retailOrderRef, bound.body.orderCode));
+      expect(snap.id).toBe(bound.body.legal.snapshotId);
+      expect(snap.userId).toBe(users.custA);
+      const acceptances = await db
+        .select()
+        .from(schema.legalPolicyAcceptance)
+        .where(eq(schema.legalPolicyAcceptance.orderRef, bound.body.orderCode));
+      expect(acceptances).toHaveLength(policyIds.length);
     } finally {
       delete process.env.KOLBE_RETAIL_LEGAL_GATE;
     }
+  });
+
+  it("binds the server-priced facts: tampered browser money never reaches the legal snapshot", async () => {
+    process.env.KOLBE_RETAIL_LEGAL_GATE = "enforce";
+    const compliance = app.get(ComplianceService);
+    const seen: any[] = [];
+    const original = compliance.bindRetailCheckout.bind(compliance);
+    const spy = vi.spyOn(compliance, "bindRetailCheckout").mockImplementation(async (input: any, executor?: any) => {
+      seen.push(input);
+      return original(input, executor);
+    });
+    try {
+      const res = await postOrder(
+        orderBody({
+          acceptedPolicyDocumentIds: policyIds,
+          lines: [{ productId: ids.p1, variantId: ids.v1, quantity: 2, presentedUnitPrice: 1, presentedName: "جعلی" }],
+        }),
+        { token: tokens.custA },
+      ).expect(201);
+      expect(res.body.totals.itemsTotal).toBe("500000");
+      expect(seen).toHaveLength(1);
+      const facts = seen[0].facts;
+      expect(facts.orderRef).toBe(res.body.orderCode);
+      expect(facts.lines).toHaveLength(1);
+      expect(facts.lines[0].unitPrice).toBe("250000");
+      expect(facts.lines[0].lineTotal).toBe("500000");
+      expect(facts.totals).toMatchObject({ items: "500000", grand: res.body.totals.grandTotal });
+      expect(seen[0].subject).toMatchObject({ userId: users.custA });
+      expect(seen[0].acceptedPolicyDocumentIds).toEqual(policyIds);
+    } finally {
+      spy.mockRestore();
+      delete process.env.KOLBE_RETAIL_LEGAL_GATE;
+    }
+  });
+
+  it("off (default): checkout succeeds with no binding and no legal rows", async () => {
+    delete process.env.KOLBE_RETAIL_LEGAL_GATE;
+    const res = await postOrder(orderBody(), { token: tokens.custA }).expect(201);
+    expect(res.body.legal).toEqual({ mode: "off", snapshotId: null });
+    const db = drizzle(pool, { schema: schema as any });
+    const [stored] = await db.select().from(schema.retailOrder).where(eq(schema.retailOrder.id, res.body.id));
+    expect(stored.legalSnapshotId).toBeNull();
+    expect(
+      await db.select().from(schema.transactionComplianceSnapshot).where(eq(schema.transactionComplianceSnapshot.retailOrderRef, res.body.orderCode)),
+    ).toHaveLength(0);
+    expect(
+      await db.select().from(schema.legalPolicyAcceptance).where(eq(schema.legalPolicyAcceptance.orderRef, res.body.orderCode)),
+    ).toHaveLength(0);
   });
 
   it("scopes GET by ownership: owner and admin read, others are forbidden", async () => {

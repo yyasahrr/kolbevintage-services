@@ -461,7 +461,7 @@ translation-only — `priceRetailOrder`, the TS price book, settlement
 helpers and parsers deleted). A static test pins zero
 `retail_order(_item)` references outside comments in the compat server.
 
-**Coverage (A24).** 90 tests: Nest pricing 12 / promotions 9 / order 20
+**Coverage (A24).** 92 tests: Nest pricing 12 / promotions 9 / order 22
 / security 8, DB migration 4, Next checkout 14 / legal-gate 5 /
 payment-honesty 7 / proxy 11 (incl. the static no-touch pin).
 
@@ -470,3 +470,69 @@ DB range CHECK; quantity positivity is service-enforced; REMOVE-LATER
 columns stay; no release/confirm lifecycle or reaper scheduling yet; no
 payment orchestration; no shipment aggregate; no admin retail surface;
 guest coupon-abuse hardening is per-order only.
+
+## 17. Test continuity record (zero-regression proof)
+
+No retail regression file was deleted: `retail-checkout.test.ts`,
+`retail-legal-gate.test.ts` and `retail-payment-honesty.test.ts` are
+recorded as **modifications** (same paths, same test titles), plus one
+addition (`phase-5-8-retail-proxy.test.ts`). Every behavioral assertion
+whose implementation target moved from the Next writer to Nest is
+re-homed below — edge response/translation pins stay at the edge (with
+`fetch`-mocked Nest), row-level authority pins move to the canonical
+Nest suites. The keystone is the drift-pin test
+(`phase-5-8-retail-order`: "pins the compat error map: every mapped key
+is a real Nest retail code"), which keeps every mocked-rejection edge
+test honest — a mocked Nest code that stops existing fails the suite.
+
+Conventions: `checkout#N` = rewritten `frontend-next/test/
+retail-checkout.test.ts` test N (titles unchanged); `legal#N`,
+`honesty#N` likewise; `proxy#N` = `phase-5-8-retail-proxy.test.ts`;
+`order"…"` / `pricing"…"` / `security"…"` = Nest suites;
+`migration"…"` = DB suite.
+
+### 17.1 retail-checkout (14/14 preserved)
+
+| # | Original assertion (e2b383f) | Replacement |
+|---|---|---|
+| 1 | D1: 201 + code regex + `replayed:false` + `currency:IRR` + **1 DB row, `lines` jsonb len 1** | `checkout#1` (same 4 response pins + fetch×1 + productId forwarded + **0 local rows** — the writer moved); rows → `order"creates an order…"` + `order"persists the immutable snapshot…"` |
+| 2 | D3: tampered `price:1` → 201, items=price×2, total=same, `adjusted:true` | `checkout#2` (identical response pins); authority → `pricing"ignores browser unit price…"` + `order"ignores browser money…"` |
+| 3 | COD: DB items/total/shipping=0/pay_method/payment_status | `checkout#3` (response-level equivalents); rows → `order"persists…"` (**strengthened**: stored `pay_method`/`payment_status` asserted) + `migration"enforces the order totals equation…"` |
+| 4 | Cheap item: items/shipping/total response | `checkout#4` (identical); rule → `pricing"applies the transitional shipping table…"` |
+| 5 | Item row: product_id/name/unit_price | `checkout#5` (forwards productId+qty, hints only, no `price`/`totals`); rows → `order"persists…"` (**strengthened**: productId/productName/unitPrice asserted) |
+| 6–11 | 422 codes: PRODUCT_UNAVAILABLE, SIZE_UNAVAILABLE, CUSTOMER_PHONE_INVALID, ADDRESS_INCOMPLETE, EMPTY_CART, PAYMENT_METHOD_NOT_ALLOWED | `checkout#6–11` (identical status+code) + drift-pin; authority → `pricing` rejection tests + `order"validates contact, address, pay method…"` |
+| 12 | Same key: 201→200, replayed, same code, **exactly 1 row** | `checkout#12` (same response + 0 local rows); → `order"replays the same key…"` (exactly 1 row + 1 reservation) + `order` 409-conflict ×2 + `security"binds keys to owners…"` + `security"binds guest replays…"` (**stronger**) |
+| 13 | Key `"short"` → 422 + Nest never called | `checkout#13` (identical + `fetch` never called) |
+| 14 | BNPL: retail 201 + wholesale throws | `checkout#14` (identical) + `proxy#10` (second lock on the helper) |
+
+### 17.2 retail-legal-gate (5/5 preserved)
+
+| # | Original assertion | Replacement |
+|---|---|---|
+| 1 | off: legacy behaviour, Nest never called | Transformed (Nest is now always the writer): the preserved behavior is **"off ⇒ no binding"** → NEW `order"off (default): checkout succeeds with no binding and no legal rows"` (201, `legal:{off,null}`, NULL snapshot, 0 snapshot/acceptance rows); every-call delegation → `legal#1` |
+| 2 | enforce + 409 → no order + code surfaced | `legal#2` (identical) + `order"legal enforce mode fails closed…"` (409 + order count unchanged) |
+| 3 | enforce + accept → order + server-priced facts + ids + audit snapshot | `legal#1` (ids forwarded) + `legal#3` (translated order, no local writes); → `order"legal enforce mode…"` (**strengthened**: audit `legal_gate`/`legal_snapshot_id`, snapshot row, per-document acceptance rows); server-priced facts → NEW `order"binds the server-priced facts…"` (spy: unitPrice/lineTotal/totals from server despite `presentedUnitPrice:1`, orderRef, `subject.userId`, ids) |
+| 4 | unreachable → 503 + no order | `legal#4` (503 + 0 rows; code renamed `LEGAL_GATE_UNAVAILABLE` → `RETAIL_UPSTREAM_UNAVAILABLE` — same fail-closed behavior at the moved seam: whole-checkout proxy instead of side-call) |
+| 5 | malformed → 502 + no order | `legal#5` (502 + 0 rows; code renamed `LEGAL_GATE_INVALID_RESPONSE` → `RETAIL_UPSTREAM_INVALID`, same reason) |
+
+### 17.3 retail-payment-honesty (7/7 preserved)
+
+| # | Original assertion | Replacement |
+|---|---|---|
+| 1 | unit: `paymentSettlementStatus` (cod→pending_cod, rest→unpaid) | Authority moved to Nest → `order"keeps payment honest…"` (exact cod/gateway blocks); edge keeps a verbatim-passthrough unit test (`honesty` unit#1: all 4 methods pass through, `collected:false`, never `pending_gateway`) |
+| 2 | unit: `requiresPaymentProvider` marking | `honesty` unit#2 (PROVIDER_BACKED constant pin: cod excluded, all methods covered) |
+| 3 | gateway exact block + DB `payment_status` | `honesty#3` (exact block + 0 rows) + `order"keeps payment honest…"` + `order"retail checkout never writes wholesale…"` (zero payment rows) |
+| 4 | cod exact block | `honesty#4` + `order"keeps payment honest…"` (incl. `shippingTotal:"0"`) |
+| 5 | all 4 methods + never `pending_gateway` | `honesty#5` (4 responses + never `pending_gateway` + 0 rows) + `order"keeps payment honest…"` |
+| 6 | replay preserves payment block | `honesty#6` + `order"replays the same key…"` |
+| 7 | `crypto` → 422 PAYMENT_METHOD_NOT_ALLOWED | `honesty#7` (422 + legacy code + Nest was called) + `order"validates…"` + drift-pin |
+
+### 17.4 Coverage-area checklist
+
+retail checkout behavior ✓ · retail legal gate ✓ · retail payment
+honesty ✓ · idempotency (scoped replay + 4 conflict tests + malformed
++ local key validation) ✓ · legacy compatibility endpoint (frozen
+shape in `checkout` + `proxy"translates the Nest 201…"` + 22-code map
+test + drift-pin) ✓. Net behavioral delta: **zero removed, two
+strengthened, two added** (facts spy, off-mode) — plus 36 net-new
+proxy/pricing/promotions/security/migration tests around them.
