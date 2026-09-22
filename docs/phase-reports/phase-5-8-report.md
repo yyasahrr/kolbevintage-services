@@ -191,10 +191,10 @@ a shared path).
 
 ## Closeout CI evidence
 
-Checkpoint D commit (this closeout): run `XXXX` — PENDING.
-URL: https://github.com/yyasahrr/kolbevintage-services/actions/runs/XXXX
+- Checkpoint D: run `35725171007`, SHA
+  `3bf88a1b2763ebdc85d52152e0882bcd9117a310` — SUCCESS.
+  URL: https://github.com/yyasahrr/kolbevintage-services/actions/runs/35725171007
+- Report commit: run `PENDING` — recorded below once this
+  commit's CI run reaches SUCCESS.
 
-(This section is finalized after the D commit's CI run reaches
-SUCCESS; the final report is then amended with the run id.)
-
-Phase 5.9 has NOT started.
+Phase 5.9 Retail Customer Account & After-sales Backend has NOT started.
