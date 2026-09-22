@@ -683,7 +683,14 @@ export class CatalogService {
       kolbeSellerId = kolbe?.id ?? null;
     }
 
-    const [prod] = await this.db.select().from(product).where(eq(product.id, id)).limit(1);
+    // 5.10-D: re-check status on the read — a product unpublished
+    // between the bump and this SELECT 404s instead of leaking.
+    const [prod] = await this.db
+      .select()
+      .from(product)
+      .where(and(eq(product.id, id), eq(product.status, "published")))
+      .limit(1);
+    if (!prod) throw new DomainError(404, "PRODUCT_NOT_FOUND", "محصول یافت نشد");
     const [brandRow] = prod.brandId
       ? await this.db.select().from(brand).where(eq(brand.id, prod.brandId)).limit(1)
       : [null];

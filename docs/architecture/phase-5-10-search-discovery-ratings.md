@@ -455,3 +455,84 @@ Scope locks (user-skipped recon questions, decided by agent):
   promotions suite; "through 0042" title in 5.3.
 - `typecheck:all` clean; full `test:all` **1547/1547** green
   (23 shared + 136 database + 1233 api + 155 frontend).
+
+## 8. Checkpoint D as-built (authority audits + failure/concurrency/security + static guards)
+
+**Verdict: no migration, no new HTTP routes, one surgical
+hardening.** D froze the A/B/C surface by auditing every write
+authority (D1–D5), proving races and failures converge (D6–D7),
+attacking the trust boundary (D8), confirming the legacy
+storefront stays hardcoded and untouched (D9), ruling out a
+namespace migration (D11), and pinning the verdicts as
+executable static guards (D10).
+
+**Authority audits (all confined, zero code change).** D1:
+catalog-table writes live only in catalog.service create/approve
+flows and offers.service (seller/offers/packages); offers never
+writes product/variant/brand/category. D2: the 5.10 read surface
+is pure except the single view-bump UPDATE — no other writes in
+search/browse/detail. D3: `product_rating` is written only by
+`RatingsService`. D4: ratings names the four order tables in
+SELECTs only. D5: all four review mutators gate at the service
+seam (rater ×3, admin ×1) with matching controller Roles; both
+reads are Public.
+
+**No-migration verdict (D11).** D adds no migration: the
+(XOR/FK/unique) integrity landed in 0042, and no namespace
+collides. `supplier_rating` / `transaction_rating` stay
+dormant by final verdict (product-only scope, §6 C0);
+`sales_count` stays dormant by final verdict (wiring it means
+touching the 5.8 money path; popularity in this phase is
+honestly views + ratings). The racy brand-duplicate pre-check
+(phase-3 `select all then some`) is observed but untouched:
+brand creation is not a 5.10 surface.
+
+**Hardening found by D (1, regression-free).** Detail re-checks
+`status = 'published'` on its read SELECT: a product
+unpublished between the bump UPDATE and the read used to leak
+through the gate that had just passed. Now it 404s (the counted
+view stays — the hit happened).
+
+**Failure injection (D6, 8 tests).** Filing on archived
+products succeeds (proof is order-based) while the product
+leaves public surfaces; deleting a product under reviews fails
+restrict with the review standing; dead categories empty
+without touching siblings; suspended brands delist while
+their products stay browsable; unpublished detail 404s without
+bumping; all-unpublished catalogs return empty, never errors;
+a rating-sort walk under hide churn terminates with valid
+rows (dupes across churned pages are possible by keyset
+nature — documented, not asserted); proof-item deletion
+refuses new filings while old reviews stand and aggregate.
+
+**Concurrency (D7, 7 tests).** Racing duplicate filings
+collapse to one review + one 409; racing hide + show converge
+with the audit trail's last word matching the row (1–2 audit
+rows); ×50 concurrent detail hits bump exactly +50; racing
+flags stay idempotent on one flagged row; racing owner updates
+serialize last-writer-wins between honest payloads; review
+and search keyset walks stay dupe-free under concurrent
+writes.
+
+**Security (D8, 8 tests).** Cross-rater updates 404 at seam
+and HTTP with the row untouched; admin/supplier/finance/
+system/null identities refused on filing (incl. supplier
+token over HTTP); anonymous callers 401 on all five mutators;
+hidden reviews leave no enumerable surface (no direct route
+exists); hostile sort/bound parameters degrade to defaults
+with the table intact; tampered cursors 400 on all three
+keysets; public review rows carry a fixed key set with zero
+PII; customers 403 on moderation over HTTP.
+
+**Coverage.** New `phase-5-10-d-failure-injection.test.ts` (8),
+`phase-5-10-d-concurrency.test.ts` (7),
+`phase-5-10-d-security.test.ts` (8), and
+`phase-5-10-d-static-guards.test.ts` (8: review-write
+confinement, verification read-only, aggregate read-only, the
+absent catalog↔ratings edge, seam gates, route Roles,
+dormancy pins, schema pins). A/B/C regression: zero — full
+`test:all` green, counts pinned below.
+
+D closeout totals: `typecheck:all` clean (4 workspaces);
+`test:all` 1578/1578 (23 shared + 136 database + 1264 api +
+155 frontend) — the C head 1547 plus the 31 new D tests.
