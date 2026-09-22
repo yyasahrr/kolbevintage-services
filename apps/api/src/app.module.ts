@@ -34,6 +34,7 @@ import { InventoryModule } from "./modules/inventory/inventory.module";
 import { VipModule } from "./modules/vip/vip.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { RetailOrdersModule } from "./modules/orders/retail/retail-orders.module";
+import { CustomerAccountModule } from "./modules/customer-account/customer-account.module";
 import { FulfillmentModule } from "./modules/fulfillment/fulfillment.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { FinanceModule } from "./modules/finance/finance.module";
@@ -70,6 +71,7 @@ import { PromotionsModule } from "./modules/promotions/promotions.module";
     VipModule,
     OrdersModule,
     RetailOrdersModule,
+    CustomerAccountModule,
     FulfillmentModule,
     PaymentsModule,
     ShippingModule,

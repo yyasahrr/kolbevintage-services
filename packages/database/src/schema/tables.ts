@@ -993,6 +993,12 @@ export const retailOrder = pgTable(
     creationRequestHash: text("creation_request_hash"),
     /** Phase 5.8 — قفل خوش‌بینانه؛ هر گذار وضعیت آن را یک واحد زیاد می‌کند. */
     version: integer("version").notNull().default(0),
+    /** Phase 5.9-A — هش SHA-256 قابلیت مهمان؛ فقط هش در rest، هرگز متن آشکار. */
+    guestCapabilityHash: text("guest_capability_hash"),
+    /** Phase 5.9-A — زمان صدور قابلیت؛ NULL یعنی سفارش مهمان قدیمی بدون قابلیت. */
+    guestCapabilityIssuedAt: timestamp("guest_capability_issued_at", { withTimezone: true }),
+    /** Phase 5.9-A — زمان ابطال قابلیت (هش هم‌زمان پاک می‌شود). */
+    guestCapabilityRevokedAt: timestamp("guest_capability_revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -1114,6 +1120,43 @@ export const retailOrderEvent = pgTable(
     foreignKey({
       name: "retail_order_event_actor_fk",
       columns: [table.actorId],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/* ── حساب مشتری (فاز ۵.۹) ──────────────────────────────────────────────────── */
+
+export const customerAddress = pgTable(
+  "customer_address",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    label: text("label"),
+    recipientName: text("recipient_name").notNull(),
+    recipientPhone: text("recipient_phone").notNull(),
+    province: text("province").notNull(),
+    city: text("city").notNull(),
+    addressLine: text("address_line").notNull(),
+    plaque: text("plaque"),
+    unit: text("unit"),
+    postalCode: text("postal_code").notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    /** Phase 5.9-A — قفل خوش‌بینانهٔ ویرایش نشانی. */
+    version: integer("version").notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex("customer_address_single_default")
+      .on(table.userId)
+      .where(sql`"is_default" AND "archived_at" IS NULL`),
+    index("customer_address_user_created").on(table.userId, table.createdAt),
+    quantityCheck("customer_address_version_non_negative", "version"),
+    foreignKey({
+      name: "customer_address_user_fk",
+      columns: [table.userId],
       foreignColumns: [accountUser.id],
     }).onDelete("restrict"),
   ],

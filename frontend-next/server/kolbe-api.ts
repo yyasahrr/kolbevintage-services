@@ -1771,7 +1771,14 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
       throw translateRetailNestError(result.status, result.data);
     }
     const translated = translateRetailOrderFromNest(result.data, submittedLines);
-    return response(req, translated.body, translated.status);
+    // Phase 5.9-A: guest capability echo. The translator already strips the
+    // secret from the frozen legacy body; it travels ONLY as this header
+    // (fresh guest creations only — Nest never emits it otherwise).
+    const guestHeaders: Record<string, string> = {};
+    if (typeof result.data?.guestCapability === "string" && result.data.guestCapability) {
+      guestHeaders["x-retail-order-token"] = result.data.guestCapability;
+    }
+    return response(req, translated.body, translated.status, guestHeaders);
   }
   if (path.startsWith("supplier/")) return handleSupplier(req, path);
   if (path.startsWith("wholesale/")) return handleWholesale(req, path);

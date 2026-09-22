@@ -33,7 +33,7 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
     await dropDatabase(DB);
   });
 
-  it("creates the seven promotion tables (journal idx 31; 0032 adds no tables)", async () => {
+  it("creates the seven promotion tables (journal idx 37 at the 5.9-A head; 0037 adds customer_address)", async () => {
     const result = await withClient(DB, (client) => client.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name LIKE 'promotion%'
@@ -49,10 +49,10 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
       "promotion_usage",
     ]);
     const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(37);
+    expect(journal.entries).toHaveLength(38);
     expect(journal.entries[journal.entries.length - 1]).toMatchObject({
-      idx: 36,
-      tag: "0036_phase_5_8_c_retail_shipping_lifecycle",
+      idx: 37,
+      tag: "0037_phase_5_9_a_customer_account",
     });
   });
 

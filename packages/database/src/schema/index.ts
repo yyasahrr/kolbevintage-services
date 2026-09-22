@@ -10,6 +10,7 @@ export * from "./state-values";
 export {
   accountUser,
   auditLog,
+  customerAddress,
   brand,
   category,
   commandIdempotency,

@@ -37,6 +37,16 @@ export const MODULES: readonly ModuleDefinition[] = [
   { name: "auth", tables: ["account_user", "login_attempt", "user_session"], dependsOn: ["audit"], status: "live", phase: 2 },
   { name: "users", tables: [], dependsOn: ["auth", "audit"], status: "planned", phase: 2 },
   { name: "customers", tables: [], dependsOn: ["auth", "audit"], status: "planned", phase: 4 },
+  // Phase 5.9 — retail customer account: owns saved addresses; reads profile
+  // through AuthService and commerce through RetailOrdersService (leaf off
+  // app.module, like RetailOrdersModule).
+  {
+    name: "customer-account",
+    tables: ["customer_address"],
+    dependsOn: ["auth", "orders", "audit"],
+    status: "live",
+    phase: 5,
+  },
   // فاز ۳ — بازار عمده و کاتالوگ
   {
     name: "vip",

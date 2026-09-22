@@ -32,7 +32,7 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_SHIPMENT_NOT_READY"
     ) {
       status = 422;
-    } else if (code === "RETAIL_WEBHOOK_UNAUTHENTICATED") {
+    } else if (code === "RETAIL_WEBHOOK_UNAUTHENTICATED" || code === "RETAIL_GUEST_CAPABILITY_MISSING") {
       status = 401;
     } else if (
       code === "RETAIL_IDEMPOTENCY_CONFLICT" ||
@@ -44,7 +44,12 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS"
     ) {
       status = 409;
-    } else if (code === "RETAIL_ORDER_FORBIDDEN") {
+    } else if (
+      code === "RETAIL_ORDER_FORBIDDEN" ||
+      code === "RETAIL_GUEST_CAPABILITY_REQUIRED" ||
+      code === "RETAIL_GUEST_CAPABILITY_INVALID" ||
+      code === "RETAIL_GUEST_CAPABILITY_REVOKED"
+    ) {
       status = 403;
     } else if (
       code === "RETAIL_ORDER_NOT_FOUND" ||
@@ -135,4 +140,10 @@ export type RetailOrderView = {
   promotionTermsHash: string | null;
   history: RetailOrderEventView[];
   createdAt: string;
+  /**
+   * Phase 5.9-A — guest capability plaintext, present ONLY on a fresh
+   * guest-order creation response. Never persisted, never re-emitted on
+   * replay, never included in reads.
+   */
+  guestCapability?: string;
 };

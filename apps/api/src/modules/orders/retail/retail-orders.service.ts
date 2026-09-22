@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { RETAIL_PAYMENT_METHODS } from "@kolbe/database";
 import { MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
@@ -57,6 +57,47 @@ function text(value: unknown, maxLength: number): string {
 // collapse an attack string onto a real id.
 function displayText(value: unknown, maxLength: number): string {
   return text(value, maxLength).replace(/[<>]/g, "");
+}
+
+/**
+ * Phase 5.9-A — guest order capability. Opaque high-entropy token
+ * (`rgc_` + 128 bits); only the SHA-256 hash rests in `retail_order`.
+ * The plaintext crosses the wire exactly once (creation response) and is
+ * verified constant-time. `orderCode + phone` alone authenticates nothing.
+ */
+const GUEST_CAPABILITY_PREFIX = "rgc";
+function mintRetailGuestCapability(): { token: string; hash: string } {
+  const token = `${GUEST_CAPABILITY_PREFIX}_${randomBytes(16).toString("base64url")}`;
+  return { token, hash: createHash("sha256").update(token).digest("hex") };
+}
+function retailGuestCapabilityMatches(presented: unknown, storedHash: string | null): boolean {
+  if (typeof presented !== "string" || presented.length === 0 || !storedHash) return false;
+  const candidate = Buffer.from(createHash("sha256").update(presented).digest("hex"));
+  const expected = Buffer.from(storedHash);
+  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+}
+
+/** Opaque history cursor: base64url(JSON([createdAtISO, id])). Fails closed. */
+function encodeRetailHistoryCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify([createdAt, id])).toString("base64url");
+}
+function decodeRetailHistoryCursor(cursor: unknown): [string, string] {
+  try {
+    const parsed = JSON.parse(Buffer.from(String(cursor), "base64url").toString("utf8"));
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      typeof parsed[0] === "string" &&
+      typeof parsed[1] === "string" &&
+      Number.isFinite(Date.parse(parsed[0])) &&
+      parsed[1].length > 0
+    ) {
+      return [new Date(parsed[0]).toISOString(), parsed[1]];
+    }
+  } catch {
+    // fall through to the domain error below
+  }
+  throw new RetailDomainError("RETAIL_CUSTOMER_CURSOR_INVALID", "history cursor is malformed");
 }
 
 function parseContact(input: unknown): ParsedContact {
@@ -246,7 +287,7 @@ export class RetailOrdersService {
           await this.repo.advisoryLock(key, tx);
           const existing = await this.repo.findByIdempotencyKey(key, tx);
           if (existing) return this.presentReplay(tx, existing, actor, contact, hash);
-          return await this.createInTx(tx, {
+          const created = await this.createInTx(tx, {
             actor,
             key,
             hash,
@@ -259,6 +300,8 @@ export class RetailOrdersService {
             acceptedPolicyDocumentIds,
             requestMetadata: input.requestMetadata ?? null,
           });
+          if (!created.guestCapability) return created.view;
+          return { ...created.view, guestCapability: created.guestCapability };
         });
       } catch (error) {
         const { code, constraint } = pgErrorInfo(error);
@@ -328,7 +371,7 @@ export class RetailOrdersService {
       acceptedPolicyDocumentIds: string[];
       requestMetadata: { ip?: string | null; userAgent?: string | null; requestId?: string | null } | null;
     },
-  ): Promise<RetailOrderView> {
+  ): Promise<{ view: RetailOrderView; guestCapability: string | null }> {
     const { actor, key, hash, contact, address, lines, payMethod, couponCodes } = args;
     const orderId = makeOrderId();
     const orderCode = makeOrderCode();
@@ -464,6 +507,9 @@ export class RetailOrdersService {
     }
 
     const paymentStatus = payMethod === "cod" ? "pending_cod" : "unpaid";
+    // Phase 5.9-A: guest orders leave with a capability token. The plaintext
+    // is returned once (below); only the hash is persisted.
+    const guestCapability = actor.kind === "guest" ? mintRetailGuestCapability() : null;
     await this.repo.insertOrder(
       {
         id: orderId,
@@ -501,6 +547,8 @@ export class RetailOrdersService {
         legalSnapshotId,
         creationRequestHash: hash,
         version: 0,
+        guestCapabilityHash: guestCapability?.hash ?? null,
+        guestCapabilityIssuedAt: guestCapability ? new Date() : null,
       },
       tx,
     );
@@ -614,13 +662,14 @@ export class RetailOrdersService {
           lines: priced.lines.length,
           legal_gate: legalMode,
           legal_snapshot_id: legalSnapshotId,
+          guest_capability_issued: guestCapability !== null,
         },
         metadata: { adjusted: priced.adjusted },
       },
       tx,
     );
 
-    return this.presentOrder(tx, orderId, false);
+    return { view: await this.presentOrder(tx, orderId, false), guestCapability: guestCapability?.token ?? null };
   }
 
   async getRetailOrder(
@@ -633,6 +682,99 @@ export class RetailOrdersService {
       throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", "this order belongs to another customer");
     }
     return this.presentOrder(undefined, order.id, false);
+  }
+
+  /**
+   * Phase 5.9-A — customer order history page (own orders only; the
+   * caller scopes by session user id). Keyset cursor, stable
+   * newest-first order, BIGINT money as strings.
+   */
+  async listCustomerRetailOrders(
+    userId: string,
+    input: { limit?: unknown; cursor?: unknown },
+  ): Promise<{ orders: Array<Record<string, unknown>>; nextCursor: string | null }> {
+    const limit = typeof input.limit === "number" && Number.isInteger(input.limit) ? input.limit : 20;
+    if (limit < 1 || limit > 100) {
+      throw new RetailDomainError("RETAIL_CUSTOMER_LIMIT_INVALID", "history limit must be between 1 and 100");
+    }
+    const cursor = input.cursor === undefined || input.cursor === null ? null : decodeRetailHistoryCursor(input.cursor);
+    const rows = await this.repo.listByCustomerId(userId, limit, cursor);
+    const page = (rows as any[]).slice(0, limit);
+    const last = page[page.length - 1] as any;
+    return {
+      orders: page.map((row: any) => ({
+        id: row.id,
+        orderCode: row.orderCode,
+        status: row.orderStatus,
+        paymentStatus: row.paymentStatus,
+        payMethod: row.payMethod,
+        grandTotal: BigInt(row.totalAmount).toString(),
+        currency: row.currency,
+        createdAt: new Date(row.createdAt).toISOString(),
+      })),
+      nextCursor: (rows as any[]).length > limit && last ? encodeRetailHistoryCursor(new Date(last.createdAt).toISOString(), last.id) : null,
+    };
+  }
+
+  /**
+   * Phase 5.9-A — guest order resolution + detail. The order code locates
+   * the order; ONLY the capability secret authenticates. Legacy orders
+   * (no hash) resolve to an honest recovery error, never a fabricated
+   * secret. Returns the owner-equivalent detail (the guest IS the orderer).
+   */
+  async getRetailOrderAsGuest(
+    orderCode: string,
+    presentedToken: unknown,
+  ): Promise<{
+    orderId: string;
+    orderCode: string;
+    order: RetailOrderView;
+    shipping: { orderId: string; orderCode: string; shipments: Array<Record<string, unknown>> };
+  }> {
+    const code = typeof orderCode === "string" ? orderCode.trim().slice(0, 64) : "";
+    if (!code) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+    const order = await this.repo.findByOrderCode(code);
+    if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+    if ((order as any).guestCapabilityRevokedAt) {
+      throw new RetailDomainError("RETAIL_GUEST_CAPABILITY_REVOKED", "this order's guest access was revoked; contact support");
+    }
+    if (!(order as any).guestCapabilityHash) {
+      throw new RetailDomainError(
+        "RETAIL_GUEST_CAPABILITY_REQUIRED",
+        "this order predates guest capabilities and has no access secret; contact support for manual recovery",
+      );
+    }
+    if (!retailGuestCapabilityMatches(presentedToken, (order as any).guestCapabilityHash)) {
+      throw new RetailDomainError("RETAIL_GUEST_CAPABILITY_INVALID", "guest capability token is invalid");
+    }
+    const view = await this.presentOrder(undefined, (order as any).id, false);
+    const shipping = await this.presentRetailShipments(order as any);
+    return { orderId: (order as any).id, orderCode: (order as any).orderCode, order: view, shipping };
+  }
+
+  /**
+   * Phase 5.9-A — revoke a guest capability (staff seam; clears the hash,
+   * keeps `revoked_at` for audit). No HTTP surface in this phase.
+   */
+  async revokeRetailGuestCapability(orderId: string, actor: { actorId: string | null; actorRole: string }): Promise<{ revoked: boolean }> {
+    this.assertStaff(actor);
+    return this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      if (!(order as any).guestCapabilityHash) return { revoked: false };
+      await this.repo.updateGuestCapability(orderId, { hash: null, revokedAt: new Date() }, tx);
+      await this.audit.record(
+        {
+          actorId: actor.actorId ?? "system",
+          actorRole: actor.actorRole,
+          action: "retail_order.guest_capability_revoked",
+          entityType: "retail_order",
+          entityId: orderId,
+        },
+        tx,
+      );
+      return { revoked: true };
+    });
   }
 
   /**
@@ -2090,8 +2232,19 @@ export class RetailOrdersService {
     if (viewer.role !== "admin" && (order.customerId ?? null) !== viewer.userId) {
       throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", "this order belongs to another customer");
     }
-    const rows = await this.shipping.listRetailShipments(orderId);
-    const lines = await this.repo.findItemsByOrderId(orderId);
+    return this.presentRetailShipments(order);
+  }
+
+  /**
+   * Phase 5.9-A — shared shipment presenter. Ownership is enforced by the
+   * caller (session viewer check above, capability check in
+   * getRetailOrderAsGuest); this method only maps rows.
+   */
+  private async presentRetailShipments(
+    order: any,
+  ): Promise<{ orderId: string; orderCode: string; shipments: Array<Record<string, unknown>> }> {
+    const rows = await this.shipping.listRetailShipments(order.id);
+    const lines = await this.repo.findItemsByOrderId(order.id);
     const lineOf = new Map((lines as any[]).map((line) => [line.id, line]));
     const iso = (value: unknown): string | null => (value ? new Date(value as any).toISOString() : null);
     const shipments: Array<Record<string, unknown>> = [];

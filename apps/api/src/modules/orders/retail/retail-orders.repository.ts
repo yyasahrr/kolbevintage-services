@@ -36,6 +36,32 @@ export class RetailOrdersRepository {
     return row ?? null;
   }
 
+  async findByOrderCode(orderCode: string, executor?: any) {
+    const ex = (executor as any) ?? this.db;
+    const [row] = await ex.select().from(retailOrder).where(eq(retailOrder.orderCode, orderCode)).limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * Phase 5.9-A — customer order history page. Keyset on
+   * (created_at DESC, id DESC): stable under inserts, no offset drift.
+   * `cursor` is [createdAtISO, id]; returns at most `limit + 1` rows so the
+   * caller can detect a next page.
+   */
+  async listByCustomerId(userId: string, limit: number, cursor: [string, string] | null, executor?: any) {
+    const ex = (executor as any) ?? this.db;
+    const conditions = [eq(retailOrder.customerId, userId)];
+    if (cursor) {
+      conditions.push(sql`(${retailOrder.createdAt}, ${retailOrder.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})`);
+    }
+    return ex
+      .select()
+      .from(retailOrder)
+      .where(sql.join(conditions, sql` AND `))
+      .orderBy(sql`${retailOrder.createdAt} DESC, ${retailOrder.id} DESC`)
+      .limit(limit + 1);
+  }
+
   async findItemsByOrderId(orderId: string, executor?: any) {
     const ex = (executor as any) ?? this.db;
     return ex.select().from(retailOrderItem).where(eq(retailOrderItem.orderId, orderId));
@@ -80,6 +106,22 @@ export class RetailOrdersRepository {
     const [updated] = await ex
       .update(retailOrder)
       .set({ orderStatus: toStatus, version: sql`${retailOrder.version} + 1`, updatedAt: new Date() })
+      .where(eq(retailOrder.id, orderId))
+      .returning();
+    return updated ?? null;
+  }
+
+  /** Phase 5.9-A: revocation is a versioned write (hash cleared, revoked_at kept for audit). */
+  async updateGuestCapability(orderId: string, patch: { hash: string | null; revokedAt: Date | null }, executor?: any) {
+    const ex = (executor as any) ?? this.db;
+    const [updated] = await ex
+      .update(retailOrder)
+      .set({
+        guestCapabilityHash: patch.hash,
+        guestCapabilityRevokedAt: patch.revokedAt,
+        version: sql`${retailOrder.version} + 1`,
+        updatedAt: new Date(),
+      })
       .where(eq(retailOrder.id, orderId))
       .returning();
     return updated ?? null;

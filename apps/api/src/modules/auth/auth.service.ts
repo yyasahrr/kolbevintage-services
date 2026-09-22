@@ -274,6 +274,95 @@ export class AuthService {
     return { ...(user as AuthUser), supplierContext };
   }
 
+  /**
+   * Phase 5.9-A — retail customer profile read. Buyer-role accounts only;
+   * email is identity and intentionally read-only here.
+   */
+  async getCustomerProfile(userId: string): Promise<{
+    id: string;
+    email: string;
+    displayName: string | null;
+    phone: string | null;
+    role: string;
+    status: string;
+  }> {
+    const [user] = await this.db
+      .select({
+        id: accountUser.id,
+        email: accountUser.email,
+        role: accountUser.role,
+        displayName: accountUser.displayName,
+        phone: accountUser.phone,
+        status: accountUser.status,
+      })
+      .from(accountUser)
+      .where(eq(accountUser.id, userId))
+      .limit(1);
+    if (!user) throw new DomainError(404, "CUSTOMER_PROFILE_NOT_FOUND", "customer profile not found");
+    if (user.role !== "customer" && user.role !== "vip") {
+      throw new DomainError(403, "CUSTOMER_PROFILE_FORBIDDEN", "only customer accounts have a retail profile");
+    }
+    return { ...user, role: user.role ?? "customer" };
+  }
+
+  /**
+   * Phase 5.9-A — self-service profile update. displayName/phone only
+   * (whitelist: email/role/status are structurally unchangeable here).
+   * `undefined` leaves a field unchanged; `null` clears it.
+   */
+  async updateCustomerProfile(
+    userId: string,
+    input: { displayName?: unknown; phone?: unknown },
+  ): Promise<{
+    id: string;
+    email: string;
+    displayName: string | null;
+    phone: string | null;
+    role: string;
+    status: string;
+  }> {
+    const current = await this.getCustomerProfile(userId);
+    if (current.status !== "active") {
+      throw new DomainError(403, "ACCOUNT_SUSPENDED", "حساب کاربری فعال نیست");
+    }
+    const patch: { displayName?: string | null; phone?: string | null } = {};
+    if (input.displayName !== undefined) {
+      if (input.displayName === null) {
+        patch.displayName = null;
+      } else {
+        const name = String(input.displayName).trim().slice(0, 160).replace(/[<>]/g, "");
+        if (!name) throw new DomainError(400, "CUSTOMER_DISPLAY_NAME_INVALID", "display name must not be empty");
+        patch.displayName = name;
+      }
+    }
+    if (input.phone !== undefined) {
+      if (input.phone === null) {
+        patch.phone = null;
+      } else {
+        const normalized = String(input.phone).replace(/[\s-]/g, "");
+        if (!/^(?:\+98|0098|98|0)?9\d{9}$/.test(normalized)) {
+          throw new DomainError(400, "CUSTOMER_PHONE_INVALID", "phone is not a valid Iranian mobile");
+        }
+        patch.phone = normalized;
+      }
+    }
+    if (Object.keys(patch).length === 0) return current;
+    const [updated] = await this.db
+      .update(accountUser)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(accountUser.id, userId))
+      .returning({
+        id: accountUser.id,
+        email: accountUser.email,
+        role: accountUser.role,
+        displayName: accountUser.displayName,
+        phone: accountUser.phone,
+        status: accountUser.status,
+      });
+    if (!updated) throw new DomainError(404, "CUSTOMER_PROFILE_NOT_FOUND", "customer profile not found");
+    return { ...updated, role: updated.role ?? "customer" };
+  }
+
   async supplierContext(userId: string): Promise<{ supplierId: string; displayName: string; legalName: string } | null> {
     const rows = await this.db
       .select({

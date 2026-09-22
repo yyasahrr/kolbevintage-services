@@ -229,6 +229,8 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "promotion_coupon_redemption",
       "promotion_usage",
       "promotion_schedule",
+      // Phase 5.9
+      "customer_address",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);

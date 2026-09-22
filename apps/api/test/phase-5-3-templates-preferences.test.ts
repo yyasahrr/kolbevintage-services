@@ -128,11 +128,11 @@ describe("Phase 5.3 — Checkpoint A: Notification Templates & Preferences", () 
     await harness.close();
   });
 
-  it("1. Schema & Migration Integrity: 194 tables, migrations through 0033 applied", async () => {
+  it("1. Schema & Migration Integrity: 195 tables, migrations through 0037 applied", async () => {
     const rows = await harness.db.execute<{ count: string }>(
       "SELECT count(*)::text FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'",
     );
-    expect(Number(rows.rows[0].count)).toBe(194);
+    expect(Number(rows.rows[0].count)).toBe(195); // 5.9-A adds customer_address
   });
 
   describe("2. Versioned Templates Lifecycle & Immutability", () => {
