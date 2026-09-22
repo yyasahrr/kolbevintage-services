@@ -281,6 +281,13 @@
       "when": 1790918400000,
       "tag": "0039_phase_5_9_c_retail_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791004800000,
+      "tag": "0040_phase_5_10_a_search_trgm",
+      "breakpoints": true
     }
   ]
 }

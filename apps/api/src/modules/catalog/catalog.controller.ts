@@ -9,8 +9,13 @@ export class CatalogController {
 
   @Public()
   @Get("products")
-  async listProducts(@Query("q") q?: string, @Query("channel") channel?: "retail" | "wholesale") {
-    if (q) return this.catalog.searchProducts(q, channel || "wholesale");
+  async listProducts(
+    @Query("q") q?: string,
+    @Query("channel") channel?: "retail" | "wholesale",
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+  ) {
+    if (q) return this.catalog.searchProducts(q, channel || "wholesale", { limit, cursor });
     if (channel === "retail") return this.catalog.listRetailProducts();
     if (channel === "wholesale") return this.catalog.listWholesaleProducts();
     return this.catalog.listProducts();

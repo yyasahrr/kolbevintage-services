@@ -317,7 +317,10 @@ describe("Phase 4.9 — Checkpoint D: Adversarial Production Readiness", () => {
         .get(`/api/v1/catalog/products?q=${encodeURIComponent(sqlInjectionQuery)}`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      // 5.10-A: search returns { results, nextCursor } (bare array retired,
+      // zero other consumers); the anti-crash intent is unchanged.
+      expect(Array.isArray(res.body.results)).toBe(true);
+      expect("nextCursor" in res.body).toBe(true);
     });
 
     it("enforces origin security headers (nosniff, frameguard SAMEORIGIN, correlation)", async () => {

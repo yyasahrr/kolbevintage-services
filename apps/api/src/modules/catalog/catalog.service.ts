@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { DomainError } from "@kolbe/shared";
@@ -295,29 +295,123 @@ export class CatalogService {
     return created;
   }
 
-  // ── Search/Ranking ───────────────────────────────────────────────────────
-  async searchProducts(query: string, channel: "retail" | "wholesale" = "wholesale") {
-    // Foundation: search by name/slug, order by search_rank + Kolbe priority
-    // Retail ONLY Kolbe, Wholesale Kolbe+Supplier
-    let all: (typeof product.$inferSelect)[];
-    if (channel === "retail") {
-      all = await this.db
-        .select()
-        .from(product)
-        .where(and(eq(product.ownerType, "KOLBE"), eq(product.status, "published")))
-        .limit(100);
-    } else {
-      all = await this.db.select().from(product).where(eq(product.status, "published")).limit(100);
+  // ── Phase 5.10-A — server-side search ────────────────────────────────────
+  // Stock PostgreSQL ships no Persian stemmer, so relevance is trigram
+  // similarity (script-agnostic, typo-tolerant) inside deterministic
+  // tiers. searchRank is deliberately NOT consulted: nothing maintains
+  // it yet, and consulting it would launder stale zeros as signal.
+  //
+  // Tier score (total order with id ASC, stable across runs):
+  //   exact name match ............ 1000
+  //   name prefix ................. 500 + 100·sim(name)
+  //   name contains OR sim > 0.18 .. 100 + 100·sim(name)
+  //   slug/brand/category match ... 10 + 100·max(sim(slug, brand, category))
+  private static readonly SEARCH_LIMIT_DEFAULT = 20;
+  private static readonly SEARCH_LIMIT_MAX = 50;
+  private static readonly SEARCH_SIMILARITY_FLOOR = 0.18;
+  private static readonly SEARCH_QUERY_MAX = 200;
+
+  /**
+   * Trim + collapse whitespace + fold Arabic Yeh/Kaf to Persian
+   * (U+064A→U+06CC, U+0643→U+06A9). A recall boundary, not a security
+   * boundary: every query is parameterized, so this only widens matches.
+   */
+  normalizeSearchQuery(query: unknown): string {
+    if (typeof query !== "string") return "";
+    return query
+      .replace(/\u064A/g, "\u06CC")
+      .replace(/\u0643/g, "\u06A9")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, CatalogService.SEARCH_QUERY_MAX);
+  }
+
+  private clampSearchLimit(limit: unknown): number {
+    const parsed = typeof limit === "string" && limit !== "" ? Number(limit) : (limit as number);
+    if (!Number.isSafeInteger(parsed)) return CatalogService.SEARCH_LIMIT_DEFAULT;
+    return Math.min(Math.max(parsed, 1), CatalogService.SEARCH_LIMIT_MAX);
+  }
+
+  private decodeSearchCursor(cursor: unknown): { score: number; id: string } | null {
+    if (cursor === undefined || cursor === null) return null;
+    try {
+      if (typeof cursor !== "string" || cursor === "") throw new Error("empty");
+      const [score, id] = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+      if (typeof score !== "number" || !Number.isFinite(score) || typeof id !== "string" || id === "") {
+        throw new Error("shape");
+      }
+      return { score, id };
+    } catch {
+      throw new CatalogDomainError("SEARCH_CURSOR_INVALID", "search cursor is malformed");
     }
-    const normalized = query.trim().toLowerCase();
-    return all
-      .filter((p) => p.name.toLowerCase().includes(normalized) || p.slug.toLowerCase().includes(normalized))
-      .sort((a, b) => {
-        // Kolbe priority
-        if (a.ownerType === "KOLBE" && b.ownerType !== "KOLBE") return -1;
-        if (b.ownerType === "KOLBE" && a.ownerType !== "KOLBE") return 1;
-        return (b.searchRank ?? 0) - (a.searchRank ?? 0);
-      });
+  }
+
+  private encodeSearchCursor(score: number, id: string): string {
+    return Buffer.from(JSON.stringify([score, id])).toString("base64url");
+  }
+
+  async searchProducts(
+    query: string,
+    channel: "retail" | "wholesale" = "wholesale",
+    opts: { limit?: unknown; cursor?: unknown } = {},
+  ): Promise<{ results: Array<Record<string, unknown>>; nextCursor: string | null }> {
+    const q = this.normalizeSearchQuery(query);
+    if (!q) return { results: [], nextCursor: null };
+    const retail = channel === "retail";
+    const limit = this.clampSearchLimit(opts.limit);
+    const cursor = this.decodeSearchCursor(opts.cursor);
+    const ql = q.toLowerCase();
+    const escaped = ql.replace(/[\\%_]/g, "\\$&");
+    const contains = `%${escaped}%`;
+    const prefix = `${escaped}%`;
+    const floor = CatalogService.SEARCH_SIMILARITY_FLOOR;
+
+    const scoreExpr = sql<number>`(CASE
+      WHEN lower(p."name") = ${ql} THEN 1000
+      WHEN lower(p."name") LIKE ${prefix} ESCAPE '\\' THEN 500 + 100 * similarity(lower(p."name"), ${ql})
+      WHEN p."name" ILIKE ${contains} ESCAPE '\\' OR similarity(lower(p."name"), ${ql}) > ${floor}
+        THEN 100 + 100 * similarity(lower(p."name"), ${ql})
+      ELSE 10 + 100 * GREATEST(
+        similarity(lower(p."slug"), ${ql}),
+        similarity(lower(COALESCE(b."name", '')), ${ql}),
+        similarity(lower(COALESCE(c."name", '')), ${ql})
+      )
+    END)::double precision`;
+
+    const keyset = cursor
+      ? sql`AND (scored."score" < ${cursor.score} OR (scored."score" = ${cursor.score} AND scored."id" > ${cursor.id}))`
+      : sql``;
+
+    const result = await this.db.execute(sql`
+      WITH scored AS (
+        SELECT p.*, ${scoreExpr} AS "score"
+        FROM "product" AS p
+        LEFT JOIN "brand" AS b ON b."id" = p."brand_id"
+        LEFT JOIN "category" AS c ON c."id" = p."category_id"
+        WHERE p."status" = 'published'
+          ${retail ? sql`AND p."owner_type" = 'KOLBE'` : sql``}
+          AND (
+            p."name" ILIKE ${contains} ESCAPE '\\'
+            OR p."slug" ILIKE ${contains} ESCAPE '\\'
+            OR similarity(lower(p."name"), ${ql}) > ${floor}
+            OR similarity(lower(p."slug"), ${ql}) > ${floor}
+            OR similarity(lower(COALESCE(b."name", '')), ${ql}) > ${floor}
+            OR similarity(lower(COALESCE(c."name", '')), ${ql}) > ${floor}
+          )
+      )
+      SELECT * FROM scored
+      WHERE 1 = 1 ${keyset}
+      ORDER BY "score" DESC, "id" ASC
+      LIMIT ${limit + 1}
+    `);
+    const rows = ((result as any).rows ?? []) as Array<Record<string, unknown>>;
+    const kept = rows.slice(0, limit);
+    const nextCursor =
+      rows.length > limit ? this.encodeSearchCursor(kept[kept.length - 1].score as number, kept[kept.length - 1].id as string) : null;
+    return {
+      results: kept.map((row) => ({ ...row, score: Math.round((row.score as number) * 1000) / 1000 })),
+      nextCursor,
+    };
   }
 
   async assertRetailIsolation(productId: string) {

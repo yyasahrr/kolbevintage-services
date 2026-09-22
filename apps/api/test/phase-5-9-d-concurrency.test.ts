@@ -299,11 +299,17 @@ describe("Phase 5.9-D7 concurrency", () => {
       returns.withdrawRetailReturn(buyerA(), filed.id),
       returns.transitionRetailReturn(filed.id, "APPROVED", admin()),
     ]);
-    // Withdraw is customer-only from REQUESTED; approve moves REQUESTED
-    // forward. Exactly one wins; the loser sees the moved row.
+    // Withdraw is customer-only from REQUESTED *and* APPROVED, so the race
+    // is order-dependent by design: withdraw-first refuses the approve
+    // (1 fulfilled), approve-first lets the withdraw follow (2 fulfilled).
+    // Both orders end WITHDRAWN — the customer always gets the last word.
     const won = [a, b].filter((r) => r.status === "fulfilled");
-    expect(won).toHaveLength(1);
+    expect([1, 2]).toContain(won.length);
+    if (won.length === 1) {
+      expect(a.status).toBe("fulfilled");
+      expect(codeOf((b as PromiseRejectedResult).reason)).toBe("RETAIL_RETURN_TRANSITION_INVALID");
+    }
     const [row] = await db.select().from(schema.retailReturnRequest).where(eq(schema.retailReturnRequest.id, filed.id));
-    expect(["WITHDRAWN", "APPROVED"]).toContain((row as any).status);
+    expect((row as any).status).toBe("WITHDRAWN");
   });
 });
