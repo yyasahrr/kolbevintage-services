@@ -34,14 +34,22 @@ export type ShipmentCreateRequest = {
   /** Canonical shipment id — doubles as the provider idempotency identity (persisted BEFORE the call). */
   shipmentId: string;
   shipmentCode: string;
-  wholesaleOrderId: string;
-  childOrderId: string;
+  /**
+   * Order linkage, exactly one side set (mirrors the `shipment_single_order_side`
+   * CHECK). Wholesale passes the wholesale side; Phase 5.8-C retail passes
+   * `retailOrderId` with the wholesale side unset. Callers validate; adapters
+   * must treat the unset side as absent, never as an empty string.
+   */
+  wholesaleOrderId?: string | null;
+  childOrderId?: string | null;
+  /** Phase 5.8-C — set only for retail shipments (KOLBE seller, KOLBE responsibility). */
+  retailOrderId?: string | null;
   sellerId: string;
   shippingResponsibility: "SUPPLIER" | "KOLBE" | "EXTERNAL_CARRIER";
   /** Server-derived fulfillment address (never client supplied). */
   addressSnapshot: Record<string, unknown>;
   quoteSnapshot?: Record<string, unknown>;
-  items: Array<{ wholesaleOrderItemId: string; variantId?: string | null; pieceQuantity: number }>;
+  items: Array<{ wholesaleOrderItemId?: string | null; retailOrderItemId?: string | null; variantId?: string | null; pieceQuantity: number }>;
   idempotencyKey: string;
 };
 

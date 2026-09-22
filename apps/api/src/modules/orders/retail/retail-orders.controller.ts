@@ -55,4 +55,10 @@ export class RetailOrdersController {
   async getOrder(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return this.retailOrders.getRetailOrder({ userId: claims.sub, role: claims.role }, id);
   }
+
+  @Get(":id/shipment")
+  @Roles("customer", "vip", "admin")
+  async getShipment(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    return this.retailOrders.getRetailShipment({ userId: claims.sub, role: claims.role }, id);
+  }
 }

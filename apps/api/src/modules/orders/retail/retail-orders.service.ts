@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { RETAIL_PAYMENT_METHODS } from "@kolbe/database";
-import { MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS } from "@kolbe/shared";
+import { MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
 import { KOLBE_DB, type KolbeDatabase } from "../../../database/database.module";
 import { AuditService } from "../../audit/audit.service";
 import { ComplianceService } from "../../compliance/compliance.service";
@@ -11,6 +11,8 @@ import { PaymentProviderEventService } from "../../payments/payment-provider-eve
 import { PaymentProviderRegistry } from "../../payments/payment-provider.registry";
 import { FinanceDomainError, PaymentsService } from "../../payments/payments.service";
 import { RetailPricingService } from "../../pricing/retail-pricing.service";
+import { ShippingProviderRegistry } from "../../shipping/shipping-provider.registry";
+import { ShippingDomainError, ShippingService } from "../../shipping/shipping.service";
 import { RETAIL_PRICING_RESOLVER } from "../../promotions/promotions.contract";
 import { PromotionCouponService } from "../../promotions/promotion-coupon.service";
 import { PromotionEvaluationService } from "../../promotions/promotion-evaluation.service";
@@ -120,6 +122,24 @@ function canonicalHash(payload: unknown): string {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
+/** Carrier/operator state -> `shipment_event.event_type` (wholesale mapping, verbatim values). */
+function retailTrackingEventType(state: string): string {
+  switch (state) {
+    case "created":
+      return "shipment.created";
+    case "in_transit":
+      return "shipment.in_transit";
+    case "delivered":
+      return "shipment.delivered";
+    case "failed":
+      return "shipment.failed";
+    case "cancelled":
+      return "shipment.cancelled";
+    default:
+      return "unknown";
+  }
+}
+
 function makeOrderId(): string {
   return `rord_${randomUUID().replaceAll("-", "")}`;
 }
@@ -130,6 +150,10 @@ function makeItemId(): string {
 
 function makeEventId(): string {
   return `revt_${randomUUID().replaceAll("-", "")}`;
+}
+
+function makeShipmentId(): string {
+  return `rshp_${randomUUID().replaceAll("-", "")}`;
 }
 
 function makeOrderCode(): string {
@@ -165,6 +189,8 @@ export class RetailOrdersService {
     @Inject(PaymentProviderEventService) private readonly providerEvents: PaymentProviderEventService,
     @Inject(ComplianceService) private readonly compliance: ComplianceService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(ShippingService) private readonly shipping: ShippingService,
+    @Inject(ShippingProviderRegistry) private readonly shippingProviders: ShippingProviderRegistry,
   ) {}
 
   async createRetailOrder(actor: RetailActor, input: CreateRetailOrderInput): Promise<RetailOrderView> {
@@ -1079,9 +1105,15 @@ export class RetailOrdersService {
   }
 
   /**
-   * Cancel an unpaid order: status transition + hold release + cancelled fact,
-   * atomically. Paid orders are rejected — money movement needs the future
-   * refund flow, and a silent release would strand a paid customer.
+   * Cancel an unpaid order: status transition + shipment coordination + hold
+   * release + cancelled fact, atomically. Paid orders are rejected — money
+   * movement needs the future refund flow, and a silent release would strand
+   * a paid customer. Shipments still in the warehouse (pending/ready) are
+   * cancelled with the order; freight already handed to the carrier
+   * (handed_over/in_transit/delivered) refuses the cancel instead — the
+   * goods are physically gone and recovery is operator/refund work. Packed
+   * orders with no live shipment stay cancellable: the frozen machine
+   * permits packed -> cancelled, and nothing has left the building.
    */
   async cancelRetailOrder(
     orderId: string,
@@ -1093,8 +1125,48 @@ export class RetailOrdersService {
       if (order.paymentStatus === "paid") {
         throw new RetailDomainError("RETAIL_CANCEL_PAID_FORBIDDEN", "paid orders cannot be cancelled without a refund");
       }
+      const shipments = await this.shipping.listRetailShipments(orderId, tx);
+      const inFlight = (shipments as any[]).filter((row) => ["handed_over", "in_transit", "delivered"].includes(row.status));
+      if (inFlight.length > 0) {
+        throw new RetailDomainError(
+          "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS",
+          `shipment ${inFlight[0].shipmentCode} is already ${inFlight[0].status}; cancel is refused once freight leaves the warehouse`,
+        );
+      }
       await this.transitionOrder(orderId, "cancelled", actor, tx);
       const requester = this.systemRequester();
+      // COD confirms the shipped slice at shipment time; cancelling a
+      // warehouse-held parcel puts those units back on the shelf (prepaid
+      // cancels never reach here — paid orders are refused above).
+      const kolbeSellerId = await this.offers.ensureSeller(null, "KOLBE");
+      for (const row of shipments as any[]) {
+        if (row.status === "pending" || row.status === "ready") {
+          await this.shipping.transitionRetailShipment({
+            shipmentId: row.id,
+            from: row.status,
+            to: "cancelled",
+            actorId: actor.actorId,
+            actorRole: actor.actorRole,
+            reason: actor.reason ?? "order_cancelled",
+            executor: tx,
+          });
+          const full = await this.shipping.getRetailShipmentById(row.id, tx);
+          for (const item of full.items as any[]) {
+            if (!item.variantId) {
+              throw new RetailDomainError("RETAIL_VARIANT_MISMATCH", `shipped line ${item.retailOrderItemId} has no variant to restock`);
+            }
+            await this.inventory.upsertVariantInventory({
+              variantId: item.variantId,
+              sellerId: kolbeSellerId,
+              onHandDelta: item.pieceQuantity,
+              reason: `retail cancel restock -> ${orderId}`,
+              requester,
+              idempotencyKey: `${orderId}:cancel:restock:${item.id}`,
+              executor: tx,
+            });
+          }
+        }
+      }
       const active = await this.inventory.listActiveReservationsByAllocation(orderId, tx);
       for (const reservation of active) {
         await this.inventory.releaseRetail({
@@ -1120,5 +1192,899 @@ export class RetailOrdersService {
       );
       return this.presentOrder(tx, orderId, false);
     });
+  }
+
+  // ── Checkpoint C: fulfillment lifecycle + shipment orchestration
+  // (service-level; Checkpoint D owns the operator HTTP surface). Retail is
+  // the orchestrator: it owns the retail order rows, the fulfillment gates
+  // and the cross-aggregate facts, while ShippingService owns the shipment
+  // rows under the retail transition table. Shipping never writes retail
+  // tables — the delivery fan-out below goes through `transitionOrder`, so
+  // every order move keeps its history row, and that row is the proof.
+
+  /**
+   * Fulfillment acts are staff-only: customers pay, operators ship. Guests
+   * carry no identity and buyers never drive warehouse acts.
+   */
+  private assertStaff(actor: { actorId: string | null; actorRole: string }) {
+    if (actor.actorRole === "admin" || actor.actorRole === "system") return;
+    throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", `role ${actor.actorRole} cannot drive retail fulfillment actions`);
+  }
+
+  /**
+   * Server-side retail shipping quote from the shared rules table — the same
+   * table checkout priced from, re-resolved at shipment time for the snapshot
+   * (the ORDER totals never move: they are immutable history). Pure: no DB.
+   */
+  resolveRetailQuote(
+    methodId: unknown,
+    itemsTotal: bigint,
+    freeShippingOverride: boolean,
+  ): { version: string; method: string; amount: bigint; currency: string; freeApplied: boolean } {
+    const method = text(methodId, 32);
+    const priced = (RETAIL_SHIPPING_RULES.methods as Record<string, bigint>)[method];
+    if (priced === undefined) {
+      throw new RetailDomainError("RETAIL_SHIPPING_METHOD_INVALID", "unknown shipping method");
+    }
+    const freeApplied = freeShippingOverride || itemsTotal >= RETAIL_SHIPPING_RULES.freeThreshold;
+    return {
+      version: RETAIL_SHIPPING_RULES.version,
+      method,
+      amount: freeApplied ? 0n : priced,
+      currency: "IRR",
+      freeApplied,
+    };
+  }
+
+  /** Payable-or-COD: prepaid needs a verified payment, COD ships on promise (collection happens at delivery). */
+  private assertFulfillmentReady(order: { paymentStatus: string; payMethod: string }) {
+    if (order.paymentStatus === "paid") return;
+    if (order.payMethod === "cod" && order.paymentStatus === "pending_cod") return;
+    throw new RetailDomainError(
+      "RETAIL_FULFILLMENT_NOT_READY",
+      `order cannot ship with payment ${order.paymentStatus} on ${order.payMethod} (only paid or cash-on-delivery)`,
+    );
+  }
+
+  private assertShippableStatus(order: { orderStatus: string }) {
+    // confirmed/packed cover the first parcel; shipped covers late/partial
+    // parcels while earlier freight is in transit. A delivered order is
+    // terminal (delivery implies every line fully shipped) and cancelled/
+    // returned/placed orders are never shippable.
+    if (order.orderStatus === "confirmed" || order.orderStatus === "packed" || order.orderStatus === "shipped") return;
+    throw new RetailDomainError(
+      "RETAIL_SHIPMENT_NOT_READY",
+      `order in status ${order.orderStatus} cannot take a shipment (confirm, then pack)`,
+    );
+  }
+
+  /**
+   * Confirm a payable order for fulfillment: placed -> confirmed + durable
+   * fact. The fact (not the status alone) is what the relay notifies on.
+   */
+  async confirmRetailOrder(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+  ): Promise<RetailOrderView> {
+    this.assertStaff(actor);
+    return this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      this.assertFulfillmentReady(order);
+      await this.transitionOrder(orderId, "confirmed", { actorId: actor.actorId, actorRole: actor.actorRole, reason: "fulfillment_confirmed" }, tx);
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: orderId,
+          eventType: "retail_order.confirmed",
+          payload: { order_code: order.orderCode, pay_method: order.payMethod, payment_status: order.paymentStatus },
+          actorId: actor.actorId,
+          actorRole: null,
+          idempotencyKey: null,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          actorId: actor.actorId ?? "system",
+          actorRole: actor.actorRole,
+          action: "retail_order.confirmed",
+          entityType: "retail_order",
+          entityId: orderId,
+          before: { status: order.orderStatus },
+          after: { status: "confirmed" },
+        },
+        tx,
+      );
+      return this.presentOrder(tx, orderId, false);
+    });
+  }
+
+  /** Pack a confirmed order: confirmed -> packed. No relay fact — packing is warehouse-internal until a shipment exists. */
+  async packRetailOrder(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+  ): Promise<RetailOrderView> {
+    this.assertStaff(actor);
+    return this.transitionOrder(orderId, "packed", {
+      actorId: actor.actorId,
+      actorRole: actor.actorRole,
+      reason: "warehouse_packed",
+    });
+  }
+
+  /**
+   * Shipment item plan: full-remaining when the caller passes no lines
+   * (the common case), else a validated partial. Lines must belong to the
+   * order and cumulative shipped quantities can never exceed ordered ones —
+   * shortfalls fail the whole command, never ship partially-by-silence.
+   */
+  private planShipmentItems(
+    lines: Array<{ id: string; variantId: string | null; quantity: number }>,
+    allocated: Map<string, number>,
+    requested: Array<{ retailOrderItemId: unknown; quantity: unknown }> | undefined,
+  ): Array<{ retailOrderItemId: string; variantId: string | null; quantity: number }> {
+    const byId = new Map(lines.map((line) => [line.id, line]));
+    const remainingOf = (lineId: string): number => {
+      const line = byId.get(lineId);
+      if (!line) throw new RetailDomainError("RETAIL_SHIPMENT_ITEM_MISMATCH", `line ${String(lineId).slice(0, 64)} does not belong to this order`);
+      return line.quantity - (allocated.get(lineId) ?? 0);
+    };
+    if (requested === undefined) {
+      const plan = lines
+        .map((line) => ({ retailOrderItemId: line.id, variantId: line.variantId, quantity: line.quantity - (allocated.get(line.id) ?? 0) }))
+        .filter((entry) => entry.quantity > 0)
+        .sort((a, b) => (a.retailOrderItemId < b.retailOrderItemId ? -1 : 1));
+      if (plan.length === 0) {
+        throw new RetailDomainError("RETAIL_SHIPMENT_QUANTITY_EXCEEDED", "every line is already fully shipped");
+      }
+      return plan;
+    }
+    if (!Array.isArray(requested) || requested.length === 0) {
+      throw new RetailDomainError("RETAIL_SHIPMENT_ITEM_MISMATCH", "shipment items must be a non-empty array");
+    }
+    const seen = new Set<string>();
+    const plan = requested.map((entry) => {
+      const itemId = typeof entry?.retailOrderItemId === "string" ? entry.retailOrderItemId : "";
+      const line = byId.get(itemId);
+      if (!line) throw new RetailDomainError("RETAIL_SHIPMENT_ITEM_MISMATCH", `line ${itemId.slice(0, 64)} does not belong to this order`);
+      if (seen.has(itemId)) throw new RetailDomainError("RETAIL_SHIPMENT_ITEM_MISMATCH", `line ${itemId.slice(0, 64)} is listed twice`);
+      seen.add(itemId);
+      const quantity = typeof entry?.quantity === "number" ? entry.quantity : Number.NaN;
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new RetailDomainError("RETAIL_SHIPMENT_ITEM_MISMATCH", `line ${itemId.slice(0, 64)}: quantity must be a positive integer`);
+      }
+      const remaining = remainingOf(itemId);
+      if (quantity > remaining) {
+        throw new RetailDomainError(
+          "RETAIL_SHIPMENT_QUANTITY_EXCEEDED",
+          `line ${itemId.slice(0, 64)}: ${quantity} exceeds the remaining ${remaining}`,
+        );
+      }
+      return { retailOrderItemId: itemId, variantId: line.variantId, quantity };
+    });
+    return plan.sort((a, b) => (a.retailOrderItemId < b.retailOrderItemId ? -1 : 1));
+  }
+
+  /**
+   * COD stock for the shipped lines, secured at shipment time (prepaid stock
+   * was already confirmed at verify). Holds are per-variant and fungible:
+   * for each shipped variant the existing holds are released and re-cut
+   * into a shipped slice (reserved, then confirmed) plus a remainder slice
+   * (stays an active hold). Confirming the whole hold on a partial shipment
+   * would strand confirmed stock a later cancel cannot release — the split
+   * keeps cancel honest. Idempotency keys are stable per shipment key, so a
+   * resumed attempt replays instead of double-moving.
+   */
+  private async secureCodShipmentStock(args: {
+    orderId: string;
+    key: string;
+    lines: Array<{ id: string; variantId: string | null; quantity: number }>;
+    plan: Array<{ retailOrderItemId: string; variantId: string | null; quantity: number }>;
+    tx: any;
+  }) {
+    const { orderId, key, lines, plan, tx } = args;
+    const allocationId = orderId;
+    const sellerId = await this.offers.ensureSeller(null, "KOLBE");
+    const requester = this.systemRequester();
+    const active = allocationId ? await this.inventory.listActiveReservationsByAllocation(allocationId, tx) : [];
+    const lineQty = new Map(lines.map((line) => [line.id, line.quantity]));
+    // Aggregate by variant: holds cover variant units, not lines.
+    const byVariant = new Map<string, { shipped: number; total: number }>();
+    for (const entry of plan) {
+      if (!entry.variantId) throw new RetailDomainError("RETAIL_VARIANT_MISMATCH", `line ${entry.retailOrderItemId}: no variant pinned`);
+      const slot = byVariant.get(entry.variantId) ?? { shipped: 0, total: 0 };
+      slot.shipped += entry.quantity;
+      slot.total += lineQty.get(entry.retailOrderItemId) ?? 0;
+      byVariant.set(entry.variantId, slot);
+    }
+    for (const [variantId, slot] of byVariant) {
+      const held = (active as any[]).filter((row) => row.variantId === variantId);
+      const heldQty = held.reduce((sum: number, row: any) => sum + (row.quantity as number), 0);
+      let available = 0;
+      try {
+        const inv = await this.inventory.getVariantInventory(variantId, sellerId, requester, tx);
+        available = (inv?.available as number) ?? 0;
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `variant ${variantId}: no KOLBE stock record`);
+        }
+        throw error;
+      }
+      if (available + heldQty < slot.total) {
+        throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `variant ${variantId}: insufficient KOLBE stock to ship`);
+      }
+      for (const row of held) {
+        await this.inventory.releaseRetail({
+          reservationId: row.id,
+          requester,
+          reason: `retail COD shipment re-cut -> ${allocationId}`,
+          idempotencyKey: `${key}:cod:release:${variantId}:${row.id}`,
+          executor: tx,
+        });
+      }
+      const shippedHold = await this.inventory.reserveRetail({
+        variantId,
+        sellerId,
+        quantity: slot.shipped,
+        allocationId: allocationId as string,
+        requester,
+        reason: `retail COD shipment reserve -> ${allocationId}`,
+        idempotencyKey: `${key}:cod:ship:${variantId}`,
+        expiresInMinutes: RETAIL_RESERVATION_TTL_MINUTES,
+        executor: tx,
+      });
+      const shippedReservationId = (shippedHold as any)?.id as string | undefined;
+      if (!shippedReservationId) throw new RetailDomainError("RETAIL_INSUFFICIENT_STOCK", `variant ${variantId}: ship-slice reserve failed`);
+      await this.inventory.confirmRetail({
+        reservationId: shippedReservationId,
+        requester,
+        reason: `retail COD shipment confirm -> ${allocationId}`,
+        idempotencyKey: `${key}:cod:confirm:${variantId}`,
+        executor: tx,
+      });
+      const remainder = slot.total - slot.shipped;
+      if (remainder > 0) {
+        await this.inventory.reserveRetail({
+          variantId,
+          sellerId,
+          quantity: remainder,
+          allocationId: allocationId as string,
+          requester,
+          reason: `retail COD shipment remainder hold -> ${allocationId}`,
+          idempotencyKey: `${key}:cod:hold:${variantId}`,
+          expiresInMinutes: RETAIL_RESERVATION_TTL_MINUTES,
+          executor: tx,
+        });
+      }
+    }
+  }
+
+  /**
+   * Create a retail shipment (TxA row + lock-free provider call + TxB
+   * finalize), idempotent per (rOrder, order, shipping.shipment_create, key).
+   * A provider failure leaves a pending row and a retryable command — the
+   * same key resumes (the provider dedupes on the shipment id), it never
+   * forks a second shipment. Manual is operator-attested (no external call,
+   * null tracking); fake is carrier-backed (tracking + re-queryable truth).
+   */
+  async createRetailShipment(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { idempotencyKey: string; providerName?: string; items?: Array<{ retailOrderItemId: unknown; quantity: unknown }> },
+  ): Promise<{ shipment: any; items: any[]; replayed: boolean; providerReplayed: boolean }> {
+    this.assertStaff(actor);
+    const key = parseIdempotencyKey(input.idempotencyKey);
+    const provider = this.shippingProviders.resolve(input.providerName);
+    const scope = { scopeType: "rOrder", scopeId: orderId, commandType: "shipping.shipment_create", idempotencyKey: key };
+
+    const prepared = await this.db.transaction(async (tx) => {
+      const order = await this.repo.findByIdForUpdate(orderId, tx);
+      if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+      this.assertFulfillmentReady(order);
+      this.assertShippableStatus(order);
+      if (order.paymentStatus === "paid") {
+        // Prepaid stock settles at verify; a live hold here means the payment
+        // never confirmed it — shipping on top would double-spend the shelf.
+        const active = await this.inventory.listActiveReservationsByAllocation(orderId, tx);
+        if ((active as any[]).length > 0) {
+          throw new RetailDomainError("RETAIL_SHIPMENT_NOT_READY", "paid stock was never confirmed; verify the payment first");
+        }
+      }
+      // Claim first: the identity hash covers the REQUESTED lines (or the
+      // ship-all intent), so a same-key replay short-circuits before quantity
+      // planning — which would otherwise see zero remaining and misreport
+      // the replay as over-quantity. Same key + different request still
+      // conflicts; different keys still bound cumulatively below.
+      const hash = canonicalHash({ provider: provider.name, items: input.items ?? null });
+      let claim;
+      try {
+        claim = await this.shipping.claimCommand(tx, { ...scope, requestHash: hash });
+      } catch (error) {
+        if (error instanceof ShippingDomainError && (error as any).code === "IDEMPOTENCY_KEY_REUSED") {
+          throw new RetailDomainError("RETAIL_IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different shipment");
+        }
+        throw error;
+      }
+      if (claim.state === "completed" && claim.resourceId) {
+        return { resume: "replay" as const, shipmentId: claim.resourceId };
+      }
+      if (claim.state === "pending") {
+        if (!claim.resourceId) {
+          throw new ShippingDomainError("SHIPMENT_COMMAND_IN_PROGRESS", `Shipment command for order ${orderId} is already running`, 409);
+        }
+        return { resume: "resume" as const, shipmentId: claim.resourceId };
+      }
+      const lines = await this.repo.findItemsByOrderId(orderId, tx);
+      const allocated = await this.shipping.getAllocatedQuantitiesForRetailOrder(orderId, tx);
+      const plan = this.planShipmentItems(lines, allocated, input.items);
+      const shipmentId = makeShipmentId();
+      const sellerId = await this.offers.ensureSeller(null, "KOLBE");
+      const quote = this.resolveRetailQuote(order.shippingMethod, BigInt(order.itemsTotal), order.payMethod === "cod");
+      if (order.payMethod === "cod" && order.paymentStatus !== "paid") {
+        await this.secureCodShipmentStock({ orderId, key, lines, plan, tx });
+      }
+      await this.shipping.createRetailPendingShipment({
+        shipmentId,
+        retailOrderId: orderId,
+        sellerId,
+        provider: provider.name,
+        shippingResponsibility: "KOLBE",
+        addressSnapshot: ((order.address ?? {}) as Record<string, unknown>),
+        quoteSnapshot: {
+          rulesVersion: quote.version,
+          method: quote.method,
+          amount: quote.amount.toString(),
+          currency: quote.currency,
+          freeApplied: quote.freeApplied,
+          itemsTotal: BigInt(order.itemsTotal).toString(),
+        },
+        items: plan.map((entry) => ({ retailOrderItemId: entry.retailOrderItemId, variantId: entry.variantId, pieceQuantity: entry.quantity })),
+        actorId: actor.actorId,
+        actorRole: actor.actorRole,
+        executor: tx,
+      });
+      await this.shipping.attachCommandResource(tx, scope, shipmentId);
+      return { resume: "created" as const, shipmentId };
+    });
+
+    if (prepared.resume === "replay") {
+      const current = await this.shipping.getRetailShipmentById(prepared.shipmentId);
+      return { shipment: current.shipment, items: current.items, replayed: true, providerReplayed: true };
+    }
+
+    // Lock-free provider call. Manual performs no external call (null refs);
+    // a provider throw fails the COMMAND, not the shipment: the pending row
+    // waits and the same key resumes below.
+    const row = await this.shipping.getRetailShipmentById(prepared.shipmentId);
+    let providerResult;
+    try {
+      providerResult = await provider.createShipment({
+        shipmentId: row.shipment.id,
+        shipmentCode: row.shipment.shipmentCode,
+        retailOrderId: orderId,
+        sellerId: row.shipment.sellerId,
+        shippingResponsibility: "KOLBE",
+        addressSnapshot: (row.shipment.addressSnapshot || {}) as Record<string, unknown>,
+        quoteSnapshot: (row.shipment.quoteSnapshot || {}) as Record<string, unknown>,
+        items: (row.items as any[]).map((item) => ({
+          retailOrderItemId: item.retailOrderItemId,
+          variantId: item.variantId ?? null,
+          pieceQuantity: item.pieceQuantity,
+        })),
+        idempotencyKey: row.shipment.id,
+      });
+    } catch (error: any) {
+      await this.db.transaction(async (tx: any) => this.shipping.failCommand(tx, scope));
+      throw new ShippingDomainError("PROVIDER_ERROR", `Shipping provider ${provider.name} failed: ${error?.message || error}`, 502);
+    }
+
+    return this.db.transaction(async (tx) => {
+      const locked = await this.shipping.lockShipment(prepared.shipmentId, tx);
+      if (!locked.retailOrderId || locked.retailOrderId !== orderId) {
+        throw new ShippingDomainError("SHIPMENT_ORDER_MISMATCH", `Shipment ${prepared.shipmentId} does not belong to retail order ${orderId}`);
+      }
+      let replayed = prepared.resume === "resume";
+      let updated = locked;
+      if (locked.status === "pending") {
+        updated = await this.shipping.transitionRetailShipment({
+          shipmentId: prepared.shipmentId,
+          from: "pending",
+          to: "ready",
+          patch: {
+            externalReference: providerResult.externalReference,
+            trackingCode: providerResult.trackingCode,
+            trackingUrl: providerResult.trackingUrl,
+          },
+          actorId: actor.actorId,
+          actorRole: actor.actorRole,
+          reason: providerResult.replayed ? "provider_replayed" : "provider_accepted",
+          executor: tx,
+        });
+        const order = await this.repo.findByIdForUpdate(orderId, tx);
+        await this.repo.insertOrderEvent(
+          {
+            id: makeEventId(),
+            aggregateType: "retail_order",
+            aggregateId: orderId,
+            eventType: "retail_order.shipment_created",
+            payload: {
+              order_code: order?.orderCode ?? null,
+              shipment_id: prepared.shipmentId,
+              shipment_code: updated.shipmentCode,
+              provider: provider.name,
+              tracking_code: updated.trackingCode ?? null,
+            },
+            actorId: actor.actorId,
+            actorRole: null,
+            idempotencyKey: key,
+          },
+          tx,
+        );
+        await this.audit.record(
+          {
+            actorId: actor.actorId ?? "system",
+            actorRole: actor.actorRole,
+            action: "retail_order.shipment_created",
+            entityType: "shipment",
+            entityId: prepared.shipmentId,
+            after: { order_id: orderId, shipment_code: updated.shipmentCode, provider: provider.name, status: "ready" },
+          },
+          tx,
+        );
+      }
+      await this.shipping.completeCommand(tx, scope, prepared.shipmentId, { shipmentId: prepared.shipmentId, shipmentCode: updated.shipmentCode });
+      const current = await this.shipping.getRetailShipmentById(prepared.shipmentId, tx);
+      return { shipment: current.shipment, items: current.items, replayed, providerReplayed: Boolean(providerResult.replayed) };
+    });
+  }
+
+  /**
+   * Operator handoff: ready -> handed_over on the shipment, packed ->
+   * shipped on the ORDER (via `transitionOrder`, so history is appended),
+   * plus the durable handed-over fact. One transaction, idempotent per
+   * (rShipment, shipment, shipping.shipment_handoff, key).
+   */
+  async markRetailShipmentHandoff(
+    shipmentId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { idempotencyKey: string },
+  ): Promise<{ shipment: any; replayed: boolean }> {
+    this.assertStaff(actor);
+    const key = parseIdempotencyKey(input.idempotencyKey);
+    const scope = { scopeType: "rShipment", scopeId: shipmentId, commandType: "shipping.shipment_handoff", idempotencyKey: key };
+    return this.db.transaction(async (tx) => {
+      const locked = await this.shipping.lockShipment(shipmentId, tx);
+      if (!locked.retailOrderId) {
+        throw new ShippingDomainError("SHIPMENT_ORDER_MISMATCH", `Shipment ${shipmentId} is not a retail shipment`);
+      }
+      const orderId = locked.retailOrderId as string;
+      let claim;
+      try {
+        claim = await this.shipping.claimCommand(tx, { ...scope, requestHash: canonicalHash({ to: "handed_over" }) });
+      } catch (error) {
+        if (error instanceof ShippingDomainError && (error as any).code === "IDEMPOTENCY_KEY_REUSED") {
+          throw new RetailDomainError("RETAIL_IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different handoff");
+        }
+        throw error;
+      }
+      if (claim.state === "completed") {
+        const current = await this.shipping.getRetailShipmentById(shipmentId, tx);
+        return { shipment: current.shipment, replayed: true };
+      }
+      if (claim.state === "pending") {
+        throw new ShippingDomainError("SHIPMENT_COMMAND_IN_PROGRESS", `Handoff for shipment ${shipmentId} is already running`, 409);
+      }
+      const updated = await this.shipping.transitionRetailShipment({
+        shipmentId,
+        from: locked.status,
+        to: "handed_over",
+        actorId: actor.actorId,
+        actorRole: actor.actorRole,
+        reason: "operator_handoff",
+        executor: tx,
+      });
+      // The first handoff ships the order; later parcels' handoffs move only
+      // their own parcel (the order is already shipped) but still record
+      // their per-parcel fact below.
+      const preOrder = await this.repo.findByIdForUpdate(orderId, tx);
+      if (preOrder && preOrder.orderStatus === "packed") {
+        await this.transitionOrder(orderId, "shipped", { actorId: actor.actorId, actorRole: actor.actorRole, reason: "shipment_handed_over" }, tx);
+      }
+      const order = await this.repo.findById(orderId, tx);
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: orderId,
+          eventType: "retail_order.shipment_handed_over",
+          payload: { order_code: order?.orderCode ?? null, shipment_id: shipmentId, shipment_code: updated.shipmentCode },
+          actorId: actor.actorId,
+          actorRole: null,
+          idempotencyKey: key,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          actorId: actor.actorId ?? "system",
+          actorRole: actor.actorRole,
+          action: "retail_order.shipment_handed_over",
+          entityType: "shipment",
+          entityId: shipmentId,
+          before: { status: locked.status },
+          after: { status: "handed_over", order_id: orderId },
+        },
+        tx,
+      );
+      await this.shipping.completeCommand(tx, scope, shipmentId, { shipmentId, status: "handed_over" });
+      return { shipment: updated, replayed: false };
+    });
+  }
+
+  /**
+   * Carrier webhook for a provider-backed retail shipment (fake in tests;
+   * manual has no webhook channel). Mirrors the payment callback: the event
+   * is only a TRIGGER — `getTracking` over the provider channel is the
+   * truth, refs must agree on both sides, and the inbox (provider +
+   * external id) plus an atomic claim decide the single processor. Terminal
+   * agreement replays; terminal conflict is rejected without touching state.
+   * Service-level; the HTTP route is Checkpoint D.
+   */
+  async handleRetailCarrierWebhook(
+    providerName: string,
+    raw: { headers: Record<string, string | string[] | undefined>; body: unknown },
+  ): Promise<{ duplicate: boolean; eventId: string; status: string; reason?: string; shipmentId: string | null; shipmentStatus?: string }> {
+    const provider = this.shippingProviders.resolve(providerName);
+    if (!provider.supportsWebhooks || !provider.parseWebhook) {
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", `provider ${provider.name} has no server-to-server tracking channel`);
+    }
+    const normalized = provider.parseWebhook({ headers: raw.headers, body: raw.body });
+    if (!normalized) {
+      // Unauthenticated: rejected without persisting anything (interface contract).
+      throw new RetailDomainError("RETAIL_WEBHOOK_UNAUTHENTICATED", "carrier webhook signature is invalid");
+    }
+    // Both refs given must identify the SAME retail shipment — otherwise the
+    // event is either misrouted or forged, and binding it to either row
+    // would let one order's scan move another order's parcel.
+    const byExternal = normalized.externalReference
+      ? await this.shipping.findRetailShipmentByProviderRef({ provider: provider.name, externalReference: normalized.externalReference })
+      : null;
+    const byTracking = normalized.trackingCode
+      ? await this.shipping.findRetailShipmentByProviderRef({ provider: provider.name, trackingCode: normalized.trackingCode })
+      : null;
+    if (byExternal && byTracking && byExternal.id !== byTracking.id) {
+      const persisted = await this.shipping.persistShipmentEvent({
+        shipmentId: null,
+        provider: provider.name,
+        externalEventId: normalized.externalEventId,
+        eventType: retailTrackingEventType(normalized.reportedState),
+        safeMetadata: { ...normalized.safeMetadata, trigger: "webhook" },
+      });
+      const claimed = await this.shipping.claimShipmentEvent(persisted.id);
+      if (claimed.claimed) {
+        await this.shipping.finishShipmentEvent({ eventId: persisted.id, status: "failed", failureReason: "references_disagree" });
+      }
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "webhook references identify two different shipments");
+    }
+    const shipment = byExternal ?? byTracking;
+    const persisted = await this.shipping.persistShipmentEvent({
+      shipmentId: shipment?.id ?? null,
+      provider: provider.name,
+      externalEventId: normalized.externalEventId,
+      eventType: retailTrackingEventType(normalized.reportedState),
+      safeMetadata: { ...normalized.safeMetadata, trigger: "webhook", retailOrderId: shipment?.retailOrderId ?? null },
+    });
+    if (persisted.duplicate && ["processed", "ignored"].includes(persisted.status)) {
+      return { duplicate: true, eventId: persisted.id, status: persisted.status, shipmentId: shipment?.id ?? null };
+    }
+    const claimed = await this.shipping.claimShipmentEvent(persisted.id);
+    if (!claimed.claimed) {
+      if (["processed", "ignored", "failed"].includes(claimed.status)) {
+        return { duplicate: true, eventId: persisted.id, status: claimed.status, reason: "already_final", shipmentId: shipment?.id ?? null };
+      }
+      return { duplicate: true, eventId: persisted.id, status: claimed.status, reason: "claimed_by_another_worker", shipmentId: shipment?.id ?? null };
+    }
+    if (!shipment) {
+      await this.shipping.finishShipmentEvent({ eventId: persisted.id, status: "failed", failureReason: "unmapped_reference" });
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "no retail shipment matches these carrier references");
+    }
+    if (shipment.provider !== provider.name) {
+      await this.shipping.finishShipmentEvent({ eventId: persisted.id, status: "failed", failureReason: "provider_mismatch" });
+      throw new RetailDomainError(
+        "RETAIL_PROVIDER_EVENT_REJECTED",
+        `webhook from ${provider.name} cannot move a ${shipment.provider} shipment (operator attestation only)`,
+      );
+    }
+    // Provider is the source of truth — queried with NO lock held.
+    let tracking: any;
+    try {
+      tracking = await provider.getTracking({
+        shipmentId: shipment.id,
+        externalReference: shipment.externalReference,
+        trackingCode: shipment.trackingCode,
+      });
+    } catch (error: any) {
+      // Failed inbox rows stay re-claimable: the next redelivery retries.
+      await this.shipping.finishShipmentEvent({ eventId: persisted.id, status: "failed", failureReason: "tracking_query_failed" });
+      throw new ShippingDomainError("PROVIDER_ERROR", `Shipping provider ${provider.name} tracking query failed: ${error?.message || error}`, 502);
+    }
+    if (tracking.externalReference && shipment.externalReference && tracking.externalReference !== shipment.externalReference) {
+      await this.shipping.finishShipmentEvent({ eventId: persisted.id, status: "failed", failureReason: "provider_reference_mismatch" });
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", "carrier now reports a different external reference for this shipment");
+    }
+    const applied = await this.db.transaction(async (tx) =>
+      this.applyRetailCarrierState(tx, {
+        shipmentId: shipment.id,
+        state: String(tracking?.state || "unknown"),
+        provider: provider.name,
+        eventId: persisted.id,
+        actorId: null,
+        actorRole: "system",
+      }),
+    );
+    return { duplicate: persisted.duplicate, eventId: persisted.id, ...applied, shipmentId: shipment.id };
+  }
+
+  /**
+   * Operator-attested scan for a manual (operator-managed) shipment. Manual
+   * has no carrier API — `getTracking` is never authoritative — so the staff
+   * actor IS the authentication and the attested state is applied directly
+   * (never re-queried). Provider-backed shipments refuse attestation.
+   */
+  async recordRetailManualTracking(
+    shipmentId: string,
+    actor: { actorId: string | null; actorRole: string },
+    input: { state: string; idempotencyKey?: string; note?: string },
+  ): Promise<{ duplicate: boolean; eventId: string; status: string; reason?: string; shipmentId: string; shipmentStatus?: string }> {
+    this.assertStaff(actor);
+    const state = String(input.state || "").toLowerCase();
+    if (!["in_transit", "delivered", "failed", "cancelled"].includes(state)) {
+      throw new RetailDomainError("RETAIL_PROVIDER_EVENT_REJECTED", `manual tracking cannot attest state ${state || "(empty)"}`);
+    }
+    const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) : "";
+    const current = await this.shipping.getRetailShipmentById(shipmentId);
+    if (current.shipment.provider !== "manual") {
+      throw new RetailDomainError(
+        "RETAIL_PROVIDER_EVENT_REJECTED",
+        `manual attestation cannot move a ${current.shipment.provider}-backed shipment (carrier truth only)`,
+      );
+    }
+    const externalEventId =
+      typeof input.idempotencyKey === "string" && input.idempotencyKey.trim()
+        ? input.idempotencyKey.trim().slice(0, 128)
+        : `manual:${shipmentId}:${state}`;
+    const persisted = await this.shipping.persistShipmentEvent({
+      shipmentId,
+      provider: "manual",
+      externalEventId,
+      eventType: retailTrackingEventType(state as any),
+      safeMetadata: { trigger: "operator", retailOrderId: current.shipment.retailOrderId, reportedState: state },
+    });
+    if (persisted.duplicate && ["processed", "ignored"].includes(persisted.status)) {
+      return { duplicate: true, eventId: persisted.id, status: persisted.status, shipmentId };
+    }
+    const claimed = await this.shipping.claimShipmentEvent(persisted.id);
+    if (!claimed.claimed) {
+      if (["processed", "ignored", "failed"].includes(claimed.status)) {
+        return { duplicate: true, eventId: persisted.id, status: claimed.status, reason: "already_final", shipmentId };
+      }
+      return { duplicate: true, eventId: persisted.id, status: claimed.status, reason: "claimed_by_another_worker", shipmentId };
+    }
+    if (note) {
+      await this.audit.record({
+        actorId: actor.actorId ?? "system",
+        actorRole: actor.actorRole,
+        action: "retail_shipment.manual_tracking",
+        entityType: "shipment",
+        entityId: shipmentId,
+        after: { attested_state: state, note },
+      });
+    }
+    const applied = await this.db.transaction(async (tx) =>
+      this.applyRetailCarrierState(tx, {
+        shipmentId,
+        state,
+        provider: "manual",
+        eventId: persisted.id,
+        actorId: actor.actorId,
+        actorRole: actor.actorRole,
+      }),
+    );
+    return { duplicate: persisted.duplicate, eventId: persisted.id, ...applied, shipmentId };
+  }
+
+  /**
+   * Apply one authoritative carrier/operator state to a retail shipment.
+   * Forward-only, no skipped handoff: a scan for freight whose handoff was
+   * never recorded is kept as a fact and ignored, never auto-advanced; a
+   * claim against a terminal shipment agrees (replay) or is rejected
+   * (backward) — it never resurrects. Delivery fans out to the ORDER through
+   * `transitionOrder` only when every line is fully delivered; a partial
+   * delivery moves the parcel, not the order.
+   */
+  private async applyRetailCarrierState(
+    tx: any,
+    input: { shipmentId: string; state: string; provider: string; eventId: string; actorId: string | null; actorRole: string },
+  ): Promise<{ status: string; reason?: string; shipmentStatus?: string }> {
+    const finish = (status: "processed" | "ignored" | "failed", reason?: string, shipmentStatus?: string) =>
+      this.shipping
+        .finishShipmentEvent({ eventId: input.eventId, status, failureReason: reason ?? null, shipmentId: input.shipmentId, executor: tx })
+        .then(() => ({ status, reason, shipmentStatus }));
+    const locked = await this.shipping.lockShipment(input.shipmentId, tx);
+    if (!locked.retailOrderId) {
+      throw new ShippingDomainError("SHIPMENT_ORDER_MISMATCH", `Shipment ${input.shipmentId} is not a retail shipment`);
+    }
+    const orderId = locked.retailOrderId as string;
+    const { state } = input;
+    const source = input.provider === "manual" ? "operator" : "carrier";
+    if (state === "unknown" || state === "created") {
+      return finish("ignored", `${source}_state_${state}`, locked.status);
+    }
+    if (["delivered", "cancelled", "failed"].includes(locked.status)) {
+      const agrees =
+        (locked.status === "delivered" && state === "delivered") ||
+        (locked.status === "cancelled" && state === "cancelled") ||
+        (locked.status === "failed" && state === "failed");
+      if (!agrees) {
+        return finish("ignored", `backward_transition_rejected:${locked.status}+${state}`, locked.status);
+      }
+      return finish("processed", `already_${locked.status}`, locked.status);
+    }
+    if (["pending", "ready"].includes(locked.status)) {
+      if (state === "cancelled") {
+        const updated = await this.shipping.transitionRetailShipment({
+          shipmentId: input.shipmentId,
+          from: locked.status,
+          to: "cancelled",
+          actorId: input.actorId,
+          actorRole: input.actorRole,
+          reason: `${source}_cancelled`,
+          executor: tx,
+        });
+        return finish("processed", `${source}_cancelled`, updated.status);
+      }
+      // Freight cannot be in transit before the handoff was recorded. Keep
+      // the fact, move nothing — the operator records the handoff, then the
+      // next scan applies.
+      return finish("ignored", "handoff_not_recorded", locked.status);
+    }
+    // handed_over / in_transit.
+    if (state === "in_transit") {
+      if (locked.status === "handed_over") {
+        const updated = await this.shipping.transitionRetailShipment({
+          shipmentId: input.shipmentId,
+          from: "handed_over",
+          to: "in_transit",
+          actorId: input.actorId,
+          actorRole: input.actorRole,
+          reason: `${source}_in_transit`,
+          executor: tx,
+        });
+        return finish("processed", undefined, updated.status);
+      }
+      return finish("processed", "already_in_transit", locked.status);
+    }
+    if (state === "delivered") {
+      const updated = await this.shipping.transitionRetailShipment({
+        shipmentId: input.shipmentId,
+        from: locked.status,
+        to: "delivered",
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        reason: `${source}_delivered`,
+        executor: tx,
+      });
+      const deliveredQty = await this.shipping.getAllocatedQuantitiesForRetailOrder(orderId, tx, ["delivered"]);
+      const lines = await this.repo.findItemsByOrderId(orderId, tx);
+      const fullyDelivered = (lines as any[]).every((line) => (deliveredQty.get(line.id) ?? 0) >= line.quantity);
+      if (!fullyDelivered) {
+        await this.audit.record(
+          {
+            actorId: input.actorId ?? "system",
+            actorRole: input.actorRole,
+            action: "retail_shipment.partially_delivered",
+            entityType: "shipment",
+            entityId: input.shipmentId,
+            after: { order_id: orderId, shipment_code: updated.shipmentCode, fully_delivered: false },
+          },
+          tx,
+        );
+        return finish("processed", "partial_delivery_order_stays_shipped", updated.status);
+      }
+      await this.transitionOrder(orderId, "delivered", { actorId: input.actorId, actorRole: input.actorRole, reason: "shipment_delivered" }, tx);
+      const order = await this.repo.findById(orderId, tx);
+      await this.repo.insertOrderEvent(
+        {
+          id: makeEventId(),
+          aggregateType: "retail_order",
+          aggregateId: orderId,
+          eventType: "retail_order.shipment_delivered",
+          payload: { order_code: order?.orderCode ?? null, shipment_id: input.shipmentId, shipment_code: updated.shipmentCode, fully_delivered: true },
+          actorId: input.actorId,
+          actorRole: null,
+          idempotencyKey: null,
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          actorId: input.actorId ?? "system",
+          actorRole: input.actorRole,
+          action: "retail_order.shipment_delivered",
+          entityType: "shipment",
+          entityId: input.shipmentId,
+          before: { status: locked.status },
+          after: { status: "delivered", order_id: orderId },
+        },
+        tx,
+      );
+      return finish("processed", undefined, updated.status);
+    }
+    if (state === "failed" || state === "cancelled") {
+      // Post-handoff failure: explicit, recoverable operational exception —
+      // never a silent success, never a resurrection of the parcel. The
+      // order stays shipped; recovery (re-ship, refund) is operator work.
+      const updated = await this.shipping.transitionRetailShipment({
+        shipmentId: input.shipmentId,
+        from: locked.status,
+        to: "failed",
+        patch: { failureReason: `${source}_${state}` },
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        reason: `${source}_${state}`,
+        executor: tx,
+      });
+      return finish("processed", `${source}_${state}`, updated.status);
+    }
+    return finish("ignored", `${source}_state_${state}`, locked.status);
+  }
+
+  /**
+   * Customer shipment read (C15): the order's parcels with line detail and
+   * customer-safe tracking. Internal carrier references stay on operator
+   * paths — the customer sees tracking codes, never external references.
+   */
+  async getRetailShipment(
+    viewer: { userId: string; role: string },
+    orderId: string,
+  ): Promise<{ orderId: string; orderCode: string; shipments: Array<Record<string, unknown>> }> {
+    const order = await this.repo.findById(orderId);
+    if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+    if (viewer.role !== "admin" && (order.customerId ?? null) !== viewer.userId) {
+      throw new RetailDomainError("RETAIL_ORDER_FORBIDDEN", "this order belongs to another customer");
+    }
+    const rows = await this.shipping.listRetailShipments(orderId);
+    const lines = await this.repo.findItemsByOrderId(orderId);
+    const lineOf = new Map((lines as any[]).map((line) => [line.id, line]));
+    const iso = (value: unknown): string | null => (value ? new Date(value as any).toISOString() : null);
+    const shipments: Array<Record<string, unknown>> = [];
+    for (const row of rows as any[]) {
+      const full = await this.shipping.getRetailShipmentById(row.id);
+      const quote = (full.shipment.quoteSnapshot || {}) as Record<string, unknown>;
+      shipments.push({
+        id: full.shipment.id,
+        code: full.shipment.shipmentCode,
+        provider: full.shipment.provider,
+        method: quote.method ?? null,
+        status: full.shipment.status,
+        trackingCode: full.shipment.trackingCode ?? null,
+        trackingUrl: full.shipment.trackingUrl ?? null,
+        failureReason: full.shipment.failureReason ?? null,
+        quote: { version: quote.rulesVersion ?? null, amount: quote.amount ?? null, currency: quote.currency ?? "IRR", freeApplied: quote.freeApplied ?? null },
+        items: (full.items as any[]).map((item) => ({
+          retailOrderItemId: item.retailOrderItemId,
+          sku: (lineOf.get(item.retailOrderItemId) as any)?.sku ?? null,
+          productName: (lineOf.get(item.retailOrderItemId) as any)?.productName ?? null,
+          quantity: item.pieceQuantity,
+        })),
+        handedOverAt: iso(full.shipment.handedOverAt),
+        deliveredAt: iso(full.shipment.deliveredAt),
+        cancelledAt: iso(full.shipment.cancelledAt),
+        createdAt: iso(full.shipment.createdAt),
+      });
+    }
+    return { orderId: order.id, orderCode: order.orderCode, shipments };
   }
 }

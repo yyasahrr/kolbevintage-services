@@ -663,3 +663,148 @@ take no gateway intents and claim no provider success
 (retail-only). Fake stays test-only: registry construction and
 `resolve("fake")` both explode in production (pinned by unit
 tests). 19 tests in `phase-5-8-b-retail-callback.test.ts`.
+
+## 19. Checkpoint C as-built (retail shipping + fulfillment lifecycle)
+
+**Surface (service-level + one customer read; D owns operator HTTP).**
+`RetailOrdersService` gains `confirmRetailOrder`, `packRetailOrder`,
+`createRetailShipment`, `markRetailShipmentHandoff`,
+`handleRetailCarrierWebhook`, `recordRetailManualTracking`,
+`getRetailShipment`, plus private gates (`assertStaff`,
+`assertFulfillmentReady`, `assertShippableStatus`), `planShipmentItems`,
+`secureCodShipmentStock`, and `applyRetailCarrierState`. The only new
+route is `GET /api/v1/retail/orders/:id/shipment` (customer/vip/admin,
+owner-checked); all fulfillment acts stay service-level for D to
+surface. `RetailOrdersModule` imports `ShippingModule` (acyclic:
+nobody imports Retail back; `registry.ts` records the edge).
+
+**Shipment split (no second authority).** `ShippingService` owns five
+order-agnostic retail primitives (`createRetailPendingShipment` with
+`RSHP-<hash12>` codes, `transitionRetailShipment`,
+`getRetailShipmentById`, `listRetailShipments`,
+`findRetailShipmentByProviderRef`,
+`getAllocatedQuantitiesForRetailOrder`) on the shared
+`shipment`/`shipment_item` tables through the shared provider
+registry, the shared carrier-event inbox, and the shared
+`command_idempotency` journal (`rOrder`/`rShipment` scopes,
+wholesale command vocabulary). Retail orchestration owns gates,
+plans, stock, facts, and audit. `transitionRetailShipment` enforces
+`RETAIL_SHIPMENT_TRANSITIONS` (`@kolbe/shared`; the stale wholesale
+table is untouched) with compare-and-set mechanics and refuses
+wholesale rows outright — cross-channel access fails closed at this
+layer. `ShipmentCreateRequest` grew optional retail linkage
+(exactly-one-side, mirroring the DB CHECK); wholesale call sites are
+unchanged.
+
+**Rules.** Fulfillment acts are staff-only (admin/system;
+`RETAIL_ORDER_FORBIDDEN` otherwise — buyers never self-ship).
+Payable-or-COD gate (`RETAIL_FULFILLMENT_NOT_READY`, 422): paid
+ships, `pending_cod` ships on promise (collection at delivery),
+unpaid gateway/installment/wallet never ships — checked BEFORE any
+provider call, so refused commands never touch the carrier.
+Lifecycle gate (`RETAIL_SHIPMENT_NOT_READY`, 422): the first parcel
+needs confirmed/packed, late/partial parcels may join while shipped;
+delivered/cancelled/placed never take shipments, and paid orders
+with still-active holds are refused (verify skipped — shipping must
+not double-spend the shelf). Items must belong to the order
+(`RETAIL_SHIPMENT_ITEM_MISMATCH`, 400) and cumulative shipped
+quantities never exceed ordered ones
+(`RETAIL_SHIPMENT_QUANTITY_EXCEEDED`, 409). Creation is TxA row →
+lock-free provider call → TxB finalize, idempotent per
+(rOrder, order, `shipping.shipment_create`, key): the claim precedes
+planning (same-key replay short-circuits before the zero-remaining
+plan), provider failure leaves a pending row + retryable command,
+and the same key resumes through provider idempotency on the
+shipment id. COD secures stock at shipment time by re-cutting each
+shipped variant's holds into a confirmed shipped slice plus an
+active remainder hold (confirming whole holds on partial shipments
+would strand unrestockable stock); lapsed holds re-reserve first,
+shortfalls fail closed (`RETAIL_INSUFFICIENT_STOCK`).
+
+**Tracking epistemology.** Two channels, never mixed: fake (webhook
+secret + `getTracking` re-query as the ONLY truth; refs must agree
+on both sides, disagreeing refs are rejected without binding) and
+manual (staff attestation applied directly — manual `getTracking`
+is never authoritative). Unauthenticated webhooks are rejected
+without persisting (`RETAIL_WEBHOOK_UNAUTHENTICATED`, 401).
+Application is forward-only with no skipped handoff: pre-handoff
+scans are kept and ignored (`handoff_not_recorded`), terminal
+agreement replays (`already_*`), terminal conflict is rejected
+(`backward_transition_rejected`), post-handoff failure is explicit
+(`failed` + reason, order stays shipped). Handoff is an explicit
+operator act (first handoff ships the order via `transitionOrder`;
+later parcels move only themselves).
+
+**Delivery fan-out (C11 proof).** The order moves to `delivered`
+through `transitionOrder` ONLY when every line is fully delivered;
+partial deliveries move the parcel and write audit, never the fact.
+No Shipping source writes `retail_order` (statically pinned in the
+C suite); the `retail_order_event` history row (`shipped →
+delivered`, reason `shipment_delivered`) is the proof the contract
+was used.
+
+**Cancel coordination.** Paid orders stay refused
+(`RETAIL_CANCEL_PAID_FORBIDDEN`). Freight handed to the carrier
+refuses instead (`RETAIL_CANCEL_SHIPMENT_IN_PROGRESS`, 409).
+Warehouse-held parcels (pending/ready) cancel with the order and
+their confirmed slices restock via `upsertVariantInventory`
+(COD truth: consumed-then-returned units come back as free stock);
+active remainder holds release; the cancelled fact writes —
+atomically. Packed orders with no live shipment stay cancellable
+(the frozen machine permits packed → cancelled; nothing left the
+building). Second cancel throws `RETAIL_TRANSITION_INVALID` with
+state stable and a single fact.
+
+**Reads + relay.** `GET :id/shipment` returns parcels with line
+detail and customer-safe tracking (tracking codes, never external
+references; 403 cross-customer, 404 missing order, 200 with `[]`
+before any parcel). The relay maps the four new facts →
+`RETAIL_ORDER_CONFIRMED` / `RETAIL_SHIPMENT_CREATED` /
+`RETAIL_SHIPMENT_HANDED_OVER` / `RETAIL_SHIPMENT_DELIVERED`
+(+ `shipmentId` payload, no denylist collision); relay failure
+still cannot roll commerce back. Quotes resolve from
+`RETAIL_SHIPPING_RULES` (moved to `@kolbe/shared`; Pricing keeps a
+compat re-export, values byte-identical) and snapshot onto the
+shipment — order totals are immutable history. Analytics needed no
+change (retail reads are status-grouped; verified green).
+
+**Schema.** Migration `0036` (spec number shifted: B-fixup took
+0035): retail linkage on `shipment` (`shipment_single_order_side`:
+wholesale all-or-nothing + exactly one order side) and
+`shipment_item` (`shipment_item_single_order_side`), `restrict`
+FKs, retail indexes, the 4 relay keys on BOTH notification twins
+(the 0035 lesson, applied together), the 4 fulfillment fact types.
+Journal idx 36 (37 entries), 194 tables, 446 FKs, 575 CHECKs.
+Migrations 0000–0035 frozen.
+
+**Test-found fixes (all inside C, none committed before).**
+1. Same-key shipment replay planned quantities before claiming
+idempotency, so the replay saw zero remaining and misreported
+over-quantity. Fixed: the claim precedes planning, hashed on the
+REQUESTED lines (or the ship-all intent).
+2. Late/partial parcels were impossible: the lifecycle gate
+rejected `shipped` orders and the second handoff re-fired
+`packed → shipped`. Fixed: `shipped` orders take new parcels;
+only the first handoff moves the order.
+3. COD cancel math: restock restores `on_hand` while the consumed
+hold correctly stays off `reserved` (net −2 vs the held
+snapshot), not a double-release.
+
+**Coverage.** New
+`apps/api/test/phase-5-8-c-retail-shipping.test.ts` (28 tests:
+server quotes, browser-price ignorance + snapshot, retail linkage,
+no wholesale child, replay + cumulative bound, quantity bound,
+cross-order rejection, financial gate ×2 incl. no-carrier-call,
+COD inline-confirm + lapsed-hold re-secure, manual truthfulness,
+fake-production guards ×2, tracking replay, backward rejection +
+terminal agreement, cross-order scan rejection, handoff + replay +
+order-shipped proof, manual in-transit + channel refusal both
+ways, shipment delivery, partial-vs-full order delivery via
+contract, static no-Shipping-SQL-on-retail_order, cancel release +
+restock, cancel replay, paid-cancel refusal, wholesale isolation,
+shipment IDOR, audit/history retention, relay-failure isolation)
+and `packages/database/test/phase-5-8-c-migration.test.ts` (4
+tests: linkage + predicate rejections, item linkage + uniqueness,
+twin key acceptance, fact acceptance). B regression: zero — full
+`test:all` green (23 shared + 115 database + 1094 api + 153 next =
+1385).

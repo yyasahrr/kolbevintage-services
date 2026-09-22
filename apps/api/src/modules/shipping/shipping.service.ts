@@ -5,7 +5,7 @@ import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import type { DbOrTx } from "../inventory/inventory.service";
 import { commandIdempotency, shipment, shipmentEvent, shipmentItem, shippingQuote } from "@kolbe/database";
 import { AuditService } from "../audit/audit.service";
-import { DomainError } from "@kolbe/shared";
+import { DomainError, RETAIL_SHIPMENT_TRANSITIONS } from "@kolbe/shared";
 
 /**
  * Phase 4.7.1 — ShippingService is the SINGLE WRITER of the shipping tables
@@ -535,7 +535,7 @@ export class ShippingService {
   // ── carrier event inbox (B16/B17) ─────────────────────────────────────
   private sanitizeMetadata(metadata: unknown): Record<string, unknown> {
     if (!metadata || typeof metadata !== "object") return {};
-    const allowed = ["shipmentId", "status", "state", "reportedState", "trackingCode", "provider", "eventType", "externalReference", "childOrderId", "orderId", "trigger", "reason"];
+    const allowed = ["shipmentId", "status", "state", "reportedState", "trackingCode", "provider", "eventType", "externalReference", "childOrderId", "orderId", "retailOrderId", "trigger", "reason"];
     const out: Record<string, unknown> = {};
     for (const key of allowed) if ((metadata as any)[key] !== undefined) out[key] = (metadata as any)[key];
     return out;
@@ -626,5 +626,179 @@ export class ShippingService {
 
   async listShipmentEvents(shipmentId: string, executor?: DbOrTx) {
     return this.withExecutor(executor, async (tx) => tx.select().from(shipmentEvent).where(eq(shipmentEvent.shipmentId, shipmentId)).orderBy(asc(shipmentEvent.receivedAt)));
+  }
+
+  // ── Phase 5.8-C — retail shipments ──────────────────────────────────
+  // Retail shipments live in the same tables (the single-side CHECK keeps
+  // the channels apart) but move under their own transition table. No
+  // wholesale method above is reused for retail rows, and no retail method
+  // below reads or writes wholesale linkage: cross-channel access fails
+  // closed at this layer, not in the caller.
+
+  /** TxA of the retail shipment flow: canonical `pending` shipment + immutable items. */
+  async createRetailPendingShipment(input: {
+    shipmentId: string;
+    retailOrderId: string;
+    sellerId: string;
+    provider: string;
+    shippingResponsibility: string;
+    addressSnapshot: Record<string, unknown>;
+    quoteSnapshot: Record<string, unknown>;
+    items: Array<{ retailOrderItemId: string; variantId: string | null; pieceQuantity: number }>;
+    actorId: string | null;
+    actorRole: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const now = await this.getDbNow(tx);
+    const shipmentCode = `RSHP-${createHash("sha256").update(input.shipmentId).digest("hex").slice(0, 12).toUpperCase()}`;
+    const [inserted] = await tx
+      .insert(shipment)
+      .values({
+        id: input.shipmentId,
+        shipmentCode,
+        wholesaleOrderId: null,
+        childOrderId: null,
+        retailOrderId: input.retailOrderId,
+        sellerId: input.sellerId,
+        provider: input.provider,
+        shippingResponsibility: input.shippingResponsibility as any,
+        status: "pending",
+        addressSnapshot: input.addressSnapshot as any,
+        quoteSnapshot: input.quoteSnapshot as any,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    const items: any[] = [];
+    for (const item of input.items) {
+      const [row] = await tx
+        .insert(shipmentItem)
+        .values({
+          id: deterministicId("shpi", input.shipmentId, item.retailOrderItemId),
+          shipmentId: input.shipmentId,
+          wholesaleOrderItemId: null,
+          retailOrderItemId: item.retailOrderItemId,
+          purchaseOrderItemId: null,
+          variantId: item.variantId,
+          pieceQuantity: item.pieceQuantity,
+          createdAt: now,
+        })
+        .returning();
+      items.push(row);
+    }
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        action: "shipping.shipment_created",
+        entityType: "shipment",
+        entityId: input.shipmentId,
+        after: { shipmentCode, itemCount: items.length, status: "pending" },
+        metadata: { retailOrderId: input.retailOrderId, provider: input.provider },
+      },
+      tx,
+    );
+    return { shipment: inserted, items };
+  }
+
+  /**
+   * The ONLY way a retail shipment changes status. Same mechanics as the
+   * wholesale transition (table check, lock-free compare-and-set, timestamp
+   * side-effects, audit) but under `RETAIL_SHIPMENT_TRANSITIONS`, and it
+   * refuses wholesale rows outright. Caller holds the row lock.
+   */
+  async transitionRetailShipment(input: {
+    shipmentId: string;
+    from: string;
+    to: string;
+    patch?: Partial<{ externalReference: string | null; trackingCode: string | null; trackingUrl: string | null; failureReason: string | null }>;
+    actorId: string | null;
+    actorRole: string;
+    reason?: string;
+    executor: DbOrTx;
+  }) {
+    const tx = input.executor as any;
+    const allowed = (RETAIL_SHIPMENT_TRANSITIONS as Record<string, readonly string[]>)[input.from] || [];
+    if (!allowed.includes(input.to)) {
+      throw new ShippingDomainError("INVALID_SHIPMENT_TRANSITION", `Retail shipment ${input.shipmentId}: ${input.from} → ${input.to} is not allowed`);
+    }
+    const now = await this.getDbNow(tx);
+    const set: Record<string, unknown> = { status: input.to, updatedAt: now, ...(input.patch || {}) };
+    if (input.to === "handed_over") { set.handedOverAt = now; set.shippedAt = now; }
+    if (input.to === "delivered") set.deliveredAt = now;
+    if (input.to === "cancelled") set.cancelledAt = now;
+    const [updated] = await tx
+      .update(shipment)
+      .set(set as any)
+      .where(and(eq(shipment.id, input.shipmentId), eq(shipment.status, input.from), sql`${shipment.retailOrderId} IS NOT NULL`))
+      .returning();
+    if (!updated) {
+      throw new ShippingDomainError("INVALID_SHIPMENT_TRANSITION", `Retail shipment ${input.shipmentId} is no longer in ${input.from} (or is not a retail shipment)`);
+    }
+    await this.auditService.record(
+      {
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        action: `shipping.shipment_${input.to}`,
+        entityType: "shipment",
+        entityId: input.shipmentId,
+        before: { status: input.from },
+        after: { status: input.to, trackingCodePresent: Boolean(updated.trackingCode) },
+        metadata: { reason: input.reason || null, retailOrderId: updated.retailOrderId },
+      },
+      tx,
+    );
+    return updated;
+  }
+
+  /** Retail-scoped read: wholesale rows are invisible here (fail closed). */
+  async getRetailShipmentById(shipmentId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      const [row] = await tx.select().from(shipment).where(and(eq(shipment.id, shipmentId), sql`${shipment.retailOrderId} IS NOT NULL`)).limit(1);
+      if (!row) throw new ShippingDomainError("SHIPMENT_NOT_FOUND", `Retail shipment ${shipmentId} not found`);
+      const items = await tx.select().from(shipmentItem).where(eq(shipmentItem.shipmentId, shipmentId)).orderBy(asc(shipmentItem.retailOrderItemId));
+      return { shipment: row, items };
+    });
+  }
+
+  async listRetailShipments(retailOrderId: string, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => tx.select().from(shipment).where(eq(shipment.retailOrderId, retailOrderId)).orderBy(asc(shipment.createdAt)));
+  }
+
+  async findRetailShipmentByProviderRef(input: { provider: string; externalReference?: string | null; trackingCode?: string | null }, executor?: DbOrTx) {
+    return this.withExecutor(executor, async (tx) => {
+      if (input.externalReference) {
+        const [row] = await tx
+          .select()
+          .from(shipment)
+          .where(and(eq(shipment.provider, input.provider), eq(shipment.externalReference, input.externalReference), sql`${shipment.retailOrderId} IS NOT NULL`))
+          .limit(1);
+        if (row) return row;
+      }
+      if (input.trackingCode) {
+        const [row] = await tx
+          .select()
+          .from(shipment)
+          .where(and(eq(shipment.provider, input.provider), eq(shipment.trackingCode, input.trackingCode), sql`${shipment.retailOrderId} IS NOT NULL`))
+          .limit(1);
+        if (row) return row;
+      }
+      return null;
+    });
+  }
+
+  /** Retail mirror of `getAllocatedQuantitiesForChild`: shipped qty per retail line over the given statuses. */
+  async getAllocatedQuantitiesForRetailOrder(retailOrderId: string, executor: DbOrTx, statuses: readonly string[] = ACTIVE_ALLOCATION_STATUSES) {
+    const tx = executor as any;
+    const rows = await tx
+      .select({ retailOrderItemId: shipmentItem.retailOrderItemId, qty: sql<string>`COALESCE(SUM(${shipmentItem.pieceQuantity}), 0)` })
+      .from(shipmentItem)
+      .innerJoin(shipment, eq(shipment.id, shipmentItem.shipmentId))
+      .where(and(eq(shipment.retailOrderId, retailOrderId), inArray(shipment.status, [...statuses])))
+      .groupBy(shipmentItem.retailOrderItemId);
+    const map = new Map<string, number>();
+    for (const r of rows as any[]) map.set(r.retailOrderItemId, Number(r.qty));
+    return map;
   }
 }

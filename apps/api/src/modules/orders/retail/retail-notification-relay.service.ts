@@ -94,6 +94,7 @@ export class RetailNotificationRelayService implements OnModuleInit, OnModuleDes
             grand: BigInt(order.totalAmount).toString(),
           },
           paymentId: ((event.payload as Record<string, unknown> | null)?.payment_id as string | undefined) ?? null,
+          shipmentId: ((event.payload as Record<string, unknown> | null)?.shipment_id as string | undefined) ?? null,
           retailEventId: event.id,
           retailEventType: event.eventType,
         },
@@ -117,6 +118,14 @@ function notificationKey(eventType: string): NotificationEventKey | null {
       return "RETAIL_ORDER_PAID";
     case "retail_order.cancelled":
       return "RETAIL_ORDER_CANCELLED";
+    case "retail_order.confirmed":
+      return "RETAIL_ORDER_CONFIRMED";
+    case "retail_order.shipment_created":
+      return "RETAIL_SHIPMENT_CREATED";
+    case "retail_order.shipment_handed_over":
+      return "RETAIL_SHIPMENT_HANDED_OVER";
+    case "retail_order.shipment_delivered":
+      return "RETAIL_SHIPMENT_DELIVERED";
     default:
       return null;
   }

@@ -27,7 +27,9 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_INTENT_METHOD_UNSUPPORTED" ||
       code === "RETAIL_EVIDENCE_RAIL_MISMATCH" ||
       code === "RETAIL_AMOUNT_MISMATCH" ||
-      code === "RETAIL_PROVIDER_EVENT_REJECTED"
+      code === "RETAIL_PROVIDER_EVENT_REJECTED" ||
+      code === "RETAIL_FULFILLMENT_NOT_READY" ||
+      code === "RETAIL_SHIPMENT_NOT_READY"
     ) {
       status = 422;
     } else if (code === "RETAIL_WEBHOOK_UNAUTHENTICATED") {
@@ -37,7 +39,9 @@ export class RetailDomainError extends DomainError {
       code === "RETAIL_INSUFFICIENT_STOCK" ||
       code === "RETAIL_ORDER_CODE_COLLISION" ||
       code === "RETAIL_ALREADY_PAID" ||
-      code === "RETAIL_CANCEL_PAID_FORBIDDEN"
+      code === "RETAIL_CANCEL_PAID_FORBIDDEN" ||
+      code === "RETAIL_SHIPMENT_QUANTITY_EXCEEDED" ||
+      code === "RETAIL_CANCEL_SHIPMENT_IN_PROGRESS"
     ) {
       status = 409;
     } else if (code === "RETAIL_ORDER_FORBIDDEN") {

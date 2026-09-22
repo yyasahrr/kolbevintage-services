@@ -15,3 +15,4 @@ export * from "./money";
 export * from "./order-status";
 export * from "./errors";
 export * from "./idempotency";
+export * from "./retail-shipping";

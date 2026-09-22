@@ -150,6 +150,9 @@ export const MODULES: readonly ModuleDefinition[] = [
     // orders -> notifications -> admin -> orders cycles that do not exist in
     // the Nest graph (RetailOrdersModule is imported by nobody but
     // app.module).
+    // Phase 5.8-C: same treatment for shipping (retail shipment rows live
+    // in the shipping tables; the Nest edge is RetailOrdersModule ->
+    // ShippingModule, never back).
     dependsOn: ["vip", "pricing", "offers", "inventory", "suppliers", "catalog", "audit", "compliance"],
     status: "scaffolded",
     phase: 4,

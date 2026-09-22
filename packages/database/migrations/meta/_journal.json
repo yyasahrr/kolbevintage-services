@@ -253,6 +253,13 @@
       "when": 1790486400000,
       "tag": "0035_phase_5_8_b_hold_unique_template_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790659200000,
+      "tag": "0036_phase_5_8_c_retail_shipping_lifecycle",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { SHIPPING_METHOD_IDS } from "@kolbe/database";
-import { MAX_MONEY } from "@kolbe/shared";
+import { MAX_MONEY, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
+export { RETAIL_SHIPPING_RULES };
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { CatalogService } from "../catalog/catalog.service";
 import { OffersService } from "../offers/offers.service";
@@ -51,16 +52,11 @@ export type RetailPriceResolution = {
 };
 
 /**
- * Transitional retail shipping rules, byte-identical to the legacy ones.
- * Shipping owns no retail quotes yet (Checkpoint C); until then this
- * versioned table is the single server source, and its version participates
- * in the pricing authority hash so any rule change is visible on the order.
+ * Retail shipping rules live in `@kolbe/shared` since Checkpoint C so
+ * Pricing and Shipping read the same server table. Re-exported here so
+ * existing import sites (and the pricing authority hash) keep working
+ * unchanged; values are byte-identical to the legacy ones.
  */
-export const RETAIL_SHIPPING_RULES = {
-  version: "retail-ship-v1",
-  methods: { post: 59_000n, pishtaz: 89_000n, tipax: 145_000n } as Record<string, bigint>,
-  freeThreshold: 3_000_000n,
-} as const;
 
 export const RETAIL_MAX_LINES = 50;
 export const RETAIL_MAX_QUANTITY_PER_LINE = 100;

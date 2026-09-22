@@ -2713,8 +2713,10 @@ export const shipment = pgTable(
   {
     id: text("id").primaryKey(),
     shipmentCode: text("shipment_code").notNull().unique(),
-    wholesaleOrderId: text("wholesale_order_id").notNull(),
-    childOrderId: text("child_order_id").notNull(),
+    wholesaleOrderId: text("wholesale_order_id"),
+    childOrderId: text("child_order_id"),
+    /** Phase 5.8-C — retail linkage. Exactly one order side is set, and the wholesale side is all-or-nothing (see `shipment_single_order_side`). */
+    retailOrderId: text("retail_order_id"),
     sellerId: text("seller_id").notNull(),
     provider: text("provider").notNull().default("manual"),
     shippingResponsibility: text("shipping_responsibility").notNull().default("SUPPLIER"),
@@ -2734,11 +2736,16 @@ export const shipment = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
+    check(
+      "shipment_single_order_side",
+      sql`((("wholesale_order_id" IS NULL) = ("child_order_id" IS NULL)) AND (("wholesale_order_id" IS NULL) <> ("retail_order_id" IS NULL)))`,
+    ),
     stateCheck("shipment_status_allowed", "status", SHIPMENT_STATUSES),
     stateCheck("shipment_shipping_responsibility_allowed", "shipping_responsibility", SHIPPING_RESPONSIBILITIES),
     uniqueIndex("shipment_code_unique").on(table.shipmentCode),
     index("shipment_wholesale_created").on(table.wholesaleOrderId, table.createdAt),
     index("shipment_child_created").on(table.childOrderId, table.createdAt),
+    index("shipment_retail_created").on(table.retailOrderId, table.createdAt),
     index("shipment_seller_created").on(table.sellerId, table.createdAt),
     index("shipment_status_created").on(table.status, table.createdAt),
     index("shipment_tracking_code").on(table.trackingCode),
@@ -2753,6 +2760,11 @@ export const shipment = pgTable(
       foreignColumns: [purchaseOrder.id],
     }).onDelete("restrict"),
     foreignKey({
+      name: "shipment_retail_order_fk",
+      columns: [table.retailOrderId],
+      foreignColumns: [retailOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
       name: "shipment_seller_fk",
       columns: [table.sellerId],
       foreignColumns: [seller.id],
@@ -2765,17 +2777,22 @@ export const shipmentItem = pgTable(
   {
     id: text("id").primaryKey(),
     shipmentId: text("shipment_id").notNull(),
-    wholesaleOrderItemId: text("wholesale_order_item_id").notNull(),
+    wholesaleOrderItemId: text("wholesale_order_item_id"),
+    /** Phase 5.8-C — retail linkage. Exactly one item side is set (see `shipment_item_single_order_side`). */
+    retailOrderItemId: text("retail_order_item_id"),
     purchaseOrderItemId: text("purchase_order_item_id"),
     variantId: text("variant_id"),
     pieceQuantity: integer("piece_quantity").notNull(),
     createdAt: createdAt(),
   },
   (table) => [
+    check("shipment_item_single_order_side", sql`(("wholesale_order_item_id" IS NULL) <> ("retail_order_item_id" IS NULL))`),
     positiveQuantityCheck("shipment_item_piece_quantity_positive", "piece_quantity"),
     uniqueIndex("shipment_item_shipment_wholesale_unique").on(table.shipmentId, table.wholesaleOrderItemId),
+    uniqueIndex("shipment_item_shipment_retail_unique").on(table.shipmentId, table.retailOrderItemId),
     index("shipment_item_shipment_created").on(table.shipmentId, table.createdAt),
     index("shipment_item_wholesale_item").on(table.wholesaleOrderItemId),
+    index("shipment_item_retail_item").on(table.retailOrderItemId),
     foreignKey({
       name: "shipment_item_shipment_fk",
       columns: [table.shipmentId],
@@ -2785,6 +2802,11 @@ export const shipmentItem = pgTable(
       name: "shipment_item_wholesale_item_fk",
       columns: [table.wholesaleOrderItemId],
       foreignColumns: [wholesaleOrderItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "shipment_item_retail_item_fk",
+      columns: [table.retailOrderItemId],
+      foreignColumns: [retailOrderItem.id],
     }).onDelete("restrict"),
     foreignKey({
       name: "shipment_item_purchase_item_fk",
