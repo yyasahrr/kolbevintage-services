@@ -132,9 +132,12 @@ are not enumerable across raters; public rows carry no PII.
 ### Local verification (fresh, this closeout)
 
 - `typecheck:all` clean (4 workspaces).
-- `test:all` 1581/1581 = 1547 (C head) + 34 new D tests...
-  (corrected below at closeout) — shared 23, database 139,
-  api 1264, frontend 155.
+- `test:all` 1578/1578 = 1547 (C head) + 31 new D tests:
+  shared 23, database 136, api 1264 (+8 failure, +7
+  concurrency, +8 security, +8 guards), frontend 155.
+  (An earlier draft of this section said 1581/database 139;
+  the independently re-run closeout log settles it at
+  1578/database 136.)
 - New suites: `phase-5-10-d-failure-injection`,
   `-concurrency`, `-security`, `-static-guards`.
 - Standing invariant: zero file deletions across the phase;
@@ -183,7 +186,10 @@ are not enumerable across raters; public rows carry no PII.
 
 ## Closeout CI evidence
 
-This report was committed with the Checkpoint D closeout,
-pushed, and its CI run was awaited to SUCCESS before closeout.
+The C+D push (`01a4b21..dbc62b8`) went CI green
+(`35764903629` SUCCESS, covering both commits); the count
+correction above was committed as `docs: record phase 5.10
+final CI`, pushed, and its own CI run was awaited to SUCCESS
+before closeout.
 
 Phase 5.10 DONE; the next phase has NOT been scoped.
