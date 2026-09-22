@@ -180,7 +180,8 @@ stop at the guard.
 
 ## Closeout CI evidence
 
-This report was committed with the Checkpoint D closeout, pushed,
-and its CI run was awaited to SUCCESS before closeout.
+This evidence was committed as `docs: record phase 5.9 final CI`
+(`9183d7b`), pushed, and its CI run `35750101524` was awaited to
+SUCCESS before closeout.
 
 Phase 5.9 DONE; Phase 5.10 Search / Discovery / Ratings Backend has NOT started.
