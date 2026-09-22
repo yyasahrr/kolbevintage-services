@@ -194,7 +194,11 @@ a shared path).
 - Checkpoint D: run `35725171007`, SHA
   `3bf88a1b2763ebdc85d52152e0882bcd9117a310` — SUCCESS.
   URL: https://github.com/yyasahrr/kolbevintage-services/actions/runs/35725171007
-- Report commit: run `PENDING` — recorded below once this
-  commit's CI run reaches SUCCESS.
+- Report commit: run `35726476302`, SHA
+  `78053aadfe64940167ca57241ec757288887c0bf` — SUCCESS.
+  URL: https://github.com/yyasahrr/kolbevintage-services/actions/runs/35726476302
+
+This evidence was committed as `docs: record phase 5.8 final CI`,
+pushed, and its own CI run was awaited to SUCCESS before closeout.
 
 Phase 5.9 Retail Customer Account & After-sales Backend has NOT started.
