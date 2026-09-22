@@ -33,6 +33,7 @@ import { SupplierTeamModule } from "./modules/supplier-team/supplier-team.module
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { VipModule } from "./modules/vip/vip.module";
 import { OrdersModule } from "./modules/orders/orders.module";
+import { RetailOrdersModule } from "./modules/orders/retail/retail-orders.module";
 import { FulfillmentModule } from "./modules/fulfillment/fulfillment.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { FinanceModule } from "./modules/finance/finance.module";
@@ -68,6 +69,7 @@ import { PromotionsModule } from "./modules/promotions/promotions.module";
     InventoryModule,
     VipModule,
     OrdersModule,
+    RetailOrdersModule,
     FulfillmentModule,
     PaymentsModule,
     ShippingModule,

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { seller, sellerOffer, product, productVariant, supplierMember, wholesalePackage, wholesalePackageItem, wholesalePricingTier } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { ForbiddenError, NotFoundError } from "@kolbe/shared";
@@ -215,6 +215,32 @@ export class OffersService {
       // For revalidation, we check not archived/suspended/rejected.
     }
     return offer;
+  }
+
+  /**
+   * Phase 5.8 — owner read for Retail pricing: live offers of one seller for
+   * a product line that carry a retail price. Variant-scoped and
+   * product-level rows are both returned; selection (variant scope wins,
+   * ambiguity fails closed) belongs to the Retail pricing caller, which owns
+   * the retail error codes.
+   */
+  async getRetailOfferCandidates(
+    input: { productId: string; variantId: string; sellerId: string },
+    executor?: any,
+  ) {
+    const db = (executor as any) || this.db;
+    return db
+      .select()
+      .from(sellerOffer)
+      .where(
+        and(
+          eq(sellerOffer.productId, input.productId),
+          eq(sellerOffer.sellerId, input.sellerId),
+          inArray(sellerOffer.status, ["approved", "published"]),
+          isNotNull(sellerOffer.retailPrice),
+          or(eq(sellerOffer.variantId, input.variantId), isNull(sellerOffer.variantId)),
+        ),
+      );
   }
 
   /**

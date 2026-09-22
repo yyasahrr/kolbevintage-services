@@ -12,12 +12,10 @@ import {
   consumeTryOnUploadQuota,
 } from "./try-on-guard";
 import {
-  assertPaymentMethodAllowed,
-  parseCustomerContact,
-  parseDeliveryAddress,
-  paymentSettlementStatus,
-  priceRetailOrder,
-  type RetailPaymentMethod,
+  resolveRetailIdempotencyKey,
+  translateRetailNestError,
+  translateRetailOrderFromNest,
+  translateRetailOrderToNest,
 } from "./retail-pricing";
 import { handlePerfectCorpRequest, isPerfectCorpError } from "./perfect-corp";
 
@@ -707,71 +705,6 @@ async function forwardToNest(
     data = { raw: text };
   }
   return { status: res.status, data };
-}
-
-/**
- * Phase 4.7.5 — retail legal binding gate (E-Commerce Law art. 33/34/37 evidence — see
- * docs/compliance/iran-legal-source-register.md S-01).
- *
- * `KOLBE_RETAIL_LEGAL_GATE`:
- *   - "off" (default until launch): legacy behaviour, no evidence written.
- *   - "enforce": the order is bound ONLY if Nest Compliance confirms the required RETAIL
- *     policy versions were presented/accepted and records acceptance + disclosure snapshot.
- *     Any non-2xx / network failure fails CLOSED (transaction rolled back, no order).
- * The gate is server-to-server; the browser can only claim document ids that Nest
- * itself published — it can never set "accepted = true".
- */
-export function retailLegalGateMode(): "off" | "enforce" {
-  return (process.env.KOLBE_RETAIL_LEGAL_GATE || "off").trim().toLowerCase() === "enforce" ? "enforce" : "off";
-}
-
-async function bindRetailLegalEvidence(
-  req: import("next/server").NextRequest,
-  input: {
-    orderCode: string;
-    userId: string | null;
-    customer: { phone: string; email: string | null };
-    acceptedPolicyDocumentIds: unknown;
-    facts: {
-      currency: string;
-      lines: Array<{ ref: string; name: string; quantity: number; unitPrice: string; lineTotal: string }>;
-      shipping: { method: string; label: string; price: string } | null;
-      totals: { items: string; shipping: string; grand: string };
-      paymentMethod: string;
-    };
-  },
-): Promise<{ mode: "off" } | { mode: "enforce"; snapshotId: string; policyBundleHash: string; disclosureHash: string | null }> {
-  if (retailLegalGateMode() === "off") return { mode: "off" };
-  const acceptedPolicyDocumentIds = Array.isArray(input.acceptedPolicyDocumentIds)
-    ? input.acceptedPolicyDocumentIds.filter((id) => typeof id === "string").slice(0, 20)
-    : [];
-  const extra: Record<string, string> = {};
-  const internalToken = process.env.KOLBE_INTERNAL_API_TOKEN?.trim();
-  if (internalToken) extra["x-kolbe-internal-token"] = internalToken;
-  let result: { status: number; data: any };
-  try {
-    result = await forwardToNest(
-      req,
-      "POST",
-      "legal/retail/checkout-binding",
-      {
-        subject: { userId: input.userId, phone: input.customer.phone, email: input.customer.email },
-        acceptedPolicyDocumentIds,
-        facts: { orderRef: input.orderCode, ...input.facts },
-      },
-      extra,
-    );
-  } catch {
-    throw new HttpError(503, "LEGAL_GATE_UNAVAILABLE", "سرویس انطباق حقوقی در دسترس نیست؛ سفارش ثبت نشد");
-  }
-  if (result.status < 200 || result.status >= 300) {
-    const code = typeof result.data?.error === "string" ? result.data.error : "LEGAL_GATE_REJECTED";
-    const status = result.status === 409 || result.status === 400 || result.status === 403 ? result.status : 502;
-    throw new HttpError(status, code, typeof result.data?.message === "string" ? result.data.message : code);
-  }
-  const snapshotId = String(result.data?.snapshotId ?? "");
-  if (!snapshotId) throw new HttpError(502, "LEGAL_GATE_INVALID_RESPONSE", "پاسخ سرویس انطباق نامعتبر است");
-  return { mode: "enforce", snapshotId, policyBundleHash: String(result.data?.policyBundleHash ?? ""), disclosureHash: result.data?.disclosureHash ?? null };
 }
 
 function mapLegacySupplierStatusToNest(status: string): string | null {
@@ -1812,187 +1745,33 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
     return response(req, { id: user.id, name: user.display_name ?? user.email.split("@")[0], phone: user.phone ?? "—", email: user.email });
   }
   /**
-   * ثبت سفارش خرده‌فروشی.
+   * Phase 5.8 — Retail compat proxy (NOT a writer, NOT a pricer).
    *
-   * ⚠️ این تابع در گام ۰.۱ و ۰.۳ به‌طور کامل بازنویسی شد:
-   *
-   * ایراد D1 (P0): `body.lines` به‌صورت آرایهٔ جاوااسکریپت به پارامتر `jsonb` پاس می‌شد؛
-   * `pg` آن را به شکل آرایهٔ پستگرس سریالایز می‌کرد و هر درخواست با خطای
-   * `invalid input syntax for type json` (HTTP 500) شکست می‌خورد — یعنی چک‌اوت
-   * خرده‌فروشی در عمل از کار افتاده بود.
-   *
-   * ایراد D3 (P0): جمع کل و قیمت هر قلم از مرورگر گرفته و بدون بازبینی ذخیره می‌شد
-   * (Price Tampering). حالا `priceRetailOrder` قیمت را از مرجع سرور بازمحاسبه می‌کند،
-   * اقلام را در `retail_order_item` به‌صورت Snapshot ذخیره می‌کند و کل مبلغ سفارش
-   * هرگز از کلاینت پذیرفته نمی‌شود.
-   *
-   * همچنین: پشتیبانی از `Idempotency-Key` تا دوبار کلیک/دوباره‌فرست، دو سفارش نسازد.
+   * Canonical checkout lives in Nest `RetailOrdersService`. This handler only
+   * translates the frozen legacy body to the Nest DTO, forwards cookie +
+   * idempotency key + internal token via `forwardToNest`, and translates the
+   * Nest response/error back to the frozen legacy shape. No INSERT/UPDATE of
+   * `retail_order`/`retail_order_item` happens here.
    */
   if (path === "retail/orders" && req.method === "POST") {
     const body = await jsonBody(req);
-    const customer = parseCustomerContact(body.customer);
-    const address = parseDeliveryAddress(body.address);
-    const idempotencyKey = readIdempotencyKey(req);
-
-    // قیمت‌گذاری سمت سرور (بدون هیچ ورودی مالی از کلاینت).
-    const priced = priceRetailOrder(body.lines, {
-      shippingMethodId: body.shipping?.id ?? body.shippingMethodId,
-      paymentMethod: body.payMethod ?? body.paymentMethod,
-    });
-    // Snapshot اقلام برای ذخیره — قیمت/نام از سرور، نه از مرورگر.
-    const linePayload = priced.lines.map((line) => ({
-      id: line.productId,
-      sku: line.sku,
-      name: line.productName,
-      colour: line.colour,
-      size: line.size,
-      img: line.imageUrl,
-      price: Number(line.unitPrice),
-      qty: line.quantity,
-      lineTotal: Number(line.lineTotal),
-    }));
-
-    const created = await transaction(async (client) => {
-      // اگر همین کلید قبلاً سفارش ساخته باشد، همان را برگردان (idempotent).
-      if (idempotencyKey) {
-        const existing = (
-          await client.query<any>(
-            "SELECT order_code, total_amount, items_total, shipping_price, order_status, pay_method, payment_status FROM retail_order WHERE idempotency_key=$1 LIMIT 1",
-            [idempotencyKey],
-          )
-        ).rows[0];
-        if (existing) return { order: existing, replayed: true as const };
-      }
-
-      const orderId = makeId("rord");
-      const orderCode = `RT-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
-      let claims = claimsFrom(req);
-      if (claims) {
-        try { claims = await assertTokenVersion(claims); } catch { claims = null; }
-      }
-
-      const order = (
-        await client.query<any>(
-          `INSERT INTO retail_order (
-             id,order_code,customer_id,customer_name,phone,email,lines,address,
-             shipping_method,shipping_price,pay_method,total_amount,payment_status,
-             items_total,currency,price_book_version,payment_method,amount_source,
-             order_status,idempotency_key
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'IRR',$15,$16,'server','placed',$17)
-           RETURNING order_code, total_amount, items_total, shipping_price, order_status, pay_method, payment_status`,
-          [
-            orderId,
-            orderCode,
-            claims?.sub ?? null,
-            customer.name,
-            customer.phone,
-            customer.email,
-            // D1: jsonb باید صریحاً JSON.stringify شود، وگرنه pg آرایهٔ پستگرس می‌سازد.
-            JSON.stringify(linePayload),
-            JSON.stringify(address),
-            priced.shippingMethod,
-            priced.shippingTotal.toString(),
-            priced.paymentMethod,
-            priced.grandTotal.toString(),
-            priced.paymentStatus,
-            priced.itemsTotal.toString(),
-            priced.priceBookVersion,
-            priced.paymentMethod,
-            idempotencyKey,
-          ],
-        )
-      ).rows[0];
-
-      for (const line of priced.lines) {
-        await client.query(
-          `INSERT INTO retail_order_item
-             (id,order_id,product_id,sku,product_name,colour,size,quantity,unit_price,line_total,image_url)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [
-            makeId("roi"),
-            orderId,
-            line.productId,
-            line.sku,
-            line.productName,
-            line.colour,
-            line.size,
-            line.quantity,
-            line.unitPrice.toString(),
-            line.lineTotal.toString(),
-            line.imageUrl,
-          ],
-        );
-      }
-
-      // Phase 4.7.5 — legal binding gate (inside the transaction: a rejected/unavailable
-      // gate rolls the order back; evidence is written by Nest Compliance, never by the browser).
-      const legal = await bindRetailLegalEvidence(req, {
-        orderCode,
-        userId: claims?.sub ?? null,
-        customer: { phone: customer.phone, email: customer.email ?? null },
-        acceptedPolicyDocumentIds: body.acceptedPolicyDocumentIds,
-        facts: {
-          currency: "IRR",
-          lines: priced.lines.map((line) => ({ ref: line.sku || line.productId, name: line.productName, quantity: line.quantity, unitPrice: line.unitPrice.toString(), lineTotal: line.lineTotal.toString() })),
-          shipping: { method: priced.shippingMethod, label: priced.shippingMethod, price: priced.shippingTotal.toString() },
-          totals: { items: priced.itemsTotal.toString(), shipping: priced.shippingTotal.toString(), grand: priced.grandTotal.toString() },
-          paymentMethod: priced.paymentMethod,
-        },
-      });
-
-      // رکورد حسابرسی چرخهٔ سفارش (append-only) — پایهٔ گزارش‌های مالی و پشتیبانی.
-      await appendAudit(client, {
-        actorId: claims?.sub ?? "guest",
-        actorRole: claims?.role ?? "guest",
-        action: "retail_order.created",
-        entityType: "retail_order",
-        entityId: orderId,
-        after: {
-          order_code: orderCode,
-          items_total: priced.itemsTotal.toString(),
-          shipping_total: priced.shippingTotal.toString(),
-          grand_total: priced.grandTotal.toString(),
-          price_book_version: priced.priceBookVersion,
-          lines: priced.lines.length,
-          legal_gate: legal.mode,
-          legal_snapshot_id: legal.mode === "enforce" ? legal.snapshotId : null,
-        },
-        metadata: { ip: clientIp(req), adjusted: priced.adjusted },
-      });
-
-      return { order, replayed: false as const, legal };
-    });
-
-    return response(req, 
-      {
-        orderCode: created.order.order_code,
-        status: created.order.order_status,
-        replayed: created.replayed,
-        currency: "IRR",
-        totals: {
-          items: Number(created.order.items_total),
-          shipping: Number(created.order.shipping_price),
-          total: Number(created.order.total_amount),
-        },
-        // اگر قیمت مرورگر با مرجع سرور یکی نبود، UI می‌تواند به کاربر اطلاع دهد.
-        adjusted: priced.adjusted,
-        /**
-         * ── D19a ────────────────────────────────────────────────────────────
-         * وضعیت پرداخت صریح. `collected` تا فاز ۵ همیشه `false` است چون هیچ
-         * ارائه‌دهندهٔ پرداختی وجود ندارد؛ کلاینت **نباید** از موفقیت ساخت
-         * سفارش نتیجه بگیرد که پول وصول شده است. برای روش‌های نیازمند
-         * ارائه‌دهنده، `requiresManualSettlement` یعنی «هماهنگی پرداخت لازم است».
-         * در پاسخِ replay هم از ردیف ذخیره‌شده خوانده می‌شود، نه از فرض.
-         */
-        payment: {
-          method: created.order.pay_method ?? priced.paymentMethod,
-          status: created.order.payment_status ?? priced.paymentStatus,
-          collected: false,
-          requiresManualSettlement: (created.order.pay_method ?? priced.paymentMethod) !== "cod",
-        },
-      },
-      created.replayed ? 200 : 201,
-    );
+    const submittedLines = Array.isArray((body as any)?.lines) ? (body as any).lines : [];
+    const idempotencyKey = resolveRetailIdempotencyKey(req.headers.get("idempotency-key"));
+    const nestBody = translateRetailOrderToNest(body, idempotencyKey);
+    const extra: Record<string, string> = {};
+    const internalToken = process.env.KOLBE_INTERNAL_API_TOKEN?.trim();
+    if (internalToken) extra["x-kolbe-internal-token"] = internalToken;
+    let result: { status: number; data: any };
+    try {
+      result = await forwardToNest(req, "POST", "retail/orders", nestBody, extra);
+    } catch {
+      throw new HttpError(503, "RETAIL_UPSTREAM_UNAVAILABLE", "سرویس سفارش در دسترس نیست؛ سفارش ثبت نشد");
+    }
+    if (result.status < 200 || result.status >= 300) {
+      throw translateRetailNestError(result.status, result.data);
+    }
+    const translated = translateRetailOrderFromNest(result.data, submittedLines);
+    return response(req, translated.body, translated.status);
   }
   if (path.startsWith("supplier/")) return handleSupplier(req, path);
   if (path.startsWith("wholesale/")) return handleWholesale(req, path);

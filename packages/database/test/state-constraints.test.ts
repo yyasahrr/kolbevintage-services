@@ -159,6 +159,9 @@ const STATE_COLUMNS: Array<{ table: string; column: string; values: readonly str
   { table: "admin_role_permission", column: "action", values: sets.ADMIN_PERMISSION_ACTIONS, check: "admin_role_permission_action_allowed" },
   { table: "approval_request", column: "request_type", values: sets.APPROVAL_REQUEST_TYPES, check: "approval_request_type_allowed" },
   { table: "approval_request", column: "status", values: sets.APPROVAL_REQUEST_STATUSES, check: "approval_request_status_allowed" },
+  { table: "retail_order_event", column: "from_status", values: sets.RETAIL_ORDER_STATUS_VALUES, check: "retail_order_event_from_status_allowed" },
+  { table: "retail_order_event", column: "to_status", values: sets.RETAIL_ORDER_STATUS_VALUES, check: "retail_order_event_to_status_allowed" },
+  { table: "retail_order_event", column: "actor_role", values: sets.RETAIL_ORDER_ACTOR_ROLES, check: "retail_order_event_actor_role_allowed" },
 ];
 
 const sorted = (values: readonly string[]) => [...values].sort();
@@ -246,7 +249,7 @@ describe("رانش مجموعهٔ مقادیر وضعیت‌ها (کد ↔ مه�
       client.query<{ table_name: string; column_name: string; data_type: string }>(
         `SELECT table_name, column_name, data_type FROM information_schema.columns
          WHERE table_schema='public'
-           AND column_name IN ('total_amount','items_total','shipping_price','unit_price','line_total','wholesale_price','cost')
+           AND column_name IN ('total_amount','items_total','shipping_price','unit_price','line_total','wholesale_price','cost','promotion_discount_total','base_line_total','promotion_discount')
          ORDER BY table_name, column_name`,
       ),
     );
@@ -296,6 +299,9 @@ describe("رانش مجموعهٔ مقادیر وضعیت‌ها (کد ↔ مه�
       ["support_ticket", "supplier_id", "supplier"],
       ["retail_order", "customer_id", "account_user"],
       ["retail_order_item", "order_id", "retail_order"],
+      ["retail_order_item", "variant_id", "product_variant"],
+      ["retail_order_event", "order_id", "retail_order"],
+      ["retail_order_event", "actor_id", "account_user"],
       ["login_attempt", "user_id", "account_user"],
       ["user_session", "user_id", "account_user"],
     ] as const;
@@ -327,6 +333,7 @@ describe("رانش مجموعهٔ مقادیر وضعیت‌ها (کد ↔ مه�
       ["wholesale_order", ["originating_request_id"]],
       ["retail_order", ["order_code"]],
       ["retail_order", ["idempotency_key"]],
+      ["retail_order_event", ["order_id", "order_version"]],
       ["purchase_order", ["order_code"]],
       ["purchase_order", ["wholesale_order_id", "seller_id"]],
       ["rfq", ["reference_code"]],

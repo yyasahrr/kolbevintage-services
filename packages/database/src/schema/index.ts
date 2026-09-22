@@ -29,6 +29,7 @@ export {
   purchaseOrderItem,
   quote,
   retailOrder,
+  retailOrderEvent,
   retailOrderItem,
   rfq,
   seller,

@@ -162,6 +162,7 @@ import {
   QUOTE_STATUSES,
   RATING_STATUSES,
   REFUND_STATUSES,
+  RETAIL_ORDER_ACTOR_ROLES,
   RETAIL_ORDER_STATUS_VALUES,
   RETAIL_PAYMENT_METHODS,
   RETAIL_PAYMENT_STATUSES,
@@ -984,6 +985,14 @@ export const retailOrder = pgTable(
     customerId: text("customer_id"),
     orderStatus: text("order_status").notNull().default("placed"),
     idempotencyKey: text("idempotency_key"),
+    /** Phase 5.8 — جمع تخفیف پروموشن روی اقلام (زیرمجموعهٔ items_total). */
+    promotionDiscountTotal: bigint("promotion_discount_total", { mode: "bigint" }).notNull().default(sql`0`),
+    /** Phase 5.8 — ارجاع سست به اسنپ‌شات حقوقی (transaction_compliance_snapshot)؛ بدون FK. */
+    legalSnapshotId: text("legal_snapshot_id"),
+    /** Phase 5.8 — اثر انگشت درخواست ساخت برای تشخیص تعارض idempotency. */
+    creationRequestHash: text("creation_request_hash"),
+    /** Phase 5.8 — قفل خوش‌بینانه؛ هر گذار وضعیت آن را یک واحد زیاد می‌کند. */
+    version: integer("version").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -998,6 +1007,13 @@ export const retailOrder = pgTable(
     moneyCheck("retail_order_total_amount_range", "total_amount"),
     moneyCheck("retail_order_items_total_range", "items_total"),
     moneyCheck("retail_order_shipping_price_range", "shipping_price"),
+    moneyCheck("retail_order_promotion_discount_total_range", "promotion_discount_total"),
+    check("retail_order_promo_discount_within_items", sql.raw(`"promotion_discount_total" <= "items_total"`)),
+    check(
+      "retail_order_totals_equation",
+      sql.raw(`"total_amount" = "items_total" - "promotion_discount_total" + "shipping_price"`),
+    ),
+    quantityCheck("retail_order_version_non_negative", "version"),
     foreignKey({
       name: "retail_order_customer_fk",
       columns: [table.customerId],
@@ -1020,6 +1036,12 @@ export const retailOrderItem = pgTable(
     unitPrice: bigint("unit_price", { mode: "bigint" }).notNull().default(sql`0`),
     lineTotal: bigint("line_total", { mode: "bigint" }).notNull().default(sql`0`),
     imageUrl: text("image_url"),
+    /** Phase 5.8 — واریانت مرجع؛ برای ردیف‌های تاریخی صادقانه NULL می‌ماند. */
+    variantId: text("variant_id"),
+    /** Phase 5.8 — جمع مبنای قلم (unit_price × quantity)؛ line_total مبلغ نهایی پس از تخفیف است. */
+    baseLineTotal: bigint("base_line_total", { mode: "bigint" }).notNull().default(sql`0`),
+    /** Phase 5.8 — سهم تخفیف پروموشن روی این قلم. */
+    promotionDiscount: bigint("promotion_discount", { mode: "bigint" }).notNull().default(sql`0`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -1027,10 +1049,72 @@ export const retailOrderItem = pgTable(
     quantityCheck("retail_order_item_quantity_non_negative", "quantity"),
     moneyCheck("retail_order_item_unit_price_range", "unit_price"),
     moneyCheck("retail_order_item_line_total_range", "line_total"),
+    moneyCheck("retail_order_item_base_line_total_range", "base_line_total"),
+    moneyCheck("retail_order_item_promotion_discount_amount_range", "promotion_discount"),
+    check("retail_order_item_promo_within_base", sql.raw(`"promotion_discount" <= "base_line_total"`)),
+    check(
+      "retail_order_item_line_equation",
+      sql.raw(`"line_total" = "base_line_total" - "promotion_discount"`),
+    ),
+    check(
+      "retail_order_item_base_equation",
+      sql.raw(`"base_line_total" = "unit_price" * "quantity"`),
+    ),
     foreignKey({
       name: "retail_order_item_order_fk",
       columns: [table.orderId],
       foreignColumns: [retailOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_order_item_variant_fk",
+      columns: [table.variantId],
+      foreignColumns: [productVariant.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/* ── Phase 5.8 — تاریخچهٔ وضعیت سفارش خرده‌فروشی (فقط-افزودنی) ───────────────
+ *
+ * تعمیم الگوی `order_status_history` برای خرده‌فروشی. استفادهٔ مستقیم از آن
+ * جدول ممکن نیست چون `order_id` آن به `wholesale_order` کلید خارجی دارد.
+ * ردیف ساخت سفارش همان ردیف `from_status = NULL` است؛ هر گذار بعدی
+ * `order_version` را یک واحد جلو می‌برد (یکتایی order_id + order_version).
+ */
+export const retailOrderEvent = pgTable(
+  "retail_order_event",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id").notNull(),
+    /** NULL یعنی نبودِ وضعیت قبلی (رویداد ساخت). */
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    actorId: text("actor_id"),
+    actorRole: text("actor_role"),
+    reason: text("reason"),
+    metadata: jsonb("metadata").notNull().default({}),
+    orderVersion: integer("order_version").notNull().default(0),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("retail_order_event_order_created").on(table.orderId, table.createdAt),
+    uniqueIndex("retail_order_event_order_version_unique").on(table.orderId, table.orderVersion),
+    check(
+      "retail_order_event_from_status_allowed",
+      sql.raw(`"from_status" IS NULL OR "from_status" IN (${RETAIL_ORDER_STATUS_VALUES.map((v) => `'${v}'`).join(", ")})`),
+    ),
+    stateCheck("retail_order_event_to_status_allowed", "to_status", RETAIL_ORDER_STATUS_VALUES),
+    stateCheck("retail_order_event_actor_role_allowed", "actor_role", RETAIL_ORDER_ACTOR_ROLES),
+    quantityCheck("retail_order_event_order_version_non_negative", "order_version"),
+    foreignKey({
+      name: "retail_order_event_order_fk",
+      columns: [table.orderId],
+      foreignColumns: [retailOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_order_event_actor_fk",
+      columns: [table.actorId],
+      foreignColumns: [accountUser.id],
     }).onDelete("restrict"),
   ],
 );

@@ -369,6 +369,13 @@ export const WHOLESALE_ORDER_STATUS_VALUES = WHOLESALE_ORDER_STATUSES;
 export const PURCHASE_ORDER_STATUS_VALUES = CHILD_ORDER_STATUSES;
 export const RETAIL_ORDER_STATUS_VALUES = RETAIL_ORDER_STATUSES;
 
+/**
+ * Phase 5.8 — کنشگران رویداد سفارش خرده‌فروشی (`retail_order_event.actor_role`).
+ * `customer`: خریدار احرازشده؛ `guest`: مهمان عبوری از پروکسی سازگاری؛
+ * `admin`: عملیات مدیریتی؛ `system`: گذارهای سیستمی (انقضا، تطبیق خودکار).
+ */
+export const RETAIL_ORDER_ACTOR_ROLES = ["customer", "guest", "admin", "system"] as const;
+
 /** Phase 4.2 — مسئولیت حمل در سفارش فرزند */
 export const SHIPPING_RESPONSIBILITIES = ["SUPPLIER", "KOLBE", "EXTERNAL_CARRIER"] as const;
 
@@ -440,13 +447,15 @@ export const ORDER_EVENT_TYPES = [
   "shipping.shipment_delivered",
   "shipping.shipment_cancelled",
   "shipping.shipment_failed",
+  // Phase 5.8 — canonical Retail checkout fact (aggregate `retail_order`).
+  "retail_order.created",
 ] as const;
 
 /** Phase 4.2 — نقش عامل در تاریخچه/رویداد */
 export const ORDER_ACTOR_ROLES = ["buyer", "admin", "supplier", "system", "fulfillment"] as const;
 
 /** Phase 4.2 — انواع aggregate برای order_event */
-export const ORDER_AGGREGATE_TYPES = ["wholesale_order", "purchase_order"] as const;
+export const ORDER_AGGREGATE_TYPES = ["wholesale_order", "purchase_order", "retail_order"] as const;
 
 /** Phase 4.2 — ترکیب همه وضعیت‌های سفارش برای تاریخچه (یکتا) */
 export const ALL_ORDER_STATUSES = [

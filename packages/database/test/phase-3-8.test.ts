@@ -28,7 +28,7 @@ describe("فاز ۳.۸ — Legacy Removal & Clean Architecture", () => {
       client.query<{ count: string }>(`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`),
     );
     // The Phase 5.7 migration adds 7 promotion-owned tables to the 186-table Phase 5.6 schema.
-    expect(Number(rows[0].count)).toBe(193);
+    expect(Number(rows[0].count)).toBe(194);
   });
 
   it("wholesale_order_item به canonical references اشاره می‌کند (Phase 4.2 evolved)", async () => {

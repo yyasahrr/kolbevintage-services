@@ -93,7 +93,7 @@ export const MODULES: readonly ModuleDefinition[] = [
     status: "scaffolded",
     phase: 3,
   },
-  { name: "pricing", tables: [], dependsOn: ["offers"], status: "scaffolded", phase: 3 },
+  { name: "pricing", tables: [], dependsOn: ["offers", "catalog"], status: "scaffolded", phase: 3 },
   {
     // Phase 5.7 — versioned promotions and the deterministic commercial engine.
     // Reads owner facts through Catalog/Offers/VIP/CRM/Pricing services; writes
@@ -121,7 +121,7 @@ export const MODULES: readonly ModuleDefinition[] = [
   },
   { name: "warehouses", tables: [], dependsOn: ["suppliers"], status: "planned", phase: 3 },
   { name: "carts", tables: [], dependsOn: ["catalog", "pricing"], status: "planned", phase: 4 },
-  { name: "checkout", tables: ["retail_order", "retail_order_item"], dependsOn: ["pricing", "inventory", "orders"], status: "planned", phase: 4 },
+
   {
     name: "orders",
     tables: [
@@ -132,8 +132,19 @@ export const MODULES: readonly ModuleDefinition[] = [
       "purchase_order_item",
       "order_status_history",
       "order_event",
+      "retail_order",
+      "retail_order_item",
+      "retail_order_event",
     ],
-    dependsOn: ["vip", "pricing", "offers", "inventory", "suppliers", "catalog", "audit"],
+    // Phase 5.8-A: the retail slice consumes the promotions evaluation engine
+    // through the bounded RetailOrdersModule (orders/retail), deliberately NOT
+    // declared here: at this coarse granularity it would assert a cycle
+    // (orders -> promotions -> crm -> orders) that does not exist in the Nest
+    // module graph, where RetailOrdersModule is a leaf off app.module and no
+    // promotions/crm/orders module imports it back (see the architecture-freeze
+    // acyclicity guard). "compliance" below is the in-transaction legal-binding
+    // edge and is genuinely acyclic.
+    dependsOn: ["vip", "pricing", "offers", "inventory", "suppliers", "catalog", "audit", "compliance"],
     status: "scaffolded",
     phase: 4,
   },

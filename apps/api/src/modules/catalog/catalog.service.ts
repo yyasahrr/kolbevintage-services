@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and } from "drizzle-orm";
-import { product, productVariant, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission } from "@kolbe/database";
+import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { DomainError } from "@kolbe/shared";
 import { ProductComplianceService } from "../compliance/product-compliance.service";
@@ -349,6 +349,51 @@ export class CatalogService {
       throw new CatalogDomainError("VARIANT_PRODUCT_MISMATCH", "واریانت متعلق به محصول نیست");
     }
     return variant;
+  }
+
+  // ── Phase 5.8 — nullable owner reads for Retail pricing ────────────────
+  // Retail throws its own precise codes (RETAIL_PRODUCT_NOT_FOUND, …), so
+  // these return rows-or-null instead of throwing catalog errors.
+
+  async findProductForRetail(productId: string, executor?: any) {
+    const db = (executor as any) || this.db;
+    const [prod] = await db.select().from(product).where(eq(product.id, productId)).limit(1);
+    return prod ?? null;
+  }
+
+  async findVariantById(variantId: string, executor?: any) {
+    const db = (executor as any) || this.db;
+    const [variant] = await db.select().from(productVariant).where(eq(productVariant.id, variantId)).limit(1);
+    return variant ?? null;
+  }
+
+  async listActiveVariantsForProduct(productId: string, executor?: any) {
+    const db = (executor as any) || this.db;
+    return db
+      .select()
+      .from(productVariant)
+      .where(and(eq(productVariant.productId, productId), eq(productVariant.status, "active")));
+  }
+
+  /** Primary display image for an order snapshot: variant media wins, else product media. */
+  async getPrimaryMedia(productId: string, variantId: string | null, executor?: any): Promise<string | null> {
+    const db = (executor as any) || this.db;
+    if (variantId) {
+      const rows = await db
+        .select({ url: productVariantMedia.url })
+        .from(productVariantMedia)
+        .where(eq(productVariantMedia.variantId, variantId))
+        .orderBy(productVariantMedia.position)
+        .limit(1);
+      if (rows[0]?.url) return rows[0].url;
+    }
+    const rows = await db
+      .select({ url: productMedia.url })
+      .from(productMedia)
+      .where(eq(productMedia.productId, productId))
+      .orderBy(productMedia.position)
+      .limit(1);
+    return rows[0]?.url ?? null;
   }
 
   async getDbNow(executor?: any) {

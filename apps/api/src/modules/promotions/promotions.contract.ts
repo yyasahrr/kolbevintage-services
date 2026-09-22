@@ -18,6 +18,13 @@
 
 export const PROMOTION_EVALUATION_VERSION = "promo-eval-v1" as const;
 
+/**
+ * Phase 5.8: the only `priceBasis.resolvedBy` value that marks a RETAIL
+ * evaluation OWNER_RESOLVED. Any other retail resolver keeps the honest
+ * CALLER_ATTESTED_RETAIL_TRANSITION flag.
+ */
+export const RETAIL_PRICING_RESOLVER = "retail-pricing-service" as const;
+
 export type PromotionChannel = "RETAIL" | "WHOLESALE";
 
 export type EvaluationActorKind = "RETAIL_CUSTOMER" | "WHOLESALE_ACCOUNT";

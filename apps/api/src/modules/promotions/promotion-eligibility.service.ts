@@ -22,6 +22,7 @@ import { MAX_MONEY } from "@kolbe/shared";
 import { KOLBE_DB } from "../../database/database.module";
 import {
   PROMOTION_FACTS_PROVIDER,
+  RETAIL_PRICING_RESOLVER,
   type EvaluatePromotionsInput,
   type PromotionFactsProvider,
 } from "./promotions.contract";
@@ -106,7 +107,12 @@ export class PromotionEligibilityService {
     const actor = await this.resolveActor(channel, actorInput.kind, userId, accountId);
     const candidates = await this.loadCandidates(channel, actor, couponCodes, now);
 
-    const priceAuthority = channel === "WHOLESALE" ? "OWNER_RESOLVED" : "CALLER_ATTESTED_RETAIL_TRANSITION";
+    // Phase 5.8: retail prices resolved by the canonical RetailPricingService
+    // are owner-resolved; any other retail caller stays honestly flagged.
+    const priceAuthority =
+      channel === "WHOLESALE" || (channel === "RETAIL" && priceBasis.resolvedBy === RETAIL_PRICING_RESOLVER)
+        ? "OWNER_RESOLVED"
+        : "CALLER_ATTESTED_RETAIL_TRANSITION";
     return {
       engine: { channel, actor: actor.engine, lines, shippingBase, candidates: candidates.engine, now },
       priceAuthority,

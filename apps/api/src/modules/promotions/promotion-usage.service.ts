@@ -61,7 +61,7 @@ export class PromotionUsageService {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  async recordRedemption(callerId: string, input: RecordRedemptionInput) {
+  async recordRedemption(callerId: string, input: RecordRedemptionInput, executor?: DbOrTx) {
     const promotionId = parseOptionalText(input.promotionId, "promotion_id", 160);
     const revisionId = parseOptionalText(input.revisionId, "revision_id", 160);
     if (!promotionId || !revisionId) {
@@ -90,9 +90,10 @@ export class PromotionUsageService {
     const termsHash = parseTermsHash(input.termsHash);
     const now = new Date();
 
-    try {
-      return await this.db.transaction(async (tx) => {
-        const executor = tx as DbOrTx;
+    // Phase 5.8: an owner transaction (Retail checkout) may thread its own
+    // executor so redemption commits atomically with the order. The default
+    // path (no executor) is unchanged: the method owns its transaction.
+    const run = async (executor: DbOrTx) => {
         const [replay] = await executor
           .select()
           .from(promotionCouponRedemption)
@@ -193,7 +194,10 @@ export class PromotionUsageService {
           after: { promotionId, revisionId: revision.id, couponId, actorType, discountAmount: discountAmount.toString() },
         }, executor);
         return this.presentRedemption(executor, redemption, false);
-      });
+    };
+    try {
+      if (executor) return await run(executor);
+      return await this.db.transaction(async (tx) => run(tx as DbOrTx));
     } catch (error) {
       if (error instanceof PromotionDomainError) throw error;
       // A failed statement aborts the whole transaction (25P02 on any further

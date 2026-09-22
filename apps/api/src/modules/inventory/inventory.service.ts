@@ -847,6 +847,61 @@ export class InventoryService {
     });
   }
 
+  // ── Retail seam (Phase 5.8 Checkpoint A) ───────────────────────────────────
+  /**
+   * Retail checkout reserves KOLBE-owned stock through these wrappers — never
+   * by touching inventory tables directly. They delegate to the proven
+   * reservation primitives (no second inventory writer): the reservation
+   * links to the retail order via the free-text `allocationId` (= retail
+   * order id), because `inventory_reservation.order_id` FKs to wholesale
+   * tables. `releaseRetail`/`confirmRetail` are Checkpoint B lifecycle
+   * hooks; in A only `reserveRetail` is called (the expiry reaper is the
+   * safety net).
+   */
+  async reserveRetail(input: {
+    variantId: string;
+    sellerId: string;
+    quantity: number;
+    allocationId: string;
+    requester: Requester;
+    reason?: string;
+    idempotencyKey?: string;
+    expiresInMinutes?: number;
+    executor?: DbOrTx;
+  }) {
+    return this.createReservation({
+      variantId: input.variantId,
+      sellerId: input.sellerId,
+      quantity: input.quantity,
+      requester: input.requester,
+      reason: input.reason ?? `retail checkout reserve -> ${input.allocationId}`,
+      allocationId: input.allocationId,
+      idempotencyKey: input.idempotencyKey,
+      expiresInMinutes: input.expiresInMinutes,
+      executor: input.executor,
+    });
+  }
+
+  async releaseRetail(input: {
+    reservationId: string;
+    requester: Requester;
+    reason?: string;
+    idempotencyKey?: string;
+    executor?: DbOrTx;
+  }) {
+    return this.releaseReservation({ ...input, reason: input.reason ?? `retail release ${input.reservationId}` });
+  }
+
+  async confirmRetail(input: {
+    reservationId: string;
+    requester: Requester;
+    reason?: string;
+    idempotencyKey?: string;
+    executor?: DbOrTx;
+  }) {
+    return this.confirmReservation({ ...input, reason: input.reason ?? `retail confirm ${input.reservationId}` });
+  }
+
   // ── Expiration ─────────────────────────────────────────────────────────────
   async findExpiredReservations(limit = 100, executor?: DbOrTx) {
     const db = (executor as any) || this.db;

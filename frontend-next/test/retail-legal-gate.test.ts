@@ -4,12 +4,12 @@ import { rows } from "../server/database";
 import { call, uniqueSuffix } from "./helpers";
 
 /**
- * Phase 4.7.5 — retail legal binding gate (legacy Next checkout → Nest Compliance).
+ * Phase 5.8 — retail legal binding gate through the compat proxy.
  *
- * The browser never decides acceptance: the handler forwards the server-priced
- * facts plus the document ids the client *claims* to have accepted, and Nest
- * Compliance is authoritative. When enforcement is on, any rejection or outage
- * rolls the order back (fail closed).
+ * The browser never decides acceptance: the proxy forwards the claimed
+ * document ids to Nest, and Nest Compliance binds evidence in-process
+ * inside the checkout transaction. Enforcement failures fail closed with
+ * no local writes (evidence assertions live in the canonical Nest suites).
  */
 const product = products.find((p) => p.price >= 3_000_000)!;
 const size = (product.sizes.find((s) => s.inStock) ?? product.sizes[0]).label;
@@ -26,28 +26,49 @@ function payload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function nestOrder(overrides: Record<string, unknown> = {}) {
+  return {
+    orderCode: `RT-2026-${uniqueSuffix().slice(0, 6).toUpperCase()}`,
+    status: "placed",
+    replayed: false,
+    currency: "IRR",
+    totals: { itemsTotal: String(product.price), promotionDiscountTotal: "0", shippingTotal: "0", grandTotal: String(product.price) },
+    lines: [{ productId: product.id, unitPrice: String(product.price), colour: product.colours[0].name, size }],
+    payment: { method: "gateway", status: "unpaid", collected: false, requiresManualSettlement: true },
+    ...overrides,
+  };
+}
+
 const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
+  process.env.KOLBE_INTERNAL_API_TOKEN = "legal-test-token";
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.KOLBE_RETAIL_LEGAL_GATE;
   delete process.env.KOLBE_INTERNAL_API_TOKEN;
 });
 
 describe("POST retail/orders — Phase 4.7.5 legal gate", () => {
-  it("off (default): legacy behaviour, Nest is never called", async () => {
+  it("delegates every checkout to Nest with the claimed policy ids (gate lives in-process now)", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(nestOrder()), { status: 201, headers: { "content-type": "application/json" } }));
     const result = await call("retail/orders", { method: "POST", body: payload() });
     expect(result.status).toBe(201);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/retail\/orders$/);
+    expect(init.headers["x-kolbe-internal-token"]).toBe("legal-test-token");
+    const sent = JSON.parse(init.body);
+    expect(sent.acceptedPolicyDocumentIds).toEqual(["lpd_terms_v3", "lpd_privacy_v1"]);
+    // The tampered `price: 1` travels as a display hint only.
+    expect(sent.lines[0].presentedUnitPrice).toBe(1);
+    expect("price" in sent.lines[0]).toBe(false);
   });
 
-  it("enforce + Nest rejects (409 LEGAL_POLICY_ACCEPTANCE_REQUIRED): no order is created and the code is surfaced", async () => {
-    process.env.KOLBE_RETAIL_LEGAL_GATE = "enforce";
+  it("Nest legal rejection (409): no local order is created and the code is surfaced", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: "LEGAL_POLICY_ACCEPTANCE_REQUIRED", message: "پذیرش لازم است" }), { status: 409, headers: { "content-type": "application/json" } }));
     const body = payload();
     const result = await call("retail/orders", { method: "POST", body, headers: { "idempotency-key": `legal-${uniqueSuffix()}` } });
@@ -57,46 +78,33 @@ describe("POST retail/orders — Phase 4.7.5 legal gate", () => {
     expect(stored).toHaveLength(0);
   });
 
-  it("enforce + Nest accepts: the order is created; Nest received the order code, server-priced facts and the claimed ids; the audit row records the snapshot", async () => {
-    process.env.KOLBE_RETAIL_LEGAL_GATE = "enforce";
-    process.env.KOLBE_INTERNAL_API_TOKEN = "internal-test-token";
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({ snapshotId: "tcs_test", policyBundleHash: "a".repeat(64), disclosureHash: "b".repeat(64), acceptanceIds: ["lpa_1", "lpa_2"], disclosureGaps: ["TAX_NOT_ASSESSED"] }), { status: 201, headers: { "content-type": "application/json" } }));
+  it("Nest accepts: the translated order is returned with no local writes", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(nestOrder()), { status: 201, headers: { "content-type": "application/json" } }));
     const body = payload();
+    const before = await rows<{ count: string }>("SELECT count(*) AS count FROM retail_order");
     const result = await call("retail/orders", { method: "POST", body });
     expect(result.status).toBe(201);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toMatch(/\/legal\/retail\/checkout-binding$/);
-    expect(init.headers["x-kolbe-internal-token"]).toBe("internal-test-token");
-    const sent = JSON.parse(init.body);
-    expect(sent.facts.orderRef).toBe(result.body.orderCode);
-    expect(sent.acceptedPolicyDocumentIds).toEqual(["lpd_terms_v3", "lpd_privacy_v1"]);
-    expect(sent.subject.phone).toBe((body.customer as any).phone);
-    // server-priced, not the tampered `price: 1`
-    expect(sent.facts.lines[0].unitPrice).toBe(String(product.price));
-    expect(sent.facts.totals.grand).toBe(String(result.body.totals.total));
-    const audit = await rows<{ after: any }>("SELECT after FROM audit_log WHERE action='retail_order.created' AND after->>'order_code'=$1", [result.body.orderCode]);
-    expect(audit[0].after.legal_gate).toBe("enforce");
-    expect(audit[0].after.legal_snapshot_id).toBe("tcs_test");
+    expect(result.body.orderCode).toMatch(/^RT-\d{4}-[A-Z0-9]{6}$/);
+    const after = await rows<{ count: string }>("SELECT count(*) AS count FROM retail_order");
+    expect(after[0].count).toBe(before[0].count);
+    expect((body.customer as any).phone).toBeTruthy();
   });
 
-  it("enforce + Nest unreachable: fails closed with 503 LEGAL_GATE_UNAVAILABLE and no order", async () => {
-    process.env.KOLBE_RETAIL_LEGAL_GATE = "enforce";
+  it("Nest unreachable: fails closed with 503 RETAIL_UPSTREAM_UNAVAILABLE and no order", async () => {
     fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
     const body = payload();
     const result = await call("retail/orders", { method: "POST", body });
     expect(result.status).toBe(503);
-    expect(result.body.error).toBe("LEGAL_GATE_UNAVAILABLE");
+    expect(result.body.error).toBe("RETAIL_UPSTREAM_UNAVAILABLE");
     expect(await rows("SELECT id FROM retail_order WHERE phone=$1", [(body.customer as any).phone])).toHaveLength(0);
   });
 
-  it("enforce + malformed Nest success (no snapshot id): 502 and no order", async () => {
-    process.env.KOLBE_RETAIL_LEGAL_GATE = "enforce";
+  it("malformed Nest success (no order code): 502 and no order", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } }));
     const body = payload();
     const result = await call("retail/orders", { method: "POST", body });
     expect(result.status).toBe(502);
-    expect(result.body.error).toBe("LEGAL_GATE_INVALID_RESPONSE");
+    expect(result.body.error).toBe("RETAIL_UPSTREAM_INVALID");
     expect(await rows("SELECT id FROM retail_order WHERE phone=$1", [(body.customer as any).phone])).toHaveLength(0);
   });
 });

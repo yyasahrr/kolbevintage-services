@@ -239,6 +239,8 @@ describe("Phase 5.1 — Checkpoint C: Factual Commerce Aggregation & Consent Com
       customerName: "رضا گلزار وینتیج",
       phone: "09301234567",
       orderStatus: "confirmed",
+      // Phase 5.8 totals equation: total = items − promo + shipping.
+      itemsTotal: 30_000_000n,
       totalAmount: 30_000_000n,
       currency: "IRR",
       createdAt: new Date("2026-09-01T14:00:00Z"),
@@ -252,6 +254,8 @@ describe("Phase 5.1 — Checkpoint C: Factual Commerce Aggregation & Consent Com
       customerName: "رضا گلزار وینتیج",
       phone: "09301234567",
       orderStatus: "returned",
+      // Phase 5.8 totals equation: total = items − promo + shipping.
+      itemsTotal: 10_000_000n,
       totalAmount: 10_000_000n,
       currency: "IRR",
       createdAt: new Date("2026-09-10T16:00:00Z"),

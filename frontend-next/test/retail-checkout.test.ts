@@ -1,15 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { products } from "../storefront/data/catalog";
 import { rows } from "../server/database";
 import { call, uniqueSuffix } from "./helpers";
 
 /**
- * آزمون‌های چک‌اوت خرده‌فروشی.
+ * آزمون‌های چک‌اوت خرده‌فروشی (Phase 5.8: سازگاری پروکسی).
  *
- * این فایل رگرسیون دو ایراد P0 ممیزی است:
- *  - D1: هر `POST retail/orders` با HTTP 500 شکست می‌خورد
- *        (`invalid input syntax for type json` چون آرایهٔ JS خام به jsonb پاس می‌شد).
+ * رگرسیون دو ایراد P0 ممیزی همچنان پابرجاست:
+ *  - D1: هر `POST retail/orders` با HTTP 500 شکست می‌خورد.
  *  - D3: قیمت و جمع کل از مرورگر پذیرفته و ذخیره می‌شد (Price Tampering).
+ *
+ * از 5.8-A به بعد نویسندهٔ canonical نست است و این هندلر فقط پروکسی است؛
+ * پس Nest این‌جا `fetch`-mock است و آزمون‌های سطح ردیف به سوئیت‌های
+ * canonical نست منتقل شده‌اند (جابه‌جایی، نه تضعیف). این فایل قرارداد لبه را پین می‌کند:
+ * شکل قدیمی منجمد + ترجمهٔ خطا + عدم نوشتن محلی.
  */
 
 const expensive = products.find((product) => product.price >= 3_000_000)!;
@@ -48,8 +52,39 @@ function orderPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function nestOrder(overrides: Record<string, unknown> = {}) {
+  return {
+    orderCode: `RT-2026-${uniqueSuffix().slice(0, 6).toUpperCase()}`,
+    status: "placed",
+    replayed: false,
+    currency: "IRR",
+    totals: { itemsTotal: String(expensive.price), promotionDiscountTotal: "0", shippingTotal: "0", grandTotal: String(expensive.price) },
+    lines: [{ productId: expensive.id, unitPrice: String(expensive.price), colour: expensive.colours[0].name, size: inStockSize(expensive) }],
+    payment: { method: "gateway", status: "unpaid", collected: false, requiresManualSettlement: true },
+    ...overrides,
+  };
+}
+
+function jsonResponse(data: unknown, status: number) {
+  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
+}
+
+const fetchMock = vi.fn();
+
+beforeEach(() => {
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
+  process.env.KOLBE_INTERNAL_API_TOKEN = "checkout-test-token";
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  delete process.env.KOLBE_INTERNAL_API_TOKEN;
+});
+
 describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () => {
   it("سفارش معتبر را می‌پذیرد و کد سفارش برمی‌گرداند (رگرسیون D1)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(nestOrder(), 201));
     const result = await call("retail/orders", { method: "POST", body: orderPayload() });
 
     expect(result.status).toBe(201);
@@ -57,17 +92,26 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
     expect(result.body.replayed).toBe(false);
     expect(result.body.currency).toBe("IRR");
 
-    // اطمینان از اینکه واقعاً در دیتابیس نشسته است (نه فقط پاسخ ۲۰۱).
-    const stored = await rows<{ id: string; lines: unknown[] }>(
-      "SELECT id, lines FROM retail_order WHERE order_code=$1",
+    // پروکسی شناسه‌ها را به نست داده و خودش چیزی ننوشته است.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body).lines[0].productId).toBe(expensive.id);
+    const stored = await rows<{ count: string }>(
+      "SELECT count(*) AS count FROM retail_order WHERE order_code=$1",
       [result.body.orderCode],
     );
-    expect(stored).toHaveLength(1);
-    expect(Array.isArray(stored[0].lines)).toBe(true);
-    expect(stored[0].lines).toHaveLength(1);
+    expect(Number(stored[0].count)).toBe(0);
   });
 
   it("جمع کل را سمت سرور محاسبه می‌کند و قیمت دستکاری‌شدهٔ مرورگر را نادیده می‌گیرد (D3)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        nestOrder({
+          totals: { itemsTotal: String(expensive.price * 2), promotionDiscountTotal: "0", shippingTotal: "0", grandTotal: String(expensive.price * 2) },
+        }),
+        201,
+      ),
+    );
     const tampered = orderPayload({
       lines: [
         {
@@ -93,26 +137,39 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
     expect(result.body.adjusted).toBe(true);
   });
 
-  it("مبلغ ذخیره‌شده در دیتابیس با محاسبهٔ سرور یکی است", async () => {
+  it("مبلغ پاسخ با محاسبهٔ سرور یکی است", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        nestOrder({
+          totals: { itemsTotal: String(expensive.price), promotionDiscountTotal: "0", shippingTotal: "0", grandTotal: String(expensive.price) },
+          payment: { method: "cod", status: "pending_cod", collected: false, requiresManualSettlement: false },
+        }),
+        201,
+      ),
+    );
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({ payMethod: "cod" }),
     });
     expect(result.status).toBe(201);
-
-    const stored = await rows<{ items_total: string; shipping_price: string; total_amount: string; payment_status: string; pay_method: string }>(
-      "SELECT items_total, shipping_price, total_amount, payment_status, pay_method FROM retail_order WHERE order_code=$1",
-      [result.body.orderCode],
-    );
-    expect(Number(stored[0].items_total)).toBe(expensive.price);
-    expect(Number(stored[0].total_amount)).toBe(expensive.price);
+    expect(result.body.totals.items).toBe(expensive.price);
+    expect(result.body.totals.total).toBe(expensive.price);
     // پرداخت در محل: هزینهٔ ارسال صفر و وضعیت پرداخت متفاوت.
-    expect(Number(stored[0].shipping_price)).toBe(0);
-    expect(stored[0].pay_method).toBe("cod");
-    expect(stored[0].payment_status).toBe("pending_cod");
+    expect(result.body.totals.shipping).toBe(0);
+    expect(result.body.payment.method).toBe("cod");
+    expect(result.body.payment.status).toBe("pending_cod");
   });
 
   it(" برای اقلام ارزان، هزینهٔ ارسال انتخاب‌شده را اضافه می‌کند", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        nestOrder({
+          totals: { itemsTotal: String(cheap.price), promotionDiscountTotal: "0", shippingTotal: "89000", grandTotal: String(cheap.price + 89_000) },
+          lines: [{ productId: cheap.id, unitPrice: String(cheap.price), colour: cheap.colours[0].name, size: inStockSize(cheap) }],
+        }),
+        201,
+      ),
+    );
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({
@@ -136,20 +193,23 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
     expect(result.body.totals.total).toBe(cheap.price + 89_000);
   });
 
-  it("اقلام ساخت‌یافته را با Snapshot نام/کد/قیمت ذخیره می‌کند", async () => {
+  it("اقلام را با Snapshot نام/کد/قیمت سرور به نست می‌فرستد", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(nestOrder(), 201));
     const result = await call("retail/orders", { method: "POST", body: orderPayload() });
-    const items = await rows<{ product_name: string; unit_price: string; quantity: number; product_id: string }>(
-      `SELECT i.product_name, i.unit_price, i.quantity, i.product_id
-       FROM retail_order_item i JOIN retail_order o ON o.id=i.order_id WHERE o.order_code=$1`,
-      [result.body.orderCode],
-    );
-    expect(items).toHaveLength(1);
-    expect(items[0].product_id).toBe(expensive.id);
-    expect(items[0].product_name).toBe(expensive.name);
-    expect(Number(items[0].unit_price)).toBe(expensive.price);
+    expect(result.status).toBe(201);
+    const [, init] = fetchMock.mock.calls[0];
+    const sent = JSON.parse(init.body);
+    // فقط شناسه + تعداد به مرجع می‌رود؛ نام/قیمت/عکس hint نمایشی‌اند.
+    expect(sent.lines[0].productId).toBe(expensive.id);
+    expect(sent.lines[0].quantity).toBe(1);
+    expect(sent.lines[0].presentedName).toBe(expensive.name);
+    expect(sent.lines[0].presentedUnitPrice).toBe(expensive.price);
+    expect("price" in sent.lines[0]).toBe(false);
+    expect("totals" in sent).toBe(false);
   });
 
   it("محصول ناشناخته را رد می‌کند", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "RETAIL_PRODUCT_NOT_FOUND", message: "not found" }, 404));
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({
@@ -161,6 +221,7 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
   });
 
   it("سایز نامعتبر را رد می‌کند", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "RETAIL_VARIANT_UNRESOLVED", message: "no match" }, 422));
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({
@@ -181,6 +242,7 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
   });
 
   it("شمارهٔ موبایل نامعتبر را رد می‌کند", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "RETAIL_CUSTOMER_PHONE_INVALID", message: "bad phone" }, 400));
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({ customer: { name: "آزمون", phone: "12345" } }),
@@ -190,6 +252,7 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
   });
 
   it("نبود استان/شهر/نشانی را رد می‌کند", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "RETAIL_ADDRESS_INCOMPLETE", message: "bad address" }, 400));
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({ address: { province: "تهران" } }),
@@ -199,12 +262,14 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
   });
 
   it("سبد خالی را رد می‌کند", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "RETAIL_LINES_REQUIRED", message: "empty" }, 400));
     const result = await call("retail/orders", { method: "POST", body: orderPayload({ lines: [] }) });
     expect(result.status).toBe(422);
     expect(result.body.error).toBe("EMPTY_CART");
   });
 
   it("روش پرداخت ناشناخته را رد می‌کند", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "RETAIL_PAYMENT_METHOD_INVALID", message: "bad method" }, 400));
     const result = await call("retail/orders", {
       method: "POST",
       body: orderPayload({ payMethod: "installment-wholesale" }),
@@ -214,6 +279,10 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
   });
 
   it("با Idempotency-Key یکسان، تنها یک سفارش می‌سازد", async () => {
+    const created = nestOrder();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse({ ...created, replayed: true }, 201));
     const key = `test-${uniqueSuffix()}-idem`;
     const first = await call("retail/orders", {
       method: "POST",
@@ -235,7 +304,7 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
       "SELECT count(*) AS count FROM retail_order WHERE idempotency_key=$1",
       [key],
     );
-    expect(Number(count[0].count)).toBe(1);
+    expect(Number(count[0].count)).toBe(0);
   });
 
   it("کلید Idempotency نامعتبر را رد می‌کند", async () => {
@@ -246,9 +315,11 @@ describe("POST retail/orders — ثبت سفارش خرده‌فروشی", () =>
     });
     expect(result.status).toBe(422);
     expect(result.body.error).toBe("INVALID_IDEMPOTENCY_KEY");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("BNPL (پرداخت اقساطی) فقط در خرده‌فروشی مجاز است", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(nestOrder(), 201));
     const retail = await call("retail/orders", {
       method: "POST",
       body: orderPayload({ payMethod: "installment" }),
