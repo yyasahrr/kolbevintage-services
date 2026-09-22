@@ -422,8 +422,8 @@ export class CatalogService {
   // is a lie). Availability sums sellable shelf (on_hand − reserved,
   // floored at 0) only where a priced offer can actually sell it.
 
-  parseBrowseSort(sort: unknown): "newest" | "price_asc" | "price_desc" {
-    return sort === "price_asc" || sort === "price_desc" ? sort : "newest";
+  parseBrowseSort(sort: unknown): "newest" | "price_asc" | "price_desc" | "rating" {
+    return sort === "price_asc" || sort === "price_desc" || sort === "rating" ? sort : "newest";
   }
 
   /** Unsigned BIGINT bound; garbage → null (ignored), over-max → clamped. */
@@ -433,29 +433,35 @@ export class CatalogService {
     return (parsed > 9223372036854775807n ? 9223372036854775807n : parsed).toString();
   }
 
-  private decodeBrowseCursor(cursor: unknown): { sort: string; key: string; id: string } | null {
+  private decodeBrowseCursor(cursor: unknown): { sort: string; keys: string[]; id: string } | null {
     if (cursor === undefined || cursor === null) return null;
     try {
       if (typeof cursor !== "string" || cursor === "") throw new Error("empty");
-      const [sort, key, id] = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-      // Keys are non-negative BIGINT strings in every sort (epoch micros
-      // for newest, minor units for price sorts) — anything else fails
-      // closed instead of reaching SQL.
-      if (
-        (sort !== "newest" && sort !== "price_asc" && sort !== "price_desc") ||
-        typeof key !== "string" || !/^\d{1,25}$/.test(key) ||
-        typeof id !== "string" || id === ""
-      ) {
+      const parts = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+      const [sort, ...rest] = parts as unknown[];
+      const id = rest[rest.length - 1];
+      const keys = rest.slice(0, -1);
+      // Keys are numeric strings in every sort (epoch micros for newest,
+      // minor units for price sorts, avg + count for rating) — anything
+      // else fails closed instead of reaching SQL.
+      const bigint = (v: unknown) => typeof v === "string" && /^\d{1,25}$/.test(v);
+      const numeric = (v: unknown) => typeof v === "string" && /^\d{1,25}(\.\d{1,30})?$/.test(v);
+      if (typeof id !== "string" || id === "") throw new Error("shape");
+      if (sort === "rating") {
+        if (keys.length !== 2 || !numeric(keys[0]) || !bigint(keys[1])) throw new Error("shape");
+      } else if (sort === "newest" || sort === "price_asc" || sort === "price_desc") {
+        if (keys.length !== 1 || !bigint(keys[0])) throw new Error("shape");
+      } else {
         throw new Error("shape");
       }
-      return { sort, key, id };
+      return { sort: sort as string, keys: keys as string[], id };
     } catch {
       throw new DomainError(400, "BROWSE_CURSOR_INVALID", "browse cursor is malformed");
     }
   }
 
-  private encodeBrowseCursor(sort: string, key: string, id: string): string {
-    return Buffer.from(JSON.stringify([sort, key, id])).toString("base64url");
+  private encodeBrowseCursor(sort: string, keys: string[], id: string): string {
+    return Buffer.from(JSON.stringify([sort, ...keys, id])).toString("base64url");
   }
 
   /** Active-subtree ids for a category root; null = unknown/inactive root. */
@@ -535,6 +541,10 @@ export class CatalogService {
     const sellerFence = retail ? sql`AND o."seller_id" = ${kolbeSellerId}` : sql``;
     const ownerFence = retail ? sql`AND p."owner_type" = 'KOLBE'` : sql``;
     const pricedFrom = (withCategory: boolean, withBrand: boolean) => sql`
+      rated AS (
+        SELECT "product_id", AVG("rating") AS "avg", COUNT(*) AS "cnt"
+        FROM "product_rating" WHERE "status" IN ('visible', 'flagged') GROUP BY "product_id"
+      ),
       channel_offers AS (
         SELECT o."product_id", o.${priceCol} AS "price", o."currency", o."variant_id", o."seller_id"
         FROM "seller_offer" AS o
@@ -552,8 +562,10 @@ export class CatalogService {
            FROM channel_offers co
            JOIN "product_variant_inventory" inv
              ON inv."variant_id" = co."variant_id" AND inv."seller_id" = co."seller_id"
-           WHERE co."product_id" = p."id") AS "availability"
+           WHERE co."product_id" = p."id") AS "availability",
+          rt."avg" AS "rating_avg", COALESCE(rt."cnt", 0) AS "rating_count"
         FROM "product" AS p
+        LEFT JOIN rated rt ON rt."product_id" = p."id"
         WHERE p."status" = 'published' ${ownerFence}
           ${withCategory && categoryIds ? sql`AND p."category_id" IN (${sql.join(categoryIds.map((cid) => sql`${cid}`), sql`, `)})` : sql``}
           ${withBrand && brandId ? sql`AND p."brand_id" = ${brandId}` : sql``}
@@ -570,19 +582,26 @@ export class CatalogService {
     // Newest keys on epoch microseconds computed in SQL: exact in both
     // worlds (a JS Date cannot hold the sub-millisecond part).
     const newestKey = sql`(EXTRACT(EPOCH FROM priced."created_at") * 1000000)::bigint`;
+    // Unrated products sink: COALESCE(avg, 0) keeps the order total and
+    // the cursor numeric (a NULL key could never round-trip exactly).
+    const ratingKey = sql`COALESCE(priced."rating_avg", 0)`;
     const keyset = !cursor
       ? sql``
       : sort === "newest"
-        ? sql`AND (${newestKey} < ${cursor.key} OR (${newestKey} = ${cursor.key} AND priced."id" > ${cursor.id}))`
+        ? sql`AND (${newestKey} < ${cursor.keys[0]} OR (${newestKey} = ${cursor.keys[0]} AND priced."id" > ${cursor.id}))`
         : sort === "price_asc"
-          ? sql`AND (priced."price_from" > ${cursor.key} OR (priced."price_from" = ${cursor.key} AND priced."id" > ${cursor.id}))`
-          : sql`AND (priced."price_from" < ${cursor.key} OR (priced."price_from" = ${cursor.key} AND priced."id" > ${cursor.id}))`;
+          ? sql`AND (priced."price_from" > ${cursor.keys[0]} OR (priced."price_from" = ${cursor.keys[0]} AND priced."id" > ${cursor.id}))`
+          : sort === "price_desc"
+            ? sql`AND (priced."price_from" < ${cursor.keys[0]} OR (priced."price_from" = ${cursor.keys[0]} AND priced."id" > ${cursor.id}))`
+            : sql`AND (${ratingKey} < ${cursor.keys[0]} OR (${ratingKey} = ${cursor.keys[0]} AND (priced."rating_count" < ${cursor.keys[1]} OR (priced."rating_count" = ${cursor.keys[1]} AND priced."id" > ${cursor.id}))))`;
     const orderBy =
       sort === "newest"
         ? sql`${newestKey} DESC, priced."id" ASC`
         : sort === "price_asc"
           ? sql`priced."price_from" ASC, priced."id" ASC`
-          : sql`priced."price_from" DESC, priced."id" ASC`;
+          : sort === "price_desc"
+            ? sql`priced."price_from" DESC, priced."id" ASC`
+            : sql`${ratingKey} DESC, priced."rating_count" DESC, priced."id" ASC`;
 
     const result = await this.db.execute(sql`
       WITH ${pricedFrom(true, true)}
@@ -593,11 +612,13 @@ export class CatalogService {
     `);
     const rows = ((result as any).rows ?? []) as Array<Record<string, unknown>>;
     const kept = rows.slice(0, limit);
-    const cursorKey = (row: Record<string, unknown>) =>
-      sort === "newest" ? String(row.newest_key) : (row.price_from as string);
+    const cursorKeys = (row: Record<string, unknown>) =>
+      sort === "rating"
+        ? [(row.rating_avg as string | null) ?? "0", String(row.rating_count)]
+        : [sort === "newest" ? String(row.newest_key) : (row.price_from as string)];
     const nextCursor =
       rows.length > limit
-        ? this.encodeBrowseCursor(sort, cursorKey(kept[kept.length - 1]), kept[kept.length - 1].id as string)
+        ? this.encodeBrowseCursor(sort, cursorKeys(kept[kept.length - 1]), kept[kept.length - 1].id as string)
         : null;
 
     const facet = async (column: ReturnType<typeof sql>, withCategory: boolean, withBrand: boolean) => {
@@ -625,6 +646,8 @@ export class CatalogService {
         priceFrom: row.price_from,
         priceCurrency: row.price_currency,
         availability: Number(row.availability),
+        ratingAverage: row.rating_avg === null ? null : Math.round(Number(row.rating_avg) * 100) / 100,
+        ratingCount: Number(row.rating_count),
         viewCount: row.view_count,
         createdAt: new Date(row.created_at as string | Date).toISOString(),
       })),
@@ -722,6 +745,11 @@ export class CatalogService {
       }
     }
 
+    const summaryResult = await this.db.execute(sql`
+      SELECT COUNT(*)::int AS "count", ROUND(AVG("rating"), 2) AS "average"
+      FROM "product_rating" WHERE "product_id" = ${id} AND "status" IN ('visible', 'flagged')
+    `);
+    const summaryRow = ((((summaryResult as any).rows ?? []) as Array<{ count: number; average: string | null }>)[0]);
     const media = await this.db
       .select()
       .from(productMedia)
@@ -762,6 +790,10 @@ export class CatalogService {
       priceFrom: cheapest ? priceOf(cheapest).toString() : null,
       priceCurrency: cheapest?.currency ?? null,
       availability,
+      rating: {
+        average: summaryRow?.average === null || summaryRow?.average === undefined ? null : Number(summaryRow.average),
+        count: summaryRow?.count ?? 0,
+      },
       viewCount: prod.viewCount,
     };
   }

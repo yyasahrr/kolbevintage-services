@@ -309,3 +309,149 @@ Scope locks (user-skipped recon questions, decided by agent):
   promotions suite; "through 0041" title + comment in 5.3.
 - `typecheck:all` clean; full `test:all` **1531/1531** green
   (23 shared + 133 database + 1220 api + 155 frontend).
+
+## 6. Checkpoint C design (product ratings)
+
+### C0 scope locks
+
+- Product reviews only: `supplier_rating` / `transaction_rating`
+  stay dormant (final verdict in D).
+- Verified purchase only: the rater must own a delivered retail
+  order or a completed wholesale order containing the product.
+  Staff cannot file (an insider review is a fake signal).
+- One migration (0042): verify-linkage columns + integrity
+  CHECKs + the one-review-per-rater unique. Tables stay 198;
+  journal 42→43 entries / idx 42.
+
+### C1 architecture (freeze-test-driven)
+
+- The architecture-freeze guard forbids `catalog` any Orders
+  dependency or order-table token, transitively. Verification
+  therefore lives in `ratings/` (which the freeze test does
+  not list): `RatingsService` reads the four order tables
+  (added to `READ_EXCEPTIONS`, read-only by convention, pinned
+  write-free-for-others in D10) and owns all `product_rating`
+  writes.
+- There is deliberately NO import edge between catalog and
+  ratings in either direction (an edge would drag order tokens
+  into catalog's transitive closure). Catalog aggregates
+  ratings via SQL (`product_rating` added to its
+  `READ_EXCEPTIONS`, read-only); review HTTP lives on a
+  `RatingsController` declaring `@Controller("catalog")`
+  paths — distinct full paths, no collision with the catalog
+  controller.
+- Registry: ratings `scaffolded` → `live` (dependsOn
+  unchanged, still acyclic).
+
+### C2 verification
+
+- Retail proof: newest `retail_order` with `customer_id` =
+  rater AND `order_status` = 'delivered' AND an item with the
+  product id. Wholesale proof: newest `wholesale_order` with
+  `buyer_user_id` = rater AND `status` = 'completed' AND an
+  item with the product id. Retail checked first (documented
+  order); the stored order id is the audit proof.
+- No proof → 403 `REVIEW_NOT_VERIFIED`. A later delivery
+  unblocks a retry (no wedge: nothing is persisted on refusal).
+
+### C3 writes
+
+- File (customer/vip, self): rating 1–5 (`REVIEW_RATING_INVALID`
+  on garbage), review text trimmed, `<>` stripped, 2000-char
+  cap, empty → NULL (rating-only reviews are legitimate).
+  Product must exist (404 `PRODUCT_NOT_FOUND`, same code as
+  detail). Duplicate (rater, product) → 409
+  `REVIEW_ALREADY_EXISTS` (23505 translation). Status starts
+  `visible`.
+- Update (owner only): rating/text, keeps status + proof.
+  Stranger update → 404 (no id oracle: the id space is not
+  enumerable by role — same code as missing).
+- Flag (any signed-in customer/vip, not own): visible →
+  flagged, idempotent; flagging own review → 409
+  `REVIEW_FLAG_OWN`; flagging hidden → no-op success.
+- Hide/unhide (admin): → hidden / hidden → visible,
+  idempotent, audit-logged (staff speech acts leave a trail;
+  customer acts are trailed by the row itself).
+- Public reads show visible + flagged (a flag is a staff
+  queue, not a takedown); hidden excluded everywhere
+  including aggregates.
+
+### C4 reads
+
+- `GET /catalog/products/:id/reviews` (public): newest-first
+  keyset (epoch-micros + id, same exactness argument as B),
+  rows carry rating, review, status, verified channel
+  (retail/wholesale), raterId (opaque, no PII), createdAt.
+- Summary `{ average, count }` over visible + flagged
+  (average ROUND 2dp as number, null when unrated).
+- Detail gains `rating: { average, count }` via a catalog-side
+  subquery (no import edge).
+- Browse gains the B-deferred `rating` sort: COALESCE(avg, 0)
+  DESC, count DESC, id ASC (unrated sink naturally; cursor
+  `[sort, avg, count, id]`, numerics validated).
+
+### C5 test plan
+
+- `packages/database/test/phase-5-10-c-migration.test.ts`:
+  XOR exactly-one-proof both ways, FKs, rating CHECK,
+  status CHECK, the (product, rater) unique, tables 198.
+- `apps/api/test/phase-5-10-c-ratings.test.ts`: retail +
+  wholesale verified filing, unverified 403 (undelivered,
+  foreign product, stranger), staff filing refused, duplicate
+  409, owner update + stranger 404, flag flow + own-flag 409,
+  hide/unhide + idempotency, hidden excluded from list +
+  summary, review listing keyset, summary math, detail
+  rating block, browse rating sort + keyset, text
+  sanitization + length cap, HTTP RBAC matrix (anon 401,
+  customer files, admin hides).
+- Count-only updates: journal 42→43 / idx 42 in the 5.7
+  promotions suite.
+
+## 7. Checkpoint C as-built (product ratings)
+
+### C1 implementation record
+
+- Migration 0042: `verified_retail_order_id` /
+  `verified_wholesale_order_id` (XOR CHECK, restrict FKs),
+  `updated_at`, unique (product_id, rater_id). Columns-only:
+  tables stay 198, journal 42→43 / idx 42. (First draft also
+  re-added the rating/status CHECKs — migration 0005 already
+  owns them; snapshots record no CHECKs, which misled the
+  first read. Dropped before commit; the C migration test
+  pins the real 0005 names.)
+- `RatingsService` + `RatingsController` (paths under
+  `/catalog`, code in ratings/ — §6 explains why): file
+  (customer/vip, verified, 409 on duplicate), update
+  (owner-only, stranger → 404), flag (non-owner, idempotent,
+  flagged stays public), hide/show (admin, idempotent,
+  audit-logged only on change), public list (visible +
+  flagged, micros keyset) + summary.
+- Verification: newest delivered retail order, else newest
+  completed wholesale order, containing the product; the
+  proving id is stored. Refusals persist nothing, so a later
+  delivery unblocks a clean retry.
+- Catalog integration without an import edge: detail gains
+  `rating: { average, count }` via subquery; browse gains the
+  `rating` sort (COALESCE(avg, 0) DESC, count DESC, id ASC —
+  unrated sink; cursor `[sort, avg, count, id]`).
+- Boundaries: `product_rating` → catalog READ_EXCEPTIONS
+  (aggregates), four order tables → ratings READ_EXCEPTIONS
+  (verification); registry ratings → live. Both directions
+  pinned write-confined in D10.
+
+### C2 gates
+
+- NEW `packages/database/test/phase-5-10-c-migration.test.ts`
+  (3: 198 tables, XOR both ways + both FKs, 0005 CHECKs +
+  the unique) and
+  `apps/api/test/phase-5-10-c-ratings.test.ts` (13: retail
+  filing + stored proof, wholesale + rating-only VIP,
+  unverified trio with persistence proof, staff/bad-rating/
+  ghost refusals, duplicate + owner-update + stranger 404s,
+  flag flow, hide/show + audit + idempotency, summary math,
+  review keyset, detail block + browse card, rating sort +
+  keyset walk, sanitization + cap, HTTP RBAC matrix).
+- Count-only updates: journal 42→43 / idx 42 in the 5.7
+  promotions suite; "through 0042" title in 5.3.
+- `typecheck:all` clean; full `test:all` **1547/1547** green
+  (23 shared + 136 database + 1233 api + 155 frontend).

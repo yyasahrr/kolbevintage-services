@@ -431,12 +431,12 @@ export const MODULES: readonly ModuleDefinition[] = [
     phase: 5,
   },
   { name: "files", tables: [], dependsOn: [], status: "planned", phase: 6 },
-  // Rating foundations — part of catalog/offers
+  // 5.10-C: product reviews live (supplier/transaction ratings dormant)
   {
     name: "ratings",
     tables: ["product_rating", "supplier_rating", "transaction_rating"],
     dependsOn: ["catalog", "suppliers", "orders"],
-    status: "scaffolded",
+    status: "live",
     phase: 3,
   },
 ] as const;

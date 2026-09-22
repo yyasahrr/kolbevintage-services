@@ -263,6 +263,9 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "wholesale_order_item",
         "purchase_order_item",
         "offer_media",
+        // 5.10-C: browse/detail rating aggregates (read-only; the writer
+        // stays in ratings, pinned by the D10 guards).
+        "product_rating",
       ],
       offers: [
         "product",
@@ -367,7 +370,9 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "supplier_compliance_hold",
       ],
       pricing: ["product", "product_variant", "seller", "wholesale_package", "wholesale_package_item", "seller_offer"],
-      ratings: ["product_rating", "supplier_rating", "transaction_rating", "product", "supplier", "product_variant"],
+      // 5.10-C: ratings verifies purchases by reading order rows
+      // (read-only; writers stay in orders, pinned by the D10 guards).
+      ratings: ["product_rating", "supplier_rating", "transaction_rating", "product", "supplier", "product_variant", "retail_order", "retail_order_item", "wholesale_order", "wholesale_order_item"],
       crm: [
         "account_user",
         "admin_internal_note",

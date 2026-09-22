@@ -1908,12 +1908,17 @@ export const productRating = pgTable(
     rating: integer("rating").notNull(),
     review: text("review"),
     status: text("status").notNull().default("visible"),
+    verifiedRetailOrderId: text("verified_retail_order_id"),
+    verifiedWholesaleOrderId: text("verified_wholesale_order_id"),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (table) => [
     stateCheck("product_rating_status_allowed", "status", RATING_STATUSES),
     quantityCheck("product_rating_rating_range", "rating"),
     check("product_rating_rating_1_5", sql.raw(`"rating" >= 1 AND "rating" <= 5`)),
+    check("product_rating_single_proof_side", sql.raw(`("verified_retail_order_id" IS NULL) <> ("verified_wholesale_order_id" IS NULL)`)),
+    uniqueIndex("product_rating_product_rater_unique").on(table.productId, table.raterId),
     foreignKey({
       name: "product_rating_product_fk",
       columns: [table.productId],
@@ -1923,6 +1928,16 @@ export const productRating = pgTable(
       name: "product_rating_rater_fk",
       columns: [table.raterId],
       foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "product_rating_retail_order_fk",
+      columns: [table.verifiedRetailOrderId],
+      foreignColumns: [retailOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "product_rating_wholesale_order_fk",
+      columns: [table.verifiedWholesaleOrderId],
+      foreignColumns: [wholesaleOrder.id],
     }).onDelete("restrict"),
   ],
 );
