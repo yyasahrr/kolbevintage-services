@@ -34,9 +34,37 @@ export class CatalogController {
   }
 
   @Public()
+  @Get("browse")
+  async browse(
+    @Query("channel") channel?: "retail" | "wholesale",
+    @Query("category") category?: string,
+    @Query("brand") brand?: string,
+    @Query("minPrice") minPrice?: string,
+    @Query("maxPrice") maxPrice?: string,
+    @Query("inStock") inStock?: string,
+    @Query("sort") sort?: string,
+    @Query("limit") limit?: string,
+    @Query("cursor") cursor?: string,
+  ) {
+    return this.catalog.browseProducts({ channel, category, brand, minPrice, maxPrice, inStock, sort, limit, cursor });
+  }
+
+  @Public()
+  @Get("categories")
+  async listCategories() {
+    return this.catalog.listCategories();
+  }
+
+  @Public()
+  @Get("brands")
+  async listBrands() {
+    return this.catalog.listBrands();
+  }
+
+  @Public()
   @Get("products/:id")
-  async getProduct(@Param("id") id: string) {
-    return this.catalog.getProductById(id);
+  async getProduct(@Param("id") id: string, @Query("channel") channel?: "retail" | "wholesale") {
+    return this.catalog.getProductDetail(id, channel === "retail" ? "retail" : "wholesale");
   }
 
   @Public()

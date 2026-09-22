@@ -161,3 +161,151 @@ Scope locks (user-skipped recon questions, decided by agent):
    outcomes (single-winner ⟹ approve refused with
    `RETAIL_RETURN_TRANSITION_INVALID`) and the always-WITHDRAWN
    end state — strictly stronger.
+
+## 4. Checkpoint B design (discovery backend)
+
+### B0 scope locks
+
+- Browse + detail + category/brand reads + view counter. No
+  rating surface (C), no search changes (A untouched).
+- One migration (0041): browse filter indexes only. Tables stay
+  198; journal 41→42 entries / idx 41.
+- `calculateSearchRank` (catalog.logic, pinned by its spec)
+  stays untouched AND unused: its conversion/response inputs
+  are fabricated defaults, so resurrecting it would launder
+  fake signal. Browse sorts are explicit instead.
+- `sales_count` wiring deferred (documented): bumping it means
+  touching the 5.8 money path (`verifyPayment`); popularity in
+  this phase is views (B, real detail hits) + ratings (C, real
+  reviews). Revisit in D.
+
+### B1 browse (`GET /catalog/browse`, public)
+
+- Filters: `channel` (retail = KOLBE published / wholesale =
+  published, same fence as A), `category` (subtree included,
+  descendants collected in app with a cycle-guard; uncapped —
+  truncating the subtree would silently drop results),
+  `brand`, `minPrice`/`maxPrice` (on channel `priceFrom`,
+  non-numeric → ignored, min > max → empty), `inStock=true`
+  (availability > 0).
+- Sorts: `newest` (default), `price_asc`, `price_desc`. No
+  `rating` sort until C aggregates exist — the key would sort
+  NULLs and lie. Keyset per sort, `limit` 1–50 default 20,
+  opaque cursor failing closed (`SEARCH_CURSOR_INVALID` reuse:
+  new code `BROWSE_CURSOR_INVALID` — distinct vocabulary per
+  surface).
+- Price: `priceFrom` = min over published channel offers with
+  an active variant (retail: KOLBE seller offers,
+  `retail_price`; wholesale: all sellers, `wholesale_price`),
+  BIGINT-as-string + currency. Products with no priced offer
+  are EXCLUDED from browse (a listing without a price is a
+  lie; detail of such a product shows `priceFrom: null`).
+- Availability: Σ max(0, on_hand − reserved) over the
+  channel's inventory rows for active variants. Exact number
+  exposed (own-retail + B2B buyers need real quantities).
+- Facets: category + brand counts over the filtered set minus
+  the facet's own filter (standard). Counts respect channel +
+  price + stock filters.
+
+### B2 detail (`GET /catalog/products/:id`, public)
+
+- Hardened: non-published (or missing) → 404 `PRODUCT_NOT_FOUND`
+  (no draft oracle; the old route leaked drafts). Same shape
+  for missing and hidden.
+- Returns product + brand + category breadcrumb (root→leaf via
+  parent chain) + active variants with their published channel
+  offers (price, currency) + media + `priceFrom` + availability
+  + `viewCount` (post-increment value).
+- View counter: single atomic
+  `UPDATE … SET view_count = view_count + 1` in-request before
+  read. Documented honest label: counts detail hits, not unique
+  visitors; no dedup, no bot filtering.
+
+### B3 taxonomy reads (public)
+
+- `GET /catalog/categories`: active-only tree built in app
+  (parent_id links, orphans dropped, cycle-guard by visited
+  set; uncapped — taxonomy tables are operationally small,
+  revisit past ~1000 nodes).
+- `GET /catalog/brands`: `verification_status = approved` AND
+  `status = active`, name order, uncapped (same reasoning).
+  Pending/suspended brands never surface publicly.
+
+### B4 test plan
+
+- `packages/database/test/phase-5-10-b-migration.test.ts`:
+  the two filter indexes exist (btree, right columns), tables
+  still 198.
+- `apps/api/test/phase-5-10-b-discovery.test.ts`: category
+  subtree inclusion, brand filter, price window both bounds +
+  min>max empty + garbage ignored, inStock true/false,
+  retail/wholesale price + availability scoping, unpriced
+  excluded from browse but detailed with null, sorts +
+  keysets (3 sorts, no dupes/skips), facets respect sibling
+  filters, detail 404s drafts identically to missing,
+  breadcrumb chain, view counter increments (+concurrent ×10
+  = +10), categories tree shape + orphan/cycle safety,
+  brands hide pending/suspended.
+- Count-only updates: journal 41→42 entries / idx 41 in the
+  5.7 promotions suite.
+
+## 5. Checkpoint B as-built (discovery backend)
+
+### B1 implementation record
+
+- Migration 0041: `product_status_category` + `product_status_brand`
+  btrees. Index-only: tables stay 198, journal 41→42 / idx 41.
+- `browseProducts`: channel fence (same as A), category subtree
+  (app-collected, cycle-guarded, uncapped — truncating would
+  silently drop results), brand id match, BIGINT price window
+  (garbage ignored, min > max → honest empty), `inStock` on
+  sellable shelf, sorts newest/price_asc/price_desc with
+  per-sort keysets (cursor carries its sort; cross-sort reuse
+  refused). Newest keys on SQL-computed epoch microseconds —
+  exact in both worlds, immune to JS Date's millisecond
+  truncation. Facets count the sibling-filtered set minus the
+  facet's own filter.
+- Price honesty: `priceFrom` = min over published channel
+  offers with an active variant and a non-null channel price;
+  currency rides with the cheapest row. Products without a
+  priced offer are excluded from browse; detail shows them
+  with `priceFrom: null`. Availability sums
+  max(0, on_hand − reserved) over (variant, seller) pairs a
+  priced offer can actually sell.
+- `getProductDetail` replaced `getProductById` on the public
+  route: gate + view bump are one UPDATE … WHERE
+  status = 'published', so drafts 404 (`PRODUCT_NOT_FOUND`)
+  identically to missing rows. Detail carries breadcrumb,
+  active variants, channel offers, ordered media, priceFrom,
+  availability, and the post-increment viewCount.
+- `listCategories` (active-only tree, dangling parents
+  dropped, cycles cut) and `listBrands` (approved + active,
+  name order); both uncapped with the revisit note in §4.
+- Cursor errors use `DomainError` with explicit codes
+  (`BROWSE_CURSOR_INVALID`, 400): `CatalogDomainError` carries
+  no HTTP status and would 500 a client error. A's
+  `decodeSearchCursor` was switched to the same form (its
+  `.code` is unchanged, so the A suite passes verbatim; HTTP
+  now 400s instead of 500ing — pinned in the B suite).
+
+### B2 replaced pins (standing-invariant map, all in-place, zero deletions)
+
+1. The public detail route's draft leak is closed by
+   construction (gate in SQL); no existing test pinned the
+   leak, so nothing was replaced — the B suite pins the 404
+   identity instead.
+
+### B3 gates
+
+- NEW `packages/database/test/phase-5-10-b-migration.test.ts`
+  (2) and `apps/api/test/phase-5-10-b-discovery.test.ts` (16:
+  subtree, brand, price window ×5, channel scoping, unpriced
+  exclusion + null detail, inStock, price_asc keyset walk,
+  price_desc top + newest termination, cursor refusals,
+  facets, detail shape both channels, 404 identity incl.
+  HTTP, serial + concurrent ×10 view bumps, tree, brands,
+  public HTTP + 400 cursors).
+- Count-only updates: journal 41→42 / idx 41 in the 5.7
+  promotions suite; "through 0041" title + comment in 5.3.
+- `typecheck:all` clean; full `test:all` **1531/1531** green
+  (23 shared + 133 database + 1220 api + 155 frontend).

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
-import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission } from "@kolbe/database";
+import { eq, and, sql, inArray } from "drizzle-orm";
+import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { DomainError } from "@kolbe/shared";
 import { ProductComplianceService } from "../compliance/product-compliance.service";
@@ -326,7 +326,7 @@ export class CatalogService {
       .slice(0, CatalogService.SEARCH_QUERY_MAX);
   }
 
-  private clampSearchLimit(limit: unknown): number {
+  private clampPageLimit(limit: unknown): number {
     const parsed = typeof limit === "string" && limit !== "" ? Number(limit) : (limit as number);
     if (!Number.isSafeInteger(parsed)) return CatalogService.SEARCH_LIMIT_DEFAULT;
     return Math.min(Math.max(parsed, 1), CatalogService.SEARCH_LIMIT_MAX);
@@ -342,7 +342,9 @@ export class CatalogService {
       }
       return { score, id };
     } catch {
-      throw new CatalogDomainError("SEARCH_CURSOR_INVALID", "search cursor is malformed");
+      // DomainError, not CatalogDomainError: the latter carries no HTTP
+      // status and would surface a client error as 500.
+      throw new DomainError(400, "SEARCH_CURSOR_INVALID", "search cursor is malformed");
     }
   }
 
@@ -358,7 +360,7 @@ export class CatalogService {
     const q = this.normalizeSearchQuery(query);
     if (!q) return { results: [], nextCursor: null };
     const retail = channel === "retail";
-    const limit = this.clampSearchLimit(opts.limit);
+    const limit = this.clampPageLimit(opts.limit);
     const cursor = this.decodeSearchCursor(opts.cursor);
     const ql = q.toLowerCase();
     const escaped = ql.replace(/[\\%_]/g, "\\$&");
@@ -412,6 +414,389 @@ export class CatalogService {
       results: kept.map((row) => ({ ...row, score: Math.round((row.score as number) * 1000) / 1000 })),
       nextCursor,
     };
+  }
+
+  // ── Phase 5.10-B — discovery ───────────────────────────────────────────────
+  // Browse prices from published channel offers over active variants; a
+  // product with no priced offer is excluded (a listing without a price
+  // is a lie). Availability sums sellable shelf (on_hand − reserved,
+  // floored at 0) only where a priced offer can actually sell it.
+
+  parseBrowseSort(sort: unknown): "newest" | "price_asc" | "price_desc" {
+    return sort === "price_asc" || sort === "price_desc" ? sort : "newest";
+  }
+
+  /** Unsigned BIGINT bound; garbage → null (ignored), over-max → clamped. */
+  parseMoneyBound(value: unknown): string | null {
+    if (typeof value !== "string" || !/^\d{1,20}$/.test(value)) return null;
+    const parsed = BigInt(value);
+    return (parsed > 9223372036854775807n ? 9223372036854775807n : parsed).toString();
+  }
+
+  private decodeBrowseCursor(cursor: unknown): { sort: string; key: string; id: string } | null {
+    if (cursor === undefined || cursor === null) return null;
+    try {
+      if (typeof cursor !== "string" || cursor === "") throw new Error("empty");
+      const [sort, key, id] = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+      // Keys are non-negative BIGINT strings in every sort (epoch micros
+      // for newest, minor units for price sorts) — anything else fails
+      // closed instead of reaching SQL.
+      if (
+        (sort !== "newest" && sort !== "price_asc" && sort !== "price_desc") ||
+        typeof key !== "string" || !/^\d{1,25}$/.test(key) ||
+        typeof id !== "string" || id === ""
+      ) {
+        throw new Error("shape");
+      }
+      return { sort, key, id };
+    } catch {
+      throw new DomainError(400, "BROWSE_CURSOR_INVALID", "browse cursor is malformed");
+    }
+  }
+
+  private encodeBrowseCursor(sort: string, key: string, id: string): string {
+    return Buffer.from(JSON.stringify([sort, key, id])).toString("base64url");
+  }
+
+  /** Active-subtree ids for a category root; null = unknown/inactive root. */
+  async collectCategorySubtree(rootId: string): Promise<string[] | null> {
+    const rows = await this.db
+      .select({ id: category.id, parentId: category.parentId, status: category.status })
+      .from(category);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const root = byId.get(rootId);
+    if (!root || root.status !== "active") return null;
+    const children = new Map<string, string[]>();
+    for (const row of rows) {
+      if (row.status !== "active" || !row.parentId) continue;
+      const list = children.get(row.parentId) ?? [];
+      list.push(row.id);
+      children.set(row.parentId, list);
+    }
+    const out = [rootId];
+    const queue = [rootId];
+    const seen = new Set([rootId]);
+    while (queue.length) {
+      const next = queue.shift()!;
+      for (const child of children.get(next) ?? []) {
+        if (seen.has(child)) continue; // cycle-guard
+        seen.add(child);
+        out.push(child);
+        queue.push(child);
+      }
+    }
+    return out;
+  }
+
+  async browseProducts(query: {
+    channel?: unknown;
+    category?: unknown;
+    brand?: unknown;
+    minPrice?: unknown;
+    maxPrice?: unknown;
+    inStock?: unknown;
+    sort?: unknown;
+    limit?: unknown;
+    cursor?: unknown;
+  }): Promise<{
+    results: Array<Record<string, unknown>>;
+    nextCursor: string | null;
+    facets: { categories: Array<{ id: string; count: number }>; brands: Array<{ id: string; count: number }> };
+  }> {
+    const empty = () => ({ results: [], nextCursor: null, facets: { categories: [], brands: [] } });
+    const retail = query.channel === "retail";
+    const sort = this.parseBrowseSort(query.sort);
+    const limit = this.clampPageLimit(query.limit);
+    const cursor = this.decodeBrowseCursor(query.cursor);
+    if (cursor && cursor.sort !== sort) {
+      throw new DomainError(400, "BROWSE_CURSOR_INVALID", "browse cursor was issued for another sort");
+    }
+
+    let categoryIds: string[] | null = null;
+    if (typeof query.category === "string" && query.category !== "") {
+      categoryIds = await this.collectCategorySubtree(query.category);
+      if (!categoryIds) return empty();
+    }
+    const brandId = typeof query.brand === "string" && query.brand !== "" ? query.brand : null;
+    const minPrice = this.parseMoneyBound(query.minPrice);
+    const maxPrice = this.parseMoneyBound(query.maxPrice);
+    if (minPrice !== null && maxPrice !== null && BigInt(minPrice) > BigInt(maxPrice)) return empty();
+    const stockOnly = query.inStock === true || query.inStock === "true";
+
+    let kolbeSellerId: string | null = null;
+    if (retail) {
+      const [kolbe] = await this.db.select({ id: seller.id }).from(seller).where(eq(seller.type, "KOLBE")).limit(1);
+      kolbeSellerId = kolbe?.id ?? null;
+      if (!kolbeSellerId) return empty(); // No KOLBE seller → no retail offers exist.
+    }
+
+    // Static fragments chosen by booleans — never interpolated user input.
+    const priceCol = retail ? sql`"retail_price"` : sql`"wholesale_price"`;
+    const sellerFence = retail ? sql`AND o."seller_id" = ${kolbeSellerId}` : sql``;
+    const ownerFence = retail ? sql`AND p."owner_type" = 'KOLBE'` : sql``;
+    const pricedFrom = (withCategory: boolean, withBrand: boolean) => sql`
+      channel_offers AS (
+        SELECT o."product_id", o.${priceCol} AS "price", o."currency", o."variant_id", o."seller_id"
+        FROM "seller_offer" AS o
+        JOIN "product_variant" AS v ON v."id" = o."variant_id" AND v."status" = 'active'
+        WHERE o."status" = 'published' AND o.${priceCol} IS NOT NULL ${sellerFence}
+      ),
+      priced AS (
+        SELECT
+          p."id", p."name", p."slug", p."description", p."brand_id", p."category_id",
+          p."owner_type", p."view_count", p."created_at",
+          (SELECT MIN(co."price") FROM channel_offers co WHERE co."product_id" = p."id") AS "price_from",
+          (SELECT co."currency" FROM channel_offers co WHERE co."product_id" = p."id"
+           ORDER BY co."price" ASC, co."variant_id" ASC, co."seller_id" ASC LIMIT 1) AS "price_currency",
+          (SELECT COALESCE(SUM(GREATEST(inv."on_hand" - inv."reserved", 0)), 0)
+           FROM channel_offers co
+           JOIN "product_variant_inventory" inv
+             ON inv."variant_id" = co."variant_id" AND inv."seller_id" = co."seller_id"
+           WHERE co."product_id" = p."id") AS "availability"
+        FROM "product" AS p
+        WHERE p."status" = 'published' ${ownerFence}
+          ${withCategory && categoryIds ? sql`AND p."category_id" IN (${sql.join(categoryIds.map((cid) => sql`${cid}`), sql`, `)})` : sql``}
+          ${withBrand && brandId ? sql`AND p."brand_id" = ${brandId}` : sql``}
+      )`;
+    const windowFence =
+      minPrice !== null && maxPrice !== null
+        ? sql`AND priced."price_from" >= ${minPrice} AND priced."price_from" <= ${maxPrice}`
+        : minPrice !== null
+          ? sql`AND priced."price_from" >= ${minPrice}`
+          : maxPrice !== null
+            ? sql`AND priced."price_from" <= ${maxPrice}`
+            : sql``;
+    const stockFence = stockOnly ? sql`AND priced."availability" > 0` : sql``;
+    // Newest keys on epoch microseconds computed in SQL: exact in both
+    // worlds (a JS Date cannot hold the sub-millisecond part).
+    const newestKey = sql`(EXTRACT(EPOCH FROM priced."created_at") * 1000000)::bigint`;
+    const keyset = !cursor
+      ? sql``
+      : sort === "newest"
+        ? sql`AND (${newestKey} < ${cursor.key} OR (${newestKey} = ${cursor.key} AND priced."id" > ${cursor.id}))`
+        : sort === "price_asc"
+          ? sql`AND (priced."price_from" > ${cursor.key} OR (priced."price_from" = ${cursor.key} AND priced."id" > ${cursor.id}))`
+          : sql`AND (priced."price_from" < ${cursor.key} OR (priced."price_from" = ${cursor.key} AND priced."id" > ${cursor.id}))`;
+    const orderBy =
+      sort === "newest"
+        ? sql`${newestKey} DESC, priced."id" ASC`
+        : sort === "price_asc"
+          ? sql`priced."price_from" ASC, priced."id" ASC`
+          : sql`priced."price_from" DESC, priced."id" ASC`;
+
+    const result = await this.db.execute(sql`
+      WITH ${pricedFrom(true, true)}
+      SELECT priced.*, ${newestKey} AS "newest_key" FROM priced
+      WHERE priced."price_from" IS NOT NULL ${windowFence} ${stockFence} ${keyset}
+      ORDER BY ${orderBy}
+      LIMIT ${limit + 1}
+    `);
+    const rows = ((result as any).rows ?? []) as Array<Record<string, unknown>>;
+    const kept = rows.slice(0, limit);
+    const cursorKey = (row: Record<string, unknown>) =>
+      sort === "newest" ? String(row.newest_key) : (row.price_from as string);
+    const nextCursor =
+      rows.length > limit
+        ? this.encodeBrowseCursor(sort, cursorKey(kept[kept.length - 1]), kept[kept.length - 1].id as string)
+        : null;
+
+    const facet = async (column: ReturnType<typeof sql>, withCategory: boolean, withBrand: boolean) => {
+      const res = await this.db.execute(sql`
+        WITH ${pricedFrom(withCategory, withBrand)}
+        SELECT priced.${column} AS "id", COUNT(*)::int AS "count"
+        FROM priced
+        WHERE priced."price_from" IS NOT NULL ${windowFence} ${stockFence} AND priced.${column} IS NOT NULL
+        GROUP BY priced.${column}
+      `);
+      return (((res as any).rows ?? []) as Array<{ id: string; count: number }>).sort((a, b) =>
+        a.id < b.id ? -1 : 1,
+      );
+    };
+
+    return {
+      results: kept.map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        brandId: row.brand_id,
+        categoryId: row.category_id,
+        ownerType: row.owner_type,
+        priceFrom: row.price_from,
+        priceCurrency: row.price_currency,
+        availability: Number(row.availability),
+        viewCount: row.view_count,
+        createdAt: new Date(row.created_at as string | Date).toISOString(),
+      })),
+      nextCursor,
+      facets: {
+        categories: await facet(sql`"category_id"`, false, true),
+        brands: await facet(sql`"brand_id"`, true, false),
+      },
+    };
+  }
+
+  /**
+   * Public detail: the status gate and the view bump are ONE statement,
+   * so drafts and missing ids 404 identically (no draft oracle). The
+   * counter counts detail hits, not unique visitors — no dedup, no bot
+   * filtering, honestly labeled.
+   */
+  async getProductDetail(
+    id: string,
+    channel: "retail" | "wholesale" = "wholesale",
+  ): Promise<Record<string, unknown>> {
+    const retail = channel === "retail";
+    const bumped = await this.db.execute(sql`
+      UPDATE "product" SET "view_count" = "view_count" + 1, "updated_at" = NOW()
+      WHERE "id" = ${id} AND "status" = 'published' RETURNING "id"
+    `);
+    if (!(((bumped as any).rows ?? []) as unknown[]).length) {
+      throw new DomainError(404, "PRODUCT_NOT_FOUND", "محصول یافت نشد");
+    }
+    let kolbeSellerId: string | null = null;
+    if (retail) {
+      const [kolbe] = await this.db.select({ id: seller.id }).from(seller).where(eq(seller.type, "KOLBE")).limit(1);
+      kolbeSellerId = kolbe?.id ?? null;
+    }
+
+    const [prod] = await this.db.select().from(product).where(eq(product.id, id)).limit(1);
+    const [brandRow] = prod.brandId
+      ? await this.db.select().from(brand).where(eq(brand.id, prod.brandId)).limit(1)
+      : [null];
+    const breadcrumb: Array<{ id: string; name: string; slug: string }> = [];
+    {
+      let cursorId = prod.categoryId;
+      const seen = new Set<string>();
+      for (let depth = 0; depth < 20 && cursorId && !seen.has(cursorId); depth++) {
+        seen.add(cursorId);
+        const [cat] = await this.db
+          .select({ id: category.id, name: category.name, slug: category.slug, parentId: category.parentId })
+          .from(category)
+          .where(eq(category.id, cursorId))
+          .limit(1);
+        if (!cat) break;
+        breadcrumb.unshift({ id: cat.id, name: cat.name, slug: cat.slug });
+        cursorId = cat.parentId;
+      }
+    }
+
+    const variants = await this.db
+      .select()
+      .from(productVariant)
+      .where(and(eq(productVariant.productId, id), eq(productVariant.status, "active")));
+    const activeVariantIds = new Set(variants.map((row) => row.id));
+    const allOffers = await this.db
+      .select()
+      .from(sellerOffer)
+      .where(and(eq(sellerOffer.productId, id), eq(sellerOffer.status, "published")));
+    const offers = allOffers.filter(
+      (offer) =>
+        offer.variantId &&
+        activeVariantIds.has(offer.variantId) &&
+        (retail ? offer.retailPrice != null : offer.wholesalePrice != null) &&
+        (!retail || offer.sellerId === kolbeSellerId),
+    );
+    const priceOf = (offer: (typeof offers)[number]) =>
+      BigInt(((retail ? offer.retailPrice : offer.wholesalePrice) as unknown as string | number).toString());
+    const cheapest = [...offers].sort((a, b) => (priceOf(a) < priceOf(b) ? -1 : 1))[0];
+
+    let availability = 0;
+    if (offers.length) {
+      const variantIds = [...new Set(offers.map((offer) => offer.variantId!))];
+      const sellerIds = [...new Set(offers.map((offer) => offer.sellerId))];
+      const stock = await this.db
+        .select()
+        .from(productVariantInventory)
+        .where(
+          and(
+            inArray(productVariantInventory.variantId, variantIds),
+            inArray(productVariantInventory.sellerId, sellerIds),
+          ),
+        );
+      const pairs = new Set(offers.map((offer) => `${offer.variantId} ${offer.sellerId}`));
+      for (const row of stock) {
+        if (pairs.has(`${row.variantId} ${row.sellerId}`)) {
+          availability += Math.max(0, row.onHand - row.reserved);
+        }
+      }
+    }
+
+    const media = await this.db
+      .select()
+      .from(productMedia)
+      .where(eq(productMedia.productId, id))
+      .orderBy(productMedia.position, productMedia.id);
+    const variantMedia =
+      variants.length > 0
+        ? await this.db
+            .select()
+            .from(productVariantMedia)
+            .where(inArray(productVariantMedia.variantId, variants.map((row) => row.id)))
+            .orderBy(productVariantMedia.position, productVariantMedia.id)
+        : [];
+
+    return {
+      id: prod.id,
+      name: prod.name,
+      slug: prod.slug,
+      description: prod.description,
+      ownerType: prod.ownerType,
+      status: prod.status,
+      brand: brandRow ? { id: brandRow.id, name: brandRow.name, slug: brandRow.slug } : null,
+      breadcrumb,
+      variants: variants.map((row) => ({
+        id: row.id,
+        sku: row.sku,
+        attributes: row.attributes,
+        media: variantMedia.filter((medium) => medium.variantId === row.id),
+      })),
+      offers: offers.map((offer) => ({
+        id: offer.id,
+        sellerId: offer.sellerId,
+        variantId: offer.variantId,
+        price: (retail ? offer.retailPrice : offer.wholesalePrice)!.toString(),
+        currency: offer.currency,
+      })),
+      media: media.map((row) => ({ id: row.id, url: row.url, type: row.type, position: row.position })),
+      priceFrom: cheapest ? priceOf(cheapest).toString() : null,
+      priceCurrency: cheapest?.currency ?? null,
+      availability,
+      viewCount: prod.viewCount,
+    };
+  }
+
+  /** Active-only category tree; dangling parents dropped, cycles cut. */
+  async listCategories(): Promise<Array<Record<string, unknown>>> {
+    const rows = await this.db.select().from(category).where(eq(category.status, "active"));
+    type Node = { id: string; name: string; slug: string; children: Node[] };
+    const byId = new Map<string, Node>();
+    for (const row of rows) byId.set(row.id, { id: row.id, name: row.name, slug: row.slug, children: [] });
+    const roots: Node[] = [];
+    for (const row of rows) {
+      const node = byId.get(row.id)!;
+      if (row.parentId && byId.has(row.parentId)) {
+        byId.get(row.parentId)!.children.push(node);
+      } else if (!row.parentId) {
+        roots.push(node);
+      }
+      // Dangling parent (missing/inactive): dropped, never surfaced.
+    }
+    const clean = (nodes: Node[], seen: Set<string>): Node[] =>
+      nodes
+        .filter((node) => !seen.has(node.id))
+        .map((node) => ({ ...node, children: clean(node.children, new Set([...seen, node.id])) }))
+        .sort((a, b) => (a.name < b.name ? -1 : 1));
+    return clean(roots, new Set());
+  }
+
+  /** Public brands: approved AND active, name order. */
+  async listBrands(): Promise<Array<Record<string, unknown>>> {
+    return this.db
+      .select({ id: brand.id, name: brand.name, slug: brand.slug, logoUrl: brand.logoUrl })
+      .from(brand)
+      .where(and(eq(brand.verificationStatus, "approved"), eq(brand.status, "active")))
+      .orderBy(brand.name, brand.id);
   }
 
   async assertRetailIsolation(productId: string) {

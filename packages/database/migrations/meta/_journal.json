@@ -288,6 +288,13 @@
       "when": 1791004800000,
       "tag": "0040_phase_5_10_a_search_trgm",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791091200000,
+      "tag": "0041_phase_5_10_b_browse_filters",
+      "breakpoints": true
     }
   ]
 }

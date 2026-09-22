@@ -1472,6 +1472,8 @@ export const product = pgTable(
     index("product_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
     index("product_slug_trgm").using("gin", table.slug.op("gin_trgm_ops")),
     index("product_status_owner_channel").on(table.status, table.ownerType),
+    index("product_status_category").on(table.status, table.categoryId),
+    index("product_status_brand").on(table.status, table.brandId),
     quantityCheck("product_sales_count_non_negative", "sales_count"),
     quantityCheck("product_view_count_non_negative", "view_count"),
     foreignKey({
