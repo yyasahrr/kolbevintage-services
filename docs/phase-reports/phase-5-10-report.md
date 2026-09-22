@@ -182,7 +182,7 @@ are not enumerable across raters; public rows carry no PII.
 | Races converge honestly | D7: 409 collapse, +50 bumps, no-dupe walks |
 | Trust boundary holds | D8: 404/401/403 matrix, injection degradation, no PII |
 | Authorities confined, edges absent | D10 static guards (8) |
-| 1581/1581 green, zero regressions | `test:all` log, this closeout |
+| 1578/1578 green, zero regressions | `test:all` log, this closeout |
 
 ## Closeout CI evidence
 
