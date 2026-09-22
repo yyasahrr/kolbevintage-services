@@ -225,6 +225,13 @@
       "when": 1790250000000,
       "tag": "0031_phase_5_7_promotions_commercial_engine",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790300000000,
+      "tag": "0032_phase_5_7_promotions_checkpoint_b",
+      "breakpoints": true
     }
   ]
 }

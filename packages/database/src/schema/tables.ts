@@ -6721,9 +6721,14 @@ export const promotionCouponRedemption = pgTable(
     actorRef: text("actor_ref").notNull(),
     baseAmount: bigint("base_amount", { mode: "bigint" }).notNull(),
     discountAmount: bigint("discount_amount", { mode: "bigint" }).notNull(),
-    // Loose future order reference (no FK: orders own their tables; 5.7-B fills this).
+    // Loose order reference (no FK: orders own their tables). 5.7-B binds every
+    // redemption to the evaluation that produced it, making this ledger the
+    // order attribution record (PromotionAttributionSnapshot).
     orderReference: text("order_reference"),
     idempotencyKey: text("idempotency_key").notNull(),
+    // Nullable only for rows predating migration 0032; new writes require both.
+    evaluationVersion: text("evaluation_version"),
+    termsHash: text("terms_hash"),
     createdAt: createdAt(),
   },
   (table) => [
@@ -6731,6 +6736,7 @@ export const promotionCouponRedemption = pgTable(
     moneyCheck("promotion_coupon_redemption_base_amount_range", "base_amount"),
     moneyCheck("promotion_coupon_redemption_discount_amount_range", "discount_amount"),
     check("promotion_coupon_redemption_discount_within_base", sql.raw(`"discount_amount" <= "base_amount"`)),
+    check("promotion_coupon_redemption_terms_hash_format", sql.raw(`"terms_hash" IS NULL OR "terms_hash" ~ '^[0-9a-f]{64}$'`)),
     uniqueIndex("promotion_coupon_redemption_idempotency_unique").on(table.idempotencyKey),
     uniqueIndex("promotion_coupon_redemption_coupon_order_unique").on(table.couponId, table.orderReference).where(sql`"coupon_id" IS NOT NULL AND "order_reference" IS NOT NULL`),
     uniqueIndex("promotion_coupon_redemption_auto_order_unique").on(table.revisionId, table.orderReference).where(sql`"coupon_id" IS NULL AND "order_reference" IS NOT NULL`),

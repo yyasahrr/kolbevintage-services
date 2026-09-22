@@ -264,6 +264,17 @@ export class AdminApprovalsService {
           break;
         }
 
+        case "PROMOTION_PUBLISH":
+        case "PROMOTION_PAUSE": {
+          // Promotions owns publish/pause execution (terms-binding checks live in
+          // the domain). Same deferred pattern as PRODUCTION_RECALL: the shared
+          // row enforces maker/checker separation, and the Promotions API
+          // completes the transition through `markApprovalExecuted`, which
+          // overwrites this marker with the real outcome.
+          executionResult = { deferredTo: "promotions.approval", targetType: req.targetType, targetId: req.targetId };
+          break;
+        }
+
         default:
           throw new Error(`Unsupported approval requestType: ${req.requestType}`);
       }
@@ -313,6 +324,56 @@ export class AdminApprovalsService {
 
       throw new ApprovalExecutionError(`Approval execution failed: ${err.message}`, err);
     }
+  }
+
+  /**
+   * Domain-completed execution (Phase 5.7-B). Deferred types (PRODUCTION_RECALL,
+   * PROMOTION_PUBLISH, PROMOTION_PAUSE) perform their transition in the owning
+   * domain, which then records the real outcome here. Accepts `approved` rows,
+   * plus `executed` rows that still carry the `deferredTo` marker (generic
+   * decide with autoExecute=true finalizes the decision but performs no domain
+   * effect). Anything else is a state conflict — never a silent overwrite.
+   */
+  async markApprovalExecuted(requestId: string, executionResult: Record<string, unknown>, executorId: string) {
+    const [req] = await this.db
+      .select()
+      .from(approvalRequest)
+      .where(eq(approvalRequest.id, requestId))
+      .limit(1);
+
+    if (!req) {
+      throw new ApprovalRequestStateError(`Approval request '${requestId}' not found`);
+    }
+    const payload = (req.executionResult || {}) as Record<string, unknown>;
+    const isPendingDeferred =
+      req.status === "executed" && typeof payload.deferredTo === "string";
+    if (req.status !== "approved" && !isPendingDeferred) {
+      throw new ApprovalRequestStateError(
+        `Cannot record execution for approval request in status '${req.status}'. Must be 'approved' (or deferred-executed).`,
+      );
+    }
+
+    const [executed] = await this.db
+      .update(approvalRequest)
+      .set({
+        status: "executed",
+        executedAt: sql`now()`,
+        executionResult,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(approvalRequest.id, requestId))
+      .returning();
+
+    await this.auditService.record({
+      actorId: executorId,
+      actorRole: "admin",
+      action: "approval_request_executed",
+      entityType: "approval_request",
+      entityId: requestId,
+      metadata: { executionResult },
+    });
+
+    return executed;
   }
 
   async cancelApprovalRequest(requestId: string, reason: string, actorId: string) {

@@ -114,9 +114,9 @@ export interface EvaluatePromotionsResult {
 }
 
 /**
- * What a future order row snapshots per applied promotion (5.7-B writes this;
- * Checkpoint A only produces it). Historical totals never recompute from live
- * promotion rows.
+ * What an order snapshots per applied promotion (5.7-B: written by
+ * `recordRedemption` at checkout time, read back via `getOrderAttribution`).
+ * Historical totals never recompute from live promotion rows.
  */
 export interface PromotionAttributionSnapshot {
   promotionId: string;
@@ -126,8 +126,39 @@ export interface PromotionAttributionSnapshot {
   baseAmount: string;
   discountAmount: string;
   finalAmount: string;
-  evaluationVersion: string;
-  termsHash: string;
+  /**
+   * Evaluation binding. Null only for ledger rows predating migration 0032;
+   * every write since requires both values.
+   */
+  evaluationVersion: string | null;
+  termsHash: string | null;
+}
+
+/**
+ * Display-safe campaign state for CMS/SiteBuilder presentation references
+ * (5.7-B). Fixed key set by design: anything eligibility- or actor-related
+ * must never appear here. `displayActive` gates *rendering* ("show the hero
+ * banner"); it is not eligibility, which is always per-basket at evaluation.
+ */
+export interface PromotionDisplayBenefit {
+  type: string;
+  scope: string;
+  /** Basis points for PERCENT_DISCOUNT, else null (render hint, not math input). */
+  percentBps: number | null;
+  /** Decimal-string bigint IRR for FIXED_AMOUNT_DISCOUNT, else null. */
+  amount: string | null;
+  couponRequired: boolean;
+  inWindow: boolean;
+}
+
+export interface PromotionDisplayState {
+  code: string;
+  title: string;
+  channel: string;
+  status: string;
+  displayActive: boolean;
+  window: { startsAt: string | null; endsAt: string | null };
+  benefit: PromotionDisplayBenefit | null;
 }
 
 /* ── Owner-facts provider ─────────────────────────────────────────────── */

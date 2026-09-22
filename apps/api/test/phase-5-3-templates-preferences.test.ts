@@ -2,7 +2,7 @@
  * Phase 5.3 — Checkpoint A: Notification Domain, Templates & Preferences Test Suite
  *
  * Verifies:
- * 1. Schema & Migration Integrity (193 tables, 32 migrations, snapshot consistency after Phase 5.7 foundation).
+ * 1. Schema & Migration Integrity (193 tables, 33 migrations, snapshot consistency after Phase 5.7 Checkpoint B).
  * 2. Versioned notification templates (DRAFT -> PUBLISHED -> SUPERSEDED).
  * 3. Published template version is historically immutable.
  * 4. Safe template variables (regex whitelisting, prohibited JS/eval, missing var rejection).
@@ -128,7 +128,7 @@ describe("Phase 5.3 — Checkpoint A: Notification Templates & Preferences", () 
     await harness.close();
   });
 
-  it("1. Schema & Migration Integrity: 193 tables, migrations through 0031 applied", async () => {
+  it("1. Schema & Migration Integrity: 193 tables, migrations through 0032 applied", async () => {
     const rows = await harness.db.execute<{ count: string }>(
       "SELECT count(*)::text FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'",
     );

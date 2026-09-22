@@ -60,9 +60,14 @@ evaluation fails closed on any mismatch with the caller-supplied unit price.
 CMS (`cms_page`, content documents, media, publication schedules) owns versioned
 editorial content and *may display* a campaign (festival hero, countdown,
 banner) by referencing a promotion's stable identity. CMS never stores discount
-math, never decides eligibility, and never gates checkout. Any campaign visual
-in SiteBuilder remains a presentation reference resolved against Promotions
-state at render/serve time (5.7-B concern).
+math, never decides eligibility, and never gates checkout. Since Checkpoint B,
+any campaign visual in SiteBuilder is a presentation reference resolved
+against Promotions state at serve time through the tested
+`CmsPromotionReferenceService` seam, which serves the fixed-key
+`PromotionDisplayState` (identity, status, window, benefit shape — no
+eligibility inputs, no actor data, no computed discounts). Consuming the seam
+from public reads and SiteBuilder is Phase 6; Checkpoint B delivers the seam,
+not the cutover.
 
 ### 1.5 CRM segmentation boundary
 
@@ -90,8 +95,14 @@ evaluation contract (`promotions.contract.ts`) therefore emits a
 `PromotionAttributionSnapshot` per applied promotion carrying
 `promotionId`, `promotionRevisionId`, `couponId`, `baseAmount`,
 `discountAmount`, `finalAmount`, plus `evaluationVersion` and a `termsHash`.
-Future order writes (5.7-B) snapshot these values; re-reading the live
-promotion is for explanation only, never for recomputation.
+Since Checkpoint B, `recordRedemption` writes these values into the
+redemption ledger at checkout time (the evaluation binding is required, so
+every redemption traces to the engine run that priced it), and
+`getOrderAttribution` reads them back per order; re-reading the live
+promotion is for explanation only, never for recomputation. There is still
+no FK to order tables: orders own their rows, the loose `order_reference`
+is the join key, and wiring the call into the hardened order-creation path
+remains future work.
 
 ### 1.8 Retail vs wholesale semantics
 
@@ -206,10 +217,17 @@ explicit `recordRedemption` call the future checkout will make.
 
 New catalog actions: `promotion:view/create/edit/publish/pause/coupon:manage`,
 enforced by the existing `AdminPermissionGuard` (`admin-promotions.controller.ts`)
-and seeded to `super_admin`. `commercial_ops` receives view/create/edit (maker)
-but **not** publish/pause (high-impact activation stays with super_admin until
-maker/checker execution wiring lands in 5.7-B; no new RBAC framework, no new
-approval request type in Checkpoint A).
+and seeded to `super_admin`. `commercial_ops` receives view/create/edit (maker).
+Since Checkpoint B, publish and pause execute exclusively through maker/checker
+approvals (`PROMOTION_PUBLISH` / `PROMOTION_PAUSE`, following the
+PRODUCTION_RECALL deferred-execution precedent): makers request with
+`promotion:edit`, checkers decide through the shared approvals API, and the
+domain performs the transition only after re-asserting the exact terms hash
+captured at request time — a draft edited after review cannot publish under a
+stale approval. Execution binds to the deciding checker, and even `super_admin`
+cannot self-approve (the framework's two-person rule). No direct publish/pause
+route exists; `end` remains the direct super_admin kill-switch. No new RBAC
+framework was needed.
 
 ## 3. Phase 6 frontend mapping (future, not implemented)
 
@@ -223,8 +241,13 @@ approval request type in Checkpoint A).
 ## 4. Honest debt carried out of Checkpoint A
 
 1. Retail base-price authority is still transitional (§1.2); evaluation flags it.
-2. Maker/checker execution for publish/pause is designed, not wired (5.7-B).
+2. ~~Maker/checker execution for publish/pause is designed, not wired~~ — wired
+   in Checkpoint B (§2.8).
 3. First-purchase/recency rules need Orders history reads — dimension intentionally omitted.
 4. Supplier-funded campaigns: no settlement economics invented (explicit non-goal).
 5. No public evaluation/checkout endpoint yet — admin preview only, so no browser
-   price can structurally reach the engine.
+   price can structurally reach the engine. Recording redemptions from the live
+   order-creation path is still future work (the ledger and attribution APIs
+   are ready; the call site is not).
+6. CMS reference consumption (public reads, SiteBuilder) is Phase 6 — Checkpoint B
+   delivers the resolution seam only.

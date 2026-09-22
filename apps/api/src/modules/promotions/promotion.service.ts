@@ -18,7 +18,7 @@ import {
 } from "@kolbe/database";
 import { KOLBE_DB } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
-import { PROMOTION_FACTS_PROVIDER, type PromotionFactsProvider } from "./promotions.contract";
+import { PROMOTION_FACTS_PROVIDER, type PromotionDisplayState, type PromotionFactsProvider } from "./promotions.contract";
 import {
   assertPromotionTransition,
   assertRevisionTransition,
@@ -160,6 +160,50 @@ export class PromotionService {
       publishedRevision = await this.getRevision(found.currentPublishedRevisionId);
     }
     return { ...found, publishedRevision };
+  }
+
+  /**
+   * Phase 5.7-B — display-safe campaign state for CMS/SiteBuilder references.
+   *
+   * Presentation-only: identity, lifecycle status, revision window, and the
+   * benefit shape for rendering ("15% off", "free shipping"). It carries no
+   * eligibility inputs, no per-actor data, and no computed discounts — CMS
+   * resolves this at serve time and must never decide eligibility or totals
+   * from it. Unknown codes return null (total function for render paths);
+   * malformed codes throw (loud authoring errors).
+   */
+  async getPromotionDisplayState(code: unknown, nowInput?: unknown): Promise<PromotionDisplayState | null> {
+    const canonical = parsePromotionCode(code);
+    const now = parseOptionalDate(nowInput, "now") ?? new Date();
+    const [found] = await this.db.select().from(promotion).where(eq(promotion.code, canonical)).limit(1);
+    if (!found) return null;
+    let benefit: PromotionDisplayState["benefit"] = null;
+    let window: PromotionDisplayState["window"] = { startsAt: null, endsAt: null };
+    if (found.currentPublishedRevisionId) {
+      const [revision] = await this.db.select().from(promotionRevision).where(eq(promotionRevision.id, found.currentPublishedRevisionId)).limit(1);
+      if (revision && revision.status === "PUBLISHED") {
+        window = { startsAt: revision.startsAt?.toISOString() ?? null, endsAt: revision.endsAt?.toISOString() ?? null };
+        const inWindow = (!revision.startsAt || revision.startsAt.getTime() <= now.getTime())
+          && (!revision.endsAt || revision.endsAt.getTime() > now.getTime());
+        benefit = {
+          type: revision.benefitType,
+          scope: revision.benefitScope,
+          percentBps: revision.percentBps,
+          amount: revision.amount === null ? null : revision.amount.toString(),
+          couponRequired: revision.couponRequired,
+          inWindow,
+        };
+      }
+    }
+    return {
+      code: found.code,
+      title: found.title,
+      channel: found.channel,
+      status: found.status,
+      displayActive: found.status === "ACTIVE" && benefit !== null && benefit.inWindow,
+      window,
+      benefit,
+    };
   }
 
   async listPromotions(filter: { status?: unknown; channel?: unknown; code?: unknown; page?: unknown; limit?: unknown } = {}) {

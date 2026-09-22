@@ -32,6 +32,8 @@ const facts = {
   tagExists: async () => true,
 };
 const audit = { record: async () => "p57-audit" };
+// 5.7-B attribution binding required by every redemption write.
+const BINDING = { evaluationVersion: "promo-eval-v1", termsHash: "a".repeat(64) };
 
 function basis() {
   return { kind: "SERVER_RESOLVED", resolvedBy: "p57_test", reference: null };
@@ -158,6 +160,7 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
       actorKind: "RETAIL_CUSTOMER", actorRef: "user_1",
       baseAmount: "10000", discountAmount: "1000",
       orderReference: "ord_stale", idempotencyKey: "idem_stale",
+      ...BINDING,
     })).rejects.toMatchObject({ code: "PROMOTION_REVISION_STALE" });
   });
 
@@ -169,6 +172,7 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
       actorKind: "RETAIL_CUSTOMER", actorRef: "user_1",
       baseAmount: "10000", discountAmount: "1000",
       orderReference: "ord_16", idempotencyKey: "idem_16",
+      ...BINDING,
     };
     const first = await usage.recordRedemption("checkout", input);
     expect(first.replayed).toBe(false);
@@ -194,6 +198,7 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
       actorKind: "RETAIL_CUSTOMER", actorRef: `user_${suffix}`,
       baseAmount: "10000", discountAmount: "1000",
       orderReference: `ord_17_${suffix}`, idempotencyKey: `idem_17_${suffix}`,
+      ...BINDING,
     });
     const outcomes = await Promise.allSettled([attempt("a"), attempt("b")]);
     const fulfilled = outcomes.filter((row) => row.status === "fulfilled");
@@ -213,12 +218,14 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
       actorKind: "RETAIL_CUSTOMER", actorRef: "user_1",
       baseAmount: "10000", discountAmount: "1000",
       orderReference: "ord_18_a", idempotencyKey: "idem_18_a",
+      ...BINDING,
     });
     await expect(usage.recordRedemption("checkout", {
       promotionId: seeded.promo.id, revisionId: seeded.revision.id, couponCode: "GATE-18",
       actorKind: "RETAIL_CUSTOMER", actorRef: "user_2",
       baseAmount: "10000", discountAmount: "1000",
       orderReference: "ord_18_b", idempotencyKey: "idem_18_b",
+      ...BINDING,
     })).rejects.toMatchObject({ code: "PROMOTION_USAGE_LIMIT_EXHAUSTED" });
     // Evaluation pre-checks the same cap before checkout even starts.
     const result = await evaluate.evaluate(retailEval(["GATE-18"]));
@@ -240,6 +247,7 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
       actorKind: "RETAIL_CUSTOMER", actorRef: actor,
       baseAmount: "10000", discountAmount: "1000",
       orderReference: order, idempotencyKey: key,
+      ...BINDING,
     });
     await redeem("user_1", "ord_19_a", "idem_19_a");
     await expect(redeem("user_1", "ord_19_b", "idem_19_b")).rejects.toMatchObject({ code: "PROMOTION_ACTOR_LIMIT_EXHAUSTED" });
@@ -254,6 +262,7 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
       actorKind: "RETAIL_CUSTOMER", actorRef: "user_9",
       baseAmount: "100", discountAmount: "10",
       orderReference: "ord_19_g", idempotencyKey: "idem_19_g",
+      ...BINDING,
     })).rejects.toMatchObject({ code: "PROMOTION_COUPON_REQUIRED" });
   });
 
@@ -263,6 +272,7 @@ describe("Phase 5.7 first-class coupons and concurrency-safe usage", () => {
     const base = {
       promotionId: seeded.promo.id, revisionId: seeded.revision.id, couponCode: "GATE-20",
       actorKind: "RETAIL_CUSTOMER", actorRef: "user_1",
+      ...BINDING,
     };
     await expect(usage.recordRedemption("checkout", {
       ...base, baseAmount: "100", discountAmount: "101", orderReference: "ord_20_a", idempotencyKey: "idem_20_a",

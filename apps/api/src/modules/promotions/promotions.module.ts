@@ -9,6 +9,7 @@ import { PricingModule } from "../pricing/pricing.module";
 import { RecoveryModule } from "../recovery/recovery.module";
 import { VipModule } from "../vip/vip.module";
 import { AdminPromotionsController } from "./admin-promotions.controller";
+import { PromotionApprovalService } from "./promotion-approval.service";
 import { PROMOTION_FACTS_PROVIDER } from "./promotions.contract";
 import { PromotionOwnerFactsProvider } from "./promotion-facts.provider";
 import { PromotionCouponService } from "./promotion-coupon.service";
@@ -32,6 +33,7 @@ import { PromotionUsageService } from "./promotion-usage.service";
   ],
   controllers: [AdminPromotionsController],
   providers: [
+    PromotionApprovalService,
     PromotionService,
     PromotionCouponService,
     PromotionEligibilityService,
@@ -43,6 +45,7 @@ import { PromotionUsageService } from "./promotion-usage.service";
     { provide: PROMOTION_FACTS_PROVIDER, useExisting: PromotionOwnerFactsProvider },
   ],
   exports: [
+    PromotionApprovalService,
     PromotionService,
     PromotionCouponService,
     PromotionEligibilityService,

@@ -32,6 +32,7 @@ import {
   PromotionDomainError,
 } from "./promotions.logic";
 import { mapPromotionPgError } from "./promotion.service";
+import type { PromotionAttributionSnapshot } from "./promotions.contract";
 
 type DbOrTx = KolbeDatabase | Parameters<Parameters<KolbeDatabase["transaction"]>[0]>[0];
 
@@ -46,6 +47,9 @@ export type RecordRedemptionInput = {
   discountAmount: unknown;
   orderReference?: unknown;
   idempotencyKey: unknown;
+  /** 5.7-B attribution binding: the evaluation that produced these amounts. */
+  evaluationVersion: unknown;
+  termsHash: unknown;
 };
 
 const ACTOR_TYPES = ["RETAIL_CUSTOMER", "WHOLESALE_ACCOUNT"] as const;
@@ -79,6 +83,11 @@ export class PromotionUsageService {
     const orderReference = parseOptionalText(input.orderReference, "order_reference", 160);
     if (orderReference) parseOrderReference(orderReference);
     const idempotencyKey = parseIdempotencyKey(input.idempotencyKey);
+    // Every redemption traces to the evaluation that produced it: without the
+    // binding, order attribution would be unmoored from the engine version and
+    // terms that computed the discount.
+    const evaluationVersion = parseEvaluationVersion(input.evaluationVersion);
+    const termsHash = parseTermsHash(input.termsHash);
     const now = new Date();
 
     try {
@@ -175,6 +184,7 @@ export class PromotionUsageService {
           .values({
             id: makePromotionId("promoredeem"), couponId, promotionId, revisionId: revision.id,
             actorType, actorRef, baseAmount, discountAmount, orderReference, idempotencyKey,
+            evaluationVersion, termsHash,
           })
           .returning();
         await this.audit.record({
@@ -262,9 +272,38 @@ export class PromotionUsageService {
       baseAmount: redemption.baseAmount.toString(),
       discountAmount: redemption.discountAmount.toString(),
       orderReference: redemption.orderReference,
+      evaluationVersion: redemption.evaluationVersion,
+      termsHash: redemption.termsHash,
       uses: usage?.uses ?? 0,
       replayed,
     };
+  }
+
+  /**
+   * Phase 5.7-B — order attribution read. Returns one snapshot per promotion
+   * applied to the order, in redemption order. Amounts come from the immutable
+   * ledger (never recomputed from live terms); `finalAmount` is derived as
+   * base minus discount so stored values cannot contradict each other.
+   */
+  async getOrderAttribution(orderReference: unknown): Promise<PromotionAttributionSnapshot[]> {
+    const reference = parseOptionalText(orderReference, "order_reference", 160);
+    if (!reference) throw new PromotionDomainError("PROMOTION_REDEMPTION_INVALID", "order_reference is required");
+    parseOrderReference(reference);
+    const rows = await this.db
+      .select()
+      .from(promotionCouponRedemption)
+      .where(eq(promotionCouponRedemption.orderReference, reference))
+      .orderBy(promotionCouponRedemption.createdAt, promotionCouponRedemption.id);
+    return rows.map((row) => ({
+      promotionId: row.promotionId,
+      promotionRevisionId: row.revisionId,
+      couponId: row.couponId,
+      baseAmount: row.baseAmount.toString(),
+      discountAmount: row.discountAmount.toString(),
+      finalAmount: (row.baseAmount - row.discountAmount).toString(),
+      evaluationVersion: row.evaluationVersion,
+      termsHash: row.termsHash,
+    }));
   }
 
   async listRedemptions(filter: { couponId?: unknown; promotionId?: unknown; page?: unknown; limit?: unknown } = {}) {
@@ -308,4 +347,20 @@ function parseOrderReference(value: string): void {
   if (!/^[A-Za-z0-9_:.=-]{1,160}$/.test(value)) {
     throw new PromotionDomainError("PROMOTION_REDEMPTION_INVALID", "order_reference has an invalid format");
   }
+}
+
+/** Engine version marker, e.g. `promo-eval-v1`. Descriptive, not equality-checked. */
+function parseEvaluationVersion(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_.-]{1,64}$/.test(value)) {
+    throw new PromotionDomainError("PROMOTION_REDEMPTION_INVALID", "evaluation_version is required (1..64 chars)");
+  }
+  return value;
+}
+
+/** sha256-hex evaluation binding (mirrors the database format CHECK). */
+function parseTermsHash(value: unknown): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) {
+    throw new PromotionDomainError("PROMOTION_REDEMPTION_INVALID", "terms_hash must be 64 lowercase hex chars");
+  }
+  return value;
 }

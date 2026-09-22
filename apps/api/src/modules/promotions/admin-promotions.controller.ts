@@ -3,8 +3,13 @@
  *
  * Every route requires the admin role plus its catalog permission, enforced
  * by the existing AdminPermissionGuard (no new RBAC framework). There is no
- * public evaluation/checkout endpoint in Checkpoint A — the only evaluation
- * route is the admin-only read-only preview below.
+ * public evaluation/checkout endpoint — the only evaluation route is the
+ * admin-only read-only preview below.
+ *
+ * Checkpoint B: publish and pause run through maker/checker approvals
+ * (PROMOTION_PUBLISH / PROMOTION_PAUSE). Makers request with `promotion:edit`;
+ * checkers decide through the shared approvals API and execute here with the
+ * approval-decide permission. No direct publish/pause route exists.
  */
 
 import { Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
@@ -12,6 +17,7 @@ import { toApiJson } from "../../common/api-json";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { AdminPermissionGuard, RequireAdminPermission } from "../admin/admin-rbac.guard";
+import { PromotionApprovalService } from "./promotion-approval.service";
 import { PromotionCouponService } from "./promotion-coupon.service";
 import { PromotionEvaluationService } from "./promotion-evaluation.service";
 import { PromotionService } from "./promotion.service";
@@ -23,6 +29,7 @@ import { PromotionUsageService } from "./promotion-usage.service";
 export class AdminPromotionsController {
   constructor(
     @Inject(PromotionService) private readonly promotions: PromotionService,
+    @Inject(PromotionApprovalService) private readonly approvals: PromotionApprovalService,
     @Inject(PromotionCouponService) private readonly coupons: PromotionCouponService,
     @Inject(PromotionEvaluationService) private readonly evaluation: PromotionEvaluationService,
     @Inject(PromotionUsageService) private readonly usage: PromotionUsageService,
@@ -82,10 +89,10 @@ export class AdminPromotionsController {
     return toApiJson(await this.promotions.activate(id, user.sub, body ?? {}));
   }
 
-  @Post(":id/pause")
-  @RequireAdminPermission("promotion:pause")
-  async pause(@Param("id") id: string, @CurrentUser() user: Claims) {
-    return toApiJson(await this.promotions.pause(id, user.sub));
+  @Post(":id/pause-request")
+  @RequireAdminPermission("promotion:edit")
+  async requestPause(@Param("id") id: string, @Body() body: Record<string, unknown>, @CurrentUser() user: Claims) {
+    return toApiJson(await this.approvals.requestPause(user.sub, { ...(body ?? {}), promotionId: id } as never));
   }
 
   @Post(":id/resume")
@@ -136,10 +143,22 @@ export class AdminPromotionsController {
     return toApiJson(await this.promotions.removeTarget(revisionId, targetId, user.sub));
   }
 
-  @Post("revisions/:revisionId/publish")
-  @RequireAdminPermission("promotion:publish")
-  async publishRevision(@Param("revisionId") revisionId: string, @CurrentUser() user: Claims) {
-    return toApiJson(await this.promotions.publishRevision(revisionId, user.sub));
+  @Post("revisions/:revisionId/publish-request")
+  @RequireAdminPermission("promotion:edit")
+  async requestPublish(@Param("revisionId") revisionId: string, @Body() body: Record<string, unknown>, @CurrentUser() user: Claims) {
+    return toApiJson(await this.approvals.requestPublish(user.sub, { ...(body ?? {}), revisionId } as never));
+  }
+
+  @Post("approval-requests/:requestId/execute-publish")
+  @RequireAdminPermission("wholesale:approval:decide")
+  async executePublish(@Param("requestId") requestId: string, @CurrentUser() user: Claims) {
+    return toApiJson(await this.approvals.executeApprovedPublish(requestId, user.sub));
+  }
+
+  @Post("approval-requests/:requestId/execute-pause")
+  @RequireAdminPermission("wholesale:approval:decide")
+  async executePause(@Param("requestId") requestId: string, @CurrentUser() user: Claims) {
+    return toApiJson(await this.approvals.executeApprovedPause(requestId, user.sub));
   }
 
   @Delete("revisions/:revisionId")
@@ -176,5 +195,18 @@ export class AdminPromotionsController {
   @RequireAdminPermission("promotion:view")
   async evaluatePreview(@Body() body: Record<string, unknown>) {
     return toApiJson(await this.evaluation.evaluate(body as never));
+  }
+
+  @Get("display/:code")
+  @RequireAdminPermission("promotion:view")
+  async displayPreview(@Param("code") code: string) {
+    return toApiJson(await this.promotions.getPromotionDisplayState(code));
+  }
+
+  @Get(":id/attribution/:orderReference")
+  @RequireAdminPermission("promotion:view")
+  async orderAttribution(@Param("id") id: string, @Param("orderReference") orderReference: string) {
+    const snapshots = await this.usage.getOrderAttribution(orderReference);
+    return toApiJson(snapshots.filter((snapshot) => snapshot.promotionId === id));
   }
 }

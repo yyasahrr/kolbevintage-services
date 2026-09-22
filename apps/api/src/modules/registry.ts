@@ -305,7 +305,9 @@ export const MODULES: readonly ModuleDefinition[] = [
       "cms_article_revision_taxonomy",
       "cms_publication_schedule",
     ],
-    dependsOn: ["auth", "admin", "audit"],
+    // Phase 5.7-B: campaign presentation references resolve against Promotions
+    // display state at serve time (read-only; no eligibility, no math).
+    dependsOn: ["auth", "admin", "audit", "promotions"],
     status: "live",
     phase: 5,
   },

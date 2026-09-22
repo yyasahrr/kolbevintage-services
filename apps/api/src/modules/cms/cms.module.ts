@@ -11,12 +11,14 @@ import { CmsMediaService, CMS_PUBLIC_MEDIA_STORAGE } from "./cms-media.service";
 import { CmsNavigationService } from "./cms-navigation.service";
 import { CmsPageService, CmsRevisionService } from "./cms-page.service";
 import { CmsPreviewService } from "./cms-preview.service";
+import { CmsPromotionReferenceService } from "./cms-promotion-reference.service";
 import { CmsPublicController } from "./cms-public.controller";
 import { CmsPublicationScheduler, CmsPublicationService } from "./cms-publication.service";
 import { LocalPublicMediaStorage } from "./public-media-storage";
+import { PromotionsModule } from "../promotions/promotions.module";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, AdminModule, RecoveryModule],
+  imports: [DatabaseModule, AuditModule, AdminModule, RecoveryModule, PromotionsModule],
   controllers: [CmsAdminController, CmsPublicController],
   providers: [
     CmsPageService,
@@ -28,6 +30,7 @@ import { LocalPublicMediaStorage } from "./public-media-storage";
     CmsPublicationService,
     CmsPublicationScheduler,
     CmsPreviewService,
+    CmsPromotionReferenceService,
     CmsLegacyImportService,
     LocalPublicMediaStorage,
     { provide: CMS_PUBLIC_MEDIA_STORAGE, useExisting: LocalPublicMediaStorage },
@@ -42,6 +45,7 @@ import { LocalPublicMediaStorage } from "./public-media-storage";
     CmsPublicationService,
     CmsPublicationScheduler,
     CmsPreviewService,
+    CmsPromotionReferenceService,
   ],
 })
 export class CmsModule {}

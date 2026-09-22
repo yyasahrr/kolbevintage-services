@@ -33,7 +33,7 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
     await dropDatabase(DB);
   });
 
-  it("creates the seven promotion tables and appends journal idx 31", async () => {
+  it("creates the seven promotion tables (journal idx 31; 0032 adds no tables)", async () => {
     const result = await withClient(DB, (client) => client.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name LIKE 'promotion%'
@@ -49,10 +49,10 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
       "promotion_usage",
     ]);
     const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(32);
+    expect(journal.entries).toHaveLength(33);
     expect(journal.entries[journal.entries.length - 1]).toMatchObject({
-      idx: 31,
-      tag: "0031_phase_5_7_promotions_commercial_engine",
+      idx: 32,
+      tag: "0032_phase_5_7_promotions_checkpoint_b",
     });
   });
 
@@ -181,6 +181,39 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
         `INSERT INTO promotion_schedule (id, promotion_id, revision_id, action, status, run_at, idempotency_key, created_by)
          VALUES ('p57_bad_sched3', 'p57_promo', 'p57_rev', 'END', 'SCHEDULED', now() + interval '1 hour', 'idem_sched_dup', 'x')`,
       )).rejects.toThrow(/idempotency_unique/);
+    });
+  });
+
+  it("migration 0032 extends the approval catalog and binds the ledger to evaluations", async () => {
+    await withClient(DB, async (client) => {
+      await client.query(`INSERT INTO account_user (id, email, password_hash, salt, role, status) VALUES ('p57_maker', 'p57-maker@test.invalid', 'h', 's', 'admin', 'active')`);
+      await client.query(
+        `INSERT INTO approval_request (id, request_type, target_type, target_id, maker_id, payload, idempotency_key)
+         VALUES ('p57_appr_pub', 'PROMOTION_PUBLISH', 'promotion_revision', 'p57_rev', 'p57_maker', '{}'::jsonb, 'p57-appr-pub')`,
+      );
+      await client.query(
+        `INSERT INTO approval_request (id, request_type, target_type, target_id, maker_id, payload, idempotency_key)
+         VALUES ('p57_appr_pause', 'PROMOTION_PAUSE', 'promotion', 'p57_promo', 'p57_maker', '{}'::jsonb, 'p57-appr-pause')`,
+      );
+      await expect(client.query(
+        `INSERT INTO approval_request (id, request_type, target_type, target_id, maker_id, payload, idempotency_key)
+         VALUES ('p57_appr_bad', 'PROMOTION_NUKE', 'promotion', 'p57_promo', 'p57_maker', '{}'::jsonb, 'p57-appr-bad')`,
+      )).rejects.toThrow(/approval_request_type_allowed/);
+
+      // Evaluation binding columns exist, accept the bound shape, and reject
+      // malformed hashes — while staying nullable for pre-0032 rows.
+      await client.query(
+        `INSERT INTO promotion_coupon_redemption (id, promotion_id, revision_id, actor_type, actor_ref, base_amount, discount_amount, order_reference, idempotency_key, evaluation_version, terms_hash)
+         VALUES ('p57_redeem_b', 'p57_promo', 'p57_rev', 'RETAIL_CUSTOMER', 'u9', 1000, 100, 'ord_b', 'idem_b', 'promo-eval-v1', repeat('c', 64))`,
+      );
+      await expect(client.query(
+        `INSERT INTO promotion_coupon_redemption (id, promotion_id, revision_id, actor_type, actor_ref, base_amount, discount_amount, order_reference, idempotency_key, evaluation_version, terms_hash)
+         VALUES ('p57_redeem_bad', 'p57_promo', 'p57_rev', 'RETAIL_CUSTOMER', 'u9', 1000, 100, 'ord_bad', 'idem_bad', 'promo-eval-v1', 'ZZZ')`,
+      )).rejects.toThrow(/terms_hash_format/);
+      await client.query(
+        `INSERT INTO promotion_coupon_redemption (id, promotion_id, revision_id, actor_type, actor_ref, base_amount, discount_amount, order_reference, idempotency_key)
+         VALUES ('p57_redeem_legacy', 'p57_promo', 'p57_rev', 'RETAIL_CUSTOMER', 'u9', 1000, 100, 'ord_legacy', 'idem_legacy')`,
+      );
     });
   });
 });

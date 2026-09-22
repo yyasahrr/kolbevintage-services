@@ -157,6 +157,8 @@ const STATE_COLUMNS: Array<{ table: string; column: string; values: readonly str
   { table: "promotion_schedule", column: "action", values: sets.PROMOTION_SCHEDULE_ACTIONS, check: "promotion_schedule_action_allowed" },
   { table: "promotion_schedule", column: "status", values: sets.PROMOTION_SCHEDULE_STATUSES, check: "promotion_schedule_status_allowed" },
   { table: "admin_role_permission", column: "action", values: sets.ADMIN_PERMISSION_ACTIONS, check: "admin_role_permission_action_allowed" },
+  { table: "approval_request", column: "request_type", values: sets.APPROVAL_REQUEST_TYPES, check: "approval_request_type_allowed" },
+  { table: "approval_request", column: "status", values: sets.APPROVAL_REQUEST_STATUSES, check: "approval_request_status_allowed" },
 ];
 
 const sorted = (values: readonly string[]) => [...values].sort();
