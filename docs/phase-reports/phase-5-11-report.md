@@ -106,8 +106,7 @@ cursors and filters treat hostile input as inert data.
 - Checkpoint A (`f68f528`): CI green (`35825530336` SUCCESS).
 - Checkpoint B (`8c91bd1`): CI green (`35827650268` SUCCESS).
 - Checkpoint C (`9db651d`): CI green (`35830486183` SUCCESS).
-- Checkpoint D: this closeout — commit, push, and CI evidence
-  below.
+- Checkpoint D (`3f4cde0`): CI green (`35832711080` SUCCESS).
 
 ## Explicit deferred items
 
@@ -137,7 +136,9 @@ cursors and filters treat hostile input as inert data.
 
 ## Closeout CI evidence
 
-This report was committed with the Checkpoint D closeout,
-pushed, and its CI run was awaited to SUCCESS before closeout.
+The D push (`9db651d..3f4cde0`, report included) went CI
+green (`35832711080` SUCCESS); this run-id record was
+committed as `docs: record phase 5.11 final CI`, pushed, and
+its own CI run was awaited to SUCCESS before closeout.
 
 Phase 5.11 DONE; the next phase has NOT been scoped.
