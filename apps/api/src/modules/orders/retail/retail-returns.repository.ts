@@ -112,4 +112,20 @@ export class RetailReturnsRepository {
       .orderBy(sql`${retailReturnRequest.createdAt} DESC, ${retailReturnRequest.id} DESC`)
       .limit(limit + 1);
   }
+
+  /** Phase 5.11-C — staff return queue: exact status + (created_at, id) keyset. */
+  async listForStaff(status: string | undefined, limit: number, cursor: [string, string] | null, executor?: any) {
+    const ex = (executor as any) ?? this.db;
+    const conditions = [];
+    if (status) conditions.push(eq(retailReturnRequest.status, status));
+    if (cursor) {
+      conditions.push(sql`(${retailReturnRequest.createdAt}, ${retailReturnRequest.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})`);
+    }
+    return ex
+      .select()
+      .from(retailReturnRequest)
+      .where(conditions.length ? sql.join(conditions, sql` AND `) : undefined)
+      .orderBy(sql`${retailReturnRequest.createdAt} DESC, ${retailReturnRequest.id} DESC`)
+      .limit(limit + 1);
+  }
 }

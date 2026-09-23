@@ -274,6 +274,32 @@ export class RetailReturnsService {
    * RESTOCKED requires RESTOCKABLE and restocks exactly once, then moves
    * the order delivered → returned (skipped when a sibling already did).
    */
+  /** Phase 5.11-C — staff return queue (slim rows, keyset page). */
+  async listRetailReturnsForStaff(
+    actor: { actorId: string | null; actorRole: string },
+    input: { status?: string; limit?: number; cursor?: { createdAt: string; id: string } | null },
+  ): Promise<{ returns: Array<Record<string, unknown>>; nextCursor: { createdAt: string; id: string } | null; hasMore: boolean }> {
+    this.assertStaff(actor);
+    const limit = Math.min(Math.max(Number.isSafeInteger(input.limit) ? (input.limit as number) : 20, 1), 100);
+    const cursor: [string, string] | null = input.cursor ? [input.cursor.createdAt, input.cursor.id] : null;
+    const rows = (await this.repo.listForStaff(input.status, limit, cursor)) as any[];
+    const page = rows.slice(0, limit);
+    const returns = page.map((request) => ({
+      id: request.id,
+      orderId: request.orderId,
+      customerId: request.customerId,
+      status: request.status,
+      reason: request.reason,
+      inspectionDecision: request.inspectionDecision ?? null,
+      version: request.version,
+      createdAt: request.createdAt,
+      updatedAt: request.updatedAt,
+    }));
+    const last = page[page.length - 1] as any;
+    const hasMore = rows.length > limit;
+    return { returns, nextCursor: hasMore && last ? { createdAt: new Date(last.createdAt).toISOString(), id: last.id } : null, hasMore };
+  }
+
   async transitionRetailReturn(
     returnId: string,
     toStatus: unknown,

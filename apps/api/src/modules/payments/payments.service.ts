@@ -2763,6 +2763,50 @@ export class PaymentsService {
     });
   }
 
+  /**
+   * Phase 5.11-C — staff retail refund queue (slim rows, keyset page).
+   * Retail-side only; the writer stays in payments (D10-pinned). RBAC is
+   * enforced by the calling controller (payments convention: readers take
+   * no actor, mirroring getRefundsForAdmin).
+   */
+  async listRetailRefundsForStaff(
+    input: { status?: string; limit?: number; cursor?: { createdAt: string; id: string } | null },
+    executor?: DbOrTx,
+  ): Promise<{ refunds: Array<Record<string, unknown>>; nextCursor: { createdAt: string; id: string } | null; hasMore: boolean }> {
+    return this.withExecutor(executor, async (tx) => {
+      const dbTx = tx as any;
+      const limit = Math.min(Math.max(Number.isSafeInteger(input.limit) ? (input.limit as number) : 20, 1), 100);
+      const conditions = [isNotNull(refund.retailOrderId)];
+      if (input.status) conditions.push(eq(refund.status, input.status));
+      if (input.cursor) {
+        conditions.push(sql`(${refund.createdAt}, ${refund.id}) < (${input.cursor.createdAt}::timestamptz, ${input.cursor.id})`);
+      }
+      const rows = (await dbTx
+        .select()
+        .from(refund)
+        .where(and(...conditions))
+        .orderBy(sql`${refund.createdAt} DESC, ${refund.id} DESC`)
+        .limit(limit + 1)) as any[];
+      const page = rows.slice(0, limit);
+      const refunds = page.map((r: any) => ({
+        id: r.id,
+        refundReference: r.refundReference,
+        retailOrderId: r.retailOrderId,
+        amount: (r.amount ?? 0).toString(),
+        currency: r.currency,
+        status: r.status,
+        reasonCode: r.reasonCode ?? null,
+        requestedAt: r.requestedAt,
+        approvedAt: r.approvedAt ?? null,
+        completedAt: r.completedAt ?? null,
+        createdAt: r.createdAt,
+      }));
+      const last = page[page.length - 1] as any;
+      const hasMore = rows.length > limit;
+      return { refunds, nextCursor: hasMore && last ? { createdAt: new Date(last.createdAt).toISOString(), id: last.id } : null, hasMore };
+    });
+  }
+
   async getIssuedProformaForChild(childOrderId: string, executor: DbOrTx) {
     const tx = executor as any;
     const [proforma] = await tx.select().from(wholesaleProforma).where(and(eq(wholesaleProforma.childOrderId, childOrderId), eq(wholesaleProforma.status, "issued"))).limit(1).for("update");

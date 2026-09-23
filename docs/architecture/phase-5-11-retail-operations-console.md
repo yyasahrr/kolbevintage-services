@@ -179,3 +179,64 @@ One run hit the known transient `phase-4-7-1-cross-domain`
 flake (random hex hash containing 13 consecutive digits trips a
 no-wall-clock-key assertion); it passes standalone and the
 re-run board is fully green. Tables stay 198.
+
+## 9. Checkpoint C design (staff reads + queue indexes)
+
+Reads complete the console. Six routes on the same controller
+(all `@Roles("admin")`, all 200):
+
+- `GET admin/retail/orders` — filters `status`,
+  `paymentStatus`, `orderCode` (exact), `customerId`,
+  `dateFrom`/`dateTo`; slim rows newest-first.
+- `GET admin/retail/orders/:id` — full view (forwards
+  `getRetailOrder` as admin; 404/403 unchanged).
+- `GET admin/retail/orders/:id/timeline` — version-ordered
+  `retail_order_event` rows; 404 when the order is missing
+  (never an ambiguous empty list).
+- `GET admin/retail/returns?status?` — slim queue rows.
+- `GET admin/retail/returns/:id` — full view (forwards
+  `getRetailReturn` as admin).
+- `GET admin/retail/refunds?status?` — slim queue rows,
+  retail-side only (payments-owned reader, mirroring
+  `getRefundsForAdmin`).
+
+Conventions mirrored from `admin/wholesale/orders` (same
+consumer): cursor is base64url `{ createdAt, id }`; a bad
+cursor degrades to the first page; `limit` clamps 1–100,
+default 20; unknown status strings match nothing (pass-through,
+no new error vocabulary); envelopes are
+`{ <rows>, nextCursor, hasMore }`. Money leaves as decimal
+strings; `toApiJson` serializes.
+
+Reads live with their owners: order list + timeline in the
+retail repo/service, return queue in the returns repo/service,
+refund queue as a new `PaymentsService` reader (registry: the
+writer stays in payments; the D10 guards pin it). RBAC is
+`assertStaff` at the seams (admin/system; HTTP admits admin).
+
+Migration 0043 (index-only, hand-written SQL + snapshot +
+journal — `drizzle-kit generate` cannot diff the hand-made
+0035–0042 snapshots): `retail_order_status_created`,
+`retail_order_payment_created`,
+`retail_return_request_status_created`, and the partial
+`refund_retail_status_created WHERE retail_order_id IS NOT
+NULL`. Tables stay 198; journal 44 entries / idx 43.
+
+## 10. Checkpoint C as-built (staff reads + queue indexes)
+
+Shipped the §9 surface verbatim: order list (6 filters) +
+detail + timeline, return queue + detail, refund queue —
+all keyset `{ rows, nextCursor, hasMore }` on the wholesale
+pagination mirror (bad cursors degrade, limit clamps 1–100,
+unknown filters match nothing). Timeline 404s on missing
+orders; detail routes forward the admin viewer.
+
+Reads live with their owners (order/return in retail,
+refunds in `PaymentsService.listRetailRefundsForStaff`,
+payments-convention no-actor reader behind the admin gate).
+Migration 0043 added the 4 queue indexes only; tables stay
+198, journal 44 entries / idx 43. Count-only pin updates in
+3 suites (5-3 string, 5-7 journal, 5.10-D10.8 guard).
+
+Gates: `typecheck:all` clean; `test:all` 1610/1610 = 1596 (B)
++ 14 new (4 migration + 10 reads), zero regressions.

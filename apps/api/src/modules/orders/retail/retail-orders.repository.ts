@@ -62,6 +62,32 @@ export class RetailOrdersRepository {
       .limit(limit + 1);
   }
 
+  /** Phase 5.11-C — staff order queue: exact filters + (created_at, id) keyset. */
+  async listForStaff(
+    filters: { orderStatus?: string; paymentStatus?: string; orderCode?: string; customerId?: string; dateFrom?: string; dateTo?: string },
+    limit: number,
+    cursor: [string, string] | null,
+    executor?: any,
+  ) {
+    const ex = (executor as any) ?? this.db;
+    const conditions = [];
+    if (filters.orderStatus) conditions.push(eq(retailOrder.orderStatus, filters.orderStatus));
+    if (filters.paymentStatus) conditions.push(eq(retailOrder.paymentStatus, filters.paymentStatus));
+    if (filters.orderCode) conditions.push(eq(retailOrder.orderCode, filters.orderCode));
+    if (filters.customerId) conditions.push(eq(retailOrder.customerId, filters.customerId));
+    if (filters.dateFrom) conditions.push(sql`${retailOrder.createdAt} >= (${filters.dateFrom}::timestamptz)`);
+    if (filters.dateTo) conditions.push(sql`${retailOrder.createdAt} <= (${filters.dateTo}::timestamptz)`);
+    if (cursor) {
+      conditions.push(sql`(${retailOrder.createdAt}, ${retailOrder.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})`);
+    }
+    return ex
+      .select()
+      .from(retailOrder)
+      .where(conditions.length ? sql.join(conditions, sql` AND `) : undefined)
+      .orderBy(sql`${retailOrder.createdAt} DESC, ${retailOrder.id} DESC`)
+      .limit(limit + 1);
+  }
+
   async findItemsByOrderId(orderId: string, executor?: any) {
     const ex = (executor as any) ?? this.db;
     return ex.select().from(retailOrderItem).where(eq(retailOrderItem.orderId, orderId));

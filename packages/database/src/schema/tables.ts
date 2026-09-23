@@ -1007,6 +1007,8 @@ export const retailOrder = pgTable(
   },
   (table) => [
     uniqueIndex("retail_order_idempotency").on(table.idempotencyKey),
+    index("retail_order_status_created").on(table.orderStatus, table.createdAt, table.id),
+    index("retail_order_payment_created").on(table.paymentStatus, table.createdAt, table.id),
     stateCheck("retail_order_status_allowed", "order_status", RETAIL_ORDER_STATUS_VALUES),
     stateCheck("retail_order_payment_status_allowed", "payment_status", RETAIL_PAYMENT_STATUSES),
     stateCheck("retail_order_pay_method_allowed", "pay_method", RETAIL_PAYMENT_METHODS),
@@ -1152,6 +1154,7 @@ export const retailReturnRequest = pgTable(
     index("retail_return_request_order_created").on(table.orderId, table.createdAt),
     index("retail_return_request_customer_created").on(table.customerId, table.createdAt),
     index("retail_return_request_support_case").on(table.supportCaseId),
+    index("retail_return_request_status_created").on(table.status, table.createdAt, table.id),
     stateCheck("retail_return_request_status_allowed", "status", RETAIL_RETURN_STATUS_VALUES),
     stateCheck("retail_return_request_reason_allowed", "reason", RETAIL_RETURN_REASON_VALUES),
     check(
@@ -2740,6 +2743,7 @@ export const refund = pgTable(
     index("refund_retail_order_created").on(table.retailOrderId, table.createdAt),
     index("refund_child_created").on(table.childOrderId, table.createdAt),
     index("refund_status_created").on(table.status, table.createdAt),
+    index("refund_retail_status_created").on(table.status, table.createdAt, table.id).where(sql`${table.retailOrderId} IS NOT NULL`),
     foreignKey({
       name: "refund_order_fk",
       columns: [table.wholesaleOrderId],

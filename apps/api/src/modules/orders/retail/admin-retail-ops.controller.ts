@@ -1,10 +1,11 @@
-import { Body, Controller, Headers, HttpCode, Inject, Param, Post, Res } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { CurrentUser, Roles } from "../../../common/guards/session.guard";
 import type { Claims } from "../../../common/session";
 import { toApiJson } from "../../../common/api-json";
 import { RetailOrdersService } from "./retail-orders.service";
 import { RetailReturnsService } from "./retail-returns.service";
+import { PaymentsService } from "../../payments/payments.service";
 
 /**
  * Phase 5.11-A — retail fulfillment ops over staff HTTP.
@@ -22,6 +23,7 @@ export class AdminRetailOpsController {
   constructor(
     @Inject(RetailOrdersService) private readonly retailOrders: RetailOrdersService,
     @Inject(RetailReturnsService) private readonly retailReturns: RetailReturnsService,
+    @Inject(PaymentsService) private readonly payments: PaymentsService,
   ) {}
 
   private actor(claims: Claims) {
@@ -31,6 +33,38 @@ export class AdminRetailOpsController {
   private key(header: string | undefined, body: unknown): string | undefined {
     if (header) return header;
     return typeof body === "string" ? body : undefined;
+  }
+
+  /** Wholesale-console pagination mirror: bad cursors degrade to page one. */
+  private pageParams(limitRaw?: string, cursorRaw?: string) {
+    let limit = limitRaw ? parseInt(limitRaw, 10) : 20;
+    if (!Number.isSafeInteger(limit)) limit = 20;
+    let cursor: { createdAt: string; id: string } | null = null;
+    if (cursorRaw) {
+      const tries = [() => Buffer.from(cursorRaw, "base64url").toString("utf-8"), () => cursorRaw];
+      for (const decode of tries) {
+        try {
+          const parsed = JSON.parse(decode()) as { createdAt?: unknown; id?: unknown };
+          if (parsed && typeof parsed.createdAt === "string" && typeof parsed.id === "string") {
+            cursor = { createdAt: parsed.createdAt, id: parsed.id };
+            break;
+          }
+        } catch {
+          // fall through to the next decoding (or the first page)
+        }
+      }
+    }
+    return { limit, cursor };
+  }
+
+  private encodeCursor(cursor: { createdAt: string; id: string } | null): string | null {
+    return cursor ? Buffer.from(JSON.stringify(cursor)).toString("base64url") : null;
+  }
+
+  private parseDate(raw?: string): string | undefined {
+    if (!raw) return undefined;
+    const ms = Date.parse(raw);
+    return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
   }
 
   @Post("orders/:id/confirm")
@@ -226,5 +260,72 @@ export class AdminRetailOpsController {
   @HttpCode(200)
   async revokeGuestCapability(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return toApiJson(await this.retailOrders.revokeRetailGuestCapability(id, this.actor(claims)));
+  }
+
+  // ── Phase 5.11-C — staff reads ─────────────────────────────────────────
+
+  @Get("orders")
+  async listOrders(
+    @CurrentUser() claims: Claims,
+    @Query("status") status?: string,
+    @Query("paymentStatus") paymentStatus?: string,
+    @Query("orderCode") orderCode?: string,
+    @Query("customerId") customerId?: string,
+    @Query("dateFrom") dateFrom?: string,
+    @Query("dateTo") dateTo?: string,
+    @Query("limit") limitRaw?: string,
+    @Query("cursor") cursorRaw?: string,
+  ) {
+    const { limit, cursor } = this.pageParams(limitRaw, cursorRaw);
+    const result = await this.retailOrders.listRetailOrdersForStaff(this.actor(claims), {
+      orderStatus: status,
+      paymentStatus,
+      orderCode,
+      customerId,
+      dateFrom: this.parseDate(dateFrom),
+      dateTo: this.parseDate(dateTo),
+      limit,
+      cursor,
+    });
+    return toApiJson({ orders: result.orders, nextCursor: this.encodeCursor(result.nextCursor), hasMore: result.hasMore });
+  }
+
+  @Get("orders/:id")
+  async getOrder(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    return toApiJson(await this.retailOrders.getRetailOrder({ userId: claims.sub, role: claims.role }, id));
+  }
+
+  @Get("orders/:id/timeline")
+  async getTimeline(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    return toApiJson(await this.retailOrders.getRetailOrderTimeline(id, this.actor(claims)));
+  }
+
+  @Get("returns")
+  async listReturns(
+    @CurrentUser() claims: Claims,
+    @Query("status") status?: string,
+    @Query("limit") limitRaw?: string,
+    @Query("cursor") cursorRaw?: string,
+  ) {
+    const { limit, cursor } = this.pageParams(limitRaw, cursorRaw);
+    const result = await this.retailReturns.listRetailReturnsForStaff(this.actor(claims), { status, limit, cursor });
+    return toApiJson({ returns: result.returns, nextCursor: this.encodeCursor(result.nextCursor), hasMore: result.hasMore });
+  }
+
+  @Get("returns/:id")
+  async getReturn(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    return toApiJson(await this.retailReturns.getRetailReturn({ userId: claims.sub, role: claims.role }, id));
+  }
+
+  @Get("refunds")
+  async listRefunds(
+    @CurrentUser() claims: Claims,
+    @Query("status") status?: string,
+    @Query("limit") limitRaw?: string,
+    @Query("cursor") cursorRaw?: string,
+  ) {
+    const { limit, cursor } = this.pageParams(limitRaw, cursorRaw);
+    const result = await this.payments.listRetailRefundsForStaff({ status, limit, cursor });
+    return toApiJson({ refunds: result.refunds, nextCursor: this.encodeCursor(result.nextCursor), hasMore: result.hasMore });
   }
 }

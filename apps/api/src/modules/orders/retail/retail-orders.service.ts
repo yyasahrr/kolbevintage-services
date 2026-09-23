@@ -782,6 +782,61 @@ export class RetailOrdersService {
    * is Checkpoint D). Forward-only per RETAIL_ORDER_TRANSITIONS, versioned,
    * and history-appended. Order state never implies payment/shipment state.
    */
+  /** Phase 5.11-C — staff order queue (slim rows, keyset page). */
+  async listRetailOrdersForStaff(
+    actor: { actorId: string | null; actorRole: string },
+    input: {
+      orderStatus?: string; paymentStatus?: string; orderCode?: string; customerId?: string;
+      dateFrom?: string; dateTo?: string; limit?: number; cursor?: { createdAt: string; id: string } | null;
+    },
+  ): Promise<{ orders: Array<Record<string, unknown>>; nextCursor: { createdAt: string; id: string } | null; hasMore: boolean }> {
+    this.assertStaff(actor);
+    const limit = Math.min(Math.max(Number.isSafeInteger(input.limit) ? (input.limit as number) : 20, 1), 100);
+    const cursor: [string, string] | null = input.cursor ? [input.cursor.createdAt, input.cursor.id] : null;
+    const rows = (await this.repo.listForStaff(
+      { orderStatus: input.orderStatus, paymentStatus: input.paymentStatus, orderCode: input.orderCode, customerId: input.customerId, dateFrom: input.dateFrom, dateTo: input.dateTo },
+      limit,
+      cursor,
+    )) as any[];
+    const money = (value: bigint | string | number): string => BigInt(value).toString();
+    const page = rows.slice(0, limit);
+    const orders = page.map((order) => ({
+      id: order.id,
+      orderCode: order.orderCode,
+      customerId: order.customerId ?? null,
+      status: order.orderStatus,
+      paymentStatus: order.paymentStatus,
+      payMethod: order.payMethod,
+      currency: order.currency ?? "IRR",
+      totals: { itemsTotal: money(order.itemsTotal), shippingTotal: money(order.shippingPrice), grandTotal: money(order.totalAmount) },
+      createdAt: order.createdAt,
+    }));
+    const last = page[page.length - 1] as any;
+    const hasMore = rows.length > limit;
+    return { orders, nextCursor: hasMore && last ? { createdAt: new Date(last.createdAt).toISOString(), id: last.id } : null, hasMore };
+  }
+
+  /** Phase 5.11-C — staff timeline (version-ordered facts; 404 when missing). */
+  async getRetailOrderTimeline(
+    orderId: string,
+    actor: { actorId: string | null; actorRole: string },
+  ): Promise<Array<Record<string, unknown>>> {
+    this.assertStaff(actor);
+    const order = await this.repo.findById(orderId);
+    if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
+    const events = (await this.repo.findEventsByOrderId(orderId)) as any[];
+    return events.map((event) => ({
+      id: event.id,
+      orderVersion: event.orderVersion,
+      fromStatus: event.fromStatus,
+      toStatus: event.toStatus,
+      actorId: event.actorId ?? null,
+      actorRole: event.actorRole ?? null,
+      reason: event.reason ?? null,
+      createdAt: event.createdAt,
+    }));
+  }
+
   async transitionOrder(
     orderId: string,
     toStatus: unknown,
