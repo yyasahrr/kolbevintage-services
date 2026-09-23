@@ -19,6 +19,12 @@ export class AuthController {
     @Inject(CONFIG_TOKEN) private readonly config: AppConfig,
   ) {}
 
+  private exposeCompatibilityToken(req: Request, res: Response, token: string): void {
+    const expected = this.config.internalApiToken?.trim();
+    const provided = String(req.headers["x-kolbe-internal-token"] ?? "").trim();
+    if (expected && provided === expected) res.setHeader("X-Kolbe-Session-Token", token);
+  }
+
   @Post("register")
   @Public()
   @RateLimit({ limit: 5, windowSeconds: 60, scope: "ip", keyPrefix: "auth:register" })
@@ -42,6 +48,7 @@ export class AuthController {
     });
 
     res.setHeader("Set-Cookie", this.auth.cookie(token));
+    this.exposeCompatibilityToken(req, res, token);
     return { user: { id: user.id, email: user.email, role: user.role, name: user.displayName, phone: user.phone } };
   }
 
@@ -67,6 +74,7 @@ export class AuthController {
     });
 
     res.setHeader("Set-Cookie", this.auth.cookie(token));
+    this.exposeCompatibilityToken(req, res, token);
     return {
       user: { id: user.id, email: user.email, role: user.role, name: user.displayName, phone: user.phone },
       supplier: supplierContext ?? undefined,
@@ -150,6 +158,7 @@ export class AuthController {
     }
 
     res.setHeader("Set-Cookie", this.auth.cookie(token));
+    this.exposeCompatibilityToken(req, res, token);
     const responseBody: Record<string, unknown> = {
       user: { id: user.id, email: user.email, role: user.role },
       supplier: supplierContext,

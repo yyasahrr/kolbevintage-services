@@ -687,9 +687,15 @@ async function forwardToNest(
     "content-type": "application/json",
     cookie,
   };
+  const authorization = req.headers.get("authorization");
+  if (authorization) headers.authorization = authorization;
   if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
   const requestId = req.headers.get("x-request-id") || req.headers.get("x-correlation-id");
   if (requestId) headers["x-request-id"] = requestId;
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
+  const compatibilityToken = req.headers.get("x-kolbe-internal-token");
+  if (compatibilityToken) headers["x-kolbe-internal-token"] = compatibilityToken;
   Object.assign(headers, extraHeaders);
 
   const res = await fetch(url, {
@@ -704,7 +710,84 @@ async function forwardToNest(
   } catch {
     data = { raw: text };
   }
-  return { status: res.status, data };
+  return { status: res.status, data, headers: res.headers } as any;
+}
+
+/** Phase 5.12-A: intercepted before legacy read handlers. Nest owns all
+ * validation, authorization, persistence, transitions and domain audit. */
+async function proxyCanonicalWrite(req: NextRequest, nestPath: string, body: Json) {
+  let result: { status: number; data: any; headers?: Headers };
+  try {
+    result = await forwardToNest(req, req.method, nestPath, body) as any;
+  } catch {
+    throw new HttpError(503, "CANONICAL_API_UNAVAILABLE", "سرویس اصلی در دسترس نیست");
+  }
+  const headers: Record<string, string> = {};
+  const setCookie = result.headers?.get("set-cookie");
+  if (setCookie) headers["set-cookie"] = setCookie;
+  if (nestPath === "auth/logout" && result.status === 401) {
+    return response(req, { ok: true }, 200, { "set-cookie": clearedSessionCookie() });
+  }
+  const compatibilityToken = result.headers?.get("x-kolbe-session-token");
+  const data = compatibilityToken && result.data && typeof result.data === "object"
+    ? { ...result.data, token: compatibilityToken }
+    : result.data;
+  const status = nestPath.startsWith("auth/") && nestPath !== "auth/register"
+    && result.status >= 200 && result.status < 300 ? 200 : result.status;
+  return response(req, data, status, headers);
+}
+
+async function cutOverLegacyBusinessWrite(req: NextRequest, path: string): Promise<Response | null> {
+  const method = req.method.toUpperCase();
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) return null;
+  const exact: Record<string, string> = {
+    "POST auth/register": "auth/register",
+    "POST auth/login": "auth/login",
+    "POST auth/logout": "auth/logout",
+    "POST auth/totp/enroll": "auth/totp/enroll",
+    "POST auth/totp/verify": "auth/totp/verify",
+    "POST auth/totp/disable": "auth/totp/disable",
+    "POST supplier/auth/login": "auth/supplier/login",
+  };
+  const target = exact[`${method} ${path}`];
+  if (target) {
+    const body = await jsonBody(req);
+    const internalToken = process.env.KOLBE_INTERNAL_API_TOKEN?.trim();
+    const headers = new Headers(req.headers);
+    if (internalToken) headers.set("x-kolbe-internal-token", internalToken);
+    const forwarded = new Request(req.url, { method: req.method, headers }) as NextRequest;
+    return proxyCanonicalWrite(forwarded, target, body);
+  }
+
+  if (method === "POST" && path === "supplier/tickets") {
+    const body = await jsonBody(req);
+    const knownCategories = new Set([
+      "ORDER", "PAYMENT", "SHIPPING", "RETURN", "REFUND", "MEMBERSHIP",
+      "WHOLESALE", "SUPPLIER", "PRODUCT", "QUALITY", "CUSTOM_PRODUCTION",
+      "FINANCE", "SETTLEMENT", "ACCOUNT", "OTHER",
+    ]);
+    const requestedCategory = String(body.category ?? "").trim().toUpperCase();
+    const requestedPriority = String(body.priority ?? "normal").trim().toUpperCase();
+    return proxyCanonicalWrite(req, "supplier/support/cases", {
+      subject: body.subject,
+      category: knownCategories.has(requestedCategory) ? requestedCategory : "SUPPLIER",
+      priority: ["LOW", "NORMAL", "HIGH", "URGENT"].includes(requestedPriority)
+        ? requestedPriority
+        : "NORMAL",
+      initialMessage: body.message,
+    });
+  }
+
+  let match = path.match(/^supplier\/orders\/([^/]+)\/status$/);
+  if (method === "POST" && match) {
+    const body = await jsonBody(req);
+    const action = mapLegacySupplierStatusToNest(String(body.status ?? ""));
+    if (!action) throw new HttpError(422, "INVALID_STATUS");
+    return proxyCanonicalWrite(req, `supplier/orders/${encodeURIComponent(match[1])}/${action}`, body);
+  }
+  match = path.match(/^admin\/orders\/([^/]+)\/cancel$/);
+  if (method === "POST" && match) return proxyCanonicalWrite(req, `admin/wholesale/orders/${encodeURIComponent(match[1])}/cancel`, await jsonBody(req));
+  return null;
 }
 
 function mapLegacySupplierStatusToNest(status: string): string | null {
@@ -1645,6 +1728,8 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   if (path.startsWith("try-on/")) {
     return handleTryOn(req, path);
   }
+  const canonicalWrite = await cutOverLegacyBusinessWrite(req, path);
+  if (canonicalWrite) return canonicalWrite;
   if (path === "health") {
     /**
      * سلامت = «دیتابیس مهاجرت‌شده و سازگار است؟». این مسیر باید **بسته** شکست

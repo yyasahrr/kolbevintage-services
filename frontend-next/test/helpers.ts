@@ -14,6 +14,7 @@ export function asNextRequest(request: Request): NextRequest {
 }
 
 export const API_ORIGIN = "http://localhost:3000";
+let requestIpSequence = 10;
 
 export async function call(
   path: string,
@@ -25,6 +26,10 @@ export async function call(
   } = {},
 ): Promise<{ status: number; body: any; headers: Headers }> {
   const headers: Record<string, string> = { ...init.headers };
+  if (!headers["x-forwarded-for"]) {
+    requestIpSequence = requestIpSequence >= 250 ? 10 : requestIpSequence + 1;
+    headers["x-forwarded-for"] = `127.0.1.${requestIpSequence}`;
+  }
   if (init.body !== undefined) headers["content-type"] = "application/json";
   if (init.token) headers.authorization = `Bearer ${init.token}`;
 

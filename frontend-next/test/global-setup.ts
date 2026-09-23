@@ -54,4 +54,26 @@ export default async function setup() {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
   });
+
+  // Phase 5.12-A: compatibility tests exercise the real canonical Nest API.
+  // The old in-process Next writer is no longer a valid test backend.
+  process.env.DATABASE_URL = TEST_DATABASE_URL;
+  process.env.NODE_ENV = "test";
+  process.env.KOLBE_SESSION_SECRET = "test-session-secret-that-is-long-enough";
+  process.env.KOLBE_INTERNAL_API_TOKEN = "phase-5-12-test-internal-token-long-enough";
+  process.env.TRUST_PROXY = "loopback";
+  process.env.KOLBE_SEED_DEMO_DATA = "true";
+  const { database } = await import("../server/database");
+  await database();
+
+  const { NestFactory } = await import("@nestjs/core");
+  const { AppModule } = await import("../../apps/api/src/app.module");
+  const app = await NestFactory.create(AppModule, { logger: ["error"] });
+  app.getHttpAdapter().getInstance().set("trust proxy", "loopback");
+  app.setGlobalPrefix("api/v1");
+  await app.listen(0, "127.0.0.1");
+  const address = app.getHttpServer().address();
+  if (!address || typeof address === "string") throw new Error("Nest test server did not expose a TCP port");
+  process.env.KOLBE_API_INTERNAL_URL = `http://127.0.0.1:${address.port}/api/v1`;
+  return async () => app.close();
 }

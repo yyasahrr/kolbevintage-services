@@ -17,7 +17,7 @@
 
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte, desc, isNull } from "drizzle-orm";
 import { accountUser, loginAttempt, supplierMember, supplier, userSession } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { CONFIG_TOKEN, type AppConfig } from "../../config/configuration";
@@ -86,6 +86,9 @@ export class AuthService {
     ip?: string | null;
   }): Promise<{ user: AuthUser; token: string }> {
     const email = input.email.trim().toLowerCase();
+    if (input.password.length < 8 || input.password.length > 128) {
+      throw new ValidationError([{ field: "password", code: "PASSWORD_LENGTH_INVALID" }], "رمز عبور باید بین ۸ تا ۱۲۸ نویسه باشد");
+    }
     const role = (input.role ?? "customer") as Role;
 
     // فقط customer از مسیر عمومی؛ نقش‌های خاص فقط با ادمین
@@ -245,7 +248,7 @@ export class AuthService {
     await this.db
       .update(userSession)
       .set({ revokedAt: new Date() })
-      .where(and(eq(userSession.userId, userId), eq(userSession.revokedAt, null as any)));
+      .where(and(eq(userSession.userId, userId), isNull(userSession.revokedAt)));
   }
 
   async me(userId: string): Promise<AuthUser & { supplierContext?: { supplierId: string; displayName: string; legalName: string } | null; totpEnabled?: boolean }> {
