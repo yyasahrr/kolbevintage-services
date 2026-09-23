@@ -125,3 +125,57 @@ fenced to packed (`RETAIL_SHIPMENT_NOT_READY`, 422).
 Gates: `typecheck:all` clean; `test:all` 1587/1587 = 1578 (5.10
 closeout) + 9 new (`phase-5-11-a-retail-ops.test.ts`), zero
 regressions. Tables stay 198; all count pins hold.
+
+## 7. Checkpoint B design (after-sales ops routes)
+
+Same controller, same prefix, same conventions. Ten routes:
+
+Refunds (all return `{ replayed }` → 201-new/200-replay):
+- `POST admin/retail/orders/:id/refunds`
+  (`{ amount, lines?, reason?, idempotencyKey? }`)
+- `POST admin/retail/refunds/:id/approve`
+  (`{ idempotencyKey?, reason? }`)
+- `POST admin/retail/refunds/:id/complete`
+  (`{ externalReference, idempotencyKey? }`)
+- `POST admin/retail/refunds/:id/fail`
+  (`{ reason, idempotencyKey? }`)
+
+Returns (explicit per-action routes mirroring the wholesale
+`supplier/orders` style; transitions answer 200):
+- `POST admin/retail/returns/:id/approve` / `receive`
+  (`{ reason? }`)
+- `POST admin/retail/returns/:id/inspect`
+  (`{ inspectionDecision, reason? }`)
+- `POST admin/retail/returns/:id/restock` (`{ reason? }`)
+- `POST admin/retail/returns/:id/reject` (`{ reason }`)
+
+Revocation:
+- `POST admin/retail/orders/:id/guest-capability/revoke` → 200
+  `{ revoked }` (idempotent: false when no live hash, covering
+  customer orders and double revoke; audit-logged on change).
+
+Locks: no `withdraw` route exists (404 by construction) and the
+seam refuses staff WITHDRAWN regardless ("WITHDRAWN is
+customer-only"); finance stays seam-only on refunds (same
+narrowing as `verify`, pinned once). `RetailReturnsService` is
+already a same-module provider — no module edit. No migration.
+
+## 8. Checkpoint B as-built (after-sales ops routes)
+
+Shipped the §7 routes verbatim: 4 refund routes (201/200 replay),
+5 explicit return routes (200), revocation (200, idempotent).
+`RetailReturnsService` injected from the same module — no module
+edit, no boundary-map change. No migration.
+
+Pinned behaviors: finance-hat 401 on refund filing (money-act
+narrowing, same as `verify`); no withdraw route (404) with the
+seam backstop untouched; reject requires a reason (400);
+revocation flips guest reads to 403 `REVOKED` and is honestly
+false on customer orders and double revoke.
+
+Gates: `typecheck:all` clean; `test:all` 1596/1596 = 1587 (A) + 9
+new (`phase-5-11-b-after-sales-ops.test.ts`), zero regressions.
+One run hit the known transient `phase-4-7-1-cross-domain`
+flake (random hex hash containing 13 consecutive digits trips a
+no-wall-clock-key assertion); it passes standalone and the
+re-run board is fully green. Tables stay 198.
