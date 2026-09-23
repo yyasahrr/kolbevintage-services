@@ -7,6 +7,10 @@ import { AnalyticsScopeService } from "./analytics-scope.service";
 import { AnalyticsReportService } from "./analytics-report.service";
 import { AnalyticsExportService } from "./analytics-export.service";
 import { AnalyticsReconciliationService } from "./analytics-reconciliation.service";
+import { RetailDashboardService } from "./retail-dashboard.service";
+import { AdminRetailDashboardController } from "./admin-retail-dashboard.controller";
+import { AdminRetailInventoryController } from "./admin-retail-inventory.controller";
+import { AdminRetailExceptionsController } from "./admin-retail-exceptions.controller";
 import {
   AdminAnalyticsController,
   SupplierAnalyticsController,
@@ -35,8 +39,14 @@ import {
     AdminAnalyticsReconciliationController,
     SupplierAnalyticsReconciliationController,
     VipAnalyticsReconciliationController,
+    // Phase 5.11-B — retail operations read model (same module: the
+    // dashboard reuses the in-module analytics engine, and AdminModule
+    // is already imported for the granular guards — zero new edges).
+    AdminRetailDashboardController,
+    AdminRetailInventoryController,
+    AdminRetailExceptionsController,
   ],
-  providers: [AnalyticsQueryService, AnalyticsScopeService, AnalyticsReportService, AnalyticsExportService, AnalyticsReconciliationService],
+  providers: [AnalyticsQueryService, AnalyticsScopeService, AnalyticsReportService, AnalyticsExportService, AnalyticsReconciliationService, RetailDashboardService],
   exports: [AnalyticsQueryService, AnalyticsScopeService, AnalyticsReportService, AnalyticsExportService, AnalyticsReconciliationService],
 })
 export class AnalyticsModule {}

@@ -228,7 +228,43 @@ writers; no 5.11 route reads them and no suite depends on them:
   with existing statuses (401 anonymous, 403 role/permission,
   404 missing, 409 conflict, 422 semantic).
 
-## 9. Checkpoint plan and invariants
+## 9. Checkpoint B as-built (dashboard / queues)
+
+- `RetailDashboardService` lives in the **analytics module**
+  (not admin): the dashboard reuses the in-module engine, the
+  module already imports AdminModule for the guards, and the
+  freeze/boundary guards stay green with **zero new module
+  edges**. Routes stay on `/api/v1/admin/retail/*`
+  (`dashboard`, `inventory`, `exceptions`) — path namespace
+  does not dictate module (ratings-on-`catalog/` precedent).
+- Sales KPIs are the five canonical `retail.*` metrics via
+  `AnalyticsQueryService.run` (scope RETAIL); the B suite
+  proves dashboard == direct engine run on the same range
+  (T6), so the dashboard adds no math and 5.5 semantics are
+  unchanged.
+- Operational queues are now-scoped, read-only, drizzle-style
+  (control-tower precedent): awaiting-payment (unpaid /
+  pending_cod, uncancelled), fulfillment backlog (paid +
+  confirmed/packed), shipment backlog (retail-side,
+  pre-delivery), returns/refunds by status, flagged reviews,
+  KOLBE stock counts, recent-exception sample with full
+  bucket counts.
+- Inventory isolation predicate is stock-side:
+  `seller.type = 'KOLBE'` (supplier-held rows never appear,
+  even for KOLBE products). Quantities are exact; the only
+  derived bit is zero-stock. The authoritative per-product
+  threshold model is **explicitly deferred** (browser-only
+  thresholds stand; nothing fabricated).
+- Exceptions are real stored states only: payments
+  pending/evidence_submitted/failed, shipments
+  pending/ready/handed_over/in_transit/failed, with
+  provider/method truth and failure reasons. No synthetic
+  stalled/reconciliation flags; no gateway states claimed.
+- Bad ranges and cursors refuse with
+  `ANALYTICS_INVALID_REQUEST` (400, existing vocabulary).
+- No migration in B (read-only; tables 198, journal idx 44).
+
+## 10. Checkpoint plan and invariants
 
 - A: this doc, 18-action catalog + migration 0044, granular
   gates on the 23 existing routes, reviews + customers
