@@ -45,7 +45,18 @@ export class AdminRetailOpsController {
       for (const decode of tries) {
         try {
           const parsed = JSON.parse(decode()) as { createdAt?: unknown; id?: unknown };
-          if (parsed && typeof parsed.createdAt === "string" && typeof parsed.id === "string") {
+          // 5.11-D hardening: createdAt must be strict ISO-8601 (our encoder
+          // emits toISOString, nothing else). V8 Date.parse is lenient with
+          // digit-bearing garbage ("not-a-date' OR '1'='1" parses as
+          // 2001-01-01), so a bare isNaN check would still admit hostile
+          // cursors; anything non-ISO degrades to the first page instead of
+          // reaching PG as ('...'::timestamptz) and 500ing.
+          if (
+            parsed &&
+            typeof parsed.createdAt === "string" &&
+            typeof parsed.id === "string" &&
+            /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})?$/.test(parsed.createdAt)
+          ) {
             cursor = { createdAt: parsed.createdAt, id: parsed.id };
             break;
           }

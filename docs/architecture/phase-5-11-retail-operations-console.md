@@ -240,3 +240,67 @@ Migration 0043 added the 4 queue indexes only; tables stay
 
 Gates: `typecheck:all` clean; `test:all` 1610/1610 = 1596 (B)
 + 14 new (4 migration + 10 reads), zero regressions.
+
+## 11. Checkpoint D as-built (audits + convergence + guards)
+
+**Verdict: no migration, no new routes, one genuine hardening.**
+D froze the A/B/C surface by auditing every authority (D1–D5),
+proving races and failures converge over HTTP (D6–D7), attacking
+the trust boundary (D8), ruling legacy untouched (D9) and the
+schema frozen (D11), and pinning the verdicts as executable
+static guards (D10).
+
+**Authority audits (all confined, zero code change).** D1:
+`retail_order` writes live only in the retail-orders repository;
+the controller performs none. D2: all six new readers are
+SELECT-only (0 write calls each). D3: `refund` rows are read only
+inside the payments module. D4: `paymentStatus` is written only
+by the `markPaid` path. D5: no new shipment-write edge (retail →
+shipping `claimCommand` is pre-existing). D9: zero legacy diffs
+in 5.11. D11: 0043 stays the head (index-only, tables 198).
+
+**Hardening found by D (1, regression-free).** Hostile cursors
+500'd: a well-shaped cursor with a garbage `createdAt` reached PG
+as `('...'::timestamptz)`. A bare `isNaN(Date.parse())` check was
+tried first and PROVEN insufficient by the D8 test — V8 leniently
+parses digit-bearing garbage (`"not-a-date' OR '1'='1"` becomes
+2001-01-01). The shipped fix requires strict ISO-8601 (the only
+shape our encoder emits); anything else degrades to page one.
+Pinned by D8 test 4 + D10.6. The wholesale console shares the
+older lenient shape — pre-existing, out of 5.11 scope, recorded
+here and untouched.
+
+**Failure injection (D6, 8 tests).** Double verify on different
+keys (201→200 replayed); same-key different-request shipment
+conflict (409); idempotent recancel; confirm-after-cancel (400);
+unpaid refund filing (422); out-of-order return transition (400);
+revocation on missing orders (404); completion before approval
+(409).
+
+**Concurrency (D7, 7 tests).** Racing confirms (one 200, loser
+400); same-key double filing (201+200, one row); racing
+approve+fail (both orders end failed, honestly); racing
+approve+reject (both orders end REJECTED — APPROVED→REJECTED is
+legal, the first version of this test wrongly assumed mutual
+exclusion); keyset walks under concurrent inserts (terminate,
+seeds seen exactly once, prepends skipped-never-duped); same-key
+double handoff (201+200); racing whole-filings (one 201, loser
+409 `REFUND_EXCEEDS_ALLOCATED`, one row).
+
+**Security (D8, 8 tests).** Full role matrix (admin 200;
+customer/vip/supplier 403; anonymous/garbage/finance-hat 401);
+guard-before-existence (no oracles); filter injection inertness
+(incl. a DROP TABLE attempt with the table surviving); hostile
+cursors degrade (the hardening); no transition/withdraw routes
+(404); inspection requires a decision (400); malformed keys 400
+(control chars, over-long); refund rows retail-only with string
+money and no wholesale keys.
+
+**Coverage.** New `phase-5-11-d-failure-injection.test.ts` (8),
+`phase-5-11-d-concurrency.test.ts` (7),
+`phase-5-11-d-security.test.ts` (8), and
+`phase-5-11-d-static-guards.test.ts` (8: shell purity, admin
+gate, no new vocabulary, payments-owned refund reads, timeline
+ordering, strict ISO cursors, schema shape, queue indexes).
+A/B/C regression: zero — full `test:all` green, counts pinned
+below.
