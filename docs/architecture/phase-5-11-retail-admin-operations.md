@@ -1,5 +1,11 @@
 # Phase 5.11 — Retail Admin & Operations Backend Architecture
 
+> **Canonical final architecture.** This document reconciles both completed
+> Phase 5.11 tranches. The earlier
+> [operations-console record](phase-5-11-retail-operations-console.md) is
+> retained as historical implementation evidence; this document is the
+> authoritative architecture and capability matrix.
+
 **Status:** ACTIVE (Checkpoint A)
 **Branch:** `arena/01a0c5f5-kolbevintage-services`
 **Date:** September 2026

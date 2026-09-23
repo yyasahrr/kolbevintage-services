@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   RETAIL_INSPECTION_DECISIONS,
   RETAIL_RETURN_REASONS,
@@ -36,6 +36,26 @@ function text(value: unknown, maxLength: number): string {
 
 const iso = (value: unknown): string | null => (value ? new Date(value as any).toISOString() : null);
 
+function parseReturnIdempotencyKey(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const key = typeof value === "string" ? value.trim() : "";
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) {
+    throw new RetailDomainError("RETAIL_IDEMPOTENCY_KEY_INVALID", "Idempotency-Key is malformed");
+  }
+  return key;
+}
+
+function returnRequestHash(reason: string, note: string | null, lines: RetailReturnLineInput[]): string {
+  const canonical = JSON.stringify({
+    reason,
+    note,
+    lines: [...lines]
+      .map((line) => ({ orderItemId: line.orderItemId, quantity: line.quantity }))
+      .sort((left, right) => left.orderItemId.localeCompare(right.orderItemId)),
+  });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
 /**
  * Phase 5.9-B — retail returns orchestration (orders-owned, retail slice).
  *
@@ -68,8 +88,8 @@ export class RetailReturnsService {
   async fileRetailReturn(
     actor: { actorId: string | null; actorRole: string },
     orderId: string,
-    input: { lines?: unknown; reason?: unknown; note?: unknown },
-  ): Promise<RetailReturnView> {
+    input: { lines?: unknown; reason?: unknown; note?: unknown; idempotencyKey?: unknown },
+  ): Promise<RetailReturnView & { replayed: boolean }> {
     const order = await this.orders.findById(orderId);
     if (!order) throw new RetailDomainError("RETAIL_ORDER_NOT_FOUND", "retail order not found");
     this.assertReturnOwner(order, actor);
@@ -80,6 +100,20 @@ export class RetailReturnsService {
       throw new RetailDomainError("RETAIL_RETURN_REASON_INVALID", `return reason must be one of ${RETAIL_RETURN_REASONS.join(", ")}`);
     }
     const note = text(input.note, 512).replace(/[<>]/g, "") || null;
+    const idempotencyKey = parseReturnIdempotencyKey(input.idempotencyKey);
+    const requestHash = returnRequestHash(reason, note, lines);
+    // A committed replay must win before returnability preflight: the first
+    // filing intentionally encumbers the units, so evaluating quantity first
+    // would turn an otherwise identical retry into a false over-return.
+    if (idempotencyKey) {
+      const existing = await this.repo.findByCustomerOrderIdempotencyKey(actor.actorId!, orderId, idempotencyKey);
+      if (existing) {
+        if (existing.creationRequestHash !== requestHash) {
+          throw new RetailDomainError("RETAIL_IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different return request");
+        }
+        return { ...(await this.presentReturn(undefined, existing.id)), replayed: true };
+      }
+    }
 
     const orderItems = (await this.orders.findItemsByOrderId(orderId)) as any[];
     const lineOf = new Map(orderItems.map((line) => [line.id, line]));
@@ -105,6 +139,15 @@ export class RetailReturnsService {
       // Serialize concurrent filings on one order: the loser blocks here,
       // then sees the winner's rows in the re-read below.
       await this.orders.advisoryLock(`return:${orderId}`, tx);
+      if (idempotencyKey) {
+        const existing = await this.repo.findByCustomerOrderIdempotencyKey(actor.actorId!, orderId, idempotencyKey, tx);
+        if (existing) {
+          if (existing.creationRequestHash !== requestHash) {
+            throw new RetailDomainError("RETAIL_IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different return request");
+          }
+          return { id: existing.id, supportCaseId: existing.supportCaseId, replayed: true };
+        }
+      }
       const reDelivered = await this.deliveredQuantities(orderId, tx);
       const reEncumbered = await this.encumberedQuantities(orderId, tx);
       for (const line of lines) {
@@ -146,6 +189,8 @@ export class RetailReturnsService {
           status: "REQUESTED",
           reason,
           note,
+          idempotencyKey,
+          creationRequestHash: idempotencyKey ? requestHash : null,
           supportCaseId: supportCase.id,
           version: 0,
         },
@@ -181,8 +226,12 @@ export class RetailReturnsService {
         },
         tx,
       );
-      return { id, supportCaseId: supportCase.id };
+      return { id, supportCaseId: supportCase.id, replayed: false };
     });
+
+    if (filed.replayed) {
+      return { ...(await this.presentReturn(undefined, filed.id)), replayed: true };
+    }
 
     // Post-commit enrichment: an SLA failure must neither fail the filing
     // the client already paid for conceptually, nor (on retry) duplicate
@@ -199,7 +248,7 @@ export class RetailReturnsService {
         metadata: { error: error instanceof Error ? error.message.slice(0, 200) : "unknown" },
       });
     }
-    return this.presentReturn(undefined, filed.id);
+    return { ...(await this.presentReturn(undefined, filed.id)), replayed: false };
   }
 
   /** Customer return list page (own returns only). Keyset, newest first. */

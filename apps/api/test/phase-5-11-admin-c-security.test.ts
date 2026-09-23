@@ -361,6 +361,8 @@ describe("Phase 5.11-C admin security", () => {
     expect(orderNote.body.note).toMatchObject({ targetType: "retail_order", targetId: ids.N1, noteText: "call before dispatch" });
     const customerNote = await post("/api/v1/admin/notes", tokens.adminOpen, { targetType: "retail_customer", targetId: users.custA, noteText: "prefers morning delivery" }).expect(201);
     expect(customerNote.body.note.targetType).toBe("retail_customer");
+    await post("/api/v1/admin/notes", tokens.adminOpen, { targetType: "retail_order", targetId: "ghost-order", noteText: "must not persist" }).expect(404);
+    await post("/api/v1/admin/notes", tokens.adminOpen, { targetType: "retail_customer", targetId: "ghost-customer", noteText: "must not persist" }).expect(404);
     const listed = await get(`/api/v1/admin/notes?targetType=retail_order&targetId=${ids.N1}`, tokens.adminOpen).expect(200);
     expect(listed.body.notes.map((n: any) => n.noteText)).toContain("call before dispatch");
     expect(listed.body.notes[0].authorId).toBe(users.adminOpen);

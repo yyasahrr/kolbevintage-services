@@ -499,6 +499,34 @@ describe("Phase 5.9-B retail returns", () => {
     expect((await returns.getRetailReturn({ userId: users.custA, role: "customer" }, ids.R2b)).status).toBe("REQUESTED");
   });
 
+  it("replays a same-key return filing once, conflicts on changed payload, and never duplicates support evidence", async () => {
+    await checkoutAs("IDEMP");
+    await payOrderGateway("IDEMP");
+    await driveToDelivered("IDEMP");
+    const [lineId] = await orderItemIds("IDEMP");
+    const key = "return-replay-key-511";
+    const body = { lines: [{ orderItemId: lineId, quantity: 1 }], reason: "DAMAGED", note: "same request" };
+    const endpoint = `/api/v1/customer/orders/${ids.IDEMP}/returns`;
+    const [first, retry] = await Promise.all([
+      request(app.getHttpServer()).post(endpoint).set("authorization", `Bearer ${tokens.custA}`).set("idempotency-key", key).send(body),
+      request(app.getHttpServer()).post(endpoint).set("authorization", `Bearer ${tokens.custA}`).set("idempotency-key", key).send(body),
+    ]);
+    expect([first.status, retry.status].sort()).toEqual([200, 201]);
+    expect(first.body.id).toBe(retry.body.id);
+    expect([first.body.replayed, retry.body.replayed].sort()).toEqual([false, true]);
+    const rows = await db.select().from(schema.retailReturnRequest).where(eq(schema.retailReturnRequest.orderId, ids.IDEMP));
+    expect(rows).toHaveLength(1);
+    const supportRows = await db.select().from(schema.supportCase).where(eq(schema.supportCase.id, (rows[0] as any).supportCaseId));
+    expect(supportRows).toHaveLength(1);
+    const changed = await request(app.getHttpServer())
+      .post(endpoint)
+      .set("authorization", `Bearer ${tokens.custA}`)
+      .set("idempotency-key", key)
+      .send({ ...body, reason: "OTHER" })
+      .expect(409);
+    expect(changed.body.error).toBe("RETAIL_IDEMPOTENCY_CONFLICT");
+  });
+
   it("completes a partial sibling return without double-moving the order", async () => {
     const before = await stockOf(ids.v1);
     await returns.transitionRetailReturn(ids.R3b, "INSPECTED", { ...admin(), inspectionDecision: "RESTOCKABLE" });

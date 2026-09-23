@@ -298,7 +298,7 @@ export class CatalogService {
   // ── Phase 5.10-A — server-side search ────────────────────────────────────
   // Stock PostgreSQL ships no Persian stemmer, so relevance is trigram
   // similarity (script-agnostic, typo-tolerant) inside deterministic
-  // tiers. searchRank is deliberately NOT consulted: nothing maintains
+  // tiers. The legacy rank column is deliberately NOT consulted: nothing maintains
   // it yet, and consulting it would launder stale zeros as signal.
   //
   // Tier score (total order with id ASC, stable across runs):

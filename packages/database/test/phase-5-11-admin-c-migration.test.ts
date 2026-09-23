@@ -26,10 +26,10 @@ describe("Phase 5.11-C (admin tranche) migration 0045: suspicious-flag table + r
     await dropDatabase(DB);
   });
 
-  it("is journal idx 45 (46 entries) with 199 tables", async () => {
+  it("remains present before reconciliation migration 0046 (47 entries) with 199 tables", async () => {
     const journal = JSON.parse(readFileSync(path.join(import.meta.dirname, "..", "migrations", "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(46);
-    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 45, tag: "0045_phase_5_11_c_admin_security" });
+    expect(journal.entries).toHaveLength(47);
+    expect(journal.entries).toContainEqual(expect.objectContaining({ idx: 45, tag: "0045_phase_5_11_c_admin_security" }));
     await withClient(DB, async (client) => {
       const tables = await client.query(
         `SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,

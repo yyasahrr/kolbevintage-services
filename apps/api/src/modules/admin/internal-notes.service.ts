@@ -4,9 +4,11 @@ import {
   adminInternalNote,
   accountUser,
   ADMIN_NOTE_TARGET_TYPES,
+  retailOrder,
 } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { AuditService } from "../audit/audit.service";
+import { NotFoundError } from "@kolbe/shared";
 
 export interface CreateNoteInput {
   targetType: (typeof ADMIN_NOTE_TARGET_TYPES)[number];
@@ -27,7 +29,21 @@ export class InternalNotesService {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
   }
 
+  /** Retail notes are the only cross-domain note targets added in 5.11.
+   * Validate them before writing so a typo cannot create an orphan note. */
+  private async assertRetailTargetExists(input: CreateNoteInput): Promise<void> {
+    if (input.targetType === "retail_order") {
+      const [row] = await this.db.select({ id: retailOrder.id }).from(retailOrder).where(eq(retailOrder.id, input.targetId)).limit(1);
+      if (!row) throw new NotFoundError("Retail order", input.targetId);
+    }
+    if (input.targetType === "retail_customer") {
+      const [row] = await this.db.select({ id: accountUser.id }).from(accountUser).where(eq(accountUser.id, input.targetId)).limit(1);
+      if (!row) throw new NotFoundError("Retail customer", input.targetId);
+    }
+  }
+
   async createNote(input: CreateNoteInput, authorId: string) {
+    await this.assertRetailTargetExists(input);
     const id = this.makeId("ain");
     const [note] = await this.db
       .insert(adminInternalNote)

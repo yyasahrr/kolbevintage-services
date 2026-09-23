@@ -1141,6 +1141,9 @@ export const retailReturnRequest = pgTable(
     status: text("status").notNull(),
     reason: text("reason").notNull(),
     note: text("note"),
+    /** Phase 5.11 reconciliation — customer return filing replay identity. */
+    idempotencyKey: text("idempotency_key"),
+    creationRequestHash: text("creation_request_hash"),
     /** Loose cross-module pointer (no FK): support owns its lifecycle. */
     supportCaseId: text("support_case_id"),
     receivedAt: timestamp("received_at", { withTimezone: true }),
@@ -1155,6 +1158,9 @@ export const retailReturnRequest = pgTable(
     index("retail_return_request_customer_created").on(table.customerId, table.createdAt),
     index("retail_return_request_support_case").on(table.supportCaseId),
     index("retail_return_request_status_created").on(table.status, table.createdAt, table.id),
+    uniqueIndex("retail_return_request_customer_order_idempotency_unique")
+      .on(table.customerId, table.orderId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
     stateCheck("retail_return_request_status_allowed", "status", RETAIL_RETURN_STATUS_VALUES),
     stateCheck("retail_return_request_reason_allowed", "reason", RETAIL_RETURN_REASON_VALUES),
     check(

@@ -45,6 +45,22 @@ export class RetailReturnsRepository {
     return row ?? null;
   }
 
+  async findByCustomerOrderIdempotencyKey(customerId: string, orderId: string, idempotencyKey: string, executor?: any) {
+    const ex = (executor as any) ?? this.db;
+    const [row] = await ex
+      .select()
+      .from(retailReturnRequest)
+      .where(
+        and(
+          eq(retailReturnRequest.customerId, customerId),
+          eq(retailReturnRequest.orderId, orderId),
+          eq(retailReturnRequest.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
   async findItemsByReturnId(returnId: string, executor?: any) {
     const ex = (executor as any) ?? this.db;
     return ex.select().from(retailReturnItem).where(eq(retailReturnItem.returnId, returnId));

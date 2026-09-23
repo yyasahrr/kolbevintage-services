@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Patch, Post, Query, Res } from "@nestjs/common";
+import type { Response } from "express";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { CustomerAccountService } from "./customer-account.service";
@@ -113,12 +114,15 @@ export class CustomerAccountController {
 
   @Post("orders/:id/returns")
   @HttpCode(201)
-  async fileReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: Record<string, any>) {
-    return this.returns.fileReturn({ actorId: claims.sub, actorRole: claims.role }, id, {
+  async fileReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Res({ passthrough: true }) res: Response, @Headers("idempotency-key") header: string | undefined, @Body() body: Record<string, any>) {
+    const result = await this.returns.fileReturn({ actorId: claims.sub, actorRole: claims.role }, id, {
       lines: body?.lines,
       reason: body?.reason,
       note: body?.note,
+      idempotencyKey: header || body?.idempotencyKey,
     });
+    res.status((result as any).replayed ? 200 : 201);
+    return result;
   }
 
   @Get("returns")

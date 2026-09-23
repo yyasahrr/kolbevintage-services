@@ -134,11 +134,64 @@ cursors and filters treat hostile input as inert data.
 | Authorities confined, shell pure | D10 static guards (8) |
 | 1641/1641 green, zero regressions | `test:all` log, this closeout |
 
-## Closeout CI evidence
+## Final reconciliation and gap closeout
 
-The D push (`9db651d..3f4cde0`, report included) went CI
-green (`35832711080` SUCCESS); this run-id record was
-committed as `docs: record phase 5.11 final CI`, pushed, and
-its own CI run was awaited to SUCCESS before closeout.
+### Reconciled lineage
 
-Phase 5.11 DONE; the next phase has NOT been scoped.
+The original retail-operations tranche is preserved by commits `f68f528`,
+`8c91bd1`, `9db651d`, and `3f4cde0`: staff order operations, after-sales,
+staff reads/indexes, and hostile-input/race hardening. The retail-admin
+tranche is preserved by `7fcc68c`, `a1c60d6`, `3ba2144`, and `4bed0c6`:
+granular control-plane RBAC, dashboard and exception queues, TOTP/flags/
+notes, and terminal race hardening. Neither tranche was reimplemented.
+
+### Final capability matrix
+
+| Capability | Status | Owner and evidence |
+|---|---|---|
+| Staff order, fulfillment, payment, returns and refund operations | IMPLEMENTED | Existing retail/payment service seams; admin forwarding routes and A/B suites |
+| Customer/operator view and review moderation | IMPLEMENTED | Customer-account and ratings owners; granular admin permissions |
+| Dashboard, KOLBE inventory and exception queues | IMPLEMENTED | Analytics read model; bounded filters, strict cursors, keyset pagination |
+| Paid cancel and refund terminal TOTP policy | IMPLEMENTED | In-transaction paid-cancel check; `AdminTotpGuard` on refund terminals |
+| Suspicious-order flags and internal retail notes | IMPLEMENTED | Admin-owned flag table; notes retain existing permissions and validate retail targets |
+| Return filing replay | IMPLEMENTED | 0046 partial unique key plus request hash, advisory lock, concurrent HTTP proof |
+| New retail catalog/promotion/finance write surfaces | NOT IMPLEMENTED | No owner seam or route exists; no endpoint was invented |
+| New UI/admin console | NOT IMPLEMENTED | Phase 5.11 is backend-only |
+
+### Reconciliation findings
+
+The audit confirmed that all admin routes remain behind the global session
+guard, admin role, and granular `AdminPermissionGuard`; permission denial
+precedes state lookup. Refund rows remain owned by Payments, return rows by
+Retail Returns, review moderation by Ratings, and customer views by Customer
+Account. Dashboard composition is read-only. Existing order, payment,
+shipment, refund, support-case, event, and audit writers remain their
+established owners.
+
+The only material closeout gap was return filing idempotency. Migration 0046
+adds nullable `idempotency_key` and `creation_request_hash` columns and a
+partial unique index over `(customer_id, order_id, idempotency_key)`.
+Legacy rows remain valid. A matching normalized request replays the original
+return; a changed request returns `RETAIL_IDEMPOTENCY_CONFLICT`; the
+transaction rechecks after its advisory lock, so concurrent matching requests
+produce one durable return, one support case, one event stream, and one audit
+trail. Retail internal notes now reject nonexistent retail order/customer
+targets before writing. Dashboard inventory cursors require strict ISO time
+values, preventing lenient date parsing from reaching PostgreSQL.
+
+### Deferred work
+
+The only deferred items are the already documented frontend console, wholesale
+cursor parity, ratings extras, and a future Phase 5.12 consolidation/cutover.
+They have no hidden endpoint, schema, permission, or background-job work in
+this closeout.
+
+### Final verification record
+
+Historical CI checkpoints were green: `35825530336`, `35827650268`,
+`35830486183`, `35832711080`, and the later-tranche checkpoint
+`35848062736`. This section is completed with the fresh reconciliation CI
+run and exact test totals after its post-push completion.
+
+Phase 5.11 is fully reconciled and CLOSED.
+Phase 5.12 Backend Consolidation / Legacy Cutover has NOT started.

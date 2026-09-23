@@ -33,7 +33,7 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
     await dropDatabase(DB);
   });
 
-  it("creates the seven promotion tables (journal idx 45 at the 5.11-C head; 0038 adds the return aggregate, 0039 alters the refund engine in place, 0040/0041 add search/browse indexes only, 0042 adds review proof columns, 0043 adds staff queue indexes only, 0044 extends the permission CHECK only, 0045 adds the suspicious-flag table)", async () => {
+  it("creates the seven promotion tables (0046 adds return-filing replay columns only; 0045 adds the suspicious-flag table)", async () => {
     const result = await withClient(DB, (client) => client.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_name LIKE 'promotion%'
@@ -49,10 +49,10 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
       "promotion_usage",
     ]);
     const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(46);
+    expect(journal.entries).toHaveLength(47);
     expect(journal.entries[journal.entries.length - 1]).toMatchObject({
-      idx: 45,
-      tag: "0045_phase_5_11_c_admin_security",
+      idx: 46,
+      tag: "0046_phase_5_11_return_filing_idempotency",
     });
   });
 

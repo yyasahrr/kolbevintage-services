@@ -62,7 +62,7 @@ export class RetailDashboardService {
         !parsed ||
         typeof parsed.createdAt !== "string" ||
         typeof parsed.id !== "string" ||
-        Number.isNaN(Date.parse(parsed.createdAt))
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})?$/.test(parsed.createdAt)
       ) {
         throw new Error("shape");
       }

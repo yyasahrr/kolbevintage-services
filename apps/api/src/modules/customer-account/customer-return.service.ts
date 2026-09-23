@@ -15,7 +15,7 @@ export class CustomerReturnService {
   async fileReturn(
     actor: { actorId: string; actorRole: string },
     orderId: string,
-    input: { lines?: unknown; reason?: unknown; note?: unknown },
+    input: { lines?: unknown; reason?: unknown; note?: unknown; idempotencyKey?: unknown },
   ): Promise<RetailReturnView> {
     return this.returns.fileRetailReturn({ actorId: actor.actorId, actorRole: actor.actorRole }, orderId, input);
   }

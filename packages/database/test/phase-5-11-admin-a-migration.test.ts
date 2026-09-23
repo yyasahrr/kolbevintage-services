@@ -77,7 +77,7 @@ describe("Phase 5.11-A (admin tranche) migration 0044: retail permission catalog
     });
   });
 
-  it("0044 sits at journal idx 44 (head has moved to 0045)", async () => {
+  it("0044 remains at journal idx 44 after the 0046 reconciliation head", async () => {
     const journal = JSON.parse(readFileSync(path.join(import.meta.dirname, "..", "migrations", "meta", "_journal.json"), "utf8"));
     expect(journal.entries[44]).toMatchObject({ idx: 44, tag: "0044_phase_5_11_a_retail_permissions" });
   });

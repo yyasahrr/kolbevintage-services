@@ -1,4 +1,8 @@
-# Phase 5.11 — Retail Operations Console Backend
+# Phase 5.11 — Retail Operations Console Backend (historical tranche record)
+
+> This is the preserved record for the first Phase 5.11 operations tranche.
+> For the reconciled, canonical architecture covering both tranches, see
+> [Retail Admin & Operations Backend](phase-5-11-retail-admin-operations.md).
 
 Backend-only staff HTTP for the retail seams. Checkouts A–D:
 fulfillment ops routes (A), after-sales ops routes (B), staff
