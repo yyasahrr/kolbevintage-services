@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { DatabaseModule } from "../../../database/database.module";
+import { AdminModule } from "../../admin/admin.module";
 import { AuditModule } from "../../audit/audit.module";
 import { ComplianceModule } from "../../compliance/compliance.module";
 import { InventoryModule } from "../../inventory/inventory.module";
@@ -37,9 +38,12 @@ import { RetailReturnsService } from "./retail-returns.service";
  * a support case in the same transaction. SupportModule is a leaf off
  * Database/Audit/Admin and never imports Retail back (verified by the
  * architecture-freeze acyclicity guard, like all edges above).
+ * Phase 5.11-A (admin tranche) adds AdminModule for the granular
+ * retail permission guard: AdminModule is a leaf off Database/Audit/Vip
+ * and never imports Retail back (same guard verifies).
  */
 @Module({
-  imports: [DatabaseModule, AuditModule, OffersModule, PricingModule, PromotionsModule, InventoryModule, ComplianceModule, PaymentsModule, NotificationsModule, ShippingModule, SupportModule],
+  imports: [DatabaseModule, AuditModule, AdminModule, OffersModule, PricingModule, PromotionsModule, InventoryModule, ComplianceModule, PaymentsModule, NotificationsModule, ShippingModule, SupportModule],
   controllers: [RetailOrdersController, AdminRetailOpsController],
   providers: [RetailOrdersService, RetailOrdersRepository, RetailCheckoutGuard, RetailNotificationRelayService, RetailReturnsService, RetailReturnsRepository],
   exports: [RetailOrdersService, RetailOrdersRepository, RetailNotificationRelayService, RetailReturnsService, RetailReturnsRepository],

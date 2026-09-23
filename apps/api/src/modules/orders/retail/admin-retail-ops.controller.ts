@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Res } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
 import { CurrentUser, Roles } from "../../../common/guards/session.guard";
+import { AdminPermissionGuard, RequireAdminPermission } from "../../admin/admin-rbac.guard";
 import type { Claims } from "../../../common/session";
 import { toApiJson } from "../../../common/api-json";
 import { RetailOrdersService } from "./retail-orders.service";
@@ -16,9 +17,15 @@ import { PaymentsService } from "../../payments/payments.service";
  * live at the seam; the route only maps replay→status and serializes.
  * Finance acts stay seam-only (the account role CHECK has no finance
  * value, and the guard re-checks token role against the live row).
+ *
+ * Phase 5.11-A (admin tranche) — every route additionally gates on a
+ * granular `retail:*` permission via AdminPermissionGuard. Paths and
+ * seam behavior are unchanged; coarse admins without granular
+ * assignments keep full power through the RBAC bootstrap fallback.
  */
 @Controller("admin/retail")
 @Roles("admin")
+@UseGuards(AdminPermissionGuard)
 export class AdminRetailOpsController {
   constructor(
     @Inject(RetailOrdersService) private readonly retailOrders: RetailOrdersService,
@@ -78,24 +85,28 @@ export class AdminRetailOpsController {
     return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("orders/:id/confirm")
   @HttpCode(200)
   async confirm(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return toApiJson(await this.retailOrders.confirmRetailOrder(id, this.actor(claims)));
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("orders/:id/pack")
   @HttpCode(200)
   async pack(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return toApiJson(await this.retailOrders.packRetailOrder(id, this.actor(claims)));
   }
 
+  @RequireAdminPermission("retail:order:cancel")
   @Post("orders/:id/cancel")
   @HttpCode(200)
   async cancel(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason?: string }) {
     return toApiJson(await this.retailOrders.cancelRetailOrder(id, { ...this.actor(claims), reason: body?.reason }));
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("orders/:id/shipments")
   async createShipment(
     @CurrentUser() claims: Claims,
@@ -113,6 +124,7 @@ export class AdminRetailOpsController {
     return toApiJson(result);
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("shipments/:id/handoff")
   async handoff(
     @CurrentUser() claims: Claims,
@@ -128,6 +140,7 @@ export class AdminRetailOpsController {
     return toApiJson(result);
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("shipments/:id/manual-tracking")
   @HttpCode(200)
   async manualTracking(
@@ -145,6 +158,7 @@ export class AdminRetailOpsController {
     );
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("payments/:id/verify")
   async verify(
     @CurrentUser() claims: Claims,
@@ -165,6 +179,7 @@ export class AdminRetailOpsController {
 
   // ── Phase 5.11-B — after-sales ops ─────────────────────────────────────
 
+  @RequireAdminPermission("retail:refund:manage")
   @Post("orders/:id/refunds")
   async fileRefund(
     @CurrentUser() claims: Claims,
@@ -183,6 +198,7 @@ export class AdminRetailOpsController {
     return toApiJson(result);
   }
 
+  @RequireAdminPermission("retail:refund:manage")
   @Post("refunds/:id/approve")
   async approveRefund(
     @CurrentUser() claims: Claims,
@@ -199,6 +215,7 @@ export class AdminRetailOpsController {
     return toApiJson(result);
   }
 
+  @RequireAdminPermission("retail:refund:manage")
   @Post("refunds/:id/complete")
   async completeRefund(
     @CurrentUser() claims: Claims,
@@ -215,6 +232,7 @@ export class AdminRetailOpsController {
     return toApiJson(result);
   }
 
+  @RequireAdminPermission("retail:refund:manage")
   @Post("refunds/:id/fail")
   async failRefund(
     @CurrentUser() claims: Claims,
@@ -231,18 +249,21 @@ export class AdminRetailOpsController {
     return toApiJson(result);
   }
 
+  @RequireAdminPermission("retail:return:manage")
   @Post("returns/:id/approve")
   @HttpCode(200)
   async approveReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason?: string }) {
     return toApiJson(await this.retailReturns.transitionRetailReturn(id, "APPROVED", { ...this.actor(claims), reason: body?.reason }));
   }
 
+  @RequireAdminPermission("retail:return:manage")
   @Post("returns/:id/receive")
   @HttpCode(200)
   async receiveReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason?: string }) {
     return toApiJson(await this.retailReturns.transitionRetailReturn(id, "RECEIVED", { ...this.actor(claims), reason: body?.reason }));
   }
 
+  @RequireAdminPermission("retail:return:manage")
   @Post("returns/:id/inspect")
   @HttpCode(200)
   async inspectReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { inspectionDecision: string; reason?: string }) {
@@ -255,18 +276,21 @@ export class AdminRetailOpsController {
     );
   }
 
+  @RequireAdminPermission("retail:return:manage")
   @Post("returns/:id/restock")
   @HttpCode(200)
   async restockReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason?: string }) {
     return toApiJson(await this.retailReturns.transitionRetailReturn(id, "RESTOCKED", { ...this.actor(claims), reason: body?.reason }));
   }
 
+  @RequireAdminPermission("retail:return:manage")
   @Post("returns/:id/reject")
   @HttpCode(200)
   async rejectReturn(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason: string }) {
     return toApiJson(await this.retailReturns.transitionRetailReturn(id, "REJECTED", { ...this.actor(claims), reason: body?.reason }));
   }
 
+  @RequireAdminPermission("retail:order:manage")
   @Post("orders/:id/guest-capability/revoke")
   @HttpCode(200)
   async revokeGuestCapability(@CurrentUser() claims: Claims, @Param("id") id: string) {
@@ -275,6 +299,7 @@ export class AdminRetailOpsController {
 
   // ── Phase 5.11-C — staff reads ─────────────────────────────────────────
 
+  @RequireAdminPermission("retail:order:view")
   @Get("orders")
   async listOrders(
     @CurrentUser() claims: Claims,
@@ -301,16 +326,19 @@ export class AdminRetailOpsController {
     return toApiJson({ orders: result.orders, nextCursor: this.encodeCursor(result.nextCursor), hasMore: result.hasMore });
   }
 
+  @RequireAdminPermission("retail:order:view")
   @Get("orders/:id")
   async getOrder(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return toApiJson(await this.retailOrders.getRetailOrder({ userId: claims.sub, role: claims.role }, id));
   }
 
+  @RequireAdminPermission("retail:order:view")
   @Get("orders/:id/timeline")
   async getTimeline(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return toApiJson(await this.retailOrders.getRetailOrderTimeline(id, this.actor(claims)));
   }
 
+  @RequireAdminPermission("retail:return:view")
   @Get("returns")
   async listReturns(
     @CurrentUser() claims: Claims,
@@ -323,11 +351,13 @@ export class AdminRetailOpsController {
     return toApiJson({ returns: result.returns, nextCursor: this.encodeCursor(result.nextCursor), hasMore: result.hasMore });
   }
 
+  @RequireAdminPermission("retail:return:view")
   @Get("returns/:id")
   async getReturn(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return toApiJson(await this.retailReturns.getRetailReturn({ userId: claims.sub, role: claims.role }, id));
   }
 
+  @RequireAdminPermission("retail:refund:view")
   @Get("refunds")
   async listRefunds(
     @CurrentUser() claims: Claims,

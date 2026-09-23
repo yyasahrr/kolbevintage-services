@@ -309,6 +309,13 @@
       "when": 1791264000000,
       "tag": "0043_phase_5_11_c_staff_queues",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791350400000,
+      "tag": "0044_phase_5_11_a_retail_permissions",
+      "breakpoints": true
     }
   ]
 }

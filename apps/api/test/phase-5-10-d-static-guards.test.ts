@@ -119,10 +119,10 @@ describe("Phase 5.10-D10 static guards", () => {
     expect(rankUsers).toEqual([]);
   });
 
-  it("D10.8 pins the schema shape: 198 tables, journal idx 43 (5.11-C: 0043 adds staff queue indexes only)", () => {
+  it("D10.8 pins the schema shape: 198 tables, journal idx 44 (5.11-A: 0044 extends the permission CHECK only)", () => {
     const journal = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(44);
-    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 43, tag: "0043_phase_5_11_c_staff_queues" });
+    expect(journal.entries).toHaveLength(45);
+    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 44, tag: "0044_phase_5_11_a_retail_permissions" });
     const snapshot = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "0043_snapshot.json"), "utf8"));
     expect(Object.keys(snapshot.tables)).toHaveLength(198);
   });

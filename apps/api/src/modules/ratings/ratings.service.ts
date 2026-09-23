@@ -233,6 +233,53 @@ export class RatingsService {
     return { reviews: kept.map((row) => this.presentRow(row)), nextCursor };
   }
 
+  /**
+   * Phase 5.11-A — cross-product moderation queue (admin-only).
+   *
+   * Unlike the public per-product list, the queue spans products,
+   * includes hidden rows, and filters by status and/or product. The
+   * module's cursor contract is reused verbatim (fail-closed 400 on
+   * malformed cursors, same keyset): the admin shell only adds the
+   * `hasMore` convenience bit. Unknown status values match nothing
+   * (console-read precedent); unknown product ids return the same
+   * empty page (no oracle).
+   */
+  async listReviewsForModeration(
+    actor: { actorId: string | null; actorRole: string },
+    query: { status?: unknown; productId?: unknown; limit?: unknown; cursor?: unknown } = {},
+  ): Promise<{ reviews: Array<Record<string, unknown>>; nextCursor: string | null }> {
+    this.assertAdmin(actor);
+    const limit = this.clampLimit(query.limit);
+    const cursor = this.decodeCursor(query.cursor);
+    const key = sql`(EXTRACT(EPOCH FROM r."created_at") * 1000000)::bigint`;
+    const keyset = cursor
+      ? sql`AND (${key} < ${cursor.key} OR (${key} = ${cursor.key} AND r."id" > ${cursor.id}))`
+      : sql``;
+    const status = typeof query.status === "string" ? query.status : undefined;
+    const statusFilter =
+      status === undefined
+        ? sql``
+        : status === "visible" || status === "flagged" || status === "hidden"
+          ? sql`AND r."status" = ${status}`
+          : sql`AND false`;
+    const productId = typeof query.productId === "string" && query.productId !== "" ? query.productId : undefined;
+    const productFilter = productId ? sql`AND r."product_id" = ${productId}` : sql``;
+    const result = await this.db.execute(sql`
+      SELECT r.*, ${key} AS "cursor_key" FROM "product_rating" AS r
+      WHERE true ${statusFilter} ${productFilter}
+      ${keyset}
+      ORDER BY ${key} DESC, r."id" ASC
+      LIMIT ${limit + 1}
+    `);
+    const rows = ((result as any).rows ?? []) as Array<Record<string, unknown>>;
+    const kept = rows.slice(0, limit);
+    const nextCursor =
+      rows.length > limit
+        ? this.encodeCursor(String(kept[kept.length - 1].cursor_key), kept[kept.length - 1].id as string)
+        : null;
+    return { reviews: kept.map((row) => this.presentRow(row)), nextCursor };
+  }
+
   async getSummary(productId: string): Promise<{ average: number | null; count: number }> {
     const result = await this.db.execute(sql`
       SELECT COUNT(*)::int AS "count", ROUND(AVG("rating"), 2) AS "average"

@@ -892,6 +892,25 @@ export const ADMIN_PERMISSION_ACTIONS = [
   "promotion:publish",
   "promotion:pause",
   "promotion:coupon:manage",
+  // Phase 5.11 — Retail Admin & Operations (granular retail control plane)
+  "retail:dashboard:view",
+  "retail:order:view",
+  "retail:order:manage",
+  "retail:order:cancel",
+  "retail:inventory:view",
+  "retail:inventory:manage",
+  "retail:return:view",
+  "retail:return:manage",
+  "retail:refund:view",
+  "retail:refund:manage",
+  "retail:review:view",
+  "retail:review:moderate",
+  "retail:customer:view",
+  "retail:customer:manage",
+  "retail:catalog:view",
+  "retail:catalog:manage",
+  "retail:promotion:view",
+  "retail:finance:view",
 ] as const;
 
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */

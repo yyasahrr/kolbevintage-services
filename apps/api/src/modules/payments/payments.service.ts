@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, sql, isNotNull } from "drizzle-orm";
+import { eq, and, sql, isNotNull, inArray } from "drizzle-orm";
 import {
   wholesaleProforma,
   wholesaleProformaLine,
@@ -2770,14 +2770,21 @@ export class PaymentsService {
    * no actor, mirroring getRefundsForAdmin).
    */
   async listRetailRefundsForStaff(
-    input: { status?: string; limit?: number; cursor?: { createdAt: string; id: string } | null },
+    input: { status?: string; limit?: number; cursor?: { createdAt: string; id: string } | null; retailOrderIds?: string[] },
     executor?: DbOrTx,
   ): Promise<{ refunds: Array<Record<string, unknown>>; nextCursor: { createdAt: string; id: string } | null; hasMore: boolean }> {
+    // Phase 5.11-A: optional per-customer scoping for the retail operator
+    // view (the caller resolves the customer's order ids first). An
+    // explicitly empty id set matches nothing — no full-table scan.
+    if (input.retailOrderIds && input.retailOrderIds.length === 0) {
+      return { refunds: [], nextCursor: null, hasMore: false };
+    }
     return this.withExecutor(executor, async (tx) => {
       const dbTx = tx as any;
       const limit = Math.min(Math.max(Number.isSafeInteger(input.limit) ? (input.limit as number) : 20, 1), 100);
       const conditions = [isNotNull(refund.retailOrderId)];
       if (input.status) conditions.push(eq(refund.status, input.status));
+      if (input.retailOrderIds) conditions.push(inArray(refund.retailOrderId, input.retailOrderIds));
       if (input.cursor) {
         conditions.push(sql`(${refund.createdAt}, ${refund.id}) < (${input.cursor.createdAt}::timestamptz, ${input.cursor.id})`);
       }
