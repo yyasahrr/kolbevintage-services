@@ -4583,6 +4583,41 @@ export const adminInternalNote = pgTable(
   ],
 );
 
+/* ── Phase 5.11-C — suspicious-order flag (admin-owned operational metadata) ─── */
+
+export const retailOrderSuspiciousFlag = pgTable(
+  "retail_order_suspicious_flag",
+  {
+    id: text("id").primaryKey(),
+    retailOrderId: text("retail_order_id").notNull(),
+    reason: text("reason").notNull(),
+    flaggedBy: text("flagged_by").notNull(),
+    flaggedAt: timestamp("flagged_at", { withTimezone: true }).notNull().defaultNow(),
+    clearedBy: text("cleared_by"),
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+    clearedReason: text("cleared_reason"),
+  },
+  (table) => [
+    uniqueIndex("retail_order_suspicious_flag_order_unique").on(table.retailOrderId),
+    check("retail_order_suspicious_flag_reason_not_empty", sql`${table.reason} <> ''`),
+    foreignKey({
+      name: "retail_order_suspicious_flag_order_fk",
+      columns: [table.retailOrderId],
+      foreignColumns: [retailOrder.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_order_suspicious_flag_flagged_by_fk",
+      columns: [table.flaggedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "retail_order_suspicious_flag_cleared_by_fk",
+      columns: [table.clearedBy],
+      foreignColumns: [accountUser.id],
+    }).onDelete("restrict"),
+  ],
+);
+
 /* ── Phase 5.1 — CRM & Customer Operations ──────────────────────────────────── */
 
 export const crmContact = pgTable(

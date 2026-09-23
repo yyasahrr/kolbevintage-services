@@ -131,6 +131,10 @@ describe("Phase 5.11-D7 concurrency", () => {
         id: userId, email: `${userId}@test.com`, passwordHash: "h", salt: "s", role, status: "active", tokenVersion: 0, failedLoginAttempts: 0,
       });
     }
+    // Phase 5.11-C (setup-only): this suite's staff actor is TOTP-enrolled;
+    // the C-tranche gate refuses paid cancels and refund terminal
+    // transitions for unenrolled staff. Assertions unchanged.
+    await db.update(schema.accountUser).set({ totpSecret: "JBSWY3DPEHPK3PXP", totpEnabled: true, totpEnrolledAt: new Date() }).where(eq(schema.accountUser.id, users.admin));
     const { SessionVerifier } = await import("../src/common/session");
     const verifier = new SessionVerifier(process.env.KOLBE_SESSION_SECRET);
     tokens.custA = verifier.issue(users.custA, "customer", 0);

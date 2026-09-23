@@ -8,10 +8,14 @@ import { InternalNotesService } from "./internal-notes.service";
 import { AdminApprovalsService } from "./admin-approvals.service";
 import { ControlTowerService } from "./control-tower.service";
 import { AdminPermissionGuard } from "./admin-rbac.guard";
+import { AdminTotpService } from "./admin-totp.service";
+import { AdminTotpGuard } from "./admin-totp.guard";
+import { AdminOrderFlagsService } from "./admin-order-flags.service";
 import { AdminApprovalsController } from "./admin-approvals.controller";
 import { AdminSettingsController } from "./admin-settings.controller";
 import { AdminNotesController } from "./admin-notes.controller";
 import { AdminRbacController } from "./admin-rbac.controller";
+import { AdminOrderFlagsController } from "./admin-order-flags.controller";
 import { ControlTowerController } from "./control-tower.controller";
 
 @Module({
@@ -25,6 +29,7 @@ import { ControlTowerController } from "./control-tower.controller";
     AdminSettingsController,
     AdminNotesController,
     AdminRbacController,
+    AdminOrderFlagsController,
     ControlTowerController,
   ],
   providers: [
@@ -34,6 +39,9 @@ import { ControlTowerController } from "./control-tower.controller";
     AdminApprovalsService,
     ControlTowerService,
     AdminPermissionGuard,
+    AdminTotpService,
+    AdminTotpGuard,
+    AdminOrderFlagsService,
   ],
   exports: [
     AdminRbacService,
@@ -42,6 +50,9 @@ import { ControlTowerController } from "./control-tower.controller";
     AdminApprovalsService,
     ControlTowerService,
     AdminPermissionGuard,
+    AdminTotpService,
+    AdminTotpGuard,
+    AdminOrderFlagsService,
   ],
 })
 export class AdminModule {}

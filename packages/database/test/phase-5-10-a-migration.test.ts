@@ -25,14 +25,14 @@ describe("Phase 5.10-A migration 0040: trigram search foundation", () => {
     await dropDatabase(DB);
   });
 
-  it("enables pg_trgm and adds no tables (198, search is index-only)", async () => {
+  it("enables pg_trgm and adds no tables (199, search is index-only)", async () => {
     await withClient(DB, async (client) => {
       const ext = await client.query(`SELECT extname FROM pg_extension WHERE extname = 'pg_trgm'`);
       expect(ext.rows).toHaveLength(1);
       const tables = await client.query(
         `SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows[0].c).toBe(198);
+      expect(tables.rows[0].c).toBe(199);
     });
   });
 

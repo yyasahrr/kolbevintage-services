@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { RETAIL_PAYMENT_METHODS } from "@kolbe/database";
-import { MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
+import { eq } from "drizzle-orm";
+import { RETAIL_PAYMENT_METHODS, accountUser } from "@kolbe/database";
+import { DomainError, MAX_MONEY, NotFoundError, RETAIL_ORDER_STATUSES, RETAIL_ORDER_TRANSITIONS, RETAIL_SHIPPING_RULES } from "@kolbe/shared";
 import { KOLBE_DB, type KolbeDatabase } from "../../../database/database.module";
 import { AuditService } from "../../audit/audit.service";
 import { CatalogDomainError } from "../../catalog/catalog.logic";
@@ -1346,6 +1347,16 @@ export class RetailOrdersService {
    * orders with no live shipment stay cancellable: the frozen machine
    * permits packed -> cancelled, and nothing has left the building.
    */
+  private async isStaffTotpEnrolled(actorId: string | null, tx: any): Promise<boolean> {
+    if (!actorId) return false;
+    const [row] = await tx
+      .select({ totpEnabled: accountUser.totpEnabled })
+      .from(accountUser)
+      .where(eq(accountUser.id, actorId))
+      .limit(1);
+    return row?.totpEnabled === true;
+  }
+
   async cancelRetailOrder(
     orderId: string,
     actor: { actorId: string | null; actorRole: string; reason?: string },
@@ -1384,6 +1395,22 @@ export class RetailOrdersService {
       // refund-required state: cancelled + paid, money untouched here,
       // the refund itself settled by Checkpoint C.
       const refundPending = order.paymentStatus === "paid";
+      // Phase 5.11-C: cancelling a PAID order is high-risk for interactive
+      // staff and requires TOTP enrollment (existing auth-domain
+      // `TOTP_REQUIRED`, 401). Enrollment is read from the live account row
+      // inside this transaction — the same source of truth the HTTP guard
+      // consults — so the gate holds under races and no caller passes (or
+      // forgets) a flag. Unpaid cancels stay RBAC-only; customers act on
+      // their own orders without it; `system` is non-interactive
+      // (unreachable via HTTP claims, which carry no such role) and exempt.
+      // The gate sits before the first write, so a refusal rolls back
+      // cleanly.
+      if (refundPending && (actor.actorRole === "admin" || actor.actorRole === "finance")) {
+        const enrolled = await this.isStaffTotpEnrolled(actor.actorId, tx);
+        if (!enrolled) {
+          throw new DomainError(401, "TOTP_REQUIRED", "cancelling a paid order requires TOTP enrollment");
+        }
+      }
       await this.transitionOrder(orderId, "cancelled", actor, tx);
       const requester = this.systemRequester();
       // COD confirms the shipped slice at shipment time; cancelling a

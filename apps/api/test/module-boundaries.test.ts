@@ -235,6 +235,8 @@ describe("دفتر مالکیت ماژول‌ها", () => {
       "retail_return_request",
       "retail_return_item",
       "retail_return_event",
+      // Phase 5.11-C
+      "retail_order_suspicious_flag",
     ];
     const unowned = schemaTables.filter((table) => !ownerOfTable(table) && !UNASSIGNED_TABLES.includes(table));
     expect(unowned, "جدول‌های بی‌مالک — ثبت در registry.ts لازم است").toEqual([]);

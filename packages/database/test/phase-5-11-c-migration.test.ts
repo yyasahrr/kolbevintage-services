@@ -23,12 +23,12 @@ describe("Phase 5.11-C migration 0043: staff queue indexes", () => {
     await dropDatabase(DB);
   });
 
-  it("adds no tables (198, staff queues are index-only)", async () => {
+  it("adds no tables (199, staff queues are index-only)", async () => {
     await withClient(DB, async (client) => {
       const tables = await client.query(
         `SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows[0].c).toBe(198);
+      expect(tables.rows[0].c).toBe(199);
     });
   });
 

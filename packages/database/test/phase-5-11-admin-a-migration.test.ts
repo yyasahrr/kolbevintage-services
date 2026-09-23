@@ -47,12 +47,12 @@ describe("Phase 5.11-A (admin tranche) migration 0044: retail permission catalog
     await dropDatabase(DB);
   });
 
-  it("adds no tables (198, the permission catalog is CHECK-only)", async () => {
+  it("adds no tables itself (199 at head: 0045 adds the suspicious-flag table; 0044 is CHECK-only)", async () => {
     await withClient(DB, async (client) => {
       const tables = await client.query(
         `SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows[0].c).toBe(198);
+      expect(tables.rows[0].c).toBe(199);
     });
   });
 
@@ -77,9 +77,8 @@ describe("Phase 5.11-A (admin tranche) migration 0044: retail permission catalog
     });
   });
 
-  it("is journal idx 44 (45 entries)", async () => {
+  it("0044 sits at journal idx 44 (head has moved to 0045)", async () => {
     const journal = JSON.parse(readFileSync(path.join(import.meta.dirname, "..", "migrations", "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(45);
-    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 44, tag: "0044_phase_5_11_a_retail_permissions" });
+    expect(journal.entries[44]).toMatchObject({ idx: 44, tag: "0044_phase_5_11_a_retail_permissions" });
   });
 });

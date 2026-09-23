@@ -280,3 +280,106 @@ writers; no 5.11 route reads them and no suite depends on them:
   - *(A) journal 44→45 entries / idx 43→44 / tag 0044 in:
     `phase-5-7-promotions-migration`, 5.10 `D10.8`, 5.11
     `D10.7` — 0044 is CHECK-only, tables stay 198.*
+  - *(C) head 45→46 entries / idx 44→45 / tag 0045 /
+    tables 198→199 (0045 adds `retail_order_suspicious_flag`)
+    in: `phase-5-7-promotions-migration`, 5.10 `D10.8`, 5.11
+    `D10.7` (snapshot path 0043→0045), 5.11
+    `phase-5-11-admin-a-migration` (0044 repointed to a
+    positional idx-44 pin), `phase-5-3-templates-preferences`,
+    `phase-4-9-1-b-operational`, db `phase-3-8`,
+    `phase-5-10-{a,b,c}-migration`, `phase-5-11-c-migration`,
+    B-suite T8. Setup-only TOTP enrollments (zero assertion
+    changes) in 12 suites: 5.9-C, 5.9-D ×3, 5.11-A/B/C,
+    5.11-D failure/concurrency/security, A-suite (adminFull +
+    adminOrderCancel), B-suite (adminFull).*
+
+## 11. Checkpoint C as-built (TOTP gate / flags / notes)
+
+- TOTP policy (C1, exact). WHO: any staff actor (role admin/
+  finance) driving a high-risk act. WHICH ACTS: refund
+  approve/complete/fail over HTTP (unconditional) and paid
+  order cancel (conditional on paymentStatus == paid, checked
+  in-transaction). FAILURE: 401 `TOTP_REQUIRED` (existing
+  auth-domain code), nothing mutates, nothing leaks
+  (unknown-perm actors still get 403 first — A:318 is the
+  order canary). BOOTSTRAP: login is password-only until
+  `totp_enabled`, so enrollment can always start; no lockout
+  by construction (C-suite T2). RECOVERY: no self-service
+  device-loss flow exists — disable needs a live code and no
+  admin-reset route was introduced (new privileged surface);
+  recovery today is a manual second-operator DB reset, a
+  documented gap, not a new flow. No SMS, no bootstrap
+  codes, no plaintext introduced (the phase-2
+  `totp_secret` column predates 5.11; its phase-6
+  crypto/rotation note in `totp.service.ts` stands).
+- Gate mechanics (C2). Two choke points, one source of truth
+  (`account_user.totp_enabled`): `AdminTotpGuard` +
+  `@RequireTotpEnrolled()` on the three refund routes
+  (stateless; service seams stay policy-free so the 5.9
+  service-level refund suites run untouched), and an
+  in-transaction seam read in `cancelRetailOrder` (stateful:
+  paid + staff + unenrolled refuses before the first write;
+  race-proof, rollback-clean). Guard order is structural:
+  global session → controller perm → method TOTP. Customers
+  (own orders), unpaid cancels, `system` (non-interactive,
+  unreachable via HTTP claims), and refund FILING
+  (non-terminal — money moves only on approve/complete) are
+  explicitly ungated. An early flag-passing sketch was
+  replaced by seam-side reads: no caller-passed flags, no
+  TOCTOU, fail-closed on missing rows.
+- Explicitly NOT gated (no seam, no gate): manual inventory
+  adjustment (no canonical writer exists — B3 confirmed
+  read-only), sensitive customer-account state changes (no
+  admin block seam exists). Maker/checker is not required by
+  the work order; single-enrolled-actor acts plus the full
+  audit trail are the control. All three are D-matrix
+  deferreds, not silent gaps.
+- Suspicious flags (C3). Admin-owned
+  `retail_order_suspicious_flag`, one row per order (unique
+  index), reason/actor/timestamp + clear columns, FKs to
+  retail_order (restrict) and account_user (restrict). All three
+  FKs are RESTRICT per the repo-wide `clean-migration`
+  invariant (no CASCADE anywhere); retail orders are
+  commercial records and are never deleted, so the flag
+  lifecycle needs no cascade.
+  Flag = atomic upsert (201 create / 200 re-flag, cleared
+  columns nulled); clear = conditional update (idempotent
+  success, no-op clears unaudited); get = 200 always.
+  Convergent under races (last-writer-wins, winners
+  audited). Flag ≠ enforcement: the order row is never
+  touched (C-suite T5 `toEqual(before)`). Errors reuse
+  existing vocabulary: ghost order → 404
+  `RETAIL_ORDER_NOT_FOUND`, bad reason → 422 shared
+  `VALIDATION_FAILED` (seam-level: vitest/esbuild emits no
+  decorator metadata, so DTO validation cannot fire in
+  tests — the console convention of seam-owned validation
+  keeps the envelope uniform in every environment).
+  Audits follow the dotted convention
+  (`retail_order.suspicious_flagged/cleared`). No flags queue
+  route was built (C3 lists flag/clear/audit only; queue =
+  D-matrix deferred).
+- Notes (C4). `ADMIN_NOTE_TARGET_TYPES` + CHECK gain
+  `retail_order` + `retail_customer`; zero service or
+  controller changes (the DB CHECK is the only gate; the
+  seam takes any cataloged target). Existing
+  `wholesale:notes:*` permissions gate retail notes
+  (documented: notes are one cross-domain staff tool; no
+  new permission actions).
+- Migration 0045 (table + note CHECK) verified on scratch:
+  46 migrations / 199 tables / 461 FKs / 589 CHECKs, plus
+  live proofs (duplicate flag 23505, empty reason 23514,
+  ghost order 23503, retail targets admitted, bogus target
+  23514). Snapshot id chained (prevId = 0044 id); registry +
+  module-boundaries table list extended (drizzle reads need
+  no exceptions; scanner covers raw SQL only).
+- C suites: `phase-5-11-admin-c-migration` (3: head/counts,
+  flag constraints, note targets) and
+  `phase-5-11-admin-c-security` (10: T1 block→ceremony→
+  unlock over real HTTP, T2 bootstrap login semantics, T3
+  TOTP-free paths, T4 perm-first + non-admin, T5 flag
+  lifecycle without mutation, T6 misuse + idempotent clear,
+  T7 flag/clear race, T8 notes perms, T9 high-risk + flag
+  audits, T10 secret hygiene). 12 existing suites adapted
+  setup-only (TOTP enrollments; helpers and call sites
+  untouched — the seam reads the DB); the only assertion
+  edit is B-suite T8's 198→199 count pin.

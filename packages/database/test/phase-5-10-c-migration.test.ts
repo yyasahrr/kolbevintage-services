@@ -41,12 +41,12 @@ describe("Phase 5.10-C migration 0042: verified-purchase proof on reviews", () =
     await dropDatabase(DB);
   });
 
-  it("adds no tables (198, proof is columns-only)", async () => {
+  it("adds no tables (199, proof is columns-only)", async () => {
     await withClient(DB, async (client) => {
       const tables = await client.query(
         `SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows[0].c).toBe(198);
+      expect(tables.rows[0].c).toBe(199);
     });
   });
 

@@ -409,6 +409,7 @@ export const MODULES: readonly ModuleDefinition[] = [
       "business_setting",
       "business_setting_history",
       "admin_internal_note",
+      "retail_order_suspicious_flag",
     ],
     dependsOn: ["auth", "audit", "catalog", "suppliers", "vip", "orders", "payments", "shipping", "settlement", "compliance"],
     status: "scaffolded",

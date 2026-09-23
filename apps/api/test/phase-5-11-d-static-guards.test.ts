@@ -7,8 +7,9 @@ import { describe, expect, it } from "vitest";
  *
  * The D audit verdicts as executable pins: the controller is a
  * forwarding shell (no DB, no throws, admin-only), queues live
- * with their owners, and the schema shape holds (198 tables,
- * journal idx 44, the four 0043 queue indexes + the 0044 permission CHECK).
+ * with their owners, and the schema shape holds (199 tables,
+ * journal idx 45, the four 0043 queue indexes + the 0044 permission CHECK +
+ * the 0045 suspicious-flag table).
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -60,12 +61,12 @@ describe("Phase 5.11-D10 static guards", () => {
     expect(code).toMatch(/fall through to the next decoding/);
   });
 
-  it("D10.7 pins the schema shape: 198 tables, journal idx 44", () => {
+  it("D10.7 pins the schema shape: 199 tables, journal idx 45", () => {
     const journal = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(45);
-    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 44, tag: "0044_phase_5_11_a_retail_permissions" });
-    const snapshot = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "0043_snapshot.json"), "utf8"));
-    expect(Object.keys(snapshot.tables)).toHaveLength(198);
+    expect(journal.entries).toHaveLength(46);
+    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 45, tag: "0045_phase_5_11_c_admin_security" });
+    const snapshot = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "0045_snapshot.json"), "utf8"));
+    expect(Object.keys(snapshot.tables)).toHaveLength(199);
   });
 
   it("D10.8 pins the four 0043 queue indexes in the snapshot", () => {

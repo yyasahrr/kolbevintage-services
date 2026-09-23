@@ -172,6 +172,13 @@ describe("Phase 5.11-A admin control plane", () => {
         id: userId, email: `${userId}@test.com`, passwordHash: "h", salt: "s", role, status: "active", tokenVersion: 0, failedLoginAttempts: 0,
       });
     }
+    // Phase 5.11-C (setup-only): the two actors that drive high-risk acts
+    // (paid cancels, refund approve/complete) are TOTP-enrolled. Limited
+    // view-only actors stay unenrolled, which also proves the permission
+    // gate fires before the TOTP gate (403, never 401, for them).
+    for (const name of ["adminFull", "adminOrderCancel"] as const) {
+      await db.update(schema.accountUser).set({ totpSecret: "JBSWY3DPEHPK3PXP", totpEnabled: true, totpEnrolledAt: new Date() }).where(eq(schema.accountUser.id, users[name]));
+    }
     // Least-privilege grants: one role per limited admin, nothing more.
     const grants: Array<[UserKey, string[]]> = [
       ["adminOrderView", ["retail:order:view"]],

@@ -32,6 +32,7 @@ export {
   retailOrder,
   retailOrderEvent,
   retailOrderItem,
+  retailOrderSuspiciousFlag,
   retailReturnEvent,
   retailReturnItem,
   retailReturnRequest,

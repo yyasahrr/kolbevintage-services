@@ -128,11 +128,11 @@ describe("Phase 5.3 — Checkpoint A: Notification Templates & Preferences", () 
     await harness.close();
   });
 
-  it("1. Schema & Migration Integrity: 198 tables, migrations through 0043 applied", async () => {
+  it("1. Schema & Migration Integrity: 199 tables, migrations through 0045 applied", async () => {
     const rows = await harness.db.execute<{ count: string }>(
       "SELECT count(*)::text FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'",
     );
-    expect(Number(rows.rows[0].count)).toBe(198); // 5.9-B adds the 3 return tables; 5.9-C alters in place; 5.10-A/B are index-only
+    expect(Number(rows.rows[0].count)).toBe(199); // 5.9-B adds the 3 return tables; 5.9-C alters in place; 5.10-A/B are index-only; 5.11-C 0045 adds the suspicious-flag table
   });
 
   describe("2. Versioned Templates Lifecycle & Immutability", () => {

@@ -144,6 +144,10 @@ describe("Phase 5.11-B retail dashboard", () => {
         id: userId, email: `${userId}@test.com`, passwordHash: "h", salt: "s", role, status: "active", tokenVersion: 0, failedLoginAttempts: 0,
       });
     }
+    // Phase 5.11-C (setup-only): this suite's staff actor is TOTP-enrolled;
+    // the C-tranche gate refuses paid cancels for unenrolled staff.
+    // Assertions unchanged.
+    await db.update(schema.accountUser).set({ totpSecret: "JBSWY3DPEHPK3PXP", totpEnabled: true, totpEnrolledAt: new Date() }).where(eq(schema.accountUser.id, users.adminFull));
     const grants: Array<[UserKey, string[]]> = [
       ["adminDashboard", ["retail:dashboard:view"]],
       ["adminInventory", ["retail:inventory:view"]],
@@ -423,7 +427,7 @@ describe("Phase 5.11-B retail dashboard", () => {
     // The database survives: the board still answers after hostile input.
     await get("/api/v1/admin/retail/dashboard", tokens.adminFull).expect(200);
     const tables = await db.execute(`SELECT count(*)::int AS c FROM information_schema.tables WHERE table_schema = 'public'`);
-    expect((tables as any).rows[0].c).toBe(198);
+    expect((tables as any).rows[0].c).toBe(199); // 5.11-C: +retail_order_suspicious_flag (0045)
   });
 
   function buyer() {

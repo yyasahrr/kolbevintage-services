@@ -1005,6 +1005,8 @@ export const ADMIN_NOTE_TARGET_TYPES = [
   "wholesale_order",
   "wholesale_request",
   "supplier",
+  "retail_order",
+  "retail_customer",
 ] as const;
 
 /* ── Phase 5.2 — Support / Ticket / Case Management ──────────────────────────── */

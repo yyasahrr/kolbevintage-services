@@ -141,6 +141,10 @@ describe("Phase 5.9-D7 concurrency", () => {
         id: userId, email: `${userId}@test.com`, passwordHash: "h", salt: "s", role, status: "active", tokenVersion: 0, failedLoginAttempts: 0,
       });
     }
+    // Phase 5.11-C (setup-only): this suite's staff actor is TOTP-enrolled;
+    // the C-tranche gate refuses paid cancels for unenrolled staff.
+    // Assertions unchanged.
+    await db.update(schema.accountUser).set({ totpSecret: "JBSWY3DPEHPK3PXP", totpEnabled: true, totpEnrolledAt: new Date() }).where(eq(schema.accountUser.id, users.admin));
 
     const offers = app.get(OffersService);
     const kolbeSellerId = await offers.ensureSeller(null, "KOLBE");

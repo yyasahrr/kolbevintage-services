@@ -2,6 +2,7 @@ import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, R
 import type { Response } from "express";
 import { CurrentUser, Roles } from "../../../common/guards/session.guard";
 import { AdminPermissionGuard, RequireAdminPermission } from "../../admin/admin-rbac.guard";
+import { AdminTotpGuard, RequireTotpEnrolled } from "../../admin/admin-totp.guard";
 import type { Claims } from "../../../common/session";
 import { toApiJson } from "../../../common/api-json";
 import { RetailOrdersService } from "./retail-orders.service";
@@ -103,7 +104,7 @@ export class AdminRetailOpsController {
   @Post("orders/:id/cancel")
   @HttpCode(200)
   async cancel(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { reason?: string }) {
-    return toApiJson(await this.retailOrders.cancelRetailOrder(id, { ...this.actor(claims), reason: body?.reason }));
+return toApiJson(await this.retailOrders.cancelRetailOrder(id, { ...this.actor(claims), reason: body?.reason }));
   }
 
   @RequireAdminPermission("retail:order:manage")
@@ -199,6 +200,8 @@ export class AdminRetailOpsController {
   }
 
   @RequireAdminPermission("retail:refund:manage")
+  @RequireTotpEnrolled()
+  @UseGuards(AdminTotpGuard)
   @Post("refunds/:id/approve")
   async approveRefund(
     @CurrentUser() claims: Claims,
@@ -216,6 +219,8 @@ export class AdminRetailOpsController {
   }
 
   @RequireAdminPermission("retail:refund:manage")
+  @RequireTotpEnrolled()
+  @UseGuards(AdminTotpGuard)
   @Post("refunds/:id/complete")
   async completeRefund(
     @CurrentUser() claims: Claims,
@@ -233,6 +238,8 @@ export class AdminRetailOpsController {
   }
 
   @RequireAdminPermission("retail:refund:manage")
+  @RequireTotpEnrolled()
+  @UseGuards(AdminTotpGuard)
   @Post("refunds/:id/fail")
   async failRefund(
     @CurrentUser() claims: Claims,
