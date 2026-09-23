@@ -11,6 +11,7 @@ import { PromotionsModule } from "../../promotions/promotions.module";
 import { ShippingModule } from "../../shipping/shipping.module";
 import { SupportModule } from "../../support/support.module";
 import { RetailCheckoutGuard } from "./retail-checkout.guard";
+import { AdminRetailOpsController } from "./admin-retail-ops.controller";
 import { RetailNotificationRelayService } from "./retail-notification-relay.service";
 import { RetailOrdersController } from "./retail-orders.controller";
 import { RetailOrdersRepository } from "./retail-orders.repository";
@@ -39,7 +40,7 @@ import { RetailReturnsService } from "./retail-returns.service";
  */
 @Module({
   imports: [DatabaseModule, AuditModule, OffersModule, PricingModule, PromotionsModule, InventoryModule, ComplianceModule, PaymentsModule, NotificationsModule, ShippingModule, SupportModule],
-  controllers: [RetailOrdersController],
+  controllers: [RetailOrdersController, AdminRetailOpsController],
   providers: [RetailOrdersService, RetailOrdersRepository, RetailCheckoutGuard, RetailNotificationRelayService, RetailReturnsService, RetailReturnsRepository],
   exports: [RetailOrdersService, RetailOrdersRepository, RetailNotificationRelayService, RetailReturnsService, RetailReturnsRepository],
 })
