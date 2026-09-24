@@ -1,6 +1,6 @@
 # Phase 5.12 — Backend Consolidation / Legacy Cutover
 
-**Status:** Checkpoints A and B complete
+**Status:** Checkpoints A, B, and C implemented; final CI closeout pending
 
 **Start SHA:** `7383aedebbb100ae26fe154c4794f9bce3404f02`
 
@@ -97,4 +97,40 @@ The narrow canonical projections are grouped by actor at
 `/api/v1/compat/wholesale`, `/api/v1/compat/admin`, and
 `/api/v1/compat/storefront`. They use server-derived tenant identity and stable
 ordering. The 11 `LEGACY_WRITE` entries remain visible for later Phase 5.12
-work; Checkpoint B does not claim writer convergence.
+work; Checkpoint B did not claim writer convergence.
+
+## Checkpoint C as built
+
+The 11 remaining business commands now cross the compatibility edge to their
+named owners: Suppliers, Catalog, Offers, VIP, CMS, Auth, and Support. Supplier
+approval uses an explicit transactional orchestrator because its one decision
+must coordinate application, supplier, seller, initial membership, account
+role, and audit state. Operational-log reads and resolution use a bounded
+Analytics infrastructure service rather than business-table SQL in Next.
+
+Compatibility DTOs preserve the existing paths and response contracts. Tenant
+identity is derived from the authenticated user and canonical membership;
+browser-supplied supplier, VIP, user, and owner identifiers cannot select an
+authority context. Monetary commands accept digit-only integer IRR or integer
+basis points, and bulk pricing validates the bounded batch before its
+transactional update.
+
+Site settings accept the existing presentation key set only. Embedded videos
+are validated, stored under the existing dedicated setting keys, and replaced
+with their stable streaming URLs in the storefront document. Arbitrary JSON
+cannot become platform or business configuration authority through this seam.
+
+Both read and write dispatchers execute before Next database initialization.
+Canonical unavailability produces `503 CANONICAL_API_UNAVAILABLE`; none of the
+migrated routes falls back to its superseded SQL branch. The route inventory's
+final counts are 47 total, 42 `NEXT_PROXY_TO_NEST`, 2 `DEPRECATED`, and 3
+`STATIC/MOCK`, with zero `LEGACY_READ`, `LEGACY_WRITE`,
+`MISSING_CANONICAL_SEAM`, or `REMOVE_LATER` entries.
+
+`POST logs/client` remains a sanitized infrastructure telemetry ingest and
+`try-on/*` remains the Perfect Corp provider edge. These are the only retained
+non-business authority edges in the legacy dispatcher. All direct business
+mutations have been removed from the compatibility file. Physical removal of
+the remaining unreachable read-only compatibility SQL is assigned to Phase 6;
+it does not participate in active request authority after the pre-database
+dispatch cutover.

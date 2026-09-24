@@ -7,9 +7,10 @@ and the executable-data companion is
 
 Checkpoint A performed the first safe writer cutover. Checkpoint B moved all
 20 legacy business reads behind authenticated Nest projections while retaining
-their compatibility paths and response shapes. Writers without an exact
-canonical command contract remain classified rather than rushed into invented
-endpoints. Phase 5.12-C has not started.
+their compatibility paths and response shapes. Checkpoint C converges the 11
+remaining business commands and the Admin operational-log edge on named Nest
+owners. The inventory now contains no legacy read, legacy write, missing seam,
+or remove-later entry.
 
 ## Checkpoint B read convergence
 
@@ -23,8 +24,34 @@ endpoints. Phase 5.12-C has not started.
 - Nest outage returns `503 CANONICAL_API_UNAVAILABLE`; no migrated read uses a
   Next SQL fallback.
 
-The route inventory now has zero `LEGACY_READ` entries and retains all 11
-`LEGACY_WRITE` entries for later Phase 5.12 work.
+The route inventory has zero `LEGACY_READ`, `LEGACY_WRITE`,
+`MISSING_CANONICAL_SEAM`, and `REMOVE_LATER` entries.
+
+## Checkpoint C writer convergence
+
+- Suppliers owns application creation and the transactional approval workflow;
+  approval creates the supplier and initial membership once, while rejection
+  creates neither.
+- Catalog owns supplier submissions and moderation. Supplier identity comes
+  from the authenticated membership and moderation uses an explicit legacy
+  status mapping.
+- Offers owns quote submission, RFQ creation, and integer basis-point bulk
+  pricing. Money remains integer IRR and bulk changes are transactional.
+- VIP owns customer applications and account decisions; Auth alone changes the
+  user role and token version.
+- CMS accepts only the known storefront presentation keys and preserves the
+  existing dedicated hero/banner video storage contract.
+- Support owns the atomic combined status/reply command.
+- Analytics exposes the bounded, Admin-only operational-log projection and
+  audited resolve command.
+- Every migrated compatibility command dispatches before Next database setup.
+  An unavailable canonical API returns `503 CANONICAL_API_UNAVAILABLE` without
+  a SQL fallback.
+
+The anonymous `POST logs/client` route remains a constrained infrastructure
+telemetry ingest, and `try-on/*` remains an external-provider transport edge.
+Neither is a business authority. Their bounded infrastructure persistence is
+intentionally retained until the Phase 6 compatibility-edge removal.
 
 ## Local worktree classification
 
@@ -49,12 +76,11 @@ The route inventory now has zero `LEGACY_READ` entries and retains all 11
 No compatibility route falls back to its SQL implementation when the selected
 Nest owner is unavailable. Unavailable Nest returns a truthful 503.
 
-## Explicit remaining writer debt
+## Remaining Next database access
 
-Supplier application/submission/quote, VIP application/decision, SiteBuilder
-settings, supplier approval, catalog moderation, unsafe bulk pricing, RFQ
-creation, combined admin ticket status/reply, and operational log state still
-have no proven parity-safe canonical command at this checkpoint.
-They remain visible as `LEGACY_WRITE` or `REMOVE_LATER` in the inventory and
-must be handled by later Phase 5.12 work. Checkpoint A makes no claim that the
-read cutover is complete.
+Next retains database plumbing needed by compatibility reads plus the explicit
+infrastructure/provider edges above. No active Phase 5.12 business read or
+command uses Next SQL authority, and the compatibility file contains no direct
+business-table mutation. Superseded read-only SQL branches remain unreachable
+behind the pre-database cutover dispatcher and are scheduled for physical
+deletion with the compatibility surface in Phase 6.

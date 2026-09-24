@@ -251,6 +251,14 @@ export class AuthService {
       .where(and(eq(userSession.userId, userId), isNull(userSession.revokedAt)));
   }
 
+  async setVipRole(userId: string, active: boolean, executor?: any): Promise<void> {
+    const db = executor || this.db;
+    const [user] = await db.select().from(accountUser).where(eq(accountUser.id, userId)).limit(1);
+    if (!user) throw new DomainError(404, "ACCOUNT_NOT_FOUND", "حساب کاربری یافت نشد");
+    const nextRole = active ? "vip" : (user.role === "vip" ? "customer" : user.role);
+    await db.update(accountUser).set({ role: nextRole, updatedAt: new Date() }).where(eq(accountUser.id, userId));
+  }
+
   async me(userId: string): Promise<AuthUser & { supplierContext?: { supplierId: string; displayName: string; legalName: string } | null; totpEnabled?: boolean }> {
     const [user] = await this.db
       .select({

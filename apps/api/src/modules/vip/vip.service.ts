@@ -18,7 +18,7 @@ import {
   commandIdempotency,
 } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
-import { ForbiddenError, NotFoundError } from "@kolbe/shared";
+import { DomainError, ForbiddenError, NotFoundError } from "@kolbe/shared";
 import { CatalogDomainError } from "../catalog/catalog.logic";
 import {
   isVipSubscriptionActive,
@@ -30,6 +30,7 @@ import {
 import { resolvePrice, hashAcceptedTerms, type AcceptedTermsSnapshot, canonicalStringify } from "../pricing/pricing.logic";
 import { createHash, randomUUID } from "node:crypto";
 import { AuditService } from "../audit/audit.service";
+import { AuthService } from "../auth/auth.service";
 
 type Tx = Parameters<Parameters<KolbeDatabase["transaction"]>[0]>[0];
 export type DbOrTx = KolbeDatabase | Tx;
@@ -63,8 +64,64 @@ function sanitizeForJsonb(value: any): any {
 export class VipService {
   constructor(
     @Inject(KOLBE_DB) private readonly db: KolbeDatabase,
+    @Inject(AuthService) private readonly authService: AuthService,
     @Optional() @Inject(AuditService) private readonly auditService?: AuditService,
   ) {}
+
+  async applyLegacy(userId: string, input: any) {
+    const storeName = String(input.storeName ?? "").trim().replace(/[<>]/g, "").slice(0, 180);
+    const phone = String(input.phone ?? "").replace(/[\s-]/g, "");
+    const city = String(input.city ?? "").trim().replace(/[<>]/g, "").slice(0, 120);
+    const planName = String(input.planName ?? "").trim().slice(0, 120);
+    const paymentReference = String(input.paymentReference ?? "").trim().slice(0, 180);
+    if (!storeName || !city || !planName || !paymentReference || !/^(?:\+98|0098|98|0)?9\d{9}$/.test(phone)) throw new DomainError(422, "INVALID_VIP_APPLICATION", "اطلاعات درخواست عضویت نامعتبر است");
+    const result = await this.db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(wholesaleAccount).where(eq(wholesaleAccount.userId, userId)).limit(1);
+      if (existing && ["pending", "approved"].includes(existing.status)) return { account: existing, replayed: true };
+      if (existing) {
+        const [updated] = await tx.update(wholesaleAccount).set({ memberName: String(input.memberName ?? storeName).trim().slice(0, 160), storeName, phone, city, planName, status: "pending", activatedAt: null, expiresAt: null, updatedAt: new Date() }).where(eq(wholesaleAccount.id, existing.id)).returning();
+        return { account: updated, replayed: false };
+      }
+      const [created] = await tx.insert(wholesaleAccount).values({ id: `wacc_${randomUUID().replaceAll("-", "")}`, userId, memberName: String(input.memberName ?? storeName).trim().slice(0, 160), storeName, phone, city, planName, status: "pending" }).returning();
+      return { account: created, replayed: false };
+    });
+    await this.auditService?.record({ actorId: userId, actorRole: "customer", action: "vip.application.created", entityType: "wholesale_account", entityId: result.account.id, after: { status: result.account.status, paymentReference } });
+    return {
+      status: result.account.status,
+      account: {
+        ...result.account,
+        user_id: result.account.userId,
+        member_name: result.account.memberName,
+        store_name: result.account.storeName,
+        plan_name: result.account.planName,
+        activated_at: result.account.activatedAt ?? null,
+        expires_at: result.account.expiresAt ?? null,
+        created_at: result.account.createdAt,
+        updated_at: result.account.updatedAt,
+      },
+      paymentReference,
+      message: "درخواست عضویت ثبت شد و در انتظار بررسی کارشناسان کلبه است.",
+    };
+  }
+
+  async decideLegacyAccount(accountId: string, input: any, actorId: string) {
+    const next = String(input.status ?? "");
+    if (!["approved", "rejected", "suspended", "expired"].includes(next)) throw new DomainError(422, "INVALID_VIP_STATUS", "وضعیت عضویت نامعتبر است");
+    return this.db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`SELECT * FROM wholesale_account WHERE id=${accountId} FOR UPDATE`);
+      const current = (locked as any).rows?.[0];
+      if (!current) throw new DomainError(404, "VIP_ACCOUNT_NOT_FOUND", "عضویت یافت نشد");
+      const allowed: Record<string, string[]> = { pending: ["approved", "rejected"], approved: ["rejected", "suspended", "expired"], suspended: ["approved", "rejected"], rejected: [], expired: ["approved"] };
+      if (current.status !== next && !(allowed[current.status] ?? []).includes(next)) throw new DomainError(409, "INVALID_VIP_STATUS_TRANSITION", "گذار وضعیت عضویت مجاز نیست");
+      if (current.status === next) return { status: next, replayed: true };
+      const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+      if (expiresAt && !Number.isFinite(expiresAt.getTime())) throw new DomainError(422, "INVALID_VIP_EXPIRY", "تاریخ انقضا نامعتبر است");
+      await tx.update(wholesaleAccount).set({ status: next, activatedAt: next === "approved" ? new Date() : null, expiresAt: next === "approved" ? expiresAt : null, updatedAt: new Date() }).where(eq(wholesaleAccount.id, accountId));
+      await this.authService.setVipRole(current.user_id, next === "approved", tx);
+      await this.auditService?.record({ actorId, actorRole: "admin", action: "vip_account.status_changed", entityType: "wholesale_account", entityId: accountId, before: { status: current.status }, after: { status: next, expiresAt: expiresAt?.toISOString() ?? current.expires_at }, metadata: { note: input.note ?? null } }, tx);
+      return { status: next };
+    });
+  }
 
   private getExecutor(executor?: DbOrTx) {
     return (executor as any) || this.db;

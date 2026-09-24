@@ -1,11 +1,11 @@
-import { Controller, Get, Post, Body, Param } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, HttpCode, Inject } from "@nestjs/common";
 import { OffersService } from "./offers.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 
 @Controller("offers")
 export class OffersController {
-  constructor(private readonly offers: OffersService) {}
+  constructor(@Inject(OffersService) private readonly offers: OffersService) {}
 
   @Post()
   @Roles("admin", "supplier")
@@ -37,6 +37,21 @@ export class OffersController {
       packageType: body.packageType || null,
     });
   }
+
+  @Post("compat/rfqs/:id/quote")
+  @Roles("supplier")
+  async legacyQuote(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: any) {
+    return this.offers.submitLegacyQuote(id, claims.sub, body);
+  }
+
+  @Post("compat/rfqs")
+  @Roles("admin")
+  async legacyRfq(@CurrentUser() claims: Claims, @Body() body: any) { return this.offers.createLegacyRfq(body, claims.sub); }
+
+  @Post("compat/bulk-price")
+  @HttpCode(200)
+  @Roles("admin")
+  async legacyBulkPrice(@CurrentUser() claims: Claims, @Body() body: any) { return this.offers.bulkPrice(body, claims.sub); }
 
   @Get("product/:productId")
   async listForProduct(@Param("productId") productId: string) {

@@ -362,6 +362,34 @@ export class SupportCaseService {
     return updated;
   }
 
+  async applyLegacyAdminCommand(caseId: string, input: { status?: unknown; adminReply?: unknown; idempotencyKey?: unknown }, actorId: string) {
+    const statusMap: Record<string, SupportCaseStatus> = { open: "OPEN", in_progress: "IN_PROGRESS", answered: "WAITING_FOR_CUSTOMER", resolved: "RESOLVED", closed: "CLOSED" };
+    const toStatus = statusMap[String(input.status ?? "").toLowerCase()] ?? (SUPPORT_CASE_STATUSES.includes(String(input.status ?? "").toUpperCase() as any) ? String(input.status).toUpperCase() as SupportCaseStatus : null);
+    const message = String(input.adminReply ?? "").trim();
+    if (!toStatus) throw new (await import("@kolbe/shared")).DomainError(422, "INVALID_SUPPORT_STATUS", "وضعیت تیکت نامعتبر است");
+    if (message.length > 10_000) throw new (await import("@kolbe/shared")).DomainError(422, "SUPPORT_MESSAGE_TOO_LONG", "پاسخ بیش از حد طولانی است");
+    return this.db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`SELECT * FROM support_case WHERE id=${caseId} FOR UPDATE`);
+      const existing = (locked as any).rows?.[0];
+      if (!existing) throw new SupportCaseNotFoundError(caseId);
+      const fromStatus = existing.status as SupportCaseStatus;
+      if (fromStatus !== toStatus && !(ALLOWED_STATUS_TRANSITIONS[fromStatus] ?? []).includes(toStatus)) throw new SupportInvalidStatusTransitionError(fromStatus, toStatus);
+      const idempotencyKey = String(input.idempotencyKey ?? "").trim() || null;
+      if (idempotencyKey) {
+        const [replay] = await tx.select().from(supportMessage).where(and(eq(supportMessage.caseId, caseId), eq(supportMessage.idempotencyKey, idempotencyKey))).limit(1);
+        if (replay) return { status: toStatus.toLowerCase(), replayed: true };
+      }
+      const now = new Date();
+      if (fromStatus !== toStatus) {
+        await tx.update(supportCase).set({ status: toStatus, lastActivityAt: now, updatedAt: now, resolvedAt: toStatus === "RESOLVED" ? now : existing.resolved_at, closedAt: toStatus === "CLOSED" ? now : existing.closed_at }).where(eq(supportCase.id, caseId));
+        await tx.insert(supportCaseStatusHistory).values({ id: `scsh_${crypto.randomUUID()}`, caseId, fromStatus, toStatus, actorType: "ADMIN", actorId, source: "LEGACY_COMPAT", createdAt: now });
+      }
+      if (message) await tx.insert(supportMessage).values({ id: `smsg_${crypto.randomUUID()}`, caseId, authorType: "ADMIN", authorId: actorId, authorDisplayName: "Support Agent", body: message, visibility: "PUBLIC", idempotencyKey, createdAt: now, updatedAt: now });
+      await this.audit.record({ actorId, actorRole: "ADMIN", action: "support.case.compat_command", entityType: "support_case", entityId: caseId, before: { status: fromStatus }, after: { status: toStatus, replied: Boolean(message) } }, tx);
+      return { status: toStatus.toLowerCase() };
+    });
+  }
+
   async changePriority(
     caseId: string,
     toPriority: SupportPriority,

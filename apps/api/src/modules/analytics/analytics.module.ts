@@ -26,6 +26,8 @@ import {
   SupplierAnalyticsReconciliationController,
   VipAnalyticsReconciliationController,
 } from "./analytics-reconciliation.controller";
+import { OperationalLogController } from "./operational-log.controller";
+import { OperationalLogService } from "./operational-log.service";
 
 @Module({
   imports: [DatabaseModule, AuditModule, AdminModule],
@@ -45,8 +47,9 @@ import {
     AdminRetailDashboardController,
     AdminRetailInventoryController,
     AdminRetailExceptionsController,
+    OperationalLogController,
   ],
-  providers: [AnalyticsQueryService, AnalyticsScopeService, AnalyticsReportService, AnalyticsExportService, AnalyticsReconciliationService, RetailDashboardService],
+  providers: [AnalyticsQueryService, AnalyticsScopeService, AnalyticsReportService, AnalyticsExportService, AnalyticsReconciliationService, RetailDashboardService, OperationalLogService],
   exports: [AnalyticsQueryService, AnalyticsScopeService, AnalyticsReportService, AnalyticsExportService, AnalyticsReconciliationService],
 })
 export class AnalyticsModule {}

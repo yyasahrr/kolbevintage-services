@@ -11,9 +11,10 @@ import { AdminWholesaleMembershipsController } from "./admin-wholesale-membershi
 import { AuditModule } from "../audit/audit.module";
 import { SuppliersModule } from "../suppliers/suppliers.module";
 import { SupplierTeamModule } from "../supplier-team/supplier-team.module";
+import { AuthModule } from "../auth/auth.module";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, SuppliersModule, SupplierTeamModule],
+  imports: [DatabaseModule, AuditModule, SuppliersModule, SupplierTeamModule, AuthModule],
   controllers: [
     VipController,
     WholesaleRequestsController,

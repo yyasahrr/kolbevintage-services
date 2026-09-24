@@ -200,9 +200,9 @@ export class CatalogService {
         const [variant] = await tx.insert(productVariant).values({ id: `var_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, productId: created.id, sku: proposed.sku, attributes: proposed.attributes ?? {}, status: "active" }).returning();
         createdVariants.push(variant);
       }
-      const commercial = (submission.commercial ?? {}) as { sku?: string; wholesalePrice?: number; moq?: number };
+      const commercial = (submission.commercial ?? {}) as { sku?: string; wholesalePrice?: string | number; moq?: number };
       const offerSku = createdVariants[0]?.sku ?? commercial.sku;
-      if (offerSku && Number.isSafeInteger(Number(commercial.wholesalePrice)) && Number(commercial.wholesalePrice) >= 0) {
+      if (offerSku && /^\d+$/.test(String(commercial.wholesalePrice ?? "0"))) {
         await tx.insert(sellerOffer).values({ id: `offer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, productId: created.id, sellerId: submission.sellerId, variantId: createdVariants[0]?.id ?? null, sku: offerSku, status: "draft", wholesalePrice: BigInt(commercial.wholesalePrice ?? 0), retailPrice: null, moq: Math.max(1, commercial.moq ?? 1), moqUnit: "PIECE" });
       }
       await tx.update(supplierProductSubmission).set({ status: "approved_new_product", approvedProductId: created.id, reviewedBy, reviewedAt: new Date(), adminReviewNote: note ?? null, updatedAt: new Date() }).where(eq(supplierProductSubmission.id, id));
@@ -217,7 +217,7 @@ export class CatalogService {
     return this.db.transaction(async (tx) => {
       const [submission] = await tx.select().from(supplierProductSubmission).where(and(eq(supplierProductSubmission.id, id), eq(supplierProductSubmission.status, "pending_review"))).limit(1);
       if (!submission) throw new CatalogDomainError("SUBMISSION_NOT_PENDING", "درخواست در انتظار بررسی نیست");
-      const commercial = (submission.commercial ?? {}) as { sku?: string; wholesalePrice?: number; moq?: number };
+      const commercial = (submission.commercial ?? {}) as { sku?: string; wholesalePrice?: string | number; moq?: number };
       if (!commercial.sku) throw new CatalogDomainError("SUBMISSION_SKU_REQUIRED", "شناسهٔ تجاری پیشنهاد موجود نیست");
       await tx.insert(sellerOffer).values({ id: `offer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, productId, sellerId: submission.sellerId, variantId: null, sku: commercial.sku, status: "draft", wholesalePrice: BigInt(commercial.wholesalePrice ?? 0), retailPrice: null, moq: Math.max(1, commercial.moq ?? 1), moqUnit: "PIECE" });
       const [updated] = await tx.update(supplierProductSubmission).set({ status: "approved_existing_product", approvedProductId: productId, reviewedBy, reviewedAt: new Date(), adminReviewNote: note ?? null, updatedAt: new Date() }).where(eq(supplierProductSubmission.id, id)).returning();

@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Inject } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Inject, HttpCode } from "@nestjs/common";
 import { CatalogService } from "./catalog.service";
 import { Public, CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
+import { DomainError } from "@kolbe/shared";
 
 @Controller("catalog")
 export class CatalogController {
@@ -127,6 +128,47 @@ export class CatalogController {
     },
   ) {
     return this.catalog.createSupplierSubmission({ ...body, createdBy: claims.sub });
+  }
+
+  @Post("compat/supplier-submissions")
+  @Roles("supplier")
+  async submitLegacySupplierProduct(@CurrentUser() claims: Claims, @Body() body: any) {
+    const name = String(body.name ?? "").trim();
+    const sku = String(body.sku ?? "").trim().toUpperCase();
+    const category = String(body.category ?? "").trim();
+    const price = String(body.wholesalePrice ?? "0");
+    const stock = Number(body.stock ?? 0);
+    if (!name || !sku || !category || !/^\d+$/.test(price) || !Number.isSafeInteger(stock) || stock < 0 || stock > 1_000_000) throw new DomainError(422, "INVALID_INPUT", "اطلاعات محصول نامعتبر است");
+    const idPart = globalThis.crypto.randomUUID().slice(0, 8);
+    const size = String(body.size ?? "تک‌سایز").trim();
+    const color = String(body.color ?? "بدون رنگ").trim();
+    const imageUrl = body.imageUrl ? String(body.imageUrl).slice(0, 2048) : "";
+    if (imageUrl && !/^(?:https?:\/\/|\/)/i.test(imageUrl) && !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(imageUrl)) {
+      throw new DomainError(422, "INVALID_MEDIA_URL", "نشانی تصویر نامعتبر است");
+    }
+    const media = imageUrl ? [{ url: imageUrl, type: "image" }] : [];
+    const result = await this.catalog.createSupplierSubmission({
+      name, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${idPart}`,
+      description: String(body.description ?? "").trim(), categoryId: undefined,
+      attributes: { sku, category, proposedStock: stock },
+      variants: [{ sku: `${sku}-${size}`.toUpperCase(), attributes: { size, color, color_hex: body.colorHex ?? null } }],
+      media, commercial: { sku, wholesalePrice: price, moq: 1 }, createdBy: claims.sub,
+    });
+    return { product: { id: result.submission.id, name: result.submission.proposedName, sku, status: result.submission.status } };
+  }
+
+  @Post("compat/products/:id/status")
+  @HttpCode(200)
+  @Roles("admin")
+  async moderateLegacyProduct(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: any) {
+    const map: Record<string, "draft" | "pending_review" | "approved" | "published" | "suspended" | "archived"> = {
+      draft: "draft", submitted: "pending_review", approved: "approved", published: "published",
+      rejected: "suspended", suspended: "suspended", archived: "archived",
+    };
+    const next = map[String(body.status ?? "")];
+    if (!next) throw new DomainError(422, "INVALID_CATALOG_STATUS", "وضعیت کاتالوگ نامعتبر است");
+    const updated = await this.catalog.transitionProductStatus(id, next, claims.role);
+    return { status: String(body.status), canonicalStatus: updated.status };
   }
 
   @Post("supplier-submissions/:id/approve-new")

@@ -1,14 +1,34 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { supplier, supplierMember, seller, supplierPermissionConfig } from "@kolbe/database";
+import { and, eq } from "drizzle-orm";
+import { supplier, supplierApplication, supplierMember, seller, supplierPermissionConfig } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { NotFoundError } from "@kolbe/shared";
 import { checkSupplierPermission, assertSupplierMemberRoleAllowed } from "./supplier-permissions.logic";
 import { CatalogDomainError } from "../catalog/catalog.logic";
+import { DomainError } from "@kolbe/shared";
+import { AuditService } from "../audit/audit.service";
 
 @Injectable()
 export class SuppliersService {
-  constructor(@Inject(KOLBE_DB) private readonly db: KolbeDatabase) {}
+  constructor(@Inject(KOLBE_DB) private readonly db: KolbeDatabase, private readonly audit: AuditService) {}
+
+  async apply(input: { companyName: unknown; representativeName: unknown; phone: unknown; category: unknown; monthlyCapacity?: unknown; email?: unknown }, idempotencyKey?: string) {
+    const companyName = String(input.companyName ?? "").trim().replace(/[<>]/g, "").slice(0, 180);
+    const representativeName = String(input.representativeName ?? "").trim().replace(/[<>]/g, "").slice(0, 160);
+    const phone = String(input.phone ?? "").replace(/[\s-]/g, "");
+    const category = String(input.category ?? "").trim().replace(/[<>]/g, "").slice(0, 120);
+    const monthlyCapacity = input.monthlyCapacity == null || input.monthlyCapacity === "" ? null : Number(input.monthlyCapacity);
+    if (!companyName || !representativeName || !category || !/^(?:\+98|0098|98|0)?9\d{9}$/.test(phone)) throw new DomainError(422, "INVALID_INPUT", "اطلاعات درخواست تأمین‌کننده نامعتبر است");
+    if (monthlyCapacity !== null && (!Number.isSafeInteger(monthlyCapacity) || monthlyCapacity < 0 || monthlyCapacity > 10_000_000)) throw new DomainError(422, "INVALID_MONTHLY_CAPACITY", "ظرفیت ماهانه نامعتبر است");
+    const [existing] = await this.db.select().from(supplierApplication).where(and(eq(supplierApplication.phone, phone), eq(supplierApplication.companyName, companyName))).limit(1);
+    if (existing && ["pending", "approved"].includes(existing.status)) return { id: existing.id, replayed: true };
+    const id = idempotencyKey && /^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey) ? `sapp_${Buffer.from(idempotencyKey).toString("hex").slice(0, 32)}` : `sapp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const [created] = await this.db.insert(supplierApplication).values({ id, companyName, representativeName, phone, category, monthlyCapacity }).onConflictDoNothing().returning();
+    const application = created ?? (await this.db.select().from(supplierApplication).where(eq(supplierApplication.id, id)).limit(1))[0];
+    if (!application) throw new DomainError(409, "SUPPLIER_APPLICATION_CONFLICT", "درخواست هم‌زمان ثبت شده است");
+    await this.audit.record({ actorId: null, actorRole: "public", action: "supplier.application.created", entityType: "supplier_application", entityId: application.id, metadata: { companyName, category } });
+    return { id: application.id, replayed: !created };
+  }
 
   async createSupplier(input: { legalName: string; displayName: string }) {
     const id = `sup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;

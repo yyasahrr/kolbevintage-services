@@ -448,60 +448,6 @@ function checkOrigin(req: NextRequest) {
   }
 }
 
-
-/**
- * ثبت رکورد حسابرسی — قاعدهٔ «Admin operations must be auditable».
- *
- * این تابع باید **داخل همان تراکنش** تغییر دامنه صدا زده شود تا اگر تغییر rollback شد،
- * رکورد حسابرسی هم ثبت نشود (و برعکس). جدول `audit_log` در سطح دیتابیس فقط-افزودنی است.
- */
-async function appendAudit(
-  client: PoolClient,
-  entry: {
-    actorId: string;
-    actorRole: string;
-    action: string;
-    entityType: string;
-    entityId?: string | null;
-    before?: unknown;
-    after?: unknown;
-    metadata?: unknown;
-  },
-) {
-  const protectedEntityTypes = new Set([
-    "wholesale_order",
-    "wholesale_order_item",
-    "purchase_order",
-    "purchase_order_item",
-    "wholesale_request",
-    "product_variant_inventory",
-    "inventory_reservation",
-    "inventory_ledger",
-    "order_status_history",
-    "order_event",
-    "fulfillment_exception",
-    "fulfillment_replacement_request",
-  ]);
-  if (protectedEntityTypes.has(entry.entityType)) {
-    return;
-  }
-  await client.query(
-    `INSERT INTO audit_log (id,actor_id,actor_role,action,entity_type,entity_id,before,after,metadata)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-    [
-      makeId("aud"),
-      entry.actorId,
-      entry.actorRole,
-      entry.action,
-      entry.entityType,
-      entry.entityId ?? null,
-      entry.before === undefined ? null : JSON.stringify(entry.before),
-      entry.after === undefined ? null : JSON.stringify(entry.after),
-      entry.metadata === undefined ? null : JSON.stringify(entry.metadata),
-    ],
-  );
-}
-
 /**
  * عدم‌تکرار (Idempotency) — قاعدهٔ «All external callbacks/webhooks must be idempotent».
  *
@@ -734,7 +680,8 @@ async function proxyCanonicalWrite(req: NextRequest, nestPath: string, body: Jso
     : result.data;
   const status = nestPath.startsWith("auth/") && nestPath !== "auth/register"
     && result.status >= 200 && result.status < 300 ? 200 : result.status;
-  return response(req, data, status, headers);
+  const legacyStatus = nestPath.startsWith("vip/compat/accounts/") && status === 403 ? 401 : status;
+  return response(req, data, legacyStatus, headers);
 }
 
 function compatibilityVideoResponse(req: NextRequest, dataUrl: string | null | undefined): Response {
@@ -768,6 +715,7 @@ async function cutOverLegacyBusinessRead(req: NextRequest, path: string): Promis
     "admin/catalog": "compat/admin/catalog", "admin/purchase-orders": "compat/admin/purchase-orders",
     "admin/orders": "compat/admin/orders", "admin/rfqs": "compat/admin/rfqs",
     "admin/tickets": "compat/admin/tickets", "site/settings": "compat/storefront/site",
+    "admin/logs": "analytics/operational-logs",
     "site/hero-video": "compat/storefront/site", "site/banner-video": "compat/storefront/site",
   };
   const target = targets[path];
@@ -809,6 +757,12 @@ async function cutOverLegacyBusinessWrite(req: NextRequest, path: string): Promi
     "POST auth/totp/verify": "auth/totp/verify",
     "POST auth/totp/disable": "auth/totp/disable",
     "POST supplier/auth/login": "auth/supplier/login",
+    "POST supplier/apply": "suppliers/applications",
+    "POST supplier/products": "catalog/compat/supplier-submissions",
+    "POST wholesale/apply": "vip/compat/applications",
+    "PUT admin/site-settings": "cms/compat/site-settings",
+    "POST admin/catalog/bulk-price": "offers/compat/bulk-price",
+    "POST admin/rfqs": "offers/compat/rfqs",
   };
   const target = exact[`${method} ${path}`];
   if (target) {
@@ -846,6 +800,18 @@ async function cutOverLegacyBusinessWrite(req: NextRequest, path: string): Promi
     if (!action) throw new HttpError(422, "INVALID_STATUS");
     return proxyCanonicalWrite(req, `supplier/orders/${encodeURIComponent(match[1])}/${action}`, body);
   }
+  match = path.match(/^supplier\/rfqs\/([^/]+)\/quote$/);
+  if (method === "POST" && match) return proxyCanonicalWrite(req, `offers/compat/rfqs/${encodeURIComponent(match[1])}/quote`, await jsonBody(req));
+  match = path.match(/^admin\/accounts\/([^/]+)\/status$/);
+  if (method === "POST" && match) return proxyCanonicalWrite(req, `vip/compat/accounts/${encodeURIComponent(match[1])}/status`, await jsonBody(req));
+  match = path.match(/^admin\/supplier-applications\/([^/]+)$/);
+  if ((method === "POST" || method === "PATCH") && match) return proxyCanonicalWrite(req, `suppliers/applications/${encodeURIComponent(match[1])}/decision`, await jsonBody(req));
+  match = path.match(/^admin\/catalog\/([^/]+)\/status$/);
+  if (method === "POST" && match) return proxyCanonicalWrite(req, `catalog/compat/products/${encodeURIComponent(match[1])}/status`, await jsonBody(req));
+  match = path.match(/^admin\/tickets\/([^/]+)$/);
+  if (method === "POST" && match) return proxyCanonicalWrite(req, `admin/support/compat/tickets/${encodeURIComponent(match[1])}`, await jsonBody(req));
+  match = path.match(/^admin\/logs\/([^/]+)$/);
+  if ((method === "POST" || method === "PATCH") && match) return proxyCanonicalWrite(req, `analytics/operational-logs/${encodeURIComponent(match[1])}`, await jsonBody(req));
   match = path.match(/^admin\/orders\/([^/]+)\/cancel$/);
   if (method === "POST" && match) return proxyCanonicalWrite(req, `admin/wholesale/orders/${encodeURIComponent(match[1])}/cancel`, await jsonBody(req));
   return null;
@@ -863,189 +829,9 @@ function mapLegacySupplierStatusToNest(status: string): string | null {
   return map[status] || null;
 }
 
-async function handleAuth(req: NextRequest, path: string) {
-  const body = await jsonBody(req);
-  const ip = clientIp(req);
-  if (path === "auth/register") {
-    if (!body.email || !body.password || String(body.password).length < 8) throw new HttpError(422, "INVALID_INPUT");
-    const { salt, passwordHash } = passwordRecord(String(body.password));
-    try {
-      const [user] = await rows<any>(
-        `INSERT INTO account_user (id,email,password_hash,salt,role,display_name,phone,token_version,failed_login_attempts)
-         VALUES ($1,$2,$3,$4,'customer',$5,$6,0,0) RETURNING id,email,role,display_name,phone,token_version`,
-        [makeId("usr"), String(body.email).trim().toLowerCase(), passwordHash, salt, body.name?.trim() || null, body.phone?.trim() || null],
-      );
-      const token = issueToken(user.id, user.role, Number(user.token_version ?? 0));
-      // نشست اختیاری — خطا نباید ثبت‌نام را بشکند
-      try {
-        const tokenHash = createHash("sha256").update(token).digest("hex");
-        await rows(`INSERT INTO user_session (id,user_id,token_hash,expires_at,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6)`, [makeId("ses"), user.id, tokenHash, new Date(Date.now() + 14*24*60*60*1000), ip, req.headers.get("user-agent") ?? null]);
-      } catch {}
-      return response(req, { user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone } }, 201, { "set-cookie": sessionCookie(token) });
-    } catch (error: any) {
-      if (error?.code === "23505") throw new HttpError(409, "EMAIL_EXISTS");
-      throw error;
-    }
-  }
-  if (path === "auth/login") {
-    if (!body.email || !body.password) throw new HttpError(422, "INVALID_INPUT");
-    const email = String(body.email).trim().toLowerCase();
-    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 LIMIT 1", [email]))[0];
-    const attemptId = makeId("lat");
-    if (!user) {
-      try { await rows(`INSERT INTO login_attempt (id,email,ip,success) VALUES ($1,$2,$3,false)`, [attemptId, email, ip]); } catch {}
-      throw new HttpError(401, "INVALID_CREDENTIALS");
-    }
-    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
-      throw new HttpError(423, "ACCOUNT_LOCKED");
-    }
-    if (user.status !== "active") throw new HttpError(403, "ACCOUNT_SUSPENDED");
-    if (!passwordMatches(String(body.password), user.salt, user.password_hash)) {
-      const attempts = Number(user.failed_login_attempts ?? 0) + 1;
-      let lockedUntil: Date | null = null;
-      if (attempts >= 5) lockedUntil = new Date(Date.now() + 15*60*1000);
-      try { await rows(`UPDATE account_user SET failed_login_attempts=$2, locked_until=$3, updated_at=now() WHERE id=$1`, [user.id, attempts, lockedUntil]); } catch {}
-      try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
-      throw new HttpError(401, "INVALID_CREDENTIALS");
-    }
-    if (body.role && body.role !== user.role) {
-      try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
-      throw new HttpError(403, "ROLE_MISMATCH");
-    }
-    if (user.totp_enabled) {
-      if (!body.totpCode) throw new HttpError(401, "TOTP_REQUIRED");
-      if (!user.totp_secret || !totpVerify(user.totp_secret, String(body.totpCode))) {
-        try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
-        throw new HttpError(401, "INVALID_TOTP");
-      }
-    }
-    try { await rows(`UPDATE account_user SET failed_login_attempts=0, locked_until=NULL, last_login_at=now(), updated_at=now() WHERE id=$1`, [user.id]); } catch {}
-    try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,true)`, [makeId("lat"), user.id, email, ip]); } catch {}
-    const token = issueToken(user.id, user.role, Number(user.token_version ?? 0));
-    try {
-      const tokenHash = createHash("sha256").update(token).digest("hex");
-      await rows(`INSERT INTO user_session (id,user_id,token_hash,expires_at,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6)`, [makeId("ses"), user.id, tokenHash, new Date(Date.now() + 14*24*60*60*1000), ip, req.headers.get("user-agent") ?? null]);
-    } catch {}
-    return response(req, 
-      {
-        token,
-        user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone },
-      },
-      200,
-      { "set-cookie": sessionCookie(token) },
-    );
-  }
-  if (path === "auth/logout" && req.method === "POST") {
-    const claims = claimsFrom(req);
-    if (claims) {
-      try {
-        const u = (await rows<any>("SELECT token_version FROM account_user WHERE id=$1 LIMIT 1", [claims.sub]))[0];
-        if (u) {
-          await rows(`UPDATE account_user SET token_version=$2, updated_at=now() WHERE id=$1`, [claims.sub, Number(u.token_version ?? 0) + 1]);
-          await rows(`UPDATE user_session SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, [claims.sub]);
-        }
-      } catch {}
-    }
-    return response(req, { ok: true }, 200, { "set-cookie": clearedSessionCookie() });
-  }
-  if (path === "auth/me" && req.method === "GET") {
-    const claims = claimsFrom(req);
-    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
-    const verified = await assertTokenVersion(claims);
-    const user = (await rows<any>("SELECT id,email,role,display_name,phone,status,totp_enabled FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
-    if (!user) throw new HttpError(401, "UNAUTHORIZED");
-    return response(req, { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone, status: user.status, totpEnabled: !!user.totp_enabled });
-  }
-  if (path === "auth/totp/enroll" && req.method === "POST") {
-    const claims = claimsFrom(req);
-    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
-    const verified = await assertTokenVersion(claims);
-    const user = (await rows<any>("SELECT email FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
-    if (!user) throw new HttpError(401, "UNAUTHORIZED");
-    const secret = totpSecretRandom();
-    const otpauthUrl = totpOtpauthUrl(secret, user.email);
-    await rows("UPDATE account_user SET totp_secret=$2, updated_at=now() WHERE id=$1", [verified.sub, secret]);
-    return response(req, { secret, otpauthUrl });
-  }
-  if (path === "auth/totp/verify" && req.method === "POST") {
-    const claims = claimsFrom(req);
-    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
-    const verified = await assertTokenVersion(claims);
-    const user = (await rows<any>("SELECT totp_secret FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
-    if (!user?.totp_secret) throw new HttpError(400, "TOTP_NOT_ENROLLED");
-    if (!totpVerify(user.totp_secret, String(body.code ?? ""))) throw new HttpError(401, "INVALID_TOTP");
-    await rows("UPDATE account_user SET totp_enabled=true, totp_enrolled_at=now(), updated_at=now() WHERE id=$1", [verified.sub]);
-    return response(req, { ok: true, enabled: true });
-  }
-  if (path === "auth/totp/disable" && req.method === "POST") {
-    const claims = claimsFrom(req);
-    if (!claims) throw new HttpError(401, "UNAUTHORIZED");
-    const verified = await assertTokenVersion(claims);
-    const user = (await rows<any>("SELECT totp_secret, totp_enabled FROM account_user WHERE id=$1 LIMIT 1", [verified.sub]))[0];
-    if (!user) throw new HttpError(404, "NOT_FOUND");
-    if (user.totp_enabled) {
-      if (!body.code) throw new HttpError(400, "TOTP_REQUIRED");
-      if (!user.totp_secret || !totpVerify(user.totp_secret, String(body.code))) throw new HttpError(401, "INVALID_TOTP");
-    }
-    await rows("UPDATE account_user SET totp_secret=NULL, totp_enabled=false, totp_enrolled_at=NULL, updated_at=now() WHERE id=$1", [verified.sub]);
-    return response(req, { ok: true, enabled: false });
-  }
-  throw new HttpError(404, "NOT_FOUND");
-}
-
 
 async function handleSupplier(req: NextRequest, path: string) {
   const method = req.method;
-  if (path === "supplier/apply" && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.companyName?.trim() || !body.representativeName?.trim() || !body.phone?.trim() || !body.category?.trim()) {
-      throw new HttpError(422, "INVALID_INPUT");
-    }
-    const id = makeId("sapp");
-    await rows(
-      `INSERT INTO supplier_application (id,company_name,representative_name,phone,category,monthly_capacity)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [id, body.companyName.trim(), body.representativeName.trim(), body.phone.trim(), body.category.trim(), body.monthlyCapacity ?? null],
-    );
-    return response(req, { id }, 201);
-  }
-  if (path === "supplier/auth/login" && method === "POST") {
-    const body = await jsonBody(req);
-    const email = String(body.email ?? "").trim().toLowerCase();
-    const ip = clientIp(req);
-    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 AND role='supplier' LIMIT 1", [email]))[0];
-    if (!user || !passwordMatches(String(body.password ?? ""), user.salt, user.password_hash)) {
-      if (user) {
-        const attempts = Number(user.failed_login_attempts ?? 0) + 1;
-        let lockedUntil: Date | null = null;
-        if (attempts >= 5) lockedUntil = new Date(Date.now() + 15*60*1000);
-        try { await rows(`UPDATE account_user SET failed_login_attempts=$2, locked_until=$3, updated_at=now() WHERE id=$1`, [user.id, attempts, lockedUntil]); } catch {}
-        try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
-      } else {
-        try { await rows(`INSERT INTO login_attempt (id,email,ip,success) VALUES ($1,$2,$3,false)`, [makeId("lat"), email, ip]); } catch {}
-      }
-      throw new HttpError(401, "INVALID_CREDENTIALS");
-    }
-    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) throw new HttpError(423, "ACCOUNT_LOCKED");
-    if (user.status !== "active") throw new HttpError(403, "ACCOUNT_SUSPENDED");
-    if (user.totp_enabled) {
-      if (!body.totpCode) throw new HttpError(401, "TOTP_REQUIRED");
-      if (!user.totp_secret || !totpVerify(user.totp_secret, String(body.totpCode))) {
-        try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,false)`, [makeId("lat"), user.id, email, ip]); } catch {}
-        throw new HttpError(401, "INVALID_TOTP");
-      }
-    }
-    const context = await supplierContext(user.id);
-    if (!context) throw new HttpError(403, "SUPPLIER_ACCESS_INACTIVE");
-    try { await rows(`UPDATE account_user SET failed_login_attempts=0, locked_until=NULL, last_login_at=now(), updated_at=now() WHERE id=$1`, [user.id]); } catch {}
-    try { await rows(`INSERT INTO login_attempt (id,user_id,email,ip,success) VALUES ($1,$2,$3,$4,true)`, [makeId("lat"), user.id, email, ip]); } catch {}
-    const token = issueToken(user.id, user.role, Number(user.token_version ?? 0));
-    try {
-      const tokenHash = createHash("sha256").update(token).digest("hex");
-      await rows(`INSERT INTO user_session (id,user_id,token_hash,expires_at,ip,user_agent) VALUES ($1,$2,$3,$4,$5,$6)`, [makeId("ses"), user.id, tokenHash, new Date(Date.now() + 14*24*60*60*1000), ip, req.headers.get("user-agent") ?? null]);
-    } catch {}
-    return response(req, { token, supplier: context }, 200, { "set-cookie": sessionCookie(token) });
-  }
 
   const claims = await requireRole(req, "supplier");
   const context = await supplierContext(claims.sub);
@@ -1055,41 +841,7 @@ async function handleSupplier(req: NextRequest, path: string) {
     const submissions = await rows<any>(`SELECT * FROM supplier_product_submission WHERE supplier_id=$1 ORDER BY created_at DESC`, [context.supplierId]);
     return response(req, { products: submissions.map((item) => ({ id: item.id, name: item.proposed_name, sku: item.attributes?.sku ?? "", category: item.attributes?.category ?? "", description: item.proposed_description, wholesale_price: item.attributes?.wholesalePrice ?? 0, status: item.status, product_variants: item.variants ?? [] })) });
   }
-  if (path === "supplier/products" && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.name?.trim() || !body.sku?.trim() || !body.category?.trim()) throw new HttpError(422, "INVALID_INPUT");
-    const wholesalePrice = parseMoneyInput(body.wholesalePrice ?? 0, "INVALID_WHOLESALE_PRICE");
-    const stock = parseNonNegativeInteger(body.stock ?? 0, "INVALID_STOCK", 1_000_000);
-    try {
-      const submission = await transaction(async (client) => {
-        const sku = body.sku.trim().toUpperCase();
-        const submissionId = makeId("sps");
-        const slug = body.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-') + '-' + submissionId.slice(-6);
-        // Ensure seller exists for this supplier
-        const sellerId = `seller_${context.supplierId}`;
-        await client.query(
-          `INSERT INTO seller (id,type,supplier_id,display_name,status) VALUES ($1,'SUPPLIER',$2,$3,'active') ON CONFLICT (id) DO NOTHING`,
-          [sellerId, context.supplierId, context.displayName || context.supplierId]
-        );
-        const size = body.size?.trim() || "تک‌سایز";
-        const color = body.color?.trim() || "بدون رنگ";
-        const result = await client.query<any>(
-          `INSERT INTO supplier_product_submission
-             (id,supplier_id,seller_id,proposed_name,proposed_slug,proposed_description,attributes,variants,media,status,created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending_review',$10) RETURNING *`,
-          [submissionId, context.supplierId, sellerId, body.name.trim(), slug, body.description?.trim() || "",
-           JSON.stringify({ sku, category: body.category.trim(), wholesalePrice, proposedStock: stock }),
-           JSON.stringify([{ sku: `${sku}-${size}`.toUpperCase(), attributes: { size, color, color_hex: body.colorHex || null } }]),
-           JSON.stringify(body.imageUrl ? [{ url: body.imageUrl, type: "image" }] : []), claims.sub],
-        );
-        return result.rows[0];
-      });
-      return response(req, { product: { id: submission.id, name: submission.proposed_name, sku: body.sku.trim().toUpperCase(), status: submission.status } }, 201);
-    } catch (error: any) {
-      if (error?.code === "23505") throw new HttpError(409, "DUPLICATE_SKU");
-      throw error;
-    }
-  }
+
   if (path === "supplier/orders" && method === "GET") return response(req, { orders: await purchaseOrders(context.supplierId) });
   const orderStatus = path.match(/^supplier\/orders\/([^/]+)\/status$/);
   if (orderStatus && method === "POST") {
@@ -1115,120 +867,15 @@ async function handleSupplier(req: NextRequest, path: string) {
     return response(req, { rfqs });
   }
   const quoteMatch = path.match(/^supplier\/rfqs\/([^/]+)\/quote$/);
-  if (quoteMatch && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.unitPrice) throw new HttpError(422, "INVALID_INPUT");
-    const rfq = (await rows<any>("SELECT * FROM rfq WHERE id=$1 AND supplier_id=$2", [quoteMatch[1], context.supplierId]))[0];
-    if (!rfq) throw new HttpError(404, "RFQ_NOT_FOUND");
-    await transaction(async (client) => {
-      await client.query(
-        `INSERT INTO quote (id,rfq_id,supplier_id,unit_price,lead_time_days,notes) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [makeId("quo"), rfq.id, context.supplierId, Number(body.unitPrice), Number(body.leadTimeDays ?? 0), body.notes?.trim() || null],
-      );
-      await client.query("UPDATE rfq SET status='quoted',updated_at=now() WHERE id=$1", [rfq.id]);
-    });
-    return response(req, { status: "quoted" }, 201);
-  }
+
   if (path === "supplier/tickets" && method === "GET") {
     return response(req, { tickets: await rows("SELECT * FROM support_ticket WHERE supplier_id=$1 ORDER BY created_at DESC", [context.supplierId]) });
-  }
-  if (path === "supplier/tickets" && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.subject?.trim() || !body.message?.trim()) throw new HttpError(422, "INVALID_INPUT");
-    const id = makeId("tic");
-    await rows(
-      `INSERT INTO support_ticket (id,supplier_id,subject,category,message,priority) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [id, context.supplierId, body.subject.trim(), body.category?.trim() || "عمومی", body.message.trim(), ["low", "normal", "high"].includes(body.priority) ? body.priority : "normal"],
-    );
-    return response(req, { id }, 201);
   }
   throw new HttpError(404, "NOT_FOUND");
 }
 
 async function handleWholesale(req: NextRequest, path: string) {
-  if (path === "wholesale/apply" && req.method === "POST") {
-    let claims = claimsFrom(req);
-    if (!claims || !["customer", "vip"].includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
-    claims = await assertTokenVersion(claims);
-    const body = await jsonBody(req);
-    if (!body.storeName?.trim() || !body.phone?.trim() || !body.city?.trim()) throw new HttpError(422, "INVALID_INPUT");
-    if (!body.paymentReference?.trim() || !body.planName?.trim()) throw new HttpError(422, "PAYMENT_REQUIRED");
 
-    /**
-     * ⚠️ اصلاح P0 ممیزی (ایراد D2 — «خودتأییدی عضویت VIP»).
-     *
-     * رفتار قبلی: این endpoint با یک «شمارهٔ پیگیری پرداخت» متنی آزاد، عضویت را
-     * بلافاصله `approved` می‌کرد و نقش کاربر را به `vip` ارتقا می‌داد. یعنی هر
-     * مشتری می‌توانست بدون هیچ تأییدی به قیمت‌های عمده و کاتالوگ تأمین‌کنندهٔ
-     * تأییدشده دسترسی بگیرد.
-     *
-     * رفتار جدید: درخواست همیشه `pending` ثبت می‌شود؛ تصمیم فقط با
-     * `POST admin/accounts/:id/status` (نقش admin) گرفته می‌شود و ارتقای نقش
-     * نیز فقط همان‌جا انجام می‌شود.
-     */
-    const account = await transaction(async (client) => {
-      const existing = (
-        await client.query<any>(
-          "SELECT * FROM wholesale_account WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE",
-          [claims.sub],
-        )
-      ).rows[0];
-
-      // اگر عضویت فعال یا در انتظار تأیید است، درخواست دوباره نباید آن را بازنشانی کند.
-      if (existing && (existing.status === "approved" || existing.status === "pending")) {
-        return existing;
-      }
-
-      const status = "pending";
-      if (existing) {
-        return (
-          await client.query<any>(
-            `UPDATE wholesale_account
-             SET member_name=$2,store_name=$3,phone=$4,city=$5,plan_name=$6,status=$7,
-                 activated_at=NULL,expires_at=NULL,updated_at=now()
-             WHERE id=$1 RETURNING *`,
-            [
-              existing.id,
-              body.memberName?.trim() || body.storeName.trim(),
-              body.storeName.trim(),
-              body.phone.trim(),
-              body.city.trim(),
-              body.planName.trim(),
-              status,
-            ],
-          )
-        ).rows[0];
-      }
-
-      return (
-        await client.query<any>(
-          `INSERT INTO wholesale_account (id,user_id,member_name,store_name,phone,city,plan_name,status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-          [
-            makeId("wacc"),
-            claims.sub,
-            body.memberName?.trim() || body.storeName.trim(),
-            body.storeName.trim(),
-            body.phone.trim(),
-            body.city.trim(),
-            body.planName.trim(),
-            status,
-          ],
-        )
-      ).rows[0];
-    });
-
-    return response(req, 
-      {
-        status: account.status,
-        account,
-        // ارجاع متنی پرداخت دیگر مبنای تأیید نیست و فقط برای پیگیری مالی نگه داشته می‌شود.
-        paymentReference: body.paymentReference,
-        message: "درخواست عضویت ثبت شد و در انتظار بررسی کارشناسان کلبه است.",
-      },
-      201,
-    );
-  }
   const claims = claimsFrom(req);
   if (!claims || !["customer", "vip"].includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
 
@@ -1277,149 +924,13 @@ async function handleWholesale(req: NextRequest, path: string) {
 async function handleAdmin(req: NextRequest, path: string) {
   const claims = await requireRole(req, "admin");
   const method = req.method;
-  if (path === "admin/site-settings" && method === "PUT") {
-    const body = await jsonBody(req);
-    if (!body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) throw new HttpError(422, "INVALID_SETTINGS");
-    const video = embeddedHeroVideo(body.settings);
-    const bannerVideo = embeddedBannerVideo(body.settings);
-    // اعتبارسنجی سمت سرور پیش از هر ذخیره‌سازی (قاعدهٔ upload validation).
-    const heroVideoBytes = video ? validateEmbeddedVideo(video) : 0;
-    const bannerVideoBytes = bannerVideo ? validateEmbeddedVideo(bannerVideo) : 0;
-    const settings = withoutEmbeddedVideos(body.settings);
-    await transaction(async (client) => {
-      if (video) {
-        await client.query(
-          `INSERT INTO site_setting (setting_key,value,updated_by) VALUES ($1,$2,$3)
-           ON CONFLICT (setting_key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=now()`,
-          [HERO_VIDEO_SETTING_KEY, { dataUrl: video }, claims.sub],
-        );
-      }
-      if (bannerVideo) {
-        await client.query(
-          `INSERT INTO site_setting (setting_key,value,updated_by) VALUES ($1,$2,$3)
-           ON CONFLICT (setting_key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=now()`,
-          [BANNER_VIDEO_SETTING_KEY, { dataUrl: bannerVideo }, claims.sub],
-        );
-      }
-      await client.query(
-        `INSERT INTO site_setting (setting_key,value,updated_by) VALUES ('storefront',$1,$2)
-         ON CONFLICT (setting_key) DO UPDATE SET value=EXCLUDED.value,updated_by=EXCLUDED.updated_by,updated_at=now()`,
-        [settings, claims.sub],
-      );
-      // فقط خلاصهٔ تغییرات ثبت می‌شود، نه کل blob تنظیمات (حجم و حساسیت).
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "site_settings.updated",
-        entityType: "site_setting",
-        entityId: "storefront",
-        before: null,
-        after: { keys: Object.keys(settings ?? {}).slice(0, 50) },
-        metadata: {
-          ip: clientIp(req),
-          heroVideoBytes,
-          bannerVideoBytes,
-        },
-      });
-    });
-    return response(req, { saved: true, updatedAt: new Date().toISOString() });
-  }
+
   if (path === "admin/accounts" && method === "GET") return response(req, { accounts: await rows("SELECT * FROM wholesale_account ORDER BY created_at DESC") });
   const accountStatus = path.match(/^admin\/accounts\/([^/]+)\/status$/);
-  if (accountStatus && method === "POST") {
-    const body = await jsonBody(req);
-    const account = (await rows<any>("SELECT * FROM wholesale_account WHERE id=$1", [accountStatus[1]]))[0];
-    if (!account || !body.status) throw new HttpError(account ? 422 : 404, account ? "INVALID_INPUT" : "ACCOUNT_NOT_FOUND");
-    if (!["pending", "approved", "rejected", "suspended", "expired"].includes(body.status)) {
-      throw new HttpError(422, "INVALID_INPUT");
-    }
-    // این تنها مسیر قانونی تأیید عضویت VIP است (اصلاح ایراد D2 — خودتأییدی).
-    await transaction(async (client) => {
-      await client.query(
-        `UPDATE wholesale_account SET status=$2,activated_at=CASE WHEN $2='approved' THEN now() ELSE activated_at END,
-         expires_at=CASE WHEN $2='approved' THEN $3 ELSE expires_at END,updated_at=now() WHERE id=$1`,
-        [account.id, body.status, body.expiresAt ?? null],
-      );
-      if (body.status === "approved") {
-        await client.query("UPDATE account_user SET role='vip',updated_at=now() WHERE id=$1", [account.user_id]);
-      } else if (body.status === "rejected" || body.status === "suspended") {
-        // پس‌گرفتن دسترسی عمده: اگر کاربر عضویت دیگری ندارد، نقش به customer برمی‌گردد.
-        await client.query(
-          `UPDATE account_user SET role='customer',updated_at=now()
-           WHERE id=$1 AND NOT EXISTS (
-             SELECT 1 FROM wholesale_account
-             WHERE user_id=$1 AND id<>$2 AND status='approved' AND (expires_at IS NULL OR expires_at > now())
-           )`,
-          [account.user_id, account.id],
-        );
-      }
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "vip_account.status_changed",
-        entityType: "wholesale_account",
-        entityId: account.id,
-        before: { status: account.status },
-        after: { status: body.status, expires_at: body.expiresAt ?? account.expires_at },
-        metadata: { ip: clientIp(req), note: body.note ?? null },
-      });
-    });
-    return response(req, { status: body.status });
-  }
+
   if (path === "admin/supplier-applications" && method === "GET") return response(req, { applications: await rows("SELECT * FROM supplier_application ORDER BY created_at DESC") });
   const applicationStatus = path.match(/^admin\/supplier-applications\/([^/]+)$/);
-  if (applicationStatus && method === "POST") {
-    const body = await jsonBody(req);
-    const application = (await rows<any>("SELECT * FROM supplier_application WHERE id=$1", [applicationStatus[1]]))[0];
-    if (!application || !body.status) throw new HttpError(application ? 422 : 404, application ? "INVALID_INPUT" : "APPLICATION_NOT_FOUND");
-    if (body.status !== "approved") {
-      await transaction(async (client) => {
-        await client.query("UPDATE supplier_application SET status=$2,updated_at=now() WHERE id=$1", [application.id, body.status]);
-        await appendAudit(client, {
-          actorId: claims.sub,
-          actorRole: "admin",
-          action: "supplier_application.reviewed",
-          entityType: "supplier_application",
-          entityId: application.id,
-          before: { status: application.status },
-          after: { status: body.status },
-          metadata: { ip: clientIp(req) },
-        });
-      });
-      return response(req, { status: body.status });
-    }
-    const supplierId = makeId("sup");
-    await transaction(async (client) => {
-      await client.query(
-        `INSERT INTO supplier (id,legal_name,display_name,phone,category,monthly_capacity,status) VALUES ($1,$2,$2,$3,$4,$5,'approved')`,
-        [supplierId, application.company_name, application.phone, application.category, application.monthly_capacity],
-      );
-      await client.query("UPDATE supplier_application SET status='approved',updated_at=now() WHERE id=$1", [application.id]);
-      let createdUserId: string | null = null;
-      if (body.loginEmail && String(body.loginPassword ?? "").length >= 8) {
-        const credentials = passwordRecord(String(body.loginPassword));
-        const userId = makeId("usr");
-        await client.query(
-          `INSERT INTO account_user (id,email,password_hash,salt,role,display_name,phone) VALUES ($1,$2,$3,$4,'supplier',$5,$6)`,
-          [userId, String(body.loginEmail).trim().toLowerCase(), credentials.passwordHash, credentials.salt, application.company_name, application.phone],
-        );
-        await client.query("INSERT INTO supplier_member (id,supplier_id,user_id,title) VALUES ($1,$2,$3,$4)", [makeId("smem"), supplierId, userId, "مدیر تأمین"]);
-        createdUserId = userId;
-      }
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "supplier_application.approved",
-        entityType: "supplier_application",
-        entityId: application.id,
-        before: { status: application.status },
-        // هیچ رمز عبوری در حسابرسی ثبت نمی‌شود؛ فقط اینکه حساب ساخته شد یا نه.
-        after: { status: "approved", supplier_id: supplierId, login_created: createdUserId !== null },
-        metadata: { ip: clientIp(req) },
-      });
-    });
-    return response(req, { status: "approved", supplier_id: supplierId });
-  }
+
   if (path === "admin/audit-logs" && method === "GET") {
     const url = new URL(req.url);
     const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
@@ -1456,102 +967,12 @@ async function handleAdmin(req: NextRequest, path: string) {
     })) });
   }
   const catalogStatus = path.match(/^admin\/catalog\/([^/]+)\/status$/);
-  if (catalogStatus && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.status) throw new HttpError(422, "INVALID_INPUT");
-    // قاعدهٔ «Moderation»: محصول تأمین‌کننده فقط با تصمیم صریح کلبه منتشر می‌شود.
-    if (!["draft", "submitted", "approved", "rejected", "archived"].includes(body.status)) {
-      throw new HttpError(422, "INVALID_INPUT");
-    }
-    await transaction(async (client) => {
-      const before = (
-        await client.query<any>("SELECT status FROM product WHERE id=$1 FOR UPDATE", [catalogStatus[1]])
-      ).rows[0];
-      if (!before) throw new HttpError(404, "PRODUCT_NOT_FOUND");
-      await client.query("UPDATE product SET status=$2,updated_at=now() WHERE id=$1", [
-        catalogStatus[1],
-        body.status,
-      ]);
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "catalog.moderation_status_changed",
-        entityType: "product",
-        entityId: catalogStatus[1],
-        before: { status: before.status },
-        after: { status: body.status },
-        metadata: { ip: clientIp(req), note: body.note ?? null },
-      });
-    });
-    return response(req, { status: body.status });
-  }
-  if (path === "admin/catalog/bulk-price" && method === "POST") {
-    const body = await jsonBody(req);
-    if (!Array.isArray(body.ids) || !body.ids.length || !Number.isFinite(Number(body.value))) throw new HttpError(422, "INVALID_INPUT");
-    if (body.ids.length > 500) throw new HttpError(422, "TOO_MANY_ROWS");
-    if (!["amount", "percent"].includes(body.mode ?? "amount")) throw new HttpError(422, "INVALID_INPUT");
-    const mode = body.mode ?? "amount";
 
-    /**
-     * قاعدهٔ «Do not store monetary values as float» (ایراد D11 ممیزی).
-     *
-     * نسخهٔ قبلی از `wholesale_price*(1+$3/100.0)` استفاده می‌کرد؛ یعنی محاسبهٔ
-     * اعشاری روی پول. حالا درصد با حساب صحیح (basis points) و به‌صورت
-     * `price * bp / 10000` محاسبه می‌شود و نتیجه با ROUND به نزدیک‌ترین ریال می‌رود.
-     * تقسیم صحیح پستگرس روی bigint، عدد صحیح برمی‌گرداند (بدون کسر اعشاری).
-     */
-    const result = await transaction(async (client) => {
-      const value = BigInt(Math.trunc(Number(body.value)));
-      // مقدار «درصد» است؛ برای پرهیز از ریاضی اعشاری به صدم‌درصد (basis point) تبدیل می‌شود:
-      //   قیمت جدید = ROUND( قیمت × (10000 + درصد×100) / 10000 )
-      const basisPoints = value * 100n;
-      const updated = await client.query<any>(
-        mode === "percent"
-          ? `UPDATE seller_offer
-             SET wholesale_price=GREATEST(0,
-                   ((wholesale_price * (10000 + $2)) + 5000) / 10000),
-                 updated_at=now()
-             WHERE product_id=ANY($1::text[]) RETURNING id, wholesale_price`
-          : `UPDATE seller_offer
-             SET wholesale_price=GREATEST(0, wholesale_price + $2), updated_at=now()
-             WHERE product_id=ANY($1::text[]) RETURNING id, wholesale_price`,
-        [body.ids, (mode === "percent" ? basisPoints : value).toString()],
-      );
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "catalog.bulk_price_updated",
-        entityType: "seller_offer",
-        entityId: null,
-        before: null,
-        after: { mode, value: value.toString(), ids: body.ids },
-        metadata: { ip: clientIp(req), updated: updated.rowCount ?? 0, prices: updated.rows },
-      });
-      return updated.rowCount ?? 0;
-    });
-    return response(req, { updated: result });
-  }
+
   if (path === "admin/purchase-orders" && method === "GET") return response(req, { orders: await purchaseOrders() });
   const poStatus = path.match(/^admin\/purchase-orders\/([^/]+)\/status$/);
   if (poStatus && method === "POST") {
-    const body = await jsonBody(req);
-    await transaction(async (client) => {
-      const before = (
-        await client.query<any>("SELECT status FROM purchase_order WHERE id=$1", [poStatus[1]])
-      ).rows[0];
-      await updatePurchaseOrder(client, poStatus[1], body.status, body.trackingCode);
-      await appendAudit(client, {
-        actorId: claims.sub,
-        actorRole: "admin",
-        action: "purchase_order.status_changed",
-        entityType: "purchase_order",
-        entityId: poStatus[1],
-        before: before ? { status: before.status } : null,
-        after: { status: body.status, tracking_code: body.trackingCode ?? null },
-        metadata: { ip: clientIp(req) },
-      });
-    });
-    return response(req, { status: body.status });
+    throw new HttpError(410, "LEGACY_PURCHASE_ORDER_STATUS_REMOVED", "Use the canonical Orders state-machine command");
   }
   if (path === "admin/orders" && method === "GET") {
     const [orders, accounts, suppliers, pos] = await Promise.all([wholesaleOrders(), rows<any>("SELECT * FROM wholesale_account"), rows<any>("SELECT * FROM supplier"), purchaseOrders()]);
@@ -1587,77 +1008,13 @@ async function handleAdmin(req: NextRequest, path: string) {
     return response(req, result.data, result.status);
   }
   if (path === "admin/rfqs" && method === "GET") return response(req, { rfqs: await rows("SELECT * FROM rfq ORDER BY created_at DESC") });
-  if (path === "admin/rfqs" && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.supplierId || !body.title?.trim()) throw new HttpError(422, "INVALID_INPUT");
-    const id = makeId("rfq");
-    const referenceCode = `RFQ-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}`;
-    await rows(
-      `INSERT INTO rfq (id,supplier_id,reference_code,title,customer_name,quantity,requested_delivery_date,specifications)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [id, body.supplierId, referenceCode, body.title.trim(), body.customerName?.trim() || "کلبه وینتیج", Number(body.quantity ?? 0), body.requestedDeliveryDate ?? null, body.specifications ?? {}],
-    );
-    return response(req, { id, reference_code: referenceCode }, 201);
-  }
+
   if (path === "admin/tickets" && method === "GET") return response(req, { tickets: await rows("SELECT * FROM support_ticket ORDER BY created_at DESC") });
   const ticketStatus = path.match(/^admin\/tickets\/([^/]+)$/);
-  if (ticketStatus && method === "POST") {
-    const body = await jsonBody(req);
-    if (!body.status) throw new HttpError(422, "INVALID_INPUT");
-    await rows(
-      `UPDATE support_ticket SET status=$2,admin_reply=COALESCE($3,admin_reply),updated_at=now() WHERE id=$1 RETURNING id`,
-      [ticketStatus[1], body.status, body.adminReply?.trim() || null],
-    );
-    return response(req, { status: body.status });
-  }
-  if (path === "admin/logs" && method === "GET") {
-    const url = new URL(req.url);
-    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const limit = Math.min(100, Math.max(10, Number(url.searchParams.get("limit")) || 50));
-    const values: unknown[] = [];
-    const filters: string[] = [];
-    for (const [key, column] of [["level", "level"], ["source", "source"], ["status", "status"]] as const) {
-      const value = url.searchParams.get(key);
-      if (value && value !== "all") { values.push(value); filters.push(`${column}=$${values.length}`); }
-    }
-    const query = url.searchParams.get("q")?.trim();
-    if (query) { values.push(`%${query}%`); filters.push(`(message ILIKE $${values.length} OR event_type ILIKE $${values.length} OR path ILIKE $${values.length})`); }
-    const range = url.searchParams.get("range") ?? "24h";
-    if (range !== "all") {
-      const interval = range === "30d" ? "30 days" : range === "7d" ? "7 days" : "24 hours";
-      filters.push(`last_seen_at >= now() - interval '${interval}'`);
-    }
-    const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
-    const total = Number((await rows<any>(`SELECT count(*) AS count FROM system_log ${where}`, values))[0]?.count ?? 0);
-    values.push(limit, (page - 1) * limit);
-    const logs = await rows<any>(`SELECT * FROM system_log ${where} ORDER BY last_seen_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values);
-    const summary = (await rows<any>(
-      `SELECT
-       coalesce(sum(occurrence_count) FILTER (WHERE status='open' AND level IN ('error','critical')),0) AS open_errors,
-       coalesce(sum(occurrence_count) FILTER (WHERE status='open' AND level='critical'),0) AS critical_open,
-       coalesce(sum(occurrence_count) FILTER (WHERE last_seen_at>=now()-interval '24 hours' AND level IN ('error','critical')),0) AS errors_24h,
-       coalesce(sum(occurrence_count) FILTER (WHERE last_seen_at>=now()-interval '24 hours' AND source='frontend'),0) AS frontend_24h,
-       coalesce(sum(occurrence_count) FILTER (WHERE last_seen_at>=now()-interval '24 hours' AND level='warning'),0) AS warnings_24h,
-       coalesce(sum(occurrence_count) FILTER (WHERE last_seen_at>=now()-interval '24 hours' AND event_type='api.slow'),0) AS slow_24h
-       FROM system_log`,
-    ))[0];
-    return response(req, {
-      logs: logs.map(logShape),
-      pagination: { page, limit, total, pageCount: Math.max(1, Math.ceil(total / limit)), capped: false },
-      summary: { openErrors: Number(summary.open_errors), criticalOpen: Number(summary.critical_open), errors24h: Number(summary.errors_24h), frontend24h: Number(summary.frontend_24h), warnings24h: Number(summary.warnings_24h), slow24h: Number(summary.slow_24h) },
-    });
-  }
+
+
   const logStatus = path.match(/^admin\/logs\/([^/]+)$/);
-  if (logStatus && method === "POST") {
-    const body = await jsonBody(req);
-    const [log] = await rows<any>(
-      `UPDATE system_log SET status=$2,resolved_at=CASE WHEN $2='open' THEN NULL ELSE now() END,
-       resolved_by=CASE WHEN $2='open' THEN NULL ELSE $3 END,resolution_note=$4,updated_at=now() WHERE id=$1 RETURNING *`,
-      [logStatus[1], body.status, claims.sub, body.note?.trim() || null],
-    );
-    if (!log) throw new HttpError(404, "LOG_NOT_FOUND");
-    return response(req, { log: logShape(log) });
-  }
+
   throw new HttpError(404, "NOT_FOUND");
 }
 
@@ -1859,33 +1216,8 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   }
   if (path === "site/settings" && req.method === "GET") {
     const setting = (await rows<any>("SELECT value,updated_at FROM site_setting WHERE setting_key='storefront' LIMIT 1"))[0];
-    const video = embeddedHeroVideo(setting?.value);
-    const bannerVideo = embeddedBannerVideo(setting?.value);
-    const settings = withoutEmbeddedVideos(setting?.value ?? null);
-    if (video) {
-      // مهاجرت یک‌باره داده قدیمی: ویدیو را از JSON عمومی و حجیم تنظیمات جدا می‌کند.
-      await transaction(async (client) => {
-        await client.query(
-          `INSERT INTO site_setting (setting_key,value) VALUES ($1,$2)
-           ON CONFLICT (setting_key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,
-          [HERO_VIDEO_SETTING_KEY, { dataUrl: video }],
-        );
-        await client.query("UPDATE site_setting SET value=$1,updated_at=now() WHERE setting_key='storefront'", [settings]);
-      });
-    }
-    if (bannerVideo) {
-      await transaction(async (client) => {
-        await client.query(
-          `INSERT INTO site_setting (setting_key,value) VALUES ($1,$2)
-           ON CONFLICT (setting_key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,
-          [BANNER_VIDEO_SETTING_KEY, { dataUrl: bannerVideo }],
-        );
-        await client.query("UPDATE site_setting SET value=$1,updated_at=now() WHERE setting_key='storefront'", [settings]);
-      });
-    }
-    return response(req, { settings, updatedAt: setting?.updated_at ?? null });
+    return response(req, { settings: withoutEmbeddedVideos(setting?.value ?? null), updatedAt: setting?.updated_at ?? null });
   }
-  if (path.startsWith("auth/")) return handleAuth(req, path);
   if (path === "me" && req.method === "GET") {
     const claims = await requireRole(req, "customer");
     const user = (await rows<any>("SELECT id,email,display_name,phone FROM account_user WHERE id=$1", [claims.sub]))[0];

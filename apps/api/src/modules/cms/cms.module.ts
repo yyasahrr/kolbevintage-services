@@ -16,10 +16,12 @@ import { CmsPublicController } from "./cms-public.controller";
 import { CmsPublicationScheduler, CmsPublicationService } from "./cms-publication.service";
 import { LocalPublicMediaStorage } from "./public-media-storage";
 import { PromotionsModule } from "../promotions/promotions.module";
+import { CmsCompatController } from "./cms-compat.controller";
+import { CmsSiteSettingsService } from "./cms-site-settings.service";
 
 @Module({
   imports: [DatabaseModule, AuditModule, AdminModule, RecoveryModule, PromotionsModule],
-  controllers: [CmsAdminController, CmsPublicController],
+  controllers: [CmsAdminController, CmsPublicController, CmsCompatController],
   providers: [
     CmsPageService,
     CmsRevisionService,
@@ -32,6 +34,7 @@ import { PromotionsModule } from "../promotions/promotions.module";
     CmsPreviewService,
     CmsPromotionReferenceService,
     CmsLegacyImportService,
+    CmsSiteSettingsService,
     LocalPublicMediaStorage,
     { provide: CMS_PUBLIC_MEDIA_STORAGE, useExisting: LocalPublicMediaStorage },
   ],

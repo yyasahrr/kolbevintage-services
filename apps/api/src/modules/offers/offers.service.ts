@@ -1,15 +1,79 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
-import { seller, sellerOffer, product, productVariant, supplierMember, wholesalePackage, wholesalePackageItem, wholesalePricingTier } from "@kolbe/database";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { seller, sellerOffer, product, productVariant, supplierMember, wholesalePackage, wholesalePackageItem, wholesalePricingTier, rfq, quote } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { ForbiddenError, NotFoundError } from "@kolbe/shared";
 import { assertOfferAllowedForProduct, CatalogDomainError } from "../catalog/catalog.logic";
 import { assertSupplierOfferIsolation } from "./offers.logic";
 import { calculatePackageTotalPieces, validateWholesalePackage } from "../catalog/catalog.logic";
+import { DomainError } from "@kolbe/shared";
+import { SuppliersService } from "../suppliers/suppliers.service";
+import { CatalogService } from "../catalog/catalog.service";
+import { AuditService } from "../audit/audit.service";
 
 @Injectable()
 export class OffersService {
-  constructor(@Inject(KOLBE_DB) private readonly db: KolbeDatabase) {}
+  constructor(@Inject(KOLBE_DB) private readonly db: KolbeDatabase, private readonly suppliers: SuppliersService, private readonly catalog: CatalogService, private readonly audit: AuditService) {}
+
+  async submitLegacyQuote(rfqId: string, userId: string, input: any) {
+    const priceText = String(input.unitPrice ?? "");
+    const leadTimeDays = Number(input.leadTimeDays ?? 0);
+    if (!/^\d+$/.test(priceText) || !Number.isSafeInteger(leadTimeDays) || leadTimeDays < 0 || leadTimeDays > 3650) throw new DomainError(422, "INVALID_QUOTE", "قیمت یا زمان تحویل نامعتبر است");
+    const unitPrice = BigInt(priceText);
+    const memberships = await this.suppliers.getUserMemberships(userId);
+    if (!memberships.length) throw new DomainError(403, "SUPPLIER_ACCESS_INACTIVE", "عضویت تأمین‌کننده فعال نیست");
+    return this.db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`SELECT * FROM rfq WHERE id=${rfqId} FOR UPDATE`);
+      const request = (locked as any).rows?.[0];
+      if (!request || !memberships.some((m) => m.supplierId === request.supplier_id)) throw new DomainError(404, "RFQ_NOT_FOUND", "درخواست قیمت یافت نشد");
+      if (!["open", "quoted"].includes(request.status)) throw new DomainError(409, "RFQ_NOT_OPEN", "درخواست قیمت قابل پاسخ نیست");
+      const [existing] = await tx.select().from(quote).where(and(eq(quote.rfqId, rfqId), eq(quote.supplierId, request.supplier_id))).limit(1);
+      if (existing) return { status: "quoted", quote: existing, replayed: true };
+      const variants = await this.catalog.listActiveVariantsForProduct(request.product_id, tx as any);
+      const variant = variants[0];
+      if (!variant) throw new DomainError(409, "RFQ_PRODUCT_VARIANT_REQUIRED", "محصول درخواست قیمت واریانت فعال ندارد");
+      const [created] = await tx.insert(quote).values({ id: `quo_${globalThis.crypto.randomUUID().replaceAll("-", "")}`, rfqId, supplierId: request.supplier_id, productId: request.product_id, variantId: variant.id, sellerOfferId: request.seller_offer_id ?? null, unitPrice, leadTimeDays, notes: String(input.notes ?? "").trim().slice(0, 2000) || null, status: "submitted" }).returning();
+      await tx.update(rfq).set({ status: "quoted", updatedAt: new Date() }).where(eq(rfq.id, rfqId));
+      await this.audit.record({ actorId: userId, actorRole: "supplier", action: "rfq.quote.submitted", entityType: "quote", entityId: created.id, after: { rfqId, unitPrice: unitPrice.toString(), leadTimeDays } }, tx);
+      return { status: "quoted", quote: created };
+    });
+  }
+
+  async createLegacyRfq(input: any, actorId: string) {
+    const supplierId = String(input.supplierId ?? "");
+    const productId = String(input.productId ?? input.product_id ?? "");
+    const title = String(input.title ?? "").trim().slice(0, 180);
+    const quantity = Number(input.quantity ?? 0);
+    if (!supplierId || !productId || !title || !Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1_000_000) throw new DomainError(422, "INVALID_RFQ", "درخواست قیمت نامعتبر است");
+    if (!await this.suppliers.getSupplierById(supplierId)) throw new DomainError(422, "INVALID_RFQ_SUPPLIER", "تأمین‌کننده نامعتبر است");
+    if (!await this.catalog.findProductForRetail(productId)) throw new DomainError(422, "INVALID_RFQ_PRODUCT", "محصول نامعتبر است");
+    const requestedDeliveryDate = input.requestedDeliveryDate ? new Date(input.requestedDeliveryDate) : null;
+    if (requestedDeliveryDate && (!Number.isFinite(requestedDeliveryDate.getTime()) || requestedDeliveryDate.getTime() <= Date.now())) throw new DomainError(422, "INVALID_RFQ_DATE", "تاریخ تحویل نامعتبر است");
+    const id = `rfq_${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
+    const referenceCode = `RFQ-${new Date().getUTCFullYear()}-${globalThis.crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const [created] = await this.db.insert(rfq).values({ id, supplierId, productId, sellerOfferId: input.sellerOfferId ?? null, referenceCode, title, customerName: String(input.customerName ?? "کلبه وینتیج").trim().slice(0, 160), quantity, requestedDeliveryDate, specifications: typeof input.specifications === "object" && input.specifications ? input.specifications : {}, status: "open" }).returning();
+    await this.audit.record({ actorId, actorRole: "admin", action: "rfq.created", entityType: "rfq", entityId: id, after: { supplierId, productId, quantity, referenceCode } });
+    return { id, reference_code: referenceCode, rfq: created };
+  }
+
+  async bulkPrice(input: any, actorId: string) {
+    const ids: string[] = Array.isArray(input.ids) ? [...new Set<string>(input.ids.map((id: unknown) => String(id)))] : [];
+    const mode = String(input.mode ?? "amount");
+    const valueText = String(input.value ?? "");
+    if (!ids.length || ids.length > 500 || !["amount", "percent"].includes(mode) || !/^-?\d+$/.test(valueText)) throw new DomainError(422, "INVALID_BULK_PRICE", "درخواست قیمت‌گذاری گروهی نامعتبر است");
+    const value = BigInt(valueText);
+    const delta = mode === "percent" ? value * 100n : value;
+    if (mode === "percent" && (delta < -10_000n || delta > 1_000_000n)) throw new DomainError(422, "BULK_PRICE_RATE_OUT_OF_RANGE", "نرخ خارج از محدوده است");
+    return this.db.transaction(async (tx) => {
+      const before = await tx.select().from(sellerOffer).where(inArray(sellerOffer.productId, ids));
+      if (!before.length) throw new DomainError(404, "BULK_PRICE_TARGETS_NOT_FOUND", "پیشنهاد هدفی یافت نشد");
+      const result = await tx.execute(mode === "percent" ? sql`UPDATE seller_offer SET wholesale_price=((wholesale_price * (10000 + ${delta.toString()}::bigint)) + 5000) / 10000, updated_at=now() WHERE product_id=ANY(${ids}::text[]) AND ((wholesale_price * (10000 + ${delta.toString()}::bigint)) + 5000) / 10000 >= 0 RETURNING id, wholesale_price` : sql`UPDATE seller_offer SET wholesale_price=wholesale_price + ${value.toString()}::bigint, updated_at=now() WHERE product_id=ANY(${ids}::text[]) AND wholesale_price + ${value.toString()}::bigint >= 0 RETURNING id, wholesale_price`);
+      const updated = (result as any).rows ?? [];
+      if (updated.length !== before.length) throw new DomainError(422, "BULK_PRICE_WOULD_BE_NEGATIVE", "قیمت منفی یا خارج از محدوده ایجاد می‌شود");
+      await this.audit.record({ actorId, actorRole: "admin", action: "offers.bulk_price_updated", entityType: "seller_offer", entityId: null, before: { count: before.length }, after: { mode, value: value.toString(), ids, updated } }, tx);
+      return { updated: updated.length };
+    });
+  }
 
   async resolveActorSeller(user: { id: string; role: "admin" | "supplier" }) {
     if (user.role === "admin") return { sellerId: await this.ensureSeller(null, "KOLBE"), sellerType: "KOLBE" as const };

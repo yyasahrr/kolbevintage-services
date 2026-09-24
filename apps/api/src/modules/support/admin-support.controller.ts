@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Query,
+  HttpCode,
   UseGuards,
   Inject,
 } from "@nestjs/common";
@@ -203,6 +204,13 @@ export class AdminSupportController {
     }
 
     return toApiJson(updated);
+  }
+
+  @Post("compat/tickets/:id")
+  @HttpCode(200)
+  @RequireAdminPermission("support:case:reply")
+  async legacyCombined(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: any) {
+    return this.caseService.applyLegacyAdminCommand(id, body, claims.sub);
   }
 
   @Post("cases/:id/priority")

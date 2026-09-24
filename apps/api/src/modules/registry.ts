@@ -341,6 +341,7 @@ export const MODULES: readonly ModuleDefinition[] = [
       "cms_article_revision",
       "cms_article_revision_taxonomy",
       "cms_publication_schedule",
+      "site_setting",
     ],
     // Phase 5.7-B: campaign presentation references resolve against Promotions
     // display state at serve time (read-only; no eligibility, no math).
@@ -446,7 +447,7 @@ export const MODULES: readonly ModuleDefinition[] = [
  * جدول‌هایی که در اسکیمای فعلی وجود دارند ولی هنوز ماژول مالک مشخصی ندارند.
  * پس از فاز ۳، rfq/quote به offers رفتند.
  */
-export const UNASSIGNED_TABLES: readonly string[] = ["site_setting"] as const;
+export const UNASSIGNED_TABLES: readonly string[] = [] as const;
 
 export const MODULE_NAMES = MODULES.map((module) => module.name);
 

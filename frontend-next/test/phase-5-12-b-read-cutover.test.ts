@@ -61,12 +61,12 @@ describe("Phase 5.12-B legacy read authority cutover", () => {
     expect(handler.indexOf("cutOverLegacyBusinessRead")).toBeLessThan(handler.indexOf("await database()"));
   });
 
-  it("closes read debt without hiding writer debt", () => {
+  it("keeps read debt closed after writer convergence", () => {
     const inventory = JSON.parse(readFileSync(
       path.join(ROOT, "docs", "architecture", "phase-5-12-route-inventory.json"), "utf8",
     ));
     expect(inventory.routes.filter((route: any) => route.status === "LEGACY_READ")).toHaveLength(0);
-    expect(inventory.routes.filter((route: any) => route.status === "LEGACY_WRITE")).toHaveLength(11);
+    expect(inventory.routes.filter((route: any) => route.status === "LEGACY_WRITE")).toHaveLength(0);
     expect(inventory.routes).toHaveLength(47);
   });
 });

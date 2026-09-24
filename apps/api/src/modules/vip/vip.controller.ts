@@ -1,11 +1,11 @@
-import { Controller, Get, Post, Body, Param } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, HttpCode, Inject } from "@nestjs/common";
 import { VipService } from "./vip.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 
 @Controller("vip")
 export class VipController {
-  constructor(private readonly vip: VipService) {}
+  constructor(@Inject(VipService) private readonly vip: VipService) {}
 
   @Get("plans")
   async plans() {
@@ -17,6 +17,15 @@ export class VipController {
   async subscribe(@CurrentUser() claims: Claims, @Body() body: { planId: string }) {
     return this.vip.subscribe(claims.sub, body.planId);
   }
+
+  @Post("compat/applications")
+  @Roles("customer", "vip")
+  async legacyApply(@CurrentUser() claims: Claims, @Body() body: any) { return this.vip.applyLegacy(claims.sub, body); }
+
+  @Post("compat/accounts/:id/status")
+  @HttpCode(200)
+  @Roles("admin")
+  async legacyDecision(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: any) { return this.vip.decideLegacyAccount(id, body, claims.sub); }
 
   @Post("requests")
   @Roles("vip")
