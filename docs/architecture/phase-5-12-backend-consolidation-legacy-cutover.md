@@ -1,6 +1,6 @@
 # Phase 5.12 — Backend Consolidation / Legacy Cutover
 
-**Status:** Checkpoint A complete
+**Status:** Checkpoints A and B complete
 
 **Start SHA:** `7383aedebbb100ae26fe154c4794f9bce3404f02`
 
@@ -82,3 +82,19 @@ role, ownership and permission decisions.
 
 No route may fall back to SQL when Nest is unavailable. The compatibility edge
 must return an honest upstream failure.
+
+## Checkpoint B as built
+
+All 20 `LEGACY_READ` entries now cross the Next compatibility edge into Nest.
+Nest resolves the authenticated user, supplier membership, VIP account and
+Admin role before reading business data. The edge only preserves legacy JSON
+and video streaming shapes. Its read dispatcher runs before `database()` and
+returns `503 CANONICAL_API_UNAVAILABLE` when Nest cannot be reached; it never
+falls back to the old SQL branches.
+
+The narrow canonical projections are grouped by actor at
+`/api/v1/compat/account`, `/api/v1/compat/supplier`,
+`/api/v1/compat/wholesale`, `/api/v1/compat/admin`, and
+`/api/v1/compat/storefront`. They use server-derived tenant identity and stable
+ordering. The 11 `LEGACY_WRITE` entries remain visible for later Phase 5.12
+work; Checkpoint B does not claim writer convergence.

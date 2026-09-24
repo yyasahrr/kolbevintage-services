@@ -33,11 +33,13 @@ import { RequestContext } from "../context/request-context";
 
 export const ROLES_KEY = "kolbe:roles";
 export const PUBLIC_KEY = "kolbe:public";
+export const STALE_CUSTOMER_VIP_READ_KEY = "kolbe:stale-customer-vip-read";
 
 /** مسیرهایی که نباید نشست بخواهند (سلامت، مستندات، ورود). */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
 
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+export const AllowStaleCustomerVipRead = () => SetMetadata(STALE_CUSTOMER_VIP_READ_KEY, true);
 
 export type RequestWithClaims = Request & { claims?: Claims };
 
@@ -94,7 +96,12 @@ export class SessionGuard implements CanActivate {
         if (user.tokenVersion !== 0) throw new UnauthorizedError();
       }
 
-      if (user.role !== claims.role) throw new UnauthorizedError();
+      const allowStaleCustomerVipRead = this.reflector.getAllAndOverride<boolean>(STALE_CUSTOMER_VIP_READ_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      const safeVipPromotion = allowStaleCustomerVipRead && claims.role === "customer" && user.role === "vip";
+      if (user.role !== claims.role && !safeVipPromotion) throw new UnauthorizedError();
     } catch (error) {
       if (error instanceof UnauthorizedError || error instanceof ForbiddenError) throw error;
       throw new UnauthorizedError();

@@ -737,6 +737,67 @@ async function proxyCanonicalWrite(req: NextRequest, nestPath: string, body: Jso
   return response(req, data, status, headers);
 }
 
+function compatibilityVideoResponse(req: NextRequest, dataUrl: string | null | undefined): Response {
+  const video = dataUrl ? parseVideoDataUrl(dataUrl) : null;
+  if (!video) throw new HttpError(404, "HERO_VIDEO_NOT_FOUND");
+  const range = req.headers.get("range")?.match(/^bytes=(\d*)-(\d*)$/);
+  const commonHeaders = { ...corsHeadersFor(req.headers.get("origin")), "content-type": video.mime,
+    "accept-ranges": "bytes", "cache-control": "public, max-age=3600" };
+  if (range) {
+    const start = range[1] ? Number(range[1]) : 0;
+    const end = Math.min(range[2] ? Number(range[2]) : video.bytes.length - 1, video.bytes.length - 1);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end) {
+      return new Response(null, { status: 416, headers: { ...commonHeaders, "content-range": `bytes */${video.bytes.length}` } });
+    }
+    return new Response(videoStream(video.bytes, start, end), { status: 206, headers: { ...commonHeaders,
+      "content-length": String(end - start + 1), "content-range": `bytes ${start}-${end}/${video.bytes.length}` } });
+  }
+  return new Response(videoStream(video.bytes), { headers: { ...commonHeaders, "content-length": String(video.bytes.length) } });
+}
+
+async function cutOverLegacyBusinessRead(req: NextRequest, path: string): Promise<Response | null> {
+  if (req.method !== "GET") return null;
+  const targets: Record<string, string> = {
+    "auth/me": "auth/me", "me": "auth/me",
+    "supplier/session": "compat/supplier/session", "supplier/products": "compat/supplier/products",
+    "supplier/orders": "compat/supplier/orders", "supplier/rfqs": "compat/supplier/rfqs",
+    "supplier/tickets": "compat/supplier/tickets", "wholesale/account": "compat/wholesale/account",
+    "wholesale/products": "compat/wholesale/products", "wholesale/orders": "compat/wholesale/orders",
+    "admin/accounts": "compat/admin/accounts", "admin/supplier-applications": "compat/admin/supplier-applications",
+    "admin/audit-logs": "compat/admin/audit-logs", "admin/suppliers": "compat/admin/suppliers",
+    "admin/catalog": "compat/admin/catalog", "admin/purchase-orders": "compat/admin/purchase-orders",
+    "admin/orders": "compat/admin/orders", "admin/rfqs": "compat/admin/rfqs",
+    "admin/tickets": "compat/admin/tickets", "site/settings": "compat/storefront/site",
+    "site/hero-video": "compat/storefront/site", "site/banner-video": "compat/storefront/site",
+  };
+  const target = targets[path];
+  if (!target) return null;
+  const query = new URL(req.url).search;
+  let result: { status: number; data: any };
+  try {
+    result = await forwardToNest(req, "GET", `${target}${query}`, undefined) as any;
+  } catch {
+    throw new HttpError(503, "CANONICAL_API_UNAVAILABLE", "سرویس اصلی در دسترس نیست");
+  }
+  if (result.status < 200 || result.status >= 300) return response(req, result.data, result.status);
+  if (path === "auth/me") return response(req, result.data.user ?? result.data);
+  if (path === "me") {
+    const user = result.data.user ?? result.data;
+    return response(req, { id: user.id, name: user.name ?? user.email.split("@")[0], phone: user.phone ?? "—", email: user.email });
+  }
+  if (path === "site/settings") {
+    const settings = withoutEmbeddedVideos(result.data.settings ?? null);
+    return response(req, { settings, updatedAt: result.data.updatedAt ?? null });
+  }
+  if (path === "site/hero-video" || path === "site/banner-video") {
+    const isBanner = path === "site/banner-video";
+    const dedicated = isBanner ? result.data.bannerVideo?.dataUrl : result.data.heroVideo?.dataUrl;
+    const embedded = isBanner ? embeddedBannerVideo(result.data.settings) : embeddedHeroVideo(result.data.settings);
+    return compatibilityVideoResponse(req, dedicated ?? embedded);
+  }
+  return response(req, result.data);
+}
+
 async function cutOverLegacyBusinessWrite(req: NextRequest, path: string): Promise<Response | null> {
   const method = req.method.toUpperCase();
   if (["GET", "HEAD", "OPTIONS"].includes(method)) return null;
@@ -1728,6 +1789,8 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   if (path.startsWith("try-on/")) {
     return handleTryOn(req, path);
   }
+  const canonicalRead = await cutOverLegacyBusinessRead(req, path);
+  if (canonicalRead) return canonicalRead;
   const canonicalWrite = await cutOverLegacyBusinessWrite(req, path);
   if (canonicalWrite) return canonicalWrite;
   if (path === "health") {

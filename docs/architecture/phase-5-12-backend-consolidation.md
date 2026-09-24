@@ -5,9 +5,26 @@ in [phase-5-12-backend-consolidation-legacy-cutover.md](phase-5-12-backend-conso
 and the executable-data companion is
 [phase-5-12-route-inventory.json](phase-5-12-route-inventory.json).
 
-Checkpoint A performs the first safe writer cutover only. Existing reads and
-writers without an exact canonical command contract are classified rather
-than rushed into invented endpoints. Phase 5.12-B has not started.
+Checkpoint A performed the first safe writer cutover. Checkpoint B moved all
+20 legacy business reads behind authenticated Nest projections while retaining
+their compatibility paths and response shapes. Writers without an exact
+canonical command contract remain classified rather than rushed into invented
+endpoints. Phase 5.12-C has not started.
+
+## Checkpoint B read convergence
+
+- Auth and customer profile reads use canonical Auth.
+- Supplier session, products, orders, RFQs and support reads derive the tenant
+  from canonical membership.
+- VIP account, catalog and order reads derive the account from the session.
+- Admin business lists are protected by the existing Admin role boundary.
+- Storefront settings and video reads cross the public Nest projection while
+  retaining the legacy streaming contract.
+- Nest outage returns `503 CANONICAL_API_UNAVAILABLE`; no migrated read uses a
+  Next SQL fallback.
+
+The route inventory now has zero `LEGACY_READ` entries and retains all 11
+`LEGACY_WRITE` entries for later Phase 5.12 work.
 
 ## Local worktree classification
 

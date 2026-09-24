@@ -17,6 +17,13 @@ import { AdminNotesController } from "./admin-notes.controller";
 import { AdminRbacController } from "./admin-rbac.controller";
 import { AdminOrderFlagsController } from "./admin-order-flags.controller";
 import { ControlTowerController } from "./control-tower.controller";
+import {
+  AccountReadCutoverController,
+  AdminReadCutoverController,
+  StorefrontReadCutoverController,
+  SupplierReadCutoverController,
+  WholesaleReadCutoverController,
+} from "../../database/legacy-read-cutover.controller";
 
 @Module({
   imports: [
@@ -31,6 +38,11 @@ import { ControlTowerController } from "./control-tower.controller";
     AdminRbacController,
     AdminOrderFlagsController,
     ControlTowerController,
+    AccountReadCutoverController,
+    AdminReadCutoverController,
+    StorefrontReadCutoverController,
+    SupplierReadCutoverController,
+    WholesaleReadCutoverController,
   ],
   providers: [
     AdminRbacService,
