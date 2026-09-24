@@ -14,6 +14,7 @@ import { toApiJson } from "../../common/api-json";
 import { SettlementService } from "./settlement.service";
 import { SettlementDomainError } from "./settlement.errors";
 import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
+import { MAX_MONEY } from "@kolbe/shared";
 
 @Controller("admin/settlement")
 export class AdminSettlementController {
@@ -31,6 +32,18 @@ export class AdminSettlementController {
       );
     }
     return key;
+  }
+
+  private optionalMoney(value: unknown, field: string, allowZero = true): bigint | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value !== "string" || !/^\d{1,16}$/.test(value)) {
+      throw new SettlementDomainError("INVALID_AMOUNT", `${field} must be a decimal integer string`, 400);
+    }
+    const amount = BigInt(value);
+    if ((!allowZero && amount === 0n) || amount > MAX_MONEY) {
+      throw new SettlementDomainError("INVALID_AMOUNT", `${field} is outside the allowed money range`, 400);
+    }
+    return amount;
   }
 
   @Get("suppliers/:supplierId/summary")
@@ -95,7 +108,7 @@ export class AdminSettlementController {
     },
   ) {
     const idempotencyKey = this.requireIdempotencyKey(idemHeader);
-    const amount = body.amount ? BigInt(body.amount) : null;
+    const amount = this.optionalMoney(body.amount, "amount", false) ?? null;
     const hold = await this.settlement.placeHold({
       supplierId: body.supplierId,
       childOrderId: body.childOrderId ?? null,
@@ -145,7 +158,7 @@ export class AdminSettlementController {
       name: body.name,
       basis: body.basis,
       rateBps: body.rateBps,
-      fixedAmount: body.fixedAmount ? BigInt(body.fixedAmount) : undefined,
+      fixedAmount: this.optionalMoney(body.fixedAmount, "fixedAmount"),
       roundingMode: body.roundingMode,
       status: body.status,
     });
@@ -187,7 +200,7 @@ export class AdminSettlementController {
   ) {
     const economics = await this.settlement.upsertShippingEconomics({
       childOrderId: body.childOrderId,
-      shippingChargeToBuyer: body.shippingChargeToBuyer ? BigInt(body.shippingChargeToBuyer) : undefined,
+      shippingChargeToBuyer: this.optionalMoney(body.shippingChargeToBuyer, "shippingChargeToBuyer"),
       shippingEconomicRecipient: body.shippingEconomicRecipient,
       shippingCostBearer: body.shippingCostBearer,
       shippingProvider: body.shippingProvider,
