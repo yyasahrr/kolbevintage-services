@@ -55,4 +55,37 @@ describe("Phase 5.13 authorization and tenant-isolation adversarial guards", () 
     expect(members).toContain('@Roles("admin")');
     expect(members).toContain('@RequireAdminPermission("wholesale:membership:view")');
   });
+
+  // A-004 regression: the Phase 5.13-A guard wiring originally imported the
+  // whole AdminModule to make AdminPermissionGuard injectable. AdminModule also
+  // imports VipModule, so catalog/suppliers/offers/vip inherited a transitive
+  // Orders dependency (AdminModule -> VipModule -> vip.service.ts reads
+  // `wholesale_order_request`), which broke the Phase 3.10 architecture-freeze
+  // guard for `catalog`. The narrow AdminRbacModule is the only sanctioned
+  // import for a consumer that needs just the RBAC guard.
+  it("wires the granular RBAC guard through AdminRbacModule, never through AdminModule", () => {
+    const rbacModule = source("admin/admin-rbac.module.ts");
+    expect(rbacModule).toContain("export class AdminRbacModule");
+    expect(rbacModule).toContain("providers: [AdminRbacService, AdminPermissionGuard]");
+    expect(rbacModule).toContain("exports: [AdminRbacService, AdminPermissionGuard]");
+
+    const guardedModules = [
+      "catalog/catalog.module.ts",
+      "suppliers/suppliers.module.ts",
+      "offers/offers.module.ts",
+      "vip/vip.module.ts",
+    ];
+    for (const file of guardedModules) {
+      const code = source(file);
+      expect(code, `${file} must import AdminRbacModule`).toContain('from "../admin/admin-rbac.module"');
+      expect(code, `${file} must not import the whole AdminModule`).not.toContain('from "../admin/admin.module"');
+    }
+
+    // AdminModule must still hand the RBAC surface to its own consumers
+    // (cms, analytics, app.module, ...) instead of silently dropping it.
+    const adminModule = source("admin/admin.module.ts");
+    expect(adminModule).toContain("AdminRbacModule,");
+    expect(adminModule).toContain("exports: [");
+    expect(adminModule.slice(adminModule.indexOf("exports: ["))).toContain("AdminRbacModule");
+  });
 });

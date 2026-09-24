@@ -7,10 +7,11 @@ import { SuppliersModule } from "../suppliers/suppliers.module";
 import { ComplianceModule } from "../compliance/compliance.module";
 import { CatalogModule } from "../catalog/catalog.module";
 import { AuditModule } from "../audit/audit.module";
-import { AdminModule } from "../admin/admin.module";
+// Phase 5.13-A: granular admin RBAC guard only — see catalog.module.ts.
+import { AdminRbacModule } from "../admin/admin-rbac.module";
 
 @Module({
-  imports: [DatabaseModule, SuppliersModule, ComplianceModule, CatalogModule, AuditModule, AdminModule],
+  imports: [DatabaseModule, SuppliersModule, ComplianceModule, CatalogModule, AuditModule, AdminRbacModule],
   controllers: [OffersController, SupplierOfferComplianceController],
   providers: [OffersService],
   exports: [OffersService],

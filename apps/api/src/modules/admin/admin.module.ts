@@ -2,12 +2,11 @@ import { forwardRef, Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module";
 import { AuditModule } from "../audit/audit.module";
 import { VipModule } from "../vip/vip.module";
-import { AdminRbacService } from "./admin-rbac.service";
+import { AdminRbacModule } from "./admin-rbac.module";
 import { BusinessSettingsService } from "./business-settings.service";
 import { InternalNotesService } from "./internal-notes.service";
 import { AdminApprovalsService } from "./admin-approvals.service";
 import { ControlTowerService } from "./control-tower.service";
-import { AdminPermissionGuard } from "./admin-rbac.guard";
 import { AdminTotpService } from "./admin-totp.service";
 import { AdminTotpGuard } from "./admin-totp.guard";
 import { AdminOrderFlagsService } from "./admin-order-flags.service";
@@ -29,6 +28,11 @@ import {
   imports: [
     DatabaseModule,
     AuditModule,
+    // Phase 5.13-A — the granular RBAC surface is a separate module so that
+    // consumers needing only the guard do not inherit the admin orchestration
+    // graph (VipModule and everything it reads). Re-exported below so the
+    // injectable graph of AdminModule is unchanged for existing consumers.
+    AdminRbacModule,
     forwardRef(() => VipModule),
   ],
   controllers: [
@@ -45,23 +49,22 @@ import {
     WholesaleReadCutoverController,
   ],
   providers: [
-    AdminRbacService,
     BusinessSettingsService,
     InternalNotesService,
     AdminApprovalsService,
     ControlTowerService,
-    AdminPermissionGuard,
     AdminTotpService,
     AdminTotpGuard,
     AdminOrderFlagsService,
   ],
   exports: [
-    AdminRbacService,
+    // Re-exports AdminRbacService and AdminPermissionGuard, so `AdminModule`
+    // consumers keep resolving them exactly as before.
+    AdminRbacModule,
     BusinessSettingsService,
     InternalNotesService,
     AdminApprovalsService,
     ControlTowerService,
-    AdminPermissionGuard,
     AdminTotpService,
     AdminTotpGuard,
     AdminOrderFlagsService,

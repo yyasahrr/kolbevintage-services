@@ -12,10 +12,11 @@ import { AuditModule } from "../audit/audit.module";
 import { SuppliersModule } from "../suppliers/suppliers.module";
 import { SupplierTeamModule } from "../supplier-team/supplier-team.module";
 import { AuthModule } from "../auth/auth.module";
-import { AdminModule } from "../admin/admin.module";
+// Phase 5.13-A: granular admin RBAC guard only — see catalog.module.ts.
+import { AdminRbacModule } from "../admin/admin-rbac.module";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, forwardRef(() => SuppliersModule), SupplierTeamModule, AuthModule, forwardRef(() => AdminModule)],
+  imports: [DatabaseModule, AuditModule, forwardRef(() => SuppliersModule), SupplierTeamModule, AuthModule, AdminRbacModule],
   controllers: [
     VipController,
     WholesaleRequestsController,
