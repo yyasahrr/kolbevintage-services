@@ -776,14 +776,14 @@ describe("Phase 4.3.1 — Hardening", () => {
     });
     expect(result.order.id).toBeDefined();
 
-    // Try to mark again with wrong orderId — should fail link mismatch or already ordered
+    // Try to mark again — the request state guard remains owned by VIP.
     failed = false;
     try {
       const dbForMark = drizzle(pool, { schema: schema as any });
-      await vipService.markRequestOrdered(reqId, 6, dbForMark as any, "fake_order_id");
+      await vipService.markRequestOrdered(reqId, 6, dbForMark as any);
     } catch (e: any) {
       failed = true;
-      expect(["REQUEST_LINK_MISSING", "REQUEST_LINK_MISMATCH", "REQUEST_NOT_ACCEPTED", "REQUEST_VERSION_CONFLICT"]).toContain(e.code);
+      expect(["REQUEST_NOT_ACCEPTED", "REQUEST_VERSION_CONFLICT"]).toContain(e.code);
     }
     expect(failed).toBe(true);
 

@@ -13,7 +13,6 @@ import {
   supplier,
   productVariant,
   wholesalePricingTier,
-  wholesaleOrderRequest,
   wholesaleRequestRevision,
   commandIdempotency,
 } from "@kolbe/database";
@@ -609,11 +608,6 @@ export class VipService {
       throw new CatalogDomainError("REQUEST_ACCEPTANCE_EXPIRED", "اعتبار پذیرش منقضی شده است");
     }
 
-    const [linked] = await db.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.requestId, requestId)).limit(1);
-    if (linked) {
-      throw new CatalogDomainError("REQUEST_ALREADY_ORDERED", "درخواست قبلاً به سفارش تبدیل شده است");
-    }
-
     const expectedHash = hashAcceptedTerms(existing.acceptedTermsSnapshot as any);
     if (expectedHash !== existing.acceptedTermsHash) {
       throw new CatalogDomainError("REQUEST_HASH_MISMATCH", "هش اسنپ‌شات نامعتبر است");
@@ -644,7 +638,7 @@ export class VipService {
     return new Date(nowVal);
   }
 
-  async markRequestOrdered(requestId: string, expectedVersion: number, executor: DbOrTx, orderId?: string) {
+  async markRequestOrdered(requestId: string, expectedVersion: number, executor: DbOrTx) {
     const db = this.getExecutor(executor);
 
     const lockResult = await (db as any).execute(sql`SELECT * FROM wholesale_request WHERE id = ${requestId} FOR UPDATE`);
@@ -674,22 +668,6 @@ export class VipService {
     const recomputed = hashAcceptedTerms(existing.acceptedTermsSnapshot as any);
     if (recomputed !== existing.acceptedTermsHash) {
       throw new CatalogDomainError("ACCEPTED_TERMS_HASH_MISMATCH", "هش اسنپ‌شات نامعتبر است");
-    }
-
-    if (orderId) {
-      const [link] = await db.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.requestId, requestId)).limit(1);
-      if (!link) {
-        throw new CatalogDomainError("REQUEST_LINK_MISSING", `Request ${requestId} link missing for order ${orderId}`);
-      }
-      if (link.orderId !== orderId) {
-        throw new CatalogDomainError("REQUEST_LINK_MISMATCH", `Request ${requestId} linked to different order ${link.orderId} != ${orderId}`);
-      }
-      if (link.requestVersion !== existing.version) {
-        throw new CatalogDomainError("REQUEST_VERSION_CONFLICT", `Link version ${link.requestVersion} != locked version ${existing.version}`);
-      }
-      if (link.acceptedTermsHash !== existing.acceptedTermsHash) {
-        throw new CatalogDomainError("ACCEPTED_TERMS_HASH_MISMATCH", `Link hash mismatch`);
-      }
     }
 
     const dbNow = await this.getDbNow(db);

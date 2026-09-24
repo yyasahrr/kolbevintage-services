@@ -464,7 +464,7 @@ export class OrdersService {
         }
         const items = await tx.select().from(wholesaleOrderItem).where(eq(wholesaleOrderItem.orderId, existingOrder.id));
         const children = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, existingOrder.id));
-        const links = await tx.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.orderId, existingOrder.id));
+        const links = await this.repository.findOrderRequestLinksByOrderId(existingOrder.id, tx);
         return { order: existingOrder, items, children, links, replayed: true };
       }
 
@@ -526,7 +526,7 @@ export class OrdersService {
         if (req.acceptance_expires_at && new Date(req.acceptance_expires_at).getTime() <= dbNow.getTime()) {
           throw new OrderDomainError("REQUEST_ACCEPTANCE_EXPIRED", `Request ${req.id} acceptance expired`);
         }
-        const [linked] = await tx.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.requestId, req.id)).limit(1);
+        const linked = await this.repository.findOrderRequestLinkByRequestId(req.id, tx);
         if (linked) {
           throw new OrderDomainError("REQUEST_ALREADY_CONVERTED", `Request ${req.id} already converted to order ${linked.orderId}`);
         }
@@ -657,7 +657,7 @@ export class OrdersService {
               }
               const items = await tx.select().from(wholesaleOrderItem).where(eq(wholesaleOrderItem.orderId, existing.id));
               const children = await tx.select().from(purchaseOrder).where(eq(purchaseOrder.wholesaleOrderId, existing.id));
-              const links = await tx.select().from(wholesaleOrderRequest).where(eq(wholesaleOrderRequest.orderId, existing.id));
+              const links = await this.repository.findOrderRequestLinksByOrderId(existing.id, tx);
               return { order: existing, items, children, links, replayed: true };
             }
             throw new OrderDomainError("IDEMPOTENCY_KEY_REUSED", `Idempotency-Key ${input.idempotencyKey} conflict`);
@@ -916,7 +916,20 @@ export class OrdersService {
 
       // Mark requests ordered with orderId for integrity check
       for (const req of lockedRequests) {
-        await this.vipService.markRequestOrdered(req.id, req.version, tx, parentOrder.id);
+        const link = await this.repository.findOrderRequestLinkByRequestId(req.id, tx);
+        if (!link) {
+          throw new OrderDomainError("REQUEST_LINK_MISSING", `Request ${req.id} link missing for order ${parentOrder.id}`);
+        }
+        if (link.orderId !== parentOrder.id) {
+          throw new OrderDomainError("REQUEST_LINK_MISMATCH", `Request ${req.id} linked to different order ${link.orderId} != ${parentOrder.id}`);
+        }
+        if (link.requestVersion !== req.version) {
+          throw new OrderDomainError("REQUEST_VERSION_CONFLICT", `Link version ${link.requestVersion} != locked version ${req.version}`);
+        }
+        if (link.acceptedTermsHash !== req.accepted_terms_hash) {
+          throw new OrderDomainError("ACCEPTED_TERMS_HASH_MISMATCH", `Link hash mismatch for request ${req.id}`);
+        }
+        await this.vipService.markRequestOrdered(req.id, req.version, tx);
       }
 
       await this.appendStatusHistory(
