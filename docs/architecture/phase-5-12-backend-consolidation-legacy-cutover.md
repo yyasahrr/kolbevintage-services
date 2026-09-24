@@ -1,6 +1,6 @@
 # Phase 5.12 — Backend Consolidation / Legacy Cutover
 
-**Status:** Checkpoints A, B, and C implemented; final CI closeout pending
+**Status:** Complete — Checkpoints A, B, and C passed CI
 
 **Start SHA:** `7383aedebbb100ae26fe154c4794f9bce3404f02`
 
