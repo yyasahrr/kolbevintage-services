@@ -421,6 +421,7 @@ describe("Phase 5.2 Checkpoint B — Conversation, Internal Notes, Isolation & A
     const foundMsg = messages.find((m) => m.id === msg.id);
     expect(foundMsg?.attachments.length).toBe(1);
     expect(foundMsg?.attachments[0].id).toBe(validPdf.id);
+    expect(foundMsg?.attachments[0]).not.toHaveProperty("objectKey");
 
     // 4. Reject dangerous MIME type
     await expect(

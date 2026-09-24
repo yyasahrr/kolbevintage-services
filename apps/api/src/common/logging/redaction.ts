@@ -30,7 +30,7 @@ const SENSITIVE_KEYS = new Set([
   "accesskey",
   "certificate",
   "refreshtoken",
-]);
+].map((key) => key.replace(/[-_]/g, "")));
 
 /**
  * ماسک‌کردن رشته‌های حساس مالی و هویتی.
@@ -108,12 +108,16 @@ export function redactSensitive<T = unknown>(data: T, depth = 0): T {
     return data.map((item) => redactSensitive(item, depth + 1)) as unknown as T;
   }
 
-  // اگر شیء از نوع Error باشد
+  if (data instanceof Date) {
+    return data;
+  }
+
+  // Error fields can contain request payload fragments and provider credentials.
   if (data instanceof Error) {
     return {
       name: data.name,
-      message: data.message,
-      stack: data.stack,
+      message: redactSensitive(data.message, depth + 1),
+      stack: data.stack ? redactSensitive(data.stack, depth + 1) : undefined,
     } as unknown as T;
   }
 

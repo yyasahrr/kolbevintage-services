@@ -14,6 +14,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { auditLog, type KolbeDatabase } from "@kolbe/database";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { KOLBE_DB } from "../../database/database.module";
+import { redactSensitive } from "../../common/logging/redaction";
 
 export type AuditEntry = {
   actorId: string | null;
@@ -58,9 +59,9 @@ export class AuditService {
       action: entry.action,
       entityType: entry.entityType,
       entityId: entry.entityId ?? null,
-      before: entry.before ?? null,
-      after: entry.after ?? null,
-      metadata: entry.metadata ?? null,
+      before: entry.before == null ? null : redactSensitive(entry.before),
+      after: entry.after == null ? null : redactSensitive(entry.after),
+      metadata: entry.metadata == null ? null : redactSensitive(entry.metadata),
       requestId: entry.requestId ?? null,
     });
     return id;

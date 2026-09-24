@@ -261,7 +261,19 @@ export class SupportConversationService {
 
     return messages.map((m) => ({
       ...m,
-      attachments: attachmentsByMessageId.get(m.id) ?? [],
+      attachments: (attachmentsByMessageId.get(m.id) ?? []).map((attachment) => ({
+        id: attachment.id,
+        caseId: attachment.caseId,
+        messageId: attachment.messageId,
+        uploaderType: attachment.uploaderType,
+        uploaderId: attachment.uploaderId,
+        originalFilename: attachment.originalFilename,
+        contentType: attachment.contentType,
+        sizeBytes: attachment.sizeBytes,
+        visibility: attachment.visibility,
+        scanStatus: attachment.scanStatus,
+        createdAt: attachment.createdAt,
+      })),
     }));
   }
 
