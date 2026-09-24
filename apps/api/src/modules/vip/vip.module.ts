@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { DatabaseModule } from "../../database/database.module";
 import { VipService } from "./vip.service";
 import { WholesalePlanService } from "./wholesale-plan.service";
@@ -12,9 +12,10 @@ import { AuditModule } from "../audit/audit.module";
 import { SuppliersModule } from "../suppliers/suppliers.module";
 import { SupplierTeamModule } from "../supplier-team/supplier-team.module";
 import { AuthModule } from "../auth/auth.module";
+import { AdminModule } from "../admin/admin.module";
 
 @Module({
-  imports: [DatabaseModule, AuditModule, SuppliersModule, SupplierTeamModule, AuthModule],
+  imports: [DatabaseModule, AuditModule, forwardRef(() => SuppliersModule), SupplierTeamModule, AuthModule, forwardRef(() => AdminModule)],
   controllers: [
     VipController,
     WholesaleRequestsController,

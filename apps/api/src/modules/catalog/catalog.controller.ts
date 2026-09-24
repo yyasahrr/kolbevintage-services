@@ -3,6 +3,7 @@ import { CatalogService } from "./catalog.service";
 import { Public, CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { DomainError } from "@kolbe/shared";
+import { AdminPermissionGuard, RequireAdminPermission } from "../admin/admin-rbac.guard";
 
 @Controller("catalog")
 export class CatalogController {
@@ -76,6 +77,8 @@ export class CatalogController {
 
   @Post("products")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async createProduct(
     @CurrentUser() claims: Claims,
     @Body() body: { name: string; slug: string; description?: string; brandId?: string; categoryId?: string; ownerType: "KOLBE" | "SUPPLIER"; isKolbeExclusive: boolean },
@@ -102,18 +105,24 @@ export class CatalogController {
 
   @Post("categories")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async createCategory(@Body() body: { slug: string; name: string; parentId?: string; attributesSchema?: Record<string, any> }) {
     return this.catalog.createCategory(body);
   }
 
   @Post("brands/:id/approve")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async approveBrand(@Param("id") id: string) {
     return this.catalog.approveBrand(id);
   }
 
   @Post("products/:id/status")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async transitionProduct(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: { status: "draft" | "pending_review" | "approved" | "published" | "suspended" | "archived" }) {
     return this.catalog.transitionProductStatus(id, body.status, claims.role as any);
   }
@@ -160,6 +169,8 @@ export class CatalogController {
   @Post("compat/products/:id/status")
   @HttpCode(200)
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async moderateLegacyProduct(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: any) {
     const map: Record<string, "draft" | "pending_review" | "approved" | "published" | "suspended" | "archived"> = {
       draft: "draft", submitted: "pending_review", approved: "approved", published: "published",
@@ -173,12 +184,16 @@ export class CatalogController {
 
   @Post("supplier-submissions/:id/approve-new")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async approveSubmissionAsNew(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { note?: string }) {
     return this.catalog.approveSubmissionAsNew(id, claims.sub, body.note);
   }
 
   @Post("supplier-submissions/:id/approve-existing")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async approveSubmissionAsExisting(
     @CurrentUser() claims: Claims, @Param("id") id: string,
     @Body() body: { productId: string; note?: string },
@@ -188,6 +203,8 @@ export class CatalogController {
 
   @Post("supplier-submissions/:id/reject")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async rejectSubmission(@CurrentUser() claims: Claims, @Param("id") id: string, @Body() body: { note: string }) {
     return this.catalog.rejectSubmission(id, claims.sub, body.note);
   }

@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Param, HttpCode, Inject } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, HttpCode, Inject, UseGuards } from "@nestjs/common";
 import { OffersService } from "./offers.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
+import { AdminPermissionGuard, RequireAdminPermission } from "../admin/admin-rbac.guard";
 
 @Controller("offers")
 export class OffersController {
@@ -46,11 +47,15 @@ export class OffersController {
 
   @Post("compat/rfqs")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("wholesale:approval:create")
   async legacyRfq(@CurrentUser() claims: Claims, @Body() body: any) { return this.offers.createLegacyRfq(body, claims.sub); }
 
   @Post("compat/bulk-price")
   @HttpCode(200)
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
   async legacyBulkPrice(@CurrentUser() claims: Claims, @Body() body: any) { return this.offers.bulkPrice(body, claims.sub); }
 
   @Get("product/:productId")

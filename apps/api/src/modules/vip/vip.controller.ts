@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Param, HttpCode, Inject } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, HttpCode, Inject, UseGuards } from "@nestjs/common";
 import { VipService } from "./vip.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
+import { AdminPermissionGuard, RequireAdminPermission } from "../admin/admin-rbac.guard";
 
 @Controller("vip")
 export class VipController {
@@ -25,6 +26,8 @@ export class VipController {
   @Post("compat/accounts/:id/status")
   @HttpCode(200)
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("wholesale:membership:manage")
   async legacyDecision(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: any) { return this.vip.decideLegacyAccount(id, body, claims.sub); }
 
   @Post("requests")
@@ -38,6 +41,8 @@ export class VipController {
 
   @Post("subscriptions/:id/activate")
   @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("wholesale:membership:manage")
   async activate(@CurrentUser() claims: Claims, @Param("id") id: string) {
     return this.vip.activateSubscription(id, claims.sub);
   }
