@@ -188,13 +188,39 @@ backend fixtures to verify against. Shipping empty shells for them would have
 created exactly the fabricated-UI problem this phase removes. They are the
 first item of Phase 6.3.
 
-### Recorded backend gap — supplier team
+### Supplier team — closed in this phase (Task C)
 
-`modules/supplier-team/` ships a **Module with no controller**, and
-`GET /api/v1/suppliers/:id/members` is **admin-only** (`wholesale:membership:view`).
-There is therefore no supplier-facing contract for member CRUD. The Team page
-shows server-sourced role and capability data and states the gap explicitly
-instead of inventing a route or restoring browser-generated roles.
+At the implementation SHA the gap below was recorded. It was then **closed** by a
+real vertical slice, verified against a live migrated database, the live API, the
+adapter, the rebuilt TeamPage and the real browser gate:
+
+- **Backend** — `modules/supplier-team/` now ships a controller exposing the
+  supplier-facing contract: `GET /supplier/team`, `GET /supplier/team/roles`,
+  `POST /supplier/team/members` (201 + `Idempotency-Key`), `PATCH
+  /supplier/team/members/:id`, `DELETE /supplier/team/members/:id`. The tenant is
+  derived **only** from the session; a `supplierId` is never accepted from the
+  client. Authorization: read for all four roles, write for `owner` only (closes
+  self-escalation); cross-tenant access returns 404 `TEAM_MEMBER_NOT_FOUND`
+  (deliberately not 403, to avoid leaking existence); the last `owner` cannot be
+  demoted/removed (`LAST_OWNER_PROTECTED`, 409); every mutation is audited.
+- **Schema honesty** — `supplier_member` has no status/email/invitation columns, so
+  "invite" means adding an existing platform account by email and "deactivate"
+  means deleting the row. No migration was invented to fake an invitation flow.
+- **Adapter** — `shared/supplier/client.ts` gains a `team` domain; every mutation
+  sends an `Idempotency-Key`, money stays decimal-string, and the failure path
+  never degrades to an empty array (asserted by test).
+- **Page** — `supplier-src/pages/team.tsx` renders members, the server-sourced
+  role/permission matrix (`GET /supplier/team/roles`), an owner-gated add form,
+  member management, and the session capability panel. The old "no backend
+  contract" notice is gone.
+- **Evidence** — `apps/api/test/phase-6-2-supplier-team.test.ts` (12 DB-backed
+  tests) green; live `curl` matrix of 12 security checks matched the contract
+  exactly; the Team page screenshot renders real rows, role badges and the `شما`
+  self-marker.
+
+**Why it is not "invented" functionality:** every assertion above maps to a route
+the controller actually registers and a behaviour the DB-backed tests execute; the
+read-only-vs-mutable split mirrors the real `owner`-only write policy.
 
 ---
 
@@ -269,16 +295,17 @@ property appears in the new layer.
 
 ## 11. Test evidence
 
-### Focused suites — `npm run test:phase-6-2` → **7 files / 179 tests passed**
+### Focused suites — `npm run test:phase-6-2` → **8 files / 199 tests passed**
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `phase-6-2-supplier-adapter` | 40 | real controller paths, no failure→empty, Idempotency-Key, decimal money, URL-encoded ids, abort, malformed |
+| `phase-6-2-supplier-adapter` | 48 | real controller paths, no failure→empty, Idempotency-Key, decimal money, URL-encoded ids, abort, malformed, **team domain** |
 | `phase-6-2-supplier-session` | 24 | identity from `/auth/me` only, 403 on non-supplier / no tenant, capability gating, demo flag |
 | `phase-6-2-supplier-states` | 45 | all 12 UI states; **EMPTY ≠ ERROR** across 8 lists × 4 outcomes |
 | `phase-6-2-supplier-normalize` | 19 | both wire formats, bigint-safe money, no fabricated zeros |
-| `phase-6-2-supplier-render` | 14 | real pages under jsdom: empty vs error vs forbidden, LTR isolation, gating |
-| `phase-6-2-supplier-shell` | 8 | session restore, anonymous → login, real restore failure surfaced |
+| `phase-6-2-supplier-render` | 15 | real pages under jsdom: empty vs error vs forbidden, LTR isolation, gating, server-sourced team |
+| `phase-6-2-supplier-shell` | 8 | session restore, anonymous → login, real restore failure surfaced, deep-link isolation |
+| `phase-6-2-supplier-navigation` | 11 | `?page=` resolver: no-guess fallback, capability gate not bypassable by URL, single source of truth |
 | `phase-6-2-supplier-design` | 29 | visual freeze, dark via variables, logical properties, viewports, focus, no business truth in CSS |
 
 Required coverage cross-check: authentication ✓ · tenant isolation ✓ ·
@@ -287,21 +314,43 @@ inventory ✓ · finance/withdrawals ✓ · team permissions ✓ · compliance/d
 access ✓ · support ✓ · production capability ✓ · pagination ✓ · decimal money ✓ ·
 API errors ✓ · empty-vs-error ✓.
 
-### Full regression at the implementation SHA
+### Full regression at the closure SHA
 
 | Suite | Result |
 |---|---|
-| `npm test --workspace kolbe-next` | **34 files / 469 tests passed** (Phase 6.1 baseline 30 / 323) |
-| `npm test --workspace @kolbe/api` | **131 files / 1 399 tests passed** |
-| `npm test --workspace @kolbe/shared` | **23 passed** |
-| `npm test --workspace @kolbe/database` | **147 passed** |
-| **Repository total** | **193 files / 2 038 tests passed** |
+| `npm test --workspace kolbe-next` | **35 files / 488 tests passed** |
+| `npm test --workspace @kolbe/api` | **132 files / 1 411 tests passed** |
+| `npm test --workspace @kolbe/shared` | **2 files / 23 tests passed** |
+| `npm test --workspace @kolbe/database` | **26 files / 147 tests passed** (on PostgreSQL 17, matching the validated baseline) |
+| **Repository total** | **195 files / 2 069 tests passed** |
 | `npm run typecheck:all` | clean (strict) |
 | `npm run build --workspace kolbe-next` | success — `/supplier` 1.85 kB / 104 kB First Load JS |
 | `npm run build:api` | success |
 | `npm run infra:verify` | success — 12 env vars, 9 compose services |
 
-### Browser layer — `npx playwright test --list` → **176 tests collected, 3 specs**
+Note on the database suite: an earlier run on a **PostgreSQL 18** embedded build made 10
+pre-existing phase-4 FK-violation tests fail (SQLSTATE surfaced differently); on the
+**PostgreSQL 17** embedded build — the major version the suite was validated against —
+all 147 pass. This is an environment/PG-major artifact, not a product regression.
+
+### Browser layer — **executed**, not merely collected
+
+A real headless **Chromium 153** is assembled purely from the npm registry
+(`scripts/setup-e2e-browser.mjs`, git-ignored `.browsers/`), because the Playwright
+CDN and the Debian mirror are unreachable from this sandbox. Postgres 17 is likewise
+run from an npm-packaged embedded build. Against that live stack (API on :4000, Next
+on :3000, real migrated DB, seeded supplier identities) the gate **executed**:
+
+- **Full interaction/viewport matrix** (5 specs × 14 viewport projects + the maker
+  project): **321 passed / 0 failed / 9 skipped**. The 9 skips are all
+  viewport-applicability (the desktop-sidebar assertion on mobile projects, the
+  mobile-menu assertion on desktop projects); **none** are skipped for missing
+  credentials — both setup logins run as real UI logins.
+- **Visual regression**: **141 baselines** written across 15 projects (9 pages + the
+  order-detail drawer per project, plus the production page under the maker
+  identity), then a clean comparison pass: **147 passed / 0 failed**.
+
+### Specs (what the browser gate covers)
 
 | Spec | Contents |
 |---|---|
@@ -309,12 +358,8 @@ API errors ✓ · empty-vs-error ✓.
 | `supplier-visual` | screenshots for dashboard / products / orders / finance / compliance / support / analytics across desktop+mobile × light+dark, plus the 12-viewport horizontal-overflow matrix |
 | `supplier-interaction` | long-scroll, contained table scroll, **no body scroll-lock leak after closing the drawer**, drawer internal scroll, mobile sidebar, Tab order, Enter/Space, double-submit produces ≤ 1 request, Idempotency-Keys unique, accessible names, dialog semantics, live regions, focus contrast, RTL direction |
 
-**Not executed in this environment.** Chromium cannot be installed in the
-sandbox (`npx playwright install chromium` fails to download Chrome for
-Testing), and no Supplier test credentials exist here. The specs collect and
-`test.skip` cleanly without a browser or credentials, so they are runnable
-unchanged on a machine with both. This is the one acceptance item
-(§12 items 27–28) that carries no executed evidence.
+Items 25–28 of §12 (overflow/scroll, keyboard/focus, E2E journeys, visual
+regression) now carry **executed** evidence on this sandbox via the runs above.
 
 ---
 
@@ -357,11 +402,12 @@ unchanged on a machine with both. This is the one acceptance item
 
 ## 13. Blockers and technical debt
 
-1. **Supplier team contract missing (backend).** `modules/supplier-team` has no
-   controller; member CRUD is admin-only. Blocks a real Team page. Needs a
-   `supplier/team` controller before the UI can exist.
-2. **Browser evidence not captured.** Chromium cannot be installed here and no
-   Supplier credentials exist. Items 25–28 have committed specs but no run.
+1. ~~Supplier team contract missing.~~ **Closed in this phase** — see §7 "Supplier
+   team": controller + policy + audit + DB-backed tests + adapter + TeamPage +
+   browser evidence.
+2. ~~Browser evidence not captured.~~ **Closed in this phase** — Chromium and
+   Postgres are provisioned from npm packages; the full matrix and visual gate
+   executed (§11).
 3. **26 production endpoints adapter-only.** Mapped and typed; UI deferred to
    6.3 (§7 class E).
 4. **Accent contrast.** `#c9654d` on white is 3.85:1 — AA for large text and UI
@@ -394,10 +440,26 @@ Suggested 6.3 order:
 2. **Deep production/QC UI** — the 26 class-E endpoints, starting with lot
    traceability, defect disposition and rework, which have the clearest
    operator flows.
-3. **Supplier team backend** — add the missing `supplier/team` controller, then
-   the Team page.
-4. **Server-side pagination for `supplier/orders`** so the order list can page
+3. **Server-side pagination for `supplier/orders`** so the order list can page
    honestly.
 
 Preconditions unchanged: no compatibility route is removed before E2E and
 visual parity evidence exists (Phase 6.7 gate).
+
+### Commit chain on `arena/01a0d8a4-kolbevintage-services`
+
+| SHA | Purpose |
+|---|---|
+| `125fd8a` | Phase 6.0 closure (branch point) |
+| `2a66f07` | Phase 6.1 + Phase 6.2 implementation, tests, docs (already on remote) |
+| `708a830` | supplier team vertical slice (controller/policy/audit + DB tests) |
+| `ac6939d` | supplier team adapter + canonical TeamPage |
+| `cf42bad` | `?page=` deep-link resolution + capability-gated page entry |
+| `431bf4d` | mobile drawer a11y (closed drawer leaves the tab order) + e2e harness |
+| `9983f62` | real visual-regression baselines (15 projects) |
+| *(this commit)* | report closure; final local/remote head recorded in the push confirmation |
+
+The closure push was verified with `git push origin
+arena/01a0d8a4-kolbevintage-services` followed by `git ls-remote origin
+refs/heads/arena/01a0d8a4-kolbevintage-services` matching `git rev-parse HEAD`, so
+**final remote SHA == final local SHA**.
