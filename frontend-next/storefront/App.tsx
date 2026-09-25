@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect } from "react";
 import { RouterProvider, useRouter } from "./router";
 import { StoreProvider } from "./store";
+import { SessionProvider } from "./session/SessionProvider";
 import { applySeo } from "./seo";
 import { initializeClientLogging } from "./lib/clientLogger";
 import { syncSiteSettingsFromServer, useSiteSettings } from "./siteSettings";
@@ -111,9 +112,11 @@ export default function App() {
 
   return (
     <StoreProvider>
-      <RouterProvider>
-        <Routes />
-      </RouterProvider>
+      <SessionProvider>
+        <RouterProvider>
+          <Routes />
+        </RouterProvider>
+      </SessionProvider>
     </StoreProvider>
   );
 }
