@@ -15,6 +15,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { ErrorCodes, isDomainError, toPublicError } from "@kolbe/shared";
@@ -28,7 +29,23 @@ export class DomainExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger("ExceptionFilter");
   private readonly errorMonitoring: ErrorMonitoringService;
 
-  constructor(errorMonitoring?: ErrorMonitoringService) {
+  /**
+   * `@Optional()` اینجا یک ضرورتِ DI است، نه تزئین.
+   *
+   * این فیلتر با `{ provide: APP_FILTER, useClass: DomainExceptionFilter }` ثبت
+   * می‌شود و `ErrorMonitoringService` در هیچ ماژولی provider نشده است. چون
+   * `apps/api/tsconfig.json` مقدار `emitDecoratorMetadata: true` دارد، متادیتای
+   * `design:paramtypes` منتشر می‌شود و Nest این پارامترِ «اختیاریِ تایپ‌اسکریپتی»
+   * را یک وابستگیِ **الزامی** تلقی می‌کند.
+   *
+   * نتیجهٔ عملی پیش از این اصلاح: بیلدِ کامپایل‌شده (`npm run dev:api` و ایمیجِ
+   * Docker که `node dist/main.js` را اجرا می‌کند) اصلاً boot نمی‌شد و با
+   * «Nest can't resolve dependencies of the DomainExceptionFilter» شکست می‌خورد؛
+   * در حالی که اجرای تست‌ها (که از سورس TS ترانسپایل می‌شوند) این را پنهان
+   * می‌کرد. `@Optional()` همان رفتارِ قبلی — ساختِ نمونهٔ محلی در غیابِ provider
+   * — را حفظ می‌کند و نیت را به Nest اعلام می‌کند.
+   */
+  constructor(@Optional() errorMonitoring?: ErrorMonitoringService) {
     this.errorMonitoring = errorMonitoring ?? new ErrorMonitoringService();
   }
 

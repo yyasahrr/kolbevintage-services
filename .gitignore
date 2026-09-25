@@ -32,3 +32,12 @@ packages/*/dist/
 
 # CMS public-media development storage (metadata remains in PostgreSQL)
 var/cms-public-media/
+
+# مرورگرِ headless که فقط برای تست‌های E2E فاز ۶.۲ آماده‌سازی می‌شود
+.browsers/
+
+# محیطِ محلیِ دروازهٔ مرورگری فاز ۶.۲ (شامل رازهای تولیدشدهٔ محلی)
+.env.e2e
+
+# کوکیِ نشستِ تست‌های مرورگری (storageState) — هرگز commit نشود
+frontend-next/e2e/.auth/
