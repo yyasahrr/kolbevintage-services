@@ -1,6 +1,6 @@
 # Phase 5.13 — Full Backend Adversarial Audit
 
-**Status:** Complete, subject to the final evidence commit CI recorded below  
+**Status:** Complete; the final evidence commit CI is verified after push
 **Branch:** `arena/01a0c5f5-kolbevintage-services`  
 **Continuation start:** `b8281caf0f77a38e8d2931283e6d22905bedea6b`
 
@@ -13,8 +13,8 @@
 | 5.13-B | `1d92a569ef740a114e54be7390602dc6d214e8b2` | `36066787677` | SUCCESS |
 | 5.13-C | `34568c1d8616232111da2678cab089f802a46d70` | `36068710219` | SUCCESS |
 | 5.13-D | `e4cc710fcb7da4d17787b52476918ab28d5d83d2` | `36107130474` | SUCCESS |
-| Closeout report | _this report commit_ | _recorded after CI_ | PENDING |
-| Final evidence | _final evidence commit_ | _recorded after CI_ | PENDING |
+| Closeout report | `3c735d9d699d24c4ad5095387f13c2005c4c007a` | `36107968149` | SUCCESS |
+| Final evidence | _this evidence commit_ | _verified after push_ | REQUIRED FINAL GATE |
 
 ## Finding register
 
@@ -39,7 +39,7 @@ Fresh schema verification applied all **47 migrations** to both the verification
 - **461 foreign keys**
 - **589 CHECK constraints**
 
-The full Linux CI suite for Checkpoint D passed typecheck, builds, infrastructure verification, live-DDL database equivalence, backend tests, frontend regression tests, and the production Next build. Exact workspace totals:
+The full Linux CI suite for Checkpoint D (`36107130474`) passed typecheck, builds, infrastructure verification, live-DDL database equivalence, backend tests, frontend regression tests, and the production Next build. The documentation-only closeout commit then passed the same workflow in run `36107968149`. Exact workspace totals:
 
 | Workspace | Test files | Tests |
 |---|---:|---:|
