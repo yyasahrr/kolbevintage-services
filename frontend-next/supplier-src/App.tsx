@@ -12,13 +12,15 @@
  */
 
 import {
-  Bell, ChevronDown, CircleHelp, LogOut, Menu, Moon, Search, Sun, X,
+  Bell, ChevronDown, CircleHelp, Lock, LogOut, Menu, Moon, Search, Sun, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { canUseProduction } from '@shared/permissions/capabilities'
 import { SupplierPortalProvider, useSupplierPortal } from './context'
 import { AuthShell } from './auth'
-import { NAV_GROUPS, PAGE_TITLES, type SupplierPage } from './navigation'
+import {
+  CAPABILITY_GATED_PAGES, NAV_GROUPS, PAGE_TITLES, resolveStartPage, type SupplierPage,
+} from './navigation'
 import { AnalyticsPage } from './pages/analytics'
 import { CompliancePage } from './pages/compliance'
 import { DashboardPage } from './pages/dashboard'
@@ -31,7 +33,7 @@ import { RfqsPage } from './pages/rfqs'
 import { SettingsPage } from './pages/settings'
 import { SupportPage } from './pages/support'
 import { TeamPage } from './pages/team'
-import { LoadingRows, Notice } from './ui'
+import { LoadingRows, Notice, StateBlock, TextButton } from './ui'
 
 const THEME_KEY = 'kolbe-supplier-theme'
 
@@ -94,12 +96,32 @@ function PortalRoot() {
 
 function Portal() {
   const portal = useSupplierPortal()
-  const [page, setPage] = useState<SupplierPage>('dashboard')
+  const productionEnabled = canUseProduction(portal.sessionState.capabilities)
+
+  /**
+   * نشانی یک ورودیِ واقعی است، نه فقط خروجی: `go()` مقدارِ `?page=` را می‌نویسد، پس
+   * بارگذاریِ صفحه هم باید همان را بخواند — وگرنه هر پیوندِ عمیق بی‌صدا روی داشبورد
+   * فرود می‌آید (نقصی که `go()` با نوشتنِ نشانی وعدهٔ نبودنش را داده بود).
+   *
+   * این lazy-initializer فقط سمتِ کلاینت اجرا می‌شود: `Portal` پشتِ `portal-boot` و بعد از
+   * بازیابیِ نشست mount می‌شود، پس ناهم‌سانیِ hydration نمی‌سازد و توانمندی‌ها هم از پیش
+   * بارگذاری شده‌اند (گیتِ «تولید» در اولین رندر درست تصمیم می‌گیرد).
+   */
+  const [page, setPage] = useState<SupplierPage>(() =>
+    typeof window === 'undefined'
+      ? 'dashboard'
+      : resolveStartPage(window.location.search, { productionEnabled }),
+  )
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
 
-  const productionEnabled = canUseProduction(portal.sessionState.capabilities)
+  // اگر تاریخچهٔ مرورگر عوض شد (عقب/جلو)، نشانی منبعِ حقیقت می‌ماند و از آن پیروی می‌کنیم.
+  useEffect(() => {
+    const syncFromUrl = () => setPage(resolveStartPage(window.location.search, { productionEnabled }))
+    window.addEventListener('popstate', syncFromUrl)
+    return () => window.removeEventListener('popstate', syncFromUrl)
+  }, [productionEnabled])
 
   const go = useCallback((target: SupplierPage) => {
     setPage(target)
@@ -176,14 +198,34 @@ function Portal() {
               تولید بدون فلگِ صریح فعال نمی‌شود.
             </Notice>
           ) : null}
-          <PageBody page={page} onNavigate={go} />
+          <PageBody page={page} onNavigate={go} productionEnabled={productionEnabled} />
         </div>
       </div>
     </div>
   )
 }
 
-function PageBody({ page, onNavigate }: { page: SupplierPage; onNavigate: (page: SupplierPage) => void }) {
+function PageBody({
+  page, onNavigate, productionEnabled,
+}: {
+  page: SupplierPage; onNavigate: (page: SupplierPage) => void; productionEnabled: boolean
+}) {
+  /**
+   * گیتِ توانمندی فقط «پنهان کردنِ پیوند» نیست. اگر صفحهٔ گیت‌شده از هر مسیرِ دیگری
+   * خواسته شود (میان‌برِ داشبورد، نشانیِ دستی، تاریخچهٔ کهنه)، باید به وضعیتِ صریحِ
+   * «بدونِ دسترسی» برسد — نه به صفحه‌ای که وانمود می‌کند دادهٔ تولید دارد.
+   */
+  if (CAPABILITY_GATED_PAGES.has(page) && !productionEnabled) {
+    return (
+      <StateBlock
+        icon={<Lock size={20} />}
+        title="این بخش برای حساب شما فعال نیست"
+        description="«تولید و کنترل کیفیت» و «ظرفیت و تعطیلی» فقط برای تأمین‌کنندهٔ دارای توانمندیِ تولید در دسترس است؛ حساب شما این توانمندی را از سرور نگرفته است."
+        action={<TextButton onClick={() => onNavigate('dashboard')}>بازگشت به داشبورد</TextButton>}
+      />
+    )
+  }
+
   switch (page) {
     case 'dashboard':
       return <DashboardPage onNavigate={onNavigate} />

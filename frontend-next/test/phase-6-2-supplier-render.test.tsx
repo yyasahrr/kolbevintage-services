@@ -251,17 +251,44 @@ describe("رندرِ سفارش‌ها — چرخهٔ عمر از سرور", () 
 });
 
 describe("رندرِ تیم — هیچ نقشِ ساختگیِ مرورگری", () => {
-  it("نبودِ قراردادِ مدیریتِ تیم صریحاً اعلام می‌شود", async () => {
-    renderWith([], React.createElement(TeamPage));
-    await waitFor(() =>
-      expect(screen.getByText(/مدیریت اعضای تیم هنوز قراردادِ سمت تأمین‌کننده ندارد/)).toBeTruthy(),
-    );
+  const teamRoutes: Route[] = [
+    {
+      method: "GET", path: "/api/v1/supplier/team", status: 200,
+      body: {
+        members: [
+          { id: "smem_1", userId: "usr_1", email: "ops@nilgoon.test", role: "owner", title: "مدیر کارگاه", userStatus: "active", isSelf: true },
+        ],
+        self: { id: "smem_1", userId: "usr_1", email: "ops@nilgoon.test", role: "owner", title: "مدیر کارگاه", userStatus: "active", isSelf: true },
+      },
+    },
+    {
+      method: "GET", path: "/api/v1/supplier/team/roles", status: 200,
+      body: {
+        roles: [
+          { code: "owner", label: "مالک", permissions: ["team.manage"], canManageTeam: true },
+          { code: "sales", label: "فروش", permissions: [], canManageTeam: false },
+        ],
+      },
+    },
+  ];
+
+  it("اعضا از /supplier/team خوانده می‌شوند و ایمیلِ سرور رندر می‌شود", async () => {
+    renderWith(teamRoutes, React.createElement(TeamPage));
+    await waitFor(() => expect(screen.getByText("اعضای تیم")).toBeTruthy());
+    expect(screen.getAllByText("ops@nilgoon.test").length).toBeGreaterThan(0);
   });
 
-  it("نقش و شناسه از نشستِ سرور نمایش داده می‌شوند", async () => {
-    renderWith([], React.createElement(TeamPage));
+  it("سیاستِ نقش از /supplier/team/roles می‌آید، نه از ثابتِ مرورگر", async () => {
+    renderWith(teamRoutes, React.createElement(TeamPage));
+    await waitFor(() => expect(screen.getByText("دسترسیِ هر نقش")).toBeTruthy());
+    expect(screen.getAllByText("مالک").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("فروش").length).toBeGreaterThan(0);
+  });
+
+  it("هویتِ نشست از سرور نمایش داده می‌شود", async () => {
+    renderWith(teamRoutes, React.createElement(TeamPage));
     await waitFor(() => expect(screen.getByText("نرگس آذر")).toBeTruthy());
-    expect(screen.getByText("sup_1")).toBeTruthy();
+    expect(screen.getByText("هویتِ شما")).toBeTruthy();
   });
 
   it("بدون capability تولید، بخشِ تولید «غیرفعال» است", async () => {

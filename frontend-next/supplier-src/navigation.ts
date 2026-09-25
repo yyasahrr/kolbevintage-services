@@ -94,5 +94,47 @@ export const PAGE_TITLES: Record<SupplierPage, { title: string; parent?: string;
   settings: { title: 'تنظیمات کارخانه', parent: 'حساب کاربری', description: 'ظرفیت، دوره‌های تولید و تعطیلی‌ها.' },
 }
 
+/**
+ * فهرستِ معتبرِ شناسه‌های صفحه — از خودِ `PAGE_TITLES` مشتق می‌شود تا منبعِ حقیقت
+ * یکی بماند و افزودنِ صفحهٔ جدید بدون به‌روزرسانیِ یک فهرستِ دوم ممکن نباشد.
+ */
+export const SUPPLIER_PAGES = Object.keys(PAGE_TITLES) as SupplierPage[]
+
+/**
+ * صفحه‌هایی که فقط با توانمندیِ «تولید» دیده می‌شوند؛ از `NAV_GROUPS` مشتق می‌شوند
+ * تا گیتِ پیوندِ عمیق و گیتِ ناوبری هرگز از هم واگرا نشوند.
+ */
+export const CAPABILITY_GATED_PAGES: ReadonlySet<SupplierPage> = new Set(
+  NAV_GROUPS.flatMap(group => group.links)
+    .filter(link => link.capability)
+    .map(link => link.page),
+)
+
+/**
+ * مقدارِ `?page=` را به یک شناسهٔ صفحهٔ معتبر ترجمه می‌کند.
+ *
+ * خالص و بدونِ مرورگر است (تا واحد‌پذیر باشد) و **هرگز حدس نمی‌زند**: مقدارِ ناشناخته
+ * `null` می‌دهد، نه `dashboard`. تصمیم دربارهٔ «رفتارِ پیش‌فرض» با فراخوان است.
+ */
+export function readPageParam(search: string): SupplierPage | null {
+  const raw = new URLSearchParams(search).get('page')
+  if (!raw) return null
+  return (SUPPLIER_PAGES as string[]).includes(raw) ? (raw as SupplierPage) : null
+}
+
+/**
+ * صفحهٔ آغازینِ پورتال از رویِ نشانی.
+ *
+ * - بدونِ `?page=` یا با مقدارِ نامعتبر → `dashboard` (پیش‌فرضِ صریح، نه حدسِ پنهان).
+ * - صفحهٔ گیت‌شده بدونِ توانمندی → `dashboard`؛ همان قاعده‌ای که پیوندِ ناوبری را پنهان
+ *   می‌کند، پیوندِ عمیق را هم بی‌اثر می‌کند تا «قابلیتِ تولید» از طریقِ نشانی دور زده نشود.
+ */
+export function resolveStartPage(search: string, gate: { productionEnabled: boolean }): SupplierPage {
+  const requested = readPageParam(search)
+  if (!requested) return 'dashboard'
+  if (CAPABILITY_GATED_PAGES.has(requested) && !gate.productionEnabled) return 'dashboard'
+  return requested
+}
+
 /** آیکون‌های بدون استفادهٔ مستقیم اما بخشی از واژگانِ بصری (برای برچسب‌های وضعیت). */
 export const NAV_ICONS = { Archive, BriefcaseBusiness, ClipboardCheck } as const

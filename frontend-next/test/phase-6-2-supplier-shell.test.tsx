@@ -50,6 +50,13 @@ const ME = {
 
 /** پوسته با کلاینتِ تزریق‌شده (Provider داخلیِ App کلاینتِ واقعی می‌سازد). */
 function renderShell(routes: Route[]) {
+  /**
+   * `go()` نشانی را با `history.replaceState` به‌روز می‌کند تا پیوندِ عمیق کار کند؛ در
+   * jsdom همان `window.location` بینِ تست‌های یک فایل زنده می‌ماند، پس تستِ قبلی می‌تواند
+   * `?page=products` را برای تستِ بعدی به‌جا بگذارد و resolverِ پیوندِ عمیق (که درست است)
+   * آن را محترم می‌شمارد. اینجا هر رندر را با نشانیِ تمیز آغاز می‌کنیم تا تست‌ها منزوی بمانند.
+   */
+  window.history.replaceState({}, "", "/supplier");
   const client = withRoutes(routes);
   const api = createSupplierApi(client);
   const original = globalThis.fetch;
