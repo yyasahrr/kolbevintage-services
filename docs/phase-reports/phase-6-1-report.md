@@ -3,7 +3,7 @@
 **Status:** Complete
 **Branch:** `arena/01a0d8a4-kolbevintage-services`
 **Start SHA:** `125fd8af465b6f97c3ec0d143d20913a6cd40a2c` (Phase 6.0 closing)
-**End SHA:** see final section — updated after the last checkpoint commit
+**End SHA:** `275d17bc7d32792b2184d69d9f7ae97d3b4fa6d5`
 **Architecture doc:** [`docs/architecture/phase-6-1-shared-foundation.md`](../architecture/phase-6-1-shared-foundation.md)
 
 ---
@@ -137,7 +137,7 @@ Focused suite: **104 passed, 5 skipped (9 files)** — no database required.
 | `npm test --workspace @kolbe/api` | 131 | 1 399 | ✅ |
 | `npm test --workspace kolbe-next` | 30 | 323 | ✅ (baseline was 21 / 214) |
 | `npm run test:phase-6-0 --workspace kolbe-next` | 1 | 13 | ✅ |
-| **Total automated tests** | **190** | **1 905** | ✅ |
+| **Total automated tests** | **189** | **1 892** | ✅ |
 
 Commands also executed and green:
 
@@ -228,7 +228,7 @@ Exact next step for 6.2 (in order):
 
 ## 11. File inventory
 
-### Added (48 files)
+### Added (43 files)
 
 | Area | Files |
 |---|---|
@@ -243,7 +243,7 @@ Exact next step for 6.2 (in order):
 | Tests | 9 × `test/phase-6-1-*.test.ts`, `test/fixtures/viewports.ts`, `vitest.phase-6-1.config.ts` |
 | Docs | `docs/architecture/phase-6-1-shared-foundation.md`, this report |
 
-### Changed (8 files)
+### Changed (6 files) — plus 3 post-commit fixes folded into the commits above
 
 | File | Change |
 |---|---|
