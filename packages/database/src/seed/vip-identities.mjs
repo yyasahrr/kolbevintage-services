@@ -17,6 +17,7 @@ const password = process.env.KOLBE_E2E_CUSTOMER_PASSWORD || "Kolbe!TestPassword1
 const customerEmail = process.env.KOLBE_E2E_CUSTOMER_EMAIL || "customer@kolbe.test";
 const vipEmail = process.env.KOLBE_E2E_VIP_EMAIL || "vip@kolbe.test";
 const vipPendingEmail = process.env.KOLBE_E2E_VIP_PENDING_EMAIL || "vip-pending@kolbe.test";
+const vipCatalogEmail = process.env.KOLBE_E2E_VIP_CATALOG_EMAIL || "vip-catalog@kolbe.test";
 
 const stableId = (ns) => createHash("sha256").update(ns).digest("hex").slice(0, 32);
 const passwordRecord = (pw) => {
@@ -51,7 +52,8 @@ async function ensurePlan() {
 async function setMembership(userId, kind, planId) {
   const now = new Date();
   const yearOut = new Date(now.getTime() + 365 * 24 * 3600 * 1000);
-  // subscription
+  // subscription — only the fully-entitled "active" identity gets one. "catalog"
+  // is deliberately approved WITHOUT a subscription (catalog-eligible, not RFQ).
   await db.query(`DELETE FROM vip_subscription WHERE user_id = $1`, [userId]);
   if (kind === "active") {
     await db.query(
@@ -62,18 +64,21 @@ async function setMembership(userId, kind, planId) {
   }
   // wholesale account
   await db.query(`DELETE FROM wholesale_account WHERE user_id = $1`, [userId]);
-  if (kind === "active" || kind === "pending") {
+  if (kind === "active" || kind === "pending" || kind === "catalog") {
+    const approved = kind === "active" || kind === "catalog";
+    const label = kind === "active" ? "کاربر VIP" : kind === "catalog" ? "عضو کاتالوگ" : "متقاضی VIP";
+    const store = kind === "active" ? "فروشگاه VIP" : kind === "catalog" ? "فروشگاه کاتالوگ" : "فروشگاه متقاضی";
     await db.query(
       `INSERT INTO wholesale_account (id, user_id, member_name, store_name, phone, city, plan_name, status, activated_at, expires_at)
        VALUES ($1,$2,$3,$4,'09120000000','تهران','وی‌آی‌پی',$5,$6,$7)`,
       [
         stableId(`ws-acct:${userId}`),
         userId,
-        kind === "active" ? "کاربر VIP" : "متقاضی VIP",
-        kind === "active" ? "فروشگاه VIP" : "فروشگاه متقاضی",
-        kind === "active" ? "approved" : "pending",
-        kind === "active" ? now : null,
-        kind === "active" ? yearOut : null,
+        label,
+        store,
+        approved ? "approved" : "pending",
+        approved ? now : null,
+        approved ? yearOut : null,
       ],
     );
   }
@@ -85,11 +90,13 @@ try {
   const customer = await upsertUser(customerEmail, "مشتری عادی");
   const vip = await upsertUser(vipEmail, "کاربر VIP");
   const vipPending = await upsertUser(vipPendingEmail, "متقاضی VIP");
+  const vipCatalog = await upsertUser(vipCatalogEmail, "عضو کاتالوگ");
   await setMembership(customer, "none", planId);
   await setMembership(vip, "active", planId);
   await setMembership(vipPending, "pending", planId);
+  await setMembership(vipCatalog, "catalog", planId);
   console.log(
-    `[vip-identities] seeded: customer=${customerEmail} (none), pending=${vipPendingEmail} (pending), vip=${vipEmail} (active); plan=${planId}`,
+    `[vip-identities] seeded: customer=${customerEmail} (none), pending=${vipPendingEmail} (pending), catalog=${vipCatalogEmail} (approved/no-sub), vip=${vipEmail} (active); plan=${planId}`,
   );
 } catch (error) {
   console.error("[vip-identities] failed:", error?.message ?? error);

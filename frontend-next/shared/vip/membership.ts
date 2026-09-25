@@ -6,7 +6,9 @@
  * module is the single place that turns the server VIP context into a gate the
  * VIP portal can render against. No network, no localStorage — pure and testable.
  */
-import type { Session } from "../session/types";
+import type { Session, VipEntitlements } from "../session/types";
+
+const NO_ENTITLEMENTS: VipEntitlements = { catalog: false, rfq: false, orders: false };
 
 export type VipGate =
   /** Not signed in → send to sign-in. */
@@ -15,7 +17,7 @@ export type VipGate =
   | { state: "ineligible" }
   /** Application submitted, awaiting approval. */
   | { state: "pending"; accountId: string | null }
-  /** Approved member → full portal. */
+  /** Approved member → full portal (per-capability access via `entitlements`). */
   | {
       state: "active";
       accountId: string | null;
@@ -23,6 +25,7 @@ export type VipGate =
       storeName: string | null;
       planName: string | null;
       expiresAt: string | null;
+      entitlements: VipEntitlements;
     };
 
 /**
@@ -41,10 +44,27 @@ export function resolveVipGate(session: Session | null | undefined): VipGate {
     storeName: vip.storeName,
     planName: vip.planName,
     expiresAt: vip.expiresAt,
+    entitlements: vip.entitlements ?? NO_ENTITLEMENTS,
   };
+}
+
+/**
+ * Phase 6.3-B — capability entitlements, taken ONLY from the server-derived VIP
+ * context. Membership (`status==="active"`) never implies a capability: an
+ * approved account without an active subscription has `catalog` but NOT `rfq`.
+ * Anonymous / ineligible / pending / missing context → all capabilities false.
+ */
+export function resolveVipCapabilities(session: Session | null | undefined): VipEntitlements {
+  if (!session || session.status !== "authenticated") return NO_ENTITLEMENTS;
+  return session.vip?.entitlements ?? NO_ENTITLEMENTS;
 }
 
 /** True only when the server confirms an approved (active) membership. */
 export function isActiveVip(session: Session | null | undefined): boolean {
   return resolveVipGate(session).state === "active";
+}
+
+/** True only when the server grants the RFQ entitlement (membership + subscription). */
+export function canUseRfq(session: Session | null | undefined): boolean {
+  return resolveVipCapabilities(session).rfq === true;
 }

@@ -18,7 +18,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { eq, and, gte, desc, isNull } from "drizzle-orm";
-import { accountUser, loginAttempt, supplierMember, supplier, userSession, wholesaleAccount } from "@kolbe/database";
+import { accountUser, loginAttempt, supplierMember, supplier, userSession, vipSubscription, wholesaleAccount } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { CONFIG_TOKEN, type AppConfig } from "../../config/configuration";
 import { SessionVerifier, type Role } from "../../common/session";
@@ -46,6 +46,15 @@ export type AuthUser = {
  *  - `pending` — application or subscription awaiting approval
  *  - `active`  — approved account AND an active (unexpired) subscription
  */
+export type VipEntitlements = {
+  /** Approved, unexpired wholesale account → wholesale catalog eligibility. */
+  catalog: boolean;
+  /** Catalog eligibility PLUS an active VIP subscription → RFQ/request creation. */
+  rfq: boolean;
+  /** Approved account → wholesale ordering (orders derive from accepted requests). */
+  orders: boolean;
+};
+
 export type VipContext = {
   status: "none" | "pending" | "active";
   accountId: string | null;
@@ -53,6 +62,13 @@ export type VipContext = {
   storeName: string | null;
   planName: string | null;
   expiresAt: string | null;
+  /**
+   * Phase 6.3-B — capability entitlements derived from canonical backend state.
+   * Membership (`status==="active"`) is NOT the same as every capability: RFQ
+   * additionally requires an active subscription. The frontend must gate each
+   * operation on the matching entitlement, never on `status` alone.
+   */
+  entitlements: VipEntitlements;
 };
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -421,9 +437,10 @@ export class AuthService {
    * module cycle); reads the canonical tables directly like `supplierContext`.
    */
   async vipContext(userId: string): Promise<VipContext> {
-    // `wholesale_account` is the canonical membership record: its status is the
-    // membership state (approval is what grants wholesale/catalog access; the
-    // separate `vip_subscription` gates RFQ creation, not membership itself).
+    // `wholesale_account` is the canonical membership record; `vip_subscription`
+    // is the separate plan entitlement that RFQ creation additionally requires
+    // (`assertVipAccess`). Capabilities are derived here from canonical state —
+    // the frontend never infers them from `status` or role names.
     const [account] = await this.db
       .select({
         id: wholesaleAccount.id,
@@ -437,10 +454,21 @@ export class AuthService {
       .where(eq(wholesaleAccount.userId, userId))
       .limit(1);
 
+    const subs = await this.db
+      .select({ status: vipSubscription.status, expiresAt: vipSubscription.expiresAt })
+      .from(vipSubscription)
+      .where(eq(vipSubscription.userId, userId))
+      .limit(10);
+
+    const now = Date.now();
+    const unexpired = (expiresAt: Date | null | undefined) => !expiresAt || new Date(expiresAt).getTime() > now;
+    const approved = account?.status === "approved" && unexpired(account.expiresAt);
+    const activeSubscription = subs.some((s) => s.status === "active" && unexpired(s.expiresAt));
+
     let status: VipContext["status"] = "none";
-    if (account?.status === "approved") status = "active";
+    if (approved) status = "active";
     else if (account?.status === "pending") status = "pending";
-    // rejected / suspended / expired / no-account → "none" (no active eligibility).
+    // rejected / suspended / expired / no-account → "none".
 
     return {
       status,
@@ -449,6 +477,11 @@ export class AuthService {
       storeName: account?.storeName ?? null,
       planName: account?.planName ?? null,
       expiresAt: account?.expiresAt ? new Date(account.expiresAt).toISOString() : null,
+      entitlements: {
+        catalog: approved,
+        rfq: approved && activeSubscription,
+        orders: approved,
+      },
     };
   }
 

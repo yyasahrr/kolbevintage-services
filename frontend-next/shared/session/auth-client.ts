@@ -68,6 +68,9 @@ function parseVip(raw: unknown): VipSessionContext | null {
   if (!isRecord(raw)) return null;
   const status = readString(raw, "status");
   if (status !== "none" && status !== "pending" && status !== "active") return null;
+  // Entitlements default to false unless the server explicitly grants them, so a
+  // missing/garbled entitlements block can never widen access.
+  const ent = isRecord(raw.entitlements) ? raw.entitlements : {};
   return {
     status,
     accountId: readString(raw, "accountId") ?? readString(raw, "account_id"),
@@ -75,6 +78,11 @@ function parseVip(raw: unknown): VipSessionContext | null {
     storeName: readString(raw, "storeName") ?? readString(raw, "store_name"),
     planName: readString(raw, "planName") ?? readString(raw, "plan_name"),
     expiresAt: readString(raw, "expiresAt") ?? readString(raw, "expires_at"),
+    entitlements: {
+      catalog: ent.catalog === true,
+      rfq: ent.rfq === true,
+      orders: ent.orders === true,
+    },
   };
 }
 

@@ -14,7 +14,7 @@ import { bootHarness, makeId, type Harness } from "./helpers/phase-4-7-1.harness
 const TEST_DB = "kolbe_phase_6_3_vip_session_test";
 
 let h: Harness;
-let ids: { customer: string; pending: string; active: string };
+let ids: { customer: string; pending: string; active: string; catalogOnly: string };
 
 beforeAll(async () => {
   h = await bootHarness(TEST_DB);
@@ -38,6 +38,7 @@ beforeAll(async () => {
   const customer = await mkUser("cust");
   const pending = await mkUser("pend");
   const active = await mkUser("act");
+  const catalogOnly = await mkUser("cat");
 
   await h.db.insert(wholesaleAccount).values({
     id: makeId("wsa_p"), userId: pending, memberName: "متقاضی", storeName: "فروشگاه متقاضی",
@@ -48,11 +49,17 @@ beforeAll(async () => {
     phone: "09120000000", city: "تهران", planName: "وی‌آی‌پی", status: "approved",
     activatedAt: now, expiresAt: yearOut,
   });
+  // Approved account with NO active subscription → catalog-eligible but NOT RFQ-entitled.
+  await h.db.insert(wholesaleAccount).values({
+    id: makeId("wsa_c"), userId: catalogOnly, memberName: "عضو کاتالوگ", storeName: "فروشگاه کاتالوگ",
+    phone: "09120000000", city: "تهران", planName: "وی‌آی‌پی", status: "approved",
+    activatedAt: now, expiresAt: yearOut,
+  });
   await h.db.insert(vipSubscription).values({
     id: makeId("sub_a"), userId: active, planId, status: "active", startedAt: now, expiresAt: yearOut,
   });
 
-  ids = { customer, pending, active };
+  ids = { customer, pending, active, catalogOnly };
 });
 
 afterAll(async () => {
@@ -95,7 +102,28 @@ describe("Phase 6.3-B — VIP membership context on /auth/me", () => {
   it("exposes only the normalized allow-list (no commercial/admin fields)", async () => {
     const res = await me(ids.active);
     expect(Object.keys(res.body.vip).sort()).toEqual(
-      ["accountId", "expiresAt", "memberName", "planName", "status", "storeName"],
+      ["accountId", "entitlements", "expiresAt", "memberName", "planName", "status", "storeName"],
     );
+  });
+
+  it("fully entitled VIP → catalog + rfq + orders", async () => {
+    const res = await me(ids.active);
+    expect(res.body.vip.status).toBe("active");
+    expect(res.body.vip.entitlements).toEqual({ catalog: true, rfq: true, orders: true });
+  });
+
+  it("approved account WITHOUT subscription → catalog yes, RFQ NO (membership ≠ capability)", async () => {
+    const res = await me(ids.catalogOnly);
+    expect(res.body.vip.status).toBe("active"); // membership is active…
+    expect(res.body.vip.entitlements.catalog).toBe(true);
+    expect(res.body.vip.entitlements.rfq).toBe(false); // …but RFQ is not granted by membership alone
+    expect(res.body.vip.entitlements.orders).toBe(true);
+  });
+
+  it("non-members get no entitlements", async () => {
+    for (const id of [ids.customer, ids.pending]) {
+      const res = await me(id);
+      expect(res.body.vip.entitlements).toEqual({ catalog: false, rfq: false, orders: false });
+    }
   });
 });

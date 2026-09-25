@@ -36,6 +36,18 @@ export type SupplierSessionContext = {
  */
 export type VipSessionStatus = "none" | "pending" | "active";
 
+/**
+ * Phase 6.3-B — capability entitlements, derived server-side from canonical
+ * state. Membership (`status==="active"`) does NOT imply every capability: RFQ
+ * additionally requires an active subscription. Gate each operation on its own
+ * entitlement, never on `status` alone.
+ */
+export type VipEntitlements = {
+  catalog: boolean;
+  rfq: boolean;
+  orders: boolean;
+};
+
 export type VipSessionContext = {
   status: VipSessionStatus;
   accountId: string | null;
@@ -43,6 +55,7 @@ export type VipSessionContext = {
   storeName: string | null;
   planName: string | null;
   expiresAt: string | null;
+  entitlements: VipEntitlements;
 };
 
 export type AuthenticatedSession = {
