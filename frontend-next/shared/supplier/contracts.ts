@@ -542,6 +542,65 @@ export type RecallRecord = {
   submittedAt?: string | null;
 };
 
+/* ── تیم و دسترسی‌ها ─────────────────────────────────────────────────────────
+ *
+ * منبعِ حقیقت: `GET/PATCH/DELETE /api/v1/supplier/team/...` (بند C فاز ۶.۲).
+ * پیش از این، پورتال هیچ قراردادی برای تیم نداشت و صفحهٔ «تیم» صریحاً همین
+ * شکاف را اعلام می‌کرد. اکنون فهرست، نقش‌ها، افزودن، تغییرِ نقش و حذف از سرور
+ * می‌آیند.
+ *
+ * دو نکتهٔ دامنه‌ای که از اسکیما می‌آید و در UI هم محترم است:
+ *   - «دعوت‌نامهٔ ایمیلی» وجود ندارد (نه جدولِ invitation، نه ستونِ ایمیل)؛
+ *     عملیاتِ پشتیبانی‌شده «افزودنِ حسابِ کاربریِ موجود» است.
+ *   - ستونِ `status` در `supplier_member` نیست؛ «فعال بودن» از
+ *     `account_user.status` خوانده می‌شود و «غیرفعال‌سازی» همان «حذفِ عضویت» است.
+ */
+
+/** نقش‌های عضوِ تیم — دقیقاً قیدِ CHECK دیتابیس. */
+export type SupplierTeamRole = "owner" | "sales" | "warehouse" | "finance";
+
+export type SupplierTeamMember = {
+  id: string;
+  userId: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  title: string;
+  /** وضعیتِ حسابِ کاربر از `account_user.status`. */
+  userStatus: string;
+  createdAt: string | null;
+  /** آیا این ردیف خودِ کاربرِ واردشده است؟ */
+  isSelf: boolean;
+};
+
+export type SupplierTeamRoleInfo = {
+  code: string;
+  label: string;
+  permissions: readonly string[];
+  canManageTeam: boolean;
+};
+
+export type SupplierTeamList = {
+  members: readonly SupplierTeamMember[];
+  self: SupplierTeamMember | null;
+};
+
+export type SupplierTeamRoles = {
+  roles: readonly SupplierTeamRoleInfo[];
+};
+
+export type TeamMemberAddInput = {
+  /** ایمیلِ حسابِ کاربریِ موجود در پلتفرم. */
+  email: string;
+  role: string;
+  title?: string;
+};
+
+export type TeamMemberUpdateInput = {
+  role?: string;
+  title?: string;
+};
+
 /* ── صفحه‌بندی ─────────────────────────────────────────────────────────────── */
 
 export type ListQuery = {

@@ -416,3 +416,118 @@ describe("آداپتور تأمین‌کننده — vi.spyOn روی fetch اث�
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * دامنهٔ «تیم و دسترسی‌ها» (Task C فاز ۶.۲).
+ *
+ * این دامنه قبلاً هیچ قراردادِ بک‌اندی نداشت و صفحه‌اش یک اطلاعیهٔ «پیاده‌سازی نشده»
+ * بود. حالا کنترلرِ واقعیِ Nest وجود دارد؛ این تست‌ها همان چهار قاعدهٔ بالا را برای
+ * این دامنه قفل می‌کنند، به‌علاوهٔ دو قاعدهٔ خاصِ خودش:
+ *
+ *   ۵) «دعوت‌نامهٔ ایمیلی» جعل نمی‌شود — اسکیما نه جدولِ invitation دارد نه ستونِ
+ *      ایمیل/وضعیت، پس افزودنِ عضو یعنی افزودنِ یک حسابِ **موجود** با ایمیل.
+ *   ۶) هرگز `supplierId` از مرورگر فرستاده نمی‌شود؛ دامنه از نشستِ سرور می‌آید.
+ */
+describe("آداپتور تیم — قراردادِ واقعیِ supplier/team", () => {
+  const memberPayload = {
+    id: "smem_1",
+    userId: "usr_1",
+    email: "sales@example.test",
+    role: "sales",
+    title: "کارشناس فروش",
+    userStatus: "active",
+    isSelf: false,
+  };
+
+  it("فهرستِ اعضا از /supplier/team می‌آید و نرمال می‌شود", async () => {
+    const { api, calls } = harness({ body: { members: [memberPayload], self: memberPayload } });
+    const result = await api.team.list();
+    expect(calls[0]?.url).toBe("/api/v1/supplier/team");
+    expect(calls[0]?.method).toBe("GET");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.members).toHaveLength(1);
+    expect(result.data.members[0]).toMatchObject({
+      id: "smem_1",
+      userId: "usr_1",
+      role: "sales",
+      userStatus: "active",
+    });
+    expect(result.data.self?.id).toBe("smem_1");
+  });
+
+  it("سیاستِ نقش‌ها از سرور خوانده می‌شود، نه از ثابتِ سمتِ مرورگر", async () => {
+    const { api, calls } = harness({
+      body: {
+        roles: [
+          { code: "owner", label: "مالک", permissions: ["team.manage"], canManageTeam: true },
+          { code: "sales", label: "فروش", permissions: [], canManageTeam: false },
+        ],
+      },
+    });
+    const result = await api.team.roles();
+    expect(calls[0]?.url).toBe("/api/v1/supplier/team/roles");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.roles.map(role => role.code)).toEqual(["owner", "sales"]);
+    expect(result.data.roles.find(role => role.code === "owner")?.canManageTeam).toBe(true);
+    expect(result.data.roles.find(role => role.code === "sales")?.canManageTeam).toBe(false);
+  });
+
+  it("افزودنِ عضو با Idempotency-Key و بدونِ supplierId انجام می‌شود", async () => {
+    const { api, calls } = harness({ status: 201, body: { member: memberPayload } });
+    const key = newIdempotencyKey();
+    await api.team.addMember({ email: "  Sales@Example.TEST ", role: "sales", title: "  کارشناس فروش  " }, key);
+
+    expect(calls[0]?.url).toBe("/api/v1/supplier/team/members");
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.headers["idempotency-key"]).toBe(String(key));
+    // ایمیل trim + lowercase می‌شود تا «یک حساب» دو بار عضو نشود.
+    expect(calls[0]?.body).toMatchObject({ email: "sales@example.test", role: "sales", title: "کارشناس فروش" });
+    // دامنهٔ tenant هرگز از مرورگر نمی‌آید.
+    expect(Object.keys(calls[0]?.body as object)).not.toContain("supplierId");
+    expect(Object.keys(calls[0]?.body as object)).not.toContain("supplier_id");
+  });
+
+  it("کلیدِ تکرارپذیری تصادفی است و از Date.now/Math.random ساخته نمی‌شود", () => {
+    const a = String(newIdempotencyKey());
+    const b = String(newIdempotencyKey());
+    expect(a).not.toBe(b);
+    expect(a.length).toBeGreaterThan(15);
+  });
+
+  it("تغییرِ نقش به PATCH با شناسهٔ encode‌شده می‌رود", async () => {
+    const { api, calls } = harness({ body: { member: memberPayload } });
+    await api.team.updateMember("smem/a b", { role: "warehouse", title: "انبار" });
+    expect(calls[0]?.url).toBe("/api/v1/supplier/team/members/smem%2Fa%20b");
+    expect(calls[0]?.method).toBe("PATCH");
+    expect(calls[0]?.body).toMatchObject({ role: "warehouse", title: "انبار" });
+    expect(Object.keys(calls[0]?.body as object)).not.toContain("supplierId");
+  });
+
+  it("حذفِ عضویت به DELETE می‌رود (اسکیما ستونِ وضعیت ندارد)", async () => {
+    const { api, calls } = harness({ body: { removedId: "smem_1" } });
+    await api.team.removeMember("smem_1");
+    expect(calls[0]?.url).toBe("/api/v1/supplier/team/members/smem_1");
+    expect(calls[0]?.method).toBe("DELETE");
+  });
+
+  it("شکست به دادهٔ خالی تبدیل نمی‌شود — ۴۰۹ همان تعارض می‌ماند", async () => {
+    const { api, calls } = harness({ status: 409, body: { code: "LAST_OWNER_PROTECTED", message: "آخرین مالک را نمی‌توان حذف کرد" } });
+    const result = await api.team.removeMember("smem_owner");
+    expect(calls[0]?.method).toBe("DELETE");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("CONFLICT");
+    // مسیرِ شکست هیچ داده‌ای حمل نمی‌کند که UI بتواند آن را «موفقِ خالی» جا بزند.
+    expect(result).not.toHaveProperty("data");
+  });
+
+  it("۴۰۳ مدیریتِ تیم به FORBIDDEN نگاشت می‌شود، نه به فهرستِ خالی", async () => {
+    const { api } = harness({ status: 403, body: { code: "TEAM_MANAGEMENT_OWNER_ONLY", message: "فقط مالک" } });
+    const result = await api.team.addMember({ email: "x@example.test", role: "sales" }, newIdempotencyKey());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe("FORBIDDEN");
+  });
+});

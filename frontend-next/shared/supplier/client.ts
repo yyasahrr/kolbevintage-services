@@ -24,6 +24,8 @@ import {
   normalizeSupplierProduct,
   normalizeSupplierRfq,
   normalizeSupportCase,
+  normalizeTeamMember,
+  normalizeTeamRole,
   normalizeWithdrawal,
 } from "./normalize";
 import type {
@@ -71,6 +73,8 @@ import type {
   SupplierRfq,
   SupplierSubmissionResult,
   SupportCase,
+  TeamMemberAddInput,
+  TeamMemberUpdateInput,
   SupportCaseDetail,
   WithdrawalRequest,
 } from "./contracts";
@@ -126,6 +130,8 @@ export function createSupplierApi(client: ApiClient) {
   const post = <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     client.requestResult<T>(path, { method: "POST", body, headers });
   const put = <T>(path: string, body?: unknown) => client.requestResult<T>(path, { method: "PUT", body });
+  const patch = <T>(path: string, body?: unknown) => client.requestResult<T>(path, { method: "PATCH", body });
+  const del = <T>(path: string) => client.requestResult<T>(path, { method: "DELETE" });
 
   return {
     /* ── ۱. احراز هویت، نشست و درخواست عضویت ─────────────────────────────── */
@@ -434,6 +440,54 @@ export function createSupplierApi(client: ApiClient) {
         post<{ recall: RecallRecord }>("/supplier/production/recalls", body, idem(key)),
       submitRecall: (id: string, key: IdempotencyKey) =>
         post<{ recall: RecallRecord }>(`/supplier/production/recalls/${encodeURIComponent(id)}/submit`, {}, idem(key)),
+    },
+
+    /* ── ۱۲. تیم و دسترسی‌ها (بند C فاز ۶.۲) ─────────────────────────────────
+     *
+     * نکتهٔ امنیتی: `supplierId` در هیچ‌کدام از این فراخوانی‌ها فرستاده
+     * نمی‌شود. سرور آن را از `Claims.sub → supplier_member` می‌گیرد؛ فرستادنش
+     * از مرورگر یعنی دادنِ مرجعِ tenant به کلاینت، که دقیقاً همان چیزی است که
+     * قاعدهٔ A6 ممنوع کرده است.
+     */
+    team: {
+      /** اعضای تیمِ همان تأمین‌کننده‌ای که نشست به آن تعلق دارد. */
+      list: () =>
+        get<{ members?: unknown; self?: unknown }>("/supplier/team").then(result =>
+          mapOk(result, data => ({
+            members: normalizeList(data.members, normalizeTeamMember),
+            self: data.self ? normalizeTeamMember(data.self as never) : null,
+          })),
+        ),
+      /** نقش‌های مجاز + دسترسی‌های هر نقش — سیاست از سرور می‌آید. */
+      roles: () =>
+        get<{ roles?: unknown }>("/supplier/team/roles").then(result =>
+          mapOk(result, data => ({ roles: normalizeList(data.roles, normalizeTeamRole) })),
+        ),
+      /**
+       * افزودنِ یک حسابِ کاربریِ **موجود** به تیم.
+       *
+       * «دعوت‌نامهٔ ایمیلی» در این دامنه وجود ندارد (اسکیما نه جدولِ invitation
+       * دارد نه ستونِ ایمیل/وضعیتِ دعوت)؛ پس چیزی به نامِ invite جعل نمی‌شود.
+       */
+      addMember: (input: TeamMemberAddInput, key: IdempotencyKey) =>
+        post<{ member?: unknown }>("/supplier/team/members", {
+          email: input.email.trim().toLowerCase(),
+          role: input.role,
+          title: input.title?.trim() || undefined,
+        }, idem(key)).then(result =>
+          mapOk(result, data => ({ member: data.member ? normalizeTeamMember(data.member) : null })),
+        ),
+      /** تغییرِ نقش/عنوان — فقط `owner` سمتِ سرور مجاز است. */
+      updateMember: (memberId: string, input: TeamMemberUpdateInput) =>
+        patch<{ member?: unknown }>(`/supplier/team/members/${encodeURIComponent(memberId)}`, {
+          role: input.role,
+          title: input.title?.trim() || undefined,
+        }).then(result =>
+          mapOk(result, data => ({ member: data.member ? normalizeTeamMember(data.member) : null })),
+        ),
+      /** حذفِ عضویت (اسکیما ستونِ وضعیت ندارد، پس «غیرفعال‌سازی» همان حذف است). */
+      removeMember: (memberId: string) =>
+        del<{ removedId?: string }>(`/supplier/team/members/${encodeURIComponent(memberId)}`),
     },
   };
 }

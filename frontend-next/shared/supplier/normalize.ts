@@ -27,6 +27,8 @@ import type {
   SupplierProduct,
   SupplierRfq,
   SupportCase,
+  SupplierTeamMember,
+  SupplierTeamRoleInfo,
   WithdrawalRequest,
 } from "./contracts";
 
@@ -292,4 +294,46 @@ export function normalizeRecall(raw: unknown): RecallRecord | null {
 export function normalizeList<T>(value: unknown, normalize: (raw: unknown) => T | null): T[] {
   const items = Array.isArray(value) ? value : asArray(value);
   return items.map(normalize).filter((item): item is T => item !== null);
+}
+
+/* ── تیم و دسترسی‌ها ─────────────────────────────────────────────────────────
+ * پاسخِ `supplier/team` از Drizzle می‌آید، پس camelCase است؛ با این حال همان
+ * `pick()` را نگه می‌داریم تا اگر روزی از مسیرِ compat هم خوانده شد بشکند نه غلط.
+ */
+
+export function normalizeTeamMember(raw: unknown): SupplierTeamMember | null {
+  const source = record(raw);
+  if (!source) return null;
+  const id = asString(pick(source, ["id"]));
+  const userId = asString(pick(source, ["userId", "user_id"]));
+  const email = asString(pick(source, ["email"]));
+  if (!id || !userId) return null;
+  return {
+    id,
+    userId,
+    email: email ?? "",
+    displayName: asString(pick(source, ["displayName", "display_name"])),
+    role: asString(pick(source, ["role"])) ?? "sales",
+    title: asString(pick(source, ["title"])) ?? "عضو تیم",
+    // وضعیتِ حساب از account_user می‌آید؛ اگر سرور نفرستاد «نامشخص» — نه «فعال».
+    userStatus: asString(pick(source, ["userStatus", "user_status"])) ?? "unknown",
+    createdAt: asString(pick(source, ["createdAt", "created_at"])),
+    isSelf: pick(source, ["isSelf", "is_self"]) === true,
+  };
+}
+
+export function normalizeTeamRole(raw: unknown): SupplierTeamRoleInfo | null {
+  const source = record(raw);
+  if (!source) return null;
+  const code = asString(pick(source, ["code"]));
+  if (!code) return null;
+  const permissions = pick(source, ["permissions"]);
+  return {
+    code,
+    label: asString(pick(source, ["label"])) ?? code,
+    permissions: Array.isArray(permissions)
+      ? permissions.map((item) => asString(item)).filter((item): item is string => item !== null)
+      : [],
+    canManageTeam: pick(source, ["canManageTeam", "can_manage_team"]) === true,
+  };
 }
