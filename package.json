@@ -37,8 +37,8 @@
     "db:migrate:verify": "npm run build:packages && node packages/database/migrate.mjs --verify-only",
     "db:adopt-legacy": "npm run build:packages && node packages/database/migrate.mjs --adopt-legacy",
     "infra:verify:deployment": "node scripts/verify-deployment.mjs",
-    "test:phase-6-2": "npm run test --workspace kolbe-next -- --config vitest.phase-6-2.config.ts run",
-    "test:e2e:supplier": "npm run test:e2e --workspace kolbe-next"
+    "test:phase-6-2": "npm run test:phase-6-2 --workspace kolbe-next",
+    "test:e2e:supplier": "npm run test:e2e:supplier --workspace kolbe-next"
   },
   "dependencies": {
     "pg": "8.23.0"
