@@ -3,11 +3,11 @@ import { Link, useRouter } from "../router";
 import { products, type Product } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
-import { loadWholesaleMembership } from "../wholesaleMembership";
 import ProductPage from "./ProductPage";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadCustomer } from "../customerIdentity";
-import { loadWholesaleCustomerOrders, loadWholesaleVipProducts, restoreWholesaleVip, signInWholesaleVip, signOutWholesaleVip, submitWholesaleCustomerOrder, type WholesaleCustomerOrder, type WholesaleVipAccount, type WholesaleVipProduct } from "../lib/wholesaleVipApi";
+import { useStorefrontSession, useVipGate, useVipCapabilities } from "../session/SessionProvider";
+import { loadWholesaleCustomerOrders, loadWholesaleVipProducts, submitWholesaleCustomerOrder, type WholesaleCustomerOrder, type WholesaleVipAccount, type WholesaleVipProduct } from "../lib/wholesaleVipApi";
 
 type WholesaleLine = { key: string; productId: string; variantId?: string; productName: string; productCode: string; colour: string; colourHex: string; size: string; qty: number; unitPrice?: number; collectionName?: string };
 type ViewMode = "grid" | "bulk";
@@ -28,16 +28,32 @@ const navGroups = [
 
 export default function VIPPortal() {
   const { path, navigate } = useRouter();
-  const [membership, setMembership] = useState<WholesaleVipAccount | null>(null);
+  const { gate, resolving, error } = useVipGate();
+  const capabilities = useVipCapabilities();
+  const { logout: sessionLogout, refresh } = useStorefrontSession();
   const [vipProducts, setVipProducts] = useState<WholesaleVipProduct[]>([]);
-  const [loading, setLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => { restoreWholesaleVip().then(async (account) => { setMembership(account); if (account) setVipProducts(await loadWholesaleVipProducts()); }).catch(() => { setCatalogError("بازیابی حساب VIP انجام نشد."); }).finally(() => setLoading(false)); }, []);
-  const authenticated = async (account: WholesaleVipAccount) => { setMembership(account); setCatalogError(""); try { setVipProducts(await loadWholesaleVipProducts()); navigate("/vip/store"); } catch (error) { setCatalogError(error instanceof Error ? error.message : "دریافت کاتالوگ انجام نشد."); } };
-  const logout = async () => { await signOutWholesaleVip(); setMembership(null); setVipProducts([]); navigate("/wholesale"); };
-  if (loading) return <main className="flex min-h-screen items-center justify-center bg-[#f3f3f0] text-[12px] text-neutral-500" aria-live="polite">در حال بررسی عضویت VIP…</main>;
-  if (!membership) return <WholesaleVipLogin onAuthenticated={authenticated} />;
+  // Membership is derived from the SERVER session (resolveVipGate) — never from
+  // localStorage. Display-only fields absent from the VIP context stay blank.
+  const membership: WholesaleVipAccount | null = gate.state === "active"
+    ? { id: gate.accountId ?? "", status: "approved", memberName: gate.memberName ?? "", storeName: gate.storeName ?? "", phone: "", city: "", planName: gate.planName ?? "", activatedAt: null, expiresAt: gate.expiresAt }
+    : null;
+  useEffect(() => {
+    if (gate.state !== "active" || !capabilities.catalog) { setVipProducts([]); return; }
+    let cancelled = false;
+    setCatalogError("");
+    loadWholesaleVipProducts().then((loaded) => { if (!cancelled) setVipProducts(loaded); }).catch(() => { if (!cancelled) setCatalogError("دریافت کاتالوگ انجام نشد."); });
+    return () => { cancelled = true; };
+  }, [gate.state, capabilities.catalog]);
+  const logout = async () => { await sessionLogout(); navigate("/wholesale"); };
+  // Never flash protected content before the session resolves; a transport error
+  // is surfaced as an error — it is NOT collapsed into "ineligible"/anonymous.
+  if (resolving) return <main className="flex min-h-screen items-center justify-center bg-[#f3f3f0] text-[12px] text-neutral-500" aria-live="polite">در حال بررسی عضویت VIP…</main>;
+  if (error) return <VipSessionError onRetry={() => { void refresh(); }} />;
+  if (gate.state === "anonymous") return <WholesaleVipLogin />;
+  if (gate.state === "pending") return <VipPending />;
+  if (gate.state !== "active" || !membership) return <VipIneligible />;
   return <div className="vip-portal-shell min-h-screen bg-[#f3f3f0] text-[#011c3a]">
     <a href="#vip-main" className="fixed right-4 top-2 z-50 -translate-y-20 bg-white px-4 py-2 text-[11px] focus:translate-y-0">رفتن به محتوای اصلی</a>
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/10 bg-[#011c3a] px-4 text-white lg:px-7">
@@ -54,10 +70,43 @@ export default function VIPPortal() {
   </div>;
 }
 
-function WholesaleVipLogin({ onAuthenticated }: { onAuthenticated: (account: WholesaleVipAccount) => Promise<void> }) {
+function WholesaleVipLogin() {
+  const { login } = useStorefrontSession();
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [submitting, setSubmitting] = useState(false);
-  const submit = async (event: FormEvent) => { event.preventDefault(); setError(""); setSubmitting(true); try { await onAuthenticated(await signInWholesaleVip(email, password)); } catch (reason) { setError(reason instanceof Error ? reason.message : "ورود انجام نشد."); } finally { setSubmitting(false); } };
+  const submit = async (event: FormEvent) => { event.preventDefault(); setError(""); setSubmitting(true); try { await login({ email, password }); } catch (reason) { setError(reason instanceof Error ? reason.message : "ورود انجام نشد."); } finally { setSubmitting(false); } };
   return <main className="grid min-h-screen bg-[#f3f3f0] lg:grid-cols-[1.1fr_0.9fr]"><section className="relative hidden overflow-hidden bg-[#011c3a] text-white lg:flex lg:flex-col lg:justify-end lg:p-12"><img src="/images/store.jpg" alt="کالکشن عمده کلبه" className="absolute inset-0 h-full w-full object-cover opacity-35"/><div className="relative"><p className="text-[9px] tracking-[0.3em] text-white/50">KOLBE WHOLESALE</p><h1 className="mt-4 max-w-lg text-[32px] font-medium leading-[1.6]">کاتالوگ واقعی و فضای خرید اختصاصی اعضای VIP</h1><p className="mt-3 max-w-md text-[11.5px] leading-7 text-white/65">قیمت عمده، موجودی قابل فروش و سفارش‌های فروشگاه شما فقط پس از احراز عضویت فعال نمایش داده می‌شوند.</p></div></section><section className="flex items-center justify-center p-5"><form onSubmit={submit} className="w-full max-w-md border border-neutral-200 bg-white p-6 sm:p-8"><Link to="/wholesale" className="text-[10px] text-neutral-500 underline">بازگشت به معرفی عمده‌فروشی</Link><p className="mt-8 text-[9px] tracking-[0.24em] text-neutral-400">VIP MEMBER ACCESS</p><h2 className="mt-2 text-[23px] font-medium">ورود اعضای عمده</h2><p className="mt-2 text-[11px] leading-6 text-neutral-500">با حسابی وارد شوید که عضویت VIP روی آن فعال شده است.</p>{error && <div role="alert" className="mt-5 border border-red-200 bg-red-50 p-3 text-[10.5px] text-red-700">{error}</div>}<label className="mt-6 block text-[10.5px] text-neutral-500">ایمیل<input type="email" required autoComplete="email" value={email} onChange={event=>setEmail(event.target.value)} className="mt-1.5 h-11 w-full border border-neutral-300 px-3 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]"/></label><label className="mt-4 block text-[10.5px] text-neutral-500">رمز عبور<input type="password" required autoComplete="current-password" value={password} onChange={event=>setPassword(event.target.value)} className="mt-1.5 h-11 w-full border border-neutral-300 px-3 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]"/></label><button disabled={submitting} className="mt-6 h-11 w-full bg-[#011c3a] text-[11.5px] font-medium text-white disabled:opacity-50">{submitting ? "در حال بررسی عضویت…" : "ورود به پنل VIP"}</button></form></section></main>;
+}
+
+function VipGateShell({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
+  return <main className="grid min-h-screen place-items-center bg-[#f3f3f0] p-5"><div className="w-full max-w-md border border-neutral-200 bg-white p-7 text-center">
+    <p className="text-[9px] tracking-[0.24em] text-neutral-400">KOLBE WHOLESALE</p>
+    <h1 className="mt-3 text-[21px] font-medium text-[#011c3a]">{title}</h1>
+    <p className="mt-3 text-[11.5px] leading-7 text-neutral-500">{body}</p>
+    {children}
+  </div></main>;
+}
+
+function VipSessionError({ onRetry }: { onRetry: () => void }) {
+  return <VipGateShell title="بررسی عضویت ممکن نشد" body="اتصال به سرور برای احراز عضویت VIP برقرار نشد. این یک خطای واقعی است، نه «عدم عضویت». لطفاً دوباره تلاش کنید.">
+    <button type="button" onClick={onRetry} className="mt-6 h-11 w-full bg-[#011c3a] text-[11.5px] font-medium text-white">تلاش مجدد</button>
+    <Link to="/wholesale" className="mt-4 inline-block text-[10px] text-neutral-500 underline">بازگشت به معرفی عمده‌فروشی</Link>
+  </VipGateShell>;
+}
+
+function VipIneligible() {
+  const { logout } = useStorefrontSession();
+  return <VipGateShell title="عضویت VIP فعال نیست" body="حساب شما وارد شده است، اما عضویت عمده‌فروشی روی آن فعال نیست. برای دسترسی به کاتالوگ و قیمت VIP، درخواست عضویت ثبت کنید.">
+    <Link to="/wholesale/join" className="mt-6 block h-11 w-full bg-[#011c3a] py-3 text-[11.5px] font-medium text-white">ثبت درخواست عضویت</Link>
+    <button type="button" onClick={() => { void logout(); }} className="mt-3 text-[10px] text-neutral-500 underline">خروج از حساب</button>
+  </VipGateShell>;
+}
+
+function VipPending() {
+  const { logout } = useStorefrontSession();
+  return <VipGateShell title="درخواست عضویت در انتظار تأیید است" body="درخواست عضویت عمده‌فروشی شما ثبت شده و در انتظار بررسی کلبه است. پس از تأیید، دسترسی کاتالوگ و قیمت VIP فعال می‌شود.">
+    <Link to="/wholesale" className="mt-6 block h-11 w-full border border-[#011c3a] py-3 text-[11.5px] font-medium text-[#011c3a]">بازگشت</Link>
+    <button type="button" onClick={() => { void logout(); }} className="mt-3 text-[10px] text-neutral-500 underline">خروج از حساب</button>
+  </VipGateShell>;
 }
 
 const sampleOrders = [
