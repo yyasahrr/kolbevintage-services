@@ -3,8 +3,22 @@
 **Status:** Complete
 **Branch:** `arena/01a0d8a4-kolbevintage-services`
 **Start SHA:** `f6705d93235fea9bca4fb2efb6d0f2bdf4f612e3` (Phase 6.1 closing)
-**Implementation ending SHA:** `312cf09a53e875f7c561f51496fdf5f9ec1f1afc`
+**Implementation ending SHA:** `d24358a4bf7d8f33a9bd2b97ef0fdc364ce3b214`
 **Architecture doc:** [`docs/architecture/phase-6-2-supplier-cutover.md`](../architecture/phase-6-2-supplier-cutover.md)
+
+Commit chain from the Phase 6.1 base `f6705d9`:
+
+| SHA | Contents |
+|---|---|
+| `2763ab3` | `shared/supplier/**` domain boundary over the Phase 6.1 HTTP layer |
+| `8aba46a` | Supplier portal cut over to canonical backend truth |
+| `2715958` | additive design-token, dark-mode and RTL layer |
+| `0590a75` | 179 focused tests + browser journey/visual/interaction specs |
+| `312cf09` | truth registry updated to the delivered state |
+| `29d81d8` | this report + the normative architecture document |
+| `d24358a` | `test:phase-6-2` made runnable from the repo root |
+
+Every green result below was re-run at `d24358a`.
 
 ---
 
