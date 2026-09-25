@@ -24,6 +24,7 @@ import {
   parseValidationIssues,
 } from "./errors";
 import { buildRequestUrl, resolveDefaultBaseUrl } from "./url";
+import { failureMeta } from "./types";
 import type {
   ApiClient,
   ApiClientOptions,
@@ -122,7 +123,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     try {
       if (timeoutMs !== null && timeoutMs !== undefined) signal = combineSignals(signal, timeoutMs);
     } catch (error) {
-      return { ok: false, error: error instanceof ApiError ? error : new ApiError({ kind: "UNKNOWN", message: String(error) }) };
+      return {
+        ok: false,
+        meta: failureMeta(url, method, 0, init.requestId ?? null),
+        error: error instanceof ApiError ? error : new ApiError({ kind: "UNKNOWN", message: String(error) }),
+      };
     }
 
     let response: Response;
@@ -138,6 +143,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       if (isAbortError(cause) || (signal?.aborted ?? false)) {
         return {
           ok: false,
+          meta: failureMeta(url, method, 0, init.requestId ?? null),
           error: new ApiError({
             kind: "ABORTED",
             message: fallbackMessage("ABORTED"),
@@ -149,6 +155,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       }
       return {
         ok: false,
+        meta: failureMeta(url, method, 0, init.requestId ?? null),
         error: new ApiError({
           kind: "NETWORK_ERROR",
           message: fallbackMessage("NETWORK_ERROR"),
@@ -175,6 +182,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const message = body.message ?? fallbackMessage(kind);
       return {
         ok: false,
+        meta,
         error: new ApiError({
           kind,
           status: response.status,
@@ -202,6 +210,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       // پاسخ ۲xx با بدنهٔ غیرِ JSON = نقض قراردادِ سرور؛ هرگز به «دادهٔ خالی» تبدیل نمی‌شود.
       return {
         ok: false,
+        meta,
         error: new ApiError({
           kind: "MALFORMED_RESPONSE",
           status: response.status,

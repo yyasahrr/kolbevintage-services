@@ -231,7 +231,7 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
       if (result.stage === "identity" && notSignedIn) {
         return { ok: true, data: anonymousSession(), meta: result.meta };
       }
-      return { ok: false, error: result.error };
+      return { ok: false, error: result.error, meta: result.meta };
     }
     const { user, supplier, capabilities } = result.data;
     return { ok: true, data: authenticated(user, supplier, capabilities), meta: result.meta };
@@ -253,7 +253,7 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
         transport: "protocol",
         body: loginResponse.data,
       });
-      return { ok: false, error };
+      return { ok: false, error, meta: loginResponse.meta };
     }
     // پاسخِ لاگین هرگز مرجعِ هویت نیست (کوکی همین‌جا ست شده است)؛
     // هویت با یک درخواستِ جداگانه از سرور خوانده می‌شود.

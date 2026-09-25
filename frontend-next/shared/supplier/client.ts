@@ -1,0 +1,442 @@
+/**
+ * آداپتورهای دامنهٔ تأمین‌کننده (فاز ۶.۲).
+ *
+ * این فایل **تنها لایهٔ مجازِ فراخوانیِ API برای پورتال تأمین‌کننده** است.
+ * هیچ `fetch`ای اینجا نیست: همه‌چیز از `ApiClient` مشترکِ `@shared/http`
+ * می‌گذرد، پس خطا، نشست، لغو، تایم‌اوت و پایهٔ نشانی دقیقاً یک پیاده‌سازی دارند.
+ *
+ * قواعدِ سخت:
+ *  - هیچ فراخوانی شکست را به «آرایهٔ خالی» یا «مقدار صفر» تبدیل نمی‌کند؛
+ *    خروجی همیشه `ApiResult` است و مصرف‌کننده موظف به رندرِ وضعیتِ درست است.
+ *  - شناسهٔ تأمین‌کننده هرگز از مرورگر نمی‌آید: مسیرهایی که به `:supplierId`
+ *    نیاز دارند، آن را از **نشست سرور** می‌گیرند (ورودیِ تابع فقط برای ادمین است).
+ *  - عملیاتِ تغییردهنده هدر `Idempotency-Key` می‌فرستند تا دوبار-ارسال،
+ *    وضعیتِ تکراری نسازد.
+ */
+
+import type { ApiClient, ApiResult } from "../http/types";
+import {
+  normalizeChildOrder,
+  normalizeHistoryEntry,
+  normalizeList,
+  normalizeProductionJob,
+  normalizeRecall,
+  normalizeSupplierProduct,
+  normalizeSupplierRfq,
+  normalizeSupportCase,
+  normalizeWithdrawal,
+} from "./normalize";
+import type {
+  AgreementStatus,
+  AnalyticsQueryInput,
+  AnalyticsResult,
+  BankDestination,
+  CapacityPeriod,
+  ChildOrder,
+  ComplianceDocument,
+  ComplianceHold,
+  ComplianceProfile,
+  CreateCaseInput,
+  DocumentAccessGrant,
+  FinancialAccountSummary,
+  FinancialHistoryEntry,
+  IdempotencyKey,
+  InventoryRecord,
+  ListQuery,
+  OrderActionInput,
+  OrderTransition,
+  ProformaInvoice,
+  ProductionCapability,
+  ProductionChangeRequest,
+  ProductionClosure,
+  ProductionDefect,
+  ProductionEvent,
+  ProductionInspection,
+  ProductionJob,
+  ProductionLot,
+  ProductionMilestone,
+  ProductionRework,
+  ProductionSample,
+  QuoteInput,
+  RecallRecord,
+  ReleaseReadiness,
+  SettlementEligibility,
+  Shipment,
+  ShipmentException,
+  ShipmentTrackingInput,
+  SupplierApplicationInput,
+  SupplierCasePriority,
+  SupplierLoginInput,
+  SupplierProduct,
+  SupplierRfq,
+  SupplierSubmissionResult,
+  SupportCase,
+  SupportCaseDetail,
+  WithdrawalRequest,
+} from "./contracts";
+
+/* ── کلیدِ یکتای عملیات ─────────────────────────────────────────────────────
+ * این کلید یک «نانسِ ضدِ تکرار» است، نه یک شناسهٔ تجاری. برخلاف کد رهگیری یا
+ * شمارهٔ مرجع، ارزشِ آن فقط جلوگیری از اجرای دوبارهِ همان عملیاتِ کاربر است و
+ * هرگز به‌عنوان شناسهٔ کسب‌وکار نمایش داده نمی‌شود.
+ */
+function randomIdempotencyKey(): IdempotencyKey {
+  const cryptoRef: Crypto | undefined = (globalThis as { crypto?: Crypto }).crypto;
+  if (cryptoRef && typeof cryptoRef.randomUUID === "function") return cryptoRef.randomUUID();
+  // مسیرِ پشتیبان فقط برای محیط‌های بدون Web Crypto (تست‌های قدیمی).
+  const bytes = new Uint8Array(16);
+  if (cryptoRef && typeof cryptoRef.getRandomValues === "function") cryptoRef.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function newIdempotencyKey(): IdempotencyKey {
+  return randomIdempotencyKey();
+}
+
+function idem(key: IdempotencyKey): Record<string, string> {
+  return { "Idempotency-Key": key };
+}
+
+function queryOf(input: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!input) return undefined;
+  const params: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null || value === "") continue;
+    params[key] = value;
+  }
+  return params;
+}
+
+/**
+ * نگاشتِ دادهٔ موفقِ یک نتیجه، بدون دست‌زدن به مسیرِ خطا.
+ *
+ * این تنها جایی است که «شکلِ خامِ سرور» به «قراردادِ تایپ‌شدهٔ پورتال» تبدیل
+ * می‌شود؛ مسیرِ شکست دست‌نخورده می‌ماند، پس هیچ خطایی به دادهٔ خالی بدل نمی‌شود.
+ */
+function mapOk<T, R>(result: ApiResult<T>, map: (data: T) => R): ApiResult<R> {
+  if (!result.ok) return result;
+  return { ok: true, data: map(result.data), meta: result.meta };
+}
+
+export type SupplierApi = ReturnType<typeof createSupplierApi>;
+
+export function createSupplierApi(client: ApiClient) {
+  const get = <T>(path: string, query?: Record<string, unknown>) =>
+    client.requestResult<T>(path, { method: "GET", query: queryOf(query) as never });
+  const post = <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    client.requestResult<T>(path, { method: "POST", body, headers });
+  const put = <T>(path: string, body?: unknown) => client.requestResult<T>(path, { method: "PUT", body });
+
+  return {
+    /* ── ۱. احراز هویت، نشست و درخواست عضویت ─────────────────────────────── */
+    auth: {
+      /** ورودِ تأمین‌کننده — پاسخ مرجعِ هویت نیست؛ بعد از آن `/auth/me` خوانده می‌شود. */
+      login: (input: SupplierLoginInput) =>
+        post<{ user?: Record<string, unknown>; supplier?: Record<string, unknown> }>("/auth/supplier/login", {
+          email: input.email.trim(),
+          password: input.password,
+        }),
+      logout: () => post<{ ok?: boolean }>("/auth/logout"),
+      /** تنها مرجعِ هویتِ تأمین‌کننده. */
+      me: () => get<Record<string, unknown>>("/auth/me"),
+      health: () => get<Record<string, unknown>>("/health/live"),
+      apply: (input: SupplierApplicationInput) =>
+        post<{ id: string }>("/suppliers/applications", {
+          companyName: input.companyName,
+          representativeName: input.representativeName,
+          phone: input.phone,
+          category: input.category,
+          monthlyCapacity: input.monthlyCapacity,
+        }),
+    },
+
+    /* ── ۲. داشبورد و تحلیل ──────────────────────────────────────────────── */
+    analytics: {
+      overview: (query?: AnalyticsQueryInput) => get<AnalyticsResult>("/supplier/analytics/overview", query),
+      orders: (query?: AnalyticsQueryInput) => get<AnalyticsResult>("/supplier/analytics/orders", query),
+      inventory: (query?: AnalyticsQueryInput) => get<AnalyticsResult>("/supplier/analytics/inventory", query),
+      settlement: (query?: AnalyticsQueryInput) => get<AnalyticsResult>("/supplier/analytics/settlement", query),
+    },
+
+    /* ── ۳. محصولات و ارسال به کاتالوگ ───────────────────────────────────── */
+    products: {
+      /** قراردادِ انتقالیِ ثبت‌شده (`compat`) — تنها seams موجود برای فهرستِ محصول. */
+      list: (query?: ListQuery) =>
+        get<Record<string, unknown>>("/compat/supplier/products", {
+          limit: query?.limit,
+          offset: query?.offset,
+        }).then(result =>
+          mapOk(result, data => ({ products: normalizeList((data as { products?: unknown }).products, normalizeSupplierProduct) })),
+        ),
+      /** ثبتِ پیشنهاد محصول (مسیرِ انتقالیِ ثبت‌شده در truth-registry). */
+      submit: (input: Record<string, unknown>) =>
+        post<{ product: SupplierSubmissionResult }>("/catalog/compat/supplier-submissions", input),
+    },
+
+    /* ── ۴. RFQ و پیشنهاد قیمت ───────────────────────────────────────────── */
+    rfqs: {
+      list: (query?: ListQuery) =>
+        get<Record<string, unknown>>("/compat/supplier/rfqs", { limit: query?.limit, offset: query?.offset }).then(result =>
+          mapOk(result, data => ({ rfqs: normalizeList((data as { rfqs?: unknown }).rfqs, normalizeSupplierRfq) })),
+        ),
+      quote: (rfqId: string, input: QuoteInput) =>
+        post<Record<string, unknown>>(`/offers/compat/rfqs/${encodeURIComponent(rfqId)}/quote`, input),
+    },
+
+    /* ── ۵. سفارش‌ها، چرخه‌عمر و ارسال ─────────────────────────────────────── */
+    orders: {
+      list: () =>
+        get<Record<string, unknown>>("/supplier/orders").then(result =>
+          mapOk(result, data => {
+            const raw = (data as { children?: unknown }).children ?? (data as { orders?: unknown }).orders;
+            return { children: normalizeList(raw, normalizeChildOrder) };
+          }),
+        ),
+      get: (id: string) =>
+        get<Record<string, unknown>>(`/supplier/orders/${encodeURIComponent(id)}`).then(result =>
+          mapOk(result, data => ({ child: normalizeChildOrder((data as { child?: unknown }).child) })),
+        ),
+      action: (transition: OrderTransition, input: OrderActionInput & { id: string }) => {
+        const body: Record<string, unknown> = {};
+        if (input.expectedVersion !== undefined) body.expectedVersion = input.expectedVersion;
+        if (input.reason) body.reason = input.reason;
+        // کدِ رهگیری فقط وقتی فرستاده می‌شود که اپراتور آن را وارد کرده باشد.
+        if (transition === "dispatch") {
+          if (input.trackingCode) body.trackingCode = input.trackingCode;
+          if (input.carrier) body.carrier = input.carrier;
+        }
+        return post<{ child: ChildOrder; replayed?: boolean }>(
+          `/supplier/orders/${encodeURIComponent(input.id)}/${transition}`,
+          body,
+          idem(input.idempotencyKey),
+        );
+      },
+      exceptions: (id: string) => get<{ exceptions: ShipmentException[] }>(`/supplier/orders/${encodeURIComponent(id)}/exceptions`),
+      reportException: (id: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<Record<string, unknown>>(`/supplier/orders/${encodeURIComponent(id)}/report-exception`, body, idem(key)),
+    },
+
+    shipments: {
+      byChild: (childOrderId: string) => get<{ shipment: Shipment | null }>(`/supplier/shipments/child/${encodeURIComponent(childOrderId)}`),
+      get: (id: string) => get<{ shipment: Shipment }>(`/supplier/shipments/${encodeURIComponent(id)}`),
+      quote: (body: Record<string, unknown>) => post<Record<string, unknown>>("/supplier/shipments/quote", body),
+      create: (body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ shipment: Shipment }>("/supplier/shipments", body, idem(key)),
+      handoff: (id: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ shipment: Shipment }>(`/supplier/shipments/${encodeURIComponent(id)}/handoff`, body, idem(key)),
+      cancel: (id: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ shipment: Shipment }>(`/supplier/shipments/${encodeURIComponent(id)}/cancel`, body, idem(key)),
+      tracking: (id: string, input: ShipmentTrackingInput, key: IdempotencyKey) =>
+        post<{ shipment: Shipment }>(`/supplier/shipments/${encodeURIComponent(id)}/tracking`, input, idem(key)),
+    },
+
+    /* ── ۶. موجودی ───────────────────────────────────────────────────────── */
+    inventory: {
+      mine: () => get<{ inventories?: InventoryRecord[]; items?: InventoryRecord[] }>("/inventory/my"),
+    },
+
+    /* ── ۷. مالی، تسویه و برداشت ─────────────────────────────────────────── */
+    finance: {
+      summary: () => get<FinancialAccountSummary>("/supplier/financial-account/summary"),
+      history: (query?: ListQuery) =>
+        get<Record<string, unknown>>("/supplier/financial-account/history", {
+          limit: query?.limit,
+          offset: query?.offset,
+        }).then(result =>
+          mapOk(result, data => ({ items: normalizeList((data as { items?: unknown }).items, normalizeHistoryEntry) })),
+        ),
+      withdrawals: (query?: ListQuery & { status?: string }) =>
+        get<Record<string, unknown>>("/supplier/financial-account/withdrawals", {
+          limit: query?.limit,
+          offset: query?.offset,
+          status: query?.status,
+        }).then(result =>
+          mapOk(result, data => ({
+            withdrawals: normalizeList((data as { withdrawals?: unknown }).withdrawals, normalizeWithdrawal),
+          })),
+        ),
+      withdrawal: (id: string) =>
+        get<Record<string, unknown>>(`/supplier/financial-account/withdrawals/${encodeURIComponent(id)}`).then(result =>
+          mapOk(result, data => ({ withdrawal: normalizeWithdrawal((data as { withdrawal?: unknown }).withdrawal) })),
+        ),
+      requestWithdrawal: (amount: string, key: IdempotencyKey) =>
+        post<{ withdrawal: WithdrawalRequest }>(
+          "/supplier/financial-account/withdrawals",
+          { amount },
+          { ...idem(key), "content-type": "application/json" },
+        ),
+      proformas: (query?: ListQuery) => get<{ proformas: ProformaInvoice[] }>("/supplier/finance/proformas", query),
+      proforma: (id: string) => get<{ proforma: ProformaInvoice }>(`/supplier/finance/proformas/${encodeURIComponent(id)}`),
+    },
+
+    /* ── ۸. انطباق و اسناد ───────────────────────────────────────────────── */
+    compliance: {
+      /** بستهٔ سیاست‌های الزامی برای تأمین‌کننده (بدون شناسه). */
+      agreementBundle: () => get<AgreementStatus>("/supplier/compliance/agreement"),
+      profile: (supplierId: string) => get<{ profile: ComplianceProfile }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/profile`),
+      upsertProfile: (supplierId: string, body: Record<string, unknown>) =>
+        put<{ profile: ComplianceProfile }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/profile`, body),
+      submitProfile: (supplierId: string) =>
+        post<{ profile: ComplianceProfile }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/profile/submit`),
+      documents: (supplierId: string) =>
+        get<{ documents: ComplianceDocument[] }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/documents`),
+      uploadDocument: (supplierId: string, body: { documentType: string; mimeType: string; contentBase64: string; originalFilename?: string }) =>
+        post<{ document: ComplianceDocument }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/documents`, body),
+      /** دسترسیِ دارای مجوز/امضا — کلیدِ شیءٔ خصوصی هرگز به مرورگر داده نمی‌شود. */
+      documentAccess: (documentId: string) =>
+        post<DocumentAccessGrant>(`/supplier/compliance/documents/${encodeURIComponent(documentId)}/access`),
+      contractStatus: (supplierId: string) => get<AgreementStatus>(`/supplier/compliance/${encodeURIComponent(supplierId)}/agreement`),
+      acceptAgreement: (supplierId: string, policyDocumentId: string) =>
+        post<Record<string, unknown>>(`/supplier/compliance/${encodeURIComponent(supplierId)}/agreement/accept`, { policyDocumentId }),
+      holds: (supplierId: string) => get<{ holds: ComplianceHold[] }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/holds`),
+      bank: (supplierId: string) => get<{ current: BankDestination | null }>(`/supplier/compliance/${encodeURIComponent(supplierId)}/bank`),
+      submitBank: (supplierId: string, body: { destinationKind: string; value: string; holderName?: string }) =>
+        post<Record<string, unknown>>(`/supplier/compliance/${encodeURIComponent(supplierId)}/bank`, body),
+      eligibility: (supplierId: string) =>
+        get<SettlementEligibility>(`/supplier/compliance/${encodeURIComponent(supplierId)}/settlement-eligibility`),
+    },
+
+    /* ── ۹. پشتیبانی ─────────────────────────────────────────────────────── */
+    support: {
+      list: (query?: ListQuery) =>
+        get<Record<string, unknown>>("/supplier/support/cases", {
+          limit: query?.limit,
+          offset: query?.offset,
+        }).then(result =>
+          mapOk(result, data => {
+            const payload = data as { cases?: unknown; total?: unknown };
+            return { cases: normalizeList(payload.cases, normalizeSupportCase), total: payload.total };
+          }),
+        ),
+      create: (input: CreateCaseInput) => post<SupportCase>("/supplier/support/cases", input),
+      get: (id: string) => get<SupportCaseDetail>(`/supplier/support/cases/${encodeURIComponent(id)}`),
+      message: (id: string, body: string, visibility: "PUBLIC" | "INTERNAL" = "PUBLIC") =>
+        post<Record<string, unknown>>(`/supplier/support/cases/${encodeURIComponent(id)}/messages`, { body, visibility }),
+    },
+
+    /* ── ۱۰. تولید و کنترل کیفیت (محدود به capability) ───────────────────── */
+    production: {
+      jobs: (query?: ListQuery) =>
+        get<Record<string, unknown>>("/supplier/production/jobs", {
+          page: query?.page,
+          limit: query?.limit,
+          status: query?.status,
+        }).then(result =>
+          mapOk(result, data => {
+            const payload = data as { jobs?: unknown; pagination?: Record<string, unknown> };
+            return { jobs: normalizeList(payload.jobs, normalizeProductionJob), pagination: payload.pagination };
+          }),
+        ),
+      createJob: (body: { purchaseOrderId?: string; requiresSampleApproval?: boolean; requiresQualityRelease?: boolean }, key: IdempotencyKey) =>
+        post<{ job: ProductionJob }>("/supplier/production/jobs", body, idem(key)),
+      job: (id: string) => get<{ job: ProductionJob; milestones?: ProductionMilestone[] }>(`/supplier/production/jobs/${encodeURIComponent(id)}`),
+      plan: (id: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ job: ProductionJob }>(`/supplier/production/jobs/${encodeURIComponent(id)}/plan`, body, idem(key)),
+      transition: (id: string, to: "start" | "block" | "complete" | "cancel", body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ job: ProductionJob }>(`/supplier/production/jobs/${encodeURIComponent(id)}/${to}`, body, idem(key)),
+      actualUnits: (id: string, actualUnits: number, key: IdempotencyKey, expectedVersion?: number) =>
+        post<{ job: ProductionJob }>(`/supplier/production/jobs/${encodeURIComponent(id)}/actual-units`, { actualUnits, expectedVersion }, idem(key)),
+      milestones: () => get<{ definitions: Array<Record<string, unknown>> }>("/supplier/production/milestones"),
+      transitionMilestone: (jobId: string, milestoneId: string, to: "start" | "complete" | "skip", key: IdempotencyKey, reason?: string) =>
+        post<Record<string, unknown>>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/milestones/${encodeURIComponent(milestoneId)}/${to}`,
+          reason ? { reason } : {},
+          idem(key),
+        ),
+      capabilities: () => get<{ capabilities: ProductionCapability[] }>("/supplier/production/capabilities"),
+      capacityPeriods: (query?: ListQuery) =>
+        get<{ periods: CapacityPeriod[]; pagination?: Record<string, unknown> }>("/supplier/production/capacity-periods", {
+          page: query?.page,
+          limit: query?.limit,
+        }),
+      createCapacityPeriod: (body: Record<string, unknown>) => post<{ period: CapacityPeriod }>("/supplier/production/capacity-periods", body),
+      createClosure: (periodId: string, body: Record<string, unknown>) =>
+        post<{ closure: ProductionClosure }>(`/supplier/production/capacity-periods/${encodeURIComponent(periodId)}/closures`, body),
+      cancelClosure: (id: string, key: IdempotencyKey, reason?: string) =>
+        post<Record<string, unknown>>(`/supplier/production/closures/${encodeURIComponent(id)}/cancel`, reason ? { reason } : {}, idem(key)),
+      samples: (jobId: string) => get<{ samples: ProductionSample[] }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/samples`),
+      createSample: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ sample: ProductionSample }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/samples`, body, idem(key)),
+      sampleRevision: (jobId: string, sampleId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<Record<string, unknown>>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/samples/${encodeURIComponent(sampleId)}/revisions`,
+          body,
+          idem(key),
+        ),
+      registerArtifact: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<Record<string, unknown>>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/artifacts`, body, idem(key)),
+      changeRequests: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ changeRequest?: ProductionChangeRequest }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/change-requests`, body, idem(key)),
+      createLot: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ lot: ProductionLot }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/lots`, body, idem(key)),
+      lotOutput: (jobId: string, lotId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ lot: ProductionLot }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/lots/${encodeURIComponent(lotId)}/output`, body, idem(key)),
+      transitionLot: (jobId: string, lotId: string, to: "start" | "complete", key: IdempotencyKey) =>
+        post<{ lot: ProductionLot }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/lots/${encodeURIComponent(lotId)}/${to}`, {}, idem(key)),
+      lotTrace: (jobId: string, lotId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<Record<string, unknown>>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/lots/${encodeURIComponent(lotId)}/traces`,
+          body,
+          idem(key),
+        ),
+      createInspection: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ inspection: ProductionInspection }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/inspections`, body, idem(key)),
+      submitInspection: (jobId: string, inspectionId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ inspection: ProductionInspection }>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/inspections/${encodeURIComponent(inspectionId)}/submit`,
+          body,
+          idem(key),
+        ),
+      recordDefect: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ defect: ProductionDefect }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/defects`, body, idem(key)),
+      transitionDefect: (
+        jobId: string,
+        defectId: string,
+        to: "acknowledge" | "rework" | "accept" | "waive" | "close",
+        key: IdempotencyKey,
+        dispositionNote?: string,
+      ) =>
+        post<{ defect: ProductionDefect }>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/defects/${encodeURIComponent(defectId)}/${to}`,
+          dispositionNote ? { dispositionNote } : {},
+          idem(key),
+        ),
+      createRework: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ rework: ProductionRework }>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/rework`, body, idem(key)),
+      transitionRework: (jobId: string, reworkId: string, to: "start" | "complete" | "fail" | "cancel", key: IdempotencyKey) =>
+        post<{ rework: ProductionRework }>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/rework/${encodeURIComponent(reworkId)}/${to}`,
+          {},
+          idem(key),
+        ),
+      events: (jobId: string, query?: ListQuery) =>
+        get<{ events: ProductionEvent[]; pagination?: Record<string, unknown> }>(
+          `/supplier/production/jobs/${encodeURIComponent(jobId)}/events`,
+          { page: query?.page, limit: query?.limit },
+        ),
+      releaseReadiness: (jobId: string, lotId: string) =>
+        get<ReleaseReadiness>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/lots/${encodeURIComponent(lotId)}/release-readiness`),
+      requestQualityRelease: (jobId: string, body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<Record<string, unknown>>(`/supplier/production/jobs/${encodeURIComponent(jobId)}/quality-releases`, body, idem(key)),
+      shippingHandoff: (qualityReleaseId: string) =>
+        get<{ shippingHandoff: unknown }>(`/supplier/production/quality-releases/${encodeURIComponent(qualityReleaseId)}/shipping-handoff`),
+      recalls: (query?: ListQuery) =>
+        get<Record<string, unknown>>("/supplier/production/recalls", {
+          page: query?.page,
+          limit: query?.limit,
+        }).then(result =>
+          mapOk(result, data => {
+            const payload = data as { recalls?: unknown; pagination?: Record<string, unknown> };
+            return { recalls: normalizeList(payload.recalls, normalizeRecall), pagination: payload.pagination };
+          }),
+        ),
+      createRecall: (body: Record<string, unknown>, key: IdempotencyKey) =>
+        post<{ recall: RecallRecord }>("/supplier/production/recalls", body, idem(key)),
+      submitRecall: (id: string, key: IdempotencyKey) =>
+        post<{ recall: RecallRecord }>(`/supplier/production/recalls/${encodeURIComponent(id)}/submit`, {}, idem(key)),
+    },
+  };
+}
+
+export type SupplierApiResult<T> = ApiResult<T>;
+export { randomIdempotencyKey };

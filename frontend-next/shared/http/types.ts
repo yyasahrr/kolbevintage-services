@@ -34,6 +34,7 @@ export type ApiRequestInit<Body = unknown> = {
 };
 
 export type ApiResponseMeta = {
+  /** ۰ یعنی «پاسخی از سرور نرسید» (شکستِ شبکه یا لغو). */
   status: number;
   url: string;
   method: HttpMethod;
@@ -41,9 +42,15 @@ export type ApiResponseMeta = {
   headers: Headers;
 };
 
+/** متادیتای ساختگی برای شکست‌هایی که پاسخی دریافت نشده است. */
+export function failureMeta(url: string, method: HttpMethod, status = 0, requestId: string | null = null): ApiResponseMeta {
+  return { status, url, method, requestId, headers: new Headers() };
+}
+
 export type ApiSuccess<T> = { ok: true; data: T; meta: ApiResponseMeta };
 
-export type ApiFailure = { ok: false; error: ApiError };
+/** شکست همیشه متادیتا دارد تا UI بتواند وضعیت/شناسهٔ رهگیری را نشان دهد، اما هرگز `data` ندارد. */
+export type ApiFailure = { ok: false; error: ApiError; meta: ApiResponseMeta };
 
 /**
  * نتیجهٔ صریح هر فراخوانی.

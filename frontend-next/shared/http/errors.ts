@@ -174,7 +174,11 @@ export function parseValidationIssues(message: string): ValidationIssue[] {
   const trimmed = message.trim();
   if (!trimmed) return [];
   const parts = trimmed.split("|").map((part) => part.trim()).filter((part) => part.length > 0);
-  if (parts.length <= 1) return [{ field: null, message: trimmed }];
+  if (parts.length === 0) return [];
+  // سرور هر فیلد را به شکل `property: constraint` می‌فرستد و چند فیلد را با
+  // ` | ` به هم می‌چسباند. پس حتی یک فیلدِ تنها هم باید تفکیک شود؛ در غیر این
+  // صورت خطای اعتبارسنجیِ تک‌فیلدی (مثلاً مبلغ برداشت) نامِ فیلدش را از دست
+  // می‌داد و UI نمی‌توانست خطا را کنارِ همان ورودی نشان دهد.
   return parts.map((part) => {
     const separator = part.indexOf(":");
     if (separator <= 0) return { field: null, message: part };
