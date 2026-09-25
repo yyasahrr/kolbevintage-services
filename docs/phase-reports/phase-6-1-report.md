@@ -3,7 +3,9 @@
 **Status:** Complete
 **Branch:** `arena/01a0d8a4-kolbevintage-services`
 **Start SHA:** `125fd8af465b6f97c3ec0d143d20913a6cd40a2c` (Phase 6.0 closing)
-**End SHA:** `275d17bc7d32792b2184d69d9f7ae97d3b4fa6d5`
+**Implementation ending SHA:** `275d17bc7d32792b2184d69d9f7ae97d3b4fa6d5`
+**Documentation-only commits after it:** `6e3ac1d…` onwards — no code or test change
+after the implementation SHA; every green result below was re-verified at the final HEAD.
 **Architecture doc:** [`docs/architecture/phase-6-1-shared-foundation.md`](../architecture/phase-6-1-shared-foundation.md)
 
 ---
