@@ -18,7 +18,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { eq, and, gte, desc, isNull } from "drizzle-orm";
-import { accountUser, loginAttempt, supplierMember, supplier, userSession } from "@kolbe/database";
+import { accountUser, loginAttempt, supplierMember, supplier, userSession, wholesaleAccount } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { CONFIG_TOKEN, type AppConfig } from "../../config/configuration";
 import { SessionVerifier, type Role } from "../../common/session";
@@ -34,6 +34,25 @@ export type AuthUser = {
   status: string;
   tokenVersion: number;
   totpEnabled?: boolean;
+};
+
+/**
+ * Phase 6.3-B — normalized VIP/wholesale membership context derived from the
+ * canonical tables (`wholesale_account` + `vip_subscription`). This is the
+ * server-authoritative membership state exposed on the session; it carries no
+ * commercial totals and no admin/internal fields. The browser must treat this
+ * (via `/auth/me`), not localStorage, as the membership authority.
+ *  - `none`    — no membership / application
+ *  - `pending` — application or subscription awaiting approval
+ *  - `active`  — approved account AND an active (unexpired) subscription
+ */
+export type VipContext = {
+  status: "none" | "pending" | "active";
+  accountId: string | null;
+  memberName: string | null;
+  storeName: string | null;
+  planName: string | null;
+  expiresAt: string | null;
 };
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -145,7 +164,7 @@ export class AuthService {
     totpCode?: string | null;
     ip?: string | null;
     userAgent?: string | null;
-  }): Promise<{ user: AuthUser; token: string; supplierContext?: { supplierId: string; displayName: string; legalName: string } | null }> {
+  }): Promise<{ user: AuthUser; token: string; supplierContext?: { supplierId: string; displayName: string; legalName: string } | null; vipContext?: VipContext }> {
     const email = input.email.trim().toLowerCase();
 
     const [user] = await this.db
@@ -213,6 +232,8 @@ export class AuthService {
     if (user.role === "supplier") {
       supplierContext = await this.supplierContext(user.id);
     }
+    // Phase 6.3-B — membership travels with the session from login onward.
+    const vipContext = await this.vipContext(user.id);
 
     const authUser: AuthUser = {
       id: user.id,
@@ -224,7 +245,7 @@ export class AuthService {
       tokenVersion: user.tokenVersion,
     };
 
-    return { user: authUser, token, supplierContext };
+    return { user: authUser, token, supplierContext, vipContext };
   }
 
   async logout(userId: string): Promise<void> {
@@ -259,7 +280,7 @@ export class AuthService {
     await db.update(accountUser).set({ role: nextRole, updatedAt: new Date() }).where(eq(accountUser.id, userId));
   }
 
-  async me(userId: string): Promise<AuthUser & { supplierContext?: { supplierId: string; displayName: string; legalName: string } | null; totpEnabled?: boolean }> {
+  async me(userId: string): Promise<AuthUser & { supplierContext?: { supplierId: string; displayName: string; legalName: string } | null; vipContext?: VipContext; totpEnabled?: boolean }> {
     const [user] = await this.db
       .select({
         id: accountUser.id,
@@ -282,7 +303,11 @@ export class AuthService {
       supplierContext = await this.supplierContext(user.id);
     }
 
-    return { ...(user as AuthUser), supplierContext };
+    // Phase 6.3-B — VIP membership context is server-authoritative for every
+    // authenticated identity (customers in practice; others resolve to "none").
+    const vipContext = await this.vipContext(user.id);
+
+    return { ...(user as AuthUser), supplierContext, vipContext };
   }
 
   /**
@@ -387,6 +412,44 @@ export class AuthService {
       .limit(1);
     if (!rows.length) return null;
     return rows[0];
+  }
+
+  /**
+   * Phase 6.3-B — server-authoritative VIP membership context. Mirrors the
+   * domain's VIP access rule (approved `wholesale_account` + active,
+   * unexpired `vip_subscription`) without importing the VIP service (avoids a
+   * module cycle); reads the canonical tables directly like `supplierContext`.
+   */
+  async vipContext(userId: string): Promise<VipContext> {
+    // `wholesale_account` is the canonical membership record: its status is the
+    // membership state (approval is what grants wholesale/catalog access; the
+    // separate `vip_subscription` gates RFQ creation, not membership itself).
+    const [account] = await this.db
+      .select({
+        id: wholesaleAccount.id,
+        memberName: wholesaleAccount.memberName,
+        storeName: wholesaleAccount.storeName,
+        planName: wholesaleAccount.planName,
+        status: wholesaleAccount.status,
+        expiresAt: wholesaleAccount.expiresAt,
+      })
+      .from(wholesaleAccount)
+      .where(eq(wholesaleAccount.userId, userId))
+      .limit(1);
+
+    let status: VipContext["status"] = "none";
+    if (account?.status === "approved") status = "active";
+    else if (account?.status === "pending") status = "pending";
+    // rejected / suspended / expired / no-account → "none" (no active eligibility).
+
+    return {
+      status,
+      accountId: account?.id ?? null,
+      memberName: account?.memberName ?? null,
+      storeName: account?.storeName ?? null,
+      planName: account?.planName ?? null,
+      expiresAt: account?.expiresAt ? new Date(account.expiresAt).toISOString() : null,
+    };
   }
 
   private async handleFailedAttempt(user: typeof accountUser.$inferSelect) {

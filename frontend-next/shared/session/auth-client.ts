@@ -32,6 +32,7 @@ import {
   type Session,
   type SessionUser,
   type SupplierSessionContext,
+  type VipSessionContext,
 } from "./types";
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -59,6 +60,24 @@ function parseSupplier(raw: unknown): SupplierSessionContext | null {
   };
 }
 
+/**
+ * Phase 6.3-B — تفسیرِ `vip` از پاسخِ سرور. اگر سرور وضعیتِ معتبری ندهد، `null`
+ * (یعنی «عضویتِ اثبات‌نشده») — هرگز از کشِ مرورگر ساخته نمی‌شود.
+ */
+function parseVip(raw: unknown): VipSessionContext | null {
+  if (!isRecord(raw)) return null;
+  const status = readString(raw, "status");
+  if (status !== "none" && status !== "pending" && status !== "active") return null;
+  return {
+    status,
+    accountId: readString(raw, "accountId") ?? readString(raw, "account_id"),
+    memberName: readString(raw, "memberName") ?? readString(raw, "member_name"),
+    storeName: readString(raw, "storeName") ?? readString(raw, "store_name"),
+    planName: readString(raw, "planName") ?? readString(raw, "plan_name"),
+    expiresAt: readString(raw, "expiresAt") ?? readString(raw, "expires_at"),
+  };
+}
+
 function parseSessionUser(raw: unknown, supplier: SupplierSessionContext | null): ParseResult<{ user: SessionUser; supplier: SupplierSessionContext | null }> {
   if (!isRecord(raw)) return { ok: false, reason: "پاسخِ سرور یک شیء معتبر نیست." };
   const id = readString(raw, "id") ?? readString(raw, "sub") ?? readString(raw, "userId") ?? readString(raw, "user_id");
@@ -81,10 +100,13 @@ function parseSessionUser(raw: unknown, supplier: SupplierSessionContext | null)
 }
 
 /** تفسیرِ بدنهٔ `GET /auth/me`. */
-export function parseAuthMeResponse(raw: unknown): ParseResult<{ user: SessionUser; supplier: SupplierSessionContext | null }> {
+export function parseAuthMeResponse(raw: unknown): ParseResult<{ user: SessionUser; supplier: SupplierSessionContext | null; vip: VipSessionContext | null }> {
   if (!isRecord(raw)) return { ok: false, reason: "بدنهٔ /auth/me یک شیء معتبر نیست." };
   const supplier = parseSupplier(raw.supplier ?? raw.supplierContext ?? raw.supplier_context);
-  return parseSessionUser(raw, supplier);
+  const vip = parseVip(raw.vip ?? raw.vipContext ?? raw.vip_context);
+  const parsed = parseSessionUser(raw, supplier);
+  if (!parsed.ok) return parsed;
+  return { ok: true, value: { ...parsed.value, vip } };
 }
 
 /** تفسیرِ بدنهٔ `POST /auth/login` (فقط برای راستی‌آزمایی؛ مرجعِ هویت نیست). */
@@ -138,6 +160,7 @@ export function anonymousSession(fetchedAt: string | null = null): Session {
     status: "anonymous",
     user: null,
     supplier: null,
+    vip: null,
     capabilities: createCapabilitySet(),
     fetchedAt,
     source: "server",
@@ -158,11 +181,12 @@ export function capabilitiesFor(
   });
 }
 
-function authenticated(user: SessionUser, supplier: SupplierSessionContext | null, capabilities: CapabilitySet): Session {
+function authenticated(user: SessionUser, supplier: SupplierSessionContext | null, vip: VipSessionContext | null, capabilities: CapabilitySet): Session {
   return {
     status: "authenticated",
     user,
     supplier,
+    vip,
     capabilities,
     fetchedAt: new Date().toISOString(),
     source: "server",
@@ -179,7 +203,7 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
    * است» — پنهان کردنش به‌عنوان anonymous دروغ است و باید اعلام شود.
    */
   type SessionRead =
-    | { ok: true; data: { user: SessionUser; supplier: SupplierSessionContext | null; capabilities: CapabilitySet }; meta: ApiResponseMeta }
+    | { ok: true; data: { user: SessionUser; supplier: SupplierSessionContext | null; vip: VipSessionContext | null; capabilities: CapabilitySet }; meta: ApiResponseMeta }
     | { ok: false; error: ApiError; meta: ApiResponseMeta; stage: "identity" | "permissions" };
 
   async function readSession(): Promise<SessionRead> {
@@ -233,8 +257,8 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
       }
       return { ok: false, error: result.error, meta: result.meta };
     }
-    const { user, supplier, capabilities } = result.data;
-    return { ok: true, data: authenticated(user, supplier, capabilities), meta: result.meta };
+    const { user, supplier, vip, capabilities } = result.data;
+    return { ok: true, data: authenticated(user, supplier, vip, capabilities), meta: result.meta };
   }
 
   async function loginResult(input: LoginInput): Promise<ApiResult<Session>> {

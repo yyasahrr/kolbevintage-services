@@ -26,10 +26,30 @@ export type SupplierSessionContext = {
   status: string | null;
 };
 
+/**
+ * Phase 6.3-B — وضعیتِ عضویتِ VIP/عمده، **فقط از سرور** (`GET /auth/me`).
+ * مرورگر هرگز این را از localStorage استنتاج نمی‌کند؛ `kv_wholesale_membership`
+ * دیگر مرجعِ عضویت نیست. هیچ مبلغِ تجاری یا فیلدِ ادمین/داخلی حمل نمی‌شود.
+ *  - `none`    — بدونِ عضویت/درخواست
+ *  - `pending` — درخواست/اشتراک در انتظارِ تأیید
+ *  - `active`  — حسابِ تأییدشده + اشتراکِ فعال
+ */
+export type VipSessionStatus = "none" | "pending" | "active";
+
+export type VipSessionContext = {
+  status: VipSessionStatus;
+  accountId: string | null;
+  memberName: string | null;
+  storeName: string | null;
+  planName: string | null;
+  expiresAt: string | null;
+};
+
 export type AuthenticatedSession = {
   status: "authenticated";
   user: SessionUser;
   supplier: SupplierSessionContext | null;
+  vip: VipSessionContext | null;
   capabilities: CapabilitySet;
   fetchedAt: string;
   source: "server";
@@ -39,6 +59,7 @@ export type AnonymousSession = {
   status: "anonymous";
   user: null;
   supplier: null;
+  vip: null;
   capabilities: CapabilitySet;
   fetchedAt: string | null;
   source: "server";
@@ -57,12 +78,14 @@ export type AuthMeResponse = {
   phone: string | null;
   totpEnabled: boolean;
   supplier: { supplierId: string; displayName: string | null; legalName: string | null; status?: string | null } | null;
+  vip: VipSessionContext | null;
 };
 
 /** بدنهٔ پاسخِ `POST /auth/login` روی API canonical. */
 export type AuthLoginResponse = {
   user: { id: string; email: string | null; role: string; name: string | null; phone: string | null };
   supplier?: { supplierId: string; displayName: string | null; legalName: string | null; status?: string | null } | null;
+  vip?: VipSessionContext | null;
 };
 
 export type LoginInput = {

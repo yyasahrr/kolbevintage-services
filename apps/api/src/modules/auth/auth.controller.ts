@@ -64,7 +64,7 @@ export class AuthController {
     const ip = req.ip ?? null;
     const userAgent = String(req.headers["user-agent"] ?? "");
 
-    const { user, token, supplierContext } = await this.auth.login({
+    const { user, token, supplierContext, vipContext } = await this.auth.login({
       email: dto.email,
       password: dto.password,
       role: dto.role,
@@ -78,6 +78,7 @@ export class AuthController {
     return {
       user: { id: user.id, email: user.email, role: user.role, name: user.displayName, phone: user.phone },
       supplier: supplierContext ?? undefined,
+      vip: vipContext ?? undefined,
     };
   }
 
@@ -101,6 +102,8 @@ export class AuthController {
       phone: user.phone,
       totpEnabled: (user as any).totpEnabled ?? false,
       supplier: (user as any).supplierContext ?? null,
+      // Phase 6.3-B — server-authoritative VIP membership context (never from browser cache).
+      vip: (user as any).vipContext ?? null,
     };
   }
 

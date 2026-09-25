@@ -235,6 +235,8 @@ export function parseSupplierMe(raw: unknown): Session {
     status: "authenticated",
     user,
     supplier,
+    // Supplier portal sessions carry no VIP/wholesale membership context.
+    vip: null,
     capabilities: capabilitiesFor(user, supplier),
     fetchedAt: new Date().toISOString(),
     source: "server",
