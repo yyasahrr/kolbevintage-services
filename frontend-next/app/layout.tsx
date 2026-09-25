@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+// فاز ۶.۱: نشانه‌های طراحی و لایهٔ پایهٔ RTL-safe. این دو فقط متغیر/کلاس اضافه
+// می‌کنند و هیچ قانونِ موجودی را تغییر نمی‌دهند (بدون تغییر بصری).
+import "../shared/design/tokens.css";
+import "../shared/design/foundation.css";
 
 export const metadata: Metadata = {
   title: "کلبه وینتیج | پوشاک کلاسیک، وینتیج و دست‌دوز",

@@ -17,6 +17,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "storefront"),
       "@server": path.resolve(import.meta.dirname, "server"),
+      "@shared": path.resolve(import.meta.dirname, "shared"),
     },
   },
   test: {

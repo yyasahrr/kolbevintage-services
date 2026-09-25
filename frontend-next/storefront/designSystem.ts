@@ -1,3 +1,5 @@
+import { semanticColorVariablesFromLegacy } from "@shared/design/legacy-bridge";
+
 export type CategoryLayout = "bento" | "editorial" | "grid" | "rail" | "split";
 export type CategoryCardRatio = "portrait" | "landscape" | "square";
 export type CategoryKind = "product" | "style" | "collection";
@@ -158,6 +160,10 @@ export function applyDesignSystem(config: DesignSystemConfig, mode: "light" | "d
   const tokens = theme[mode];
   const root = document.documentElement;
   const variables: Record<string, string> = {
+    // فاز ۶.۱: نشانه‌های معناییِ تازه هم‌زمان با متغیرهای قدیمی به‌روز می‌شوند تا
+    // دو سیستم از هم جدا نیفتند. این بلوک فقط متغیر اضافه می‌کند و هیچ
+    // قانون/مقدارِ فعلی را تغییر نمی‌دهد.
+    ...semanticColorVariablesFromLegacy(tokens),
     "--site-bg": tokens.background,
     "--site-surface": tokens.surface,
     "--site-surface-muted": tokens.surfaceMuted,
