@@ -9,7 +9,10 @@
     "start": "next start -H 0.0.0.0 -p 3000",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:phase-6-0": "vitest run --config vitest.phase-6-0.config.ts",
+    "test:phase-6-1": "vitest run --config vitest.phase-6-1.config.ts",
+    "tokens:build": "node --no-warnings shared/design/generate-tokens.mts"
   },
   "dependencies": {
     "lucide-react": "^0.545.0",

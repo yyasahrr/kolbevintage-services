@@ -134,8 +134,10 @@ export function formatMoney(value: MoneyString, options: FormatMoneyOptions = {}
 
 /** مقایسهٔ ایمن: -1 / 0 / 1 بدون لمسِ عدد اعشاری. */
 export function compareMoney(a: MoneyString, b: MoneyString): -1 | 0 | 1 {
-  const left = toMinorUnits(a);
-  const right = toMinorUnits(b);
+  // مقیاسِ دو مقدار لزوماً یکی نیست ("10" و "10.00")؛ قبل از مقایسه هم‌تراز می‌شوند.
+  const scale = Math.max(moneyScale(a), moneyScale(b));
+  const left = toMinorUnits(a, scale);
+  const right = toMinorUnits(b, scale);
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;

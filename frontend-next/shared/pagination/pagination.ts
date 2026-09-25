@@ -136,15 +136,16 @@ export function normalizePage<T>(
 ): Page<T> {
   const { items: rawItems, container } = locateItems(raw, options.itemsPath);
   const items = rawItems as readonly T[];
-  const pageSize = readPageSize(container, items.length);
+  const source = container ?? {};
+  const nested = isRecord(source.pagination) ? source.pagination : null;
+  const meta = nested ?? source;
+  // متادیتا می‌تواند در خودِ پاسخ یا در شیءِ `pagination` باشد (هر دو قراردادِ
+  // canonical وجود دارد: لاگ‌ها `pagination.limit` و سفارش‌ها `nextCursor` سطحِ اول).
+  const pageSize = readPageSize(meta, items.length);
 
   if (mode === "NONE") {
     return { mode: "NONE", items, pageSize, complete: true };
   }
-
-  const source = container ?? {};
-  const nested = isRecord(source.pagination) ? source.pagination : null;
-  const meta = nested ?? source;
 
   if (mode === "OFFSET") {
     const page = readNumber(meta, ["page", "currentPage", "current_page"]) ?? options.fallbackPage ?? 1;

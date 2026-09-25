@@ -223,9 +223,31 @@ describe("Phase 6.1-A shared HTTP boundary", () => {
   });
 
   it("resolves the default base url without hardcoding a host or port", () => {
-    const resolved = resolveDefaultBaseUrl();
-    expect(resolved.startsWith("http")).toBe(false);
-    expect(resolved).toBe("/api/v1");
+    // در harness کاملِ تست، global setup آدرس داخلی Nest را ست می‌کند؛ برای سنجشِ
+    // مقدارِ پیش‌فرضِ تولید، آن را موقتاً حذف می‌کنیم.
+    const original = process.env.KOLBE_API_INTERNAL_URL;
+    delete process.env.KOLBE_API_INTERNAL_URL;
+    try {
+      const resolved = resolveDefaultBaseUrl();
+      expect(resolved.startsWith("http")).toBe(false);
+      expect(resolved).toBe("/api/v1");
+    } finally {
+      if (original !== undefined) process.env.KOLBE_API_INTERNAL_URL = original;
+    }
+  });
+
+  it("prefers the internal service url on the server without leaking it to the browser", () => {
+    const original = process.env.KOLBE_API_INTERNAL_URL;
+    process.env.KOLBE_API_INTERNAL_URL = "http://127.0.0.1:45600/api/v1";
+    try {
+      const resolved = resolveDefaultBaseUrl();
+      expect(typeof globalThis.window === "undefined" ? resolved : "/api/v1").toBe(
+        typeof globalThis.window === "undefined" ? "http://127.0.0.1:45600/api/v1" : "/api/v1",
+      );
+    } finally {
+      if (original === undefined) delete process.env.KOLBE_API_INTERNAL_URL;
+      else process.env.KOLBE_API_INTERNAL_URL = original;
+    }
   });
 
   it("exposes a Persian fallback message for every error kind", () => {

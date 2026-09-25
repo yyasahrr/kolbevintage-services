@@ -172,13 +172,26 @@ function authenticated(user: SessionUser, supplier: SupplierSessionContext | nul
 export function createSessionClient(client: ApiClient, options: SessionClientOptions = {}): SessionClient {
   const paths = options.paths ?? CANONICAL_AUTH_PATHS;
 
+  /**
+   * `stage` مشخص می‌کند شکست در کدام مرحله بوده است. چرا مهم است؟ چون
+   * ۴۰۱/۴۰۳ روی خودِ `me` یک پاسخِ معتبر است (نشستی وجود ندارد)، اما همان
+   * وضعیت روی قراردادِ capability یعنی «کاربر هست اما دسترسیِ دانه‌ریز نامشخص
+   * است» — پنهان کردنش به‌عنوان anonymous دروغ است و باید اعلام شود.
+   */
   type SessionRead =
     | { ok: true; data: { user: SessionUser; supplier: SupplierSessionContext | null; capabilities: CapabilitySet }; meta: ApiResponseMeta }
-    | { ok: false; error: ApiError; meta: ApiResponseMeta };
+    | { ok: false; error: ApiError; meta: ApiResponseMeta; stage: "identity" | "permissions" };
 
   async function readSession(): Promise<SessionRead> {
     const result = await client.requestResult<unknown>(paths.me);
-    if (!result.ok) return { ok: false, error: result.error, meta: { status: result.error.status ?? 0, url: paths.me, method: "GET", requestId: result.error.requestId, headers: new Headers() } };
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.error,
+        stage: "identity",
+        meta: { status: result.error.status ?? 0, url: paths.me, method: "GET", requestId: result.error.requestId, headers: new Headers() },
+      };
+    }
     const parsed = parseAuthMeResponse(result.data);
     if (!parsed.ok) {
       const error = new ApiError({
@@ -190,12 +203,19 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
         transport: "protocol",
         body: result.data,
       });
-      return { ok: false, error, meta: result.meta };
+      return { ok: false, error, meta: result.meta, stage: "identity" };
     }
     let permissions: readonly string[] = [];
     if (options.permissionsLoader) {
       const loaded = await options.permissionsLoader(parsed.value.user);
-      if (!loaded.ok) return { ok: false, error: loaded.error, meta: { status: loaded.error.status ?? 0, url: paths.me, method: "GET", requestId: loaded.error.requestId, headers: new Headers() } };
+      if (!loaded.ok) {
+        return {
+          ok: false,
+          error: loaded.error,
+          stage: "permissions",
+          meta: { status: loaded.error.status ?? 0, url: paths.me, method: "GET", requestId: loaded.error.requestId, headers: new Headers() },
+        };
+      }
       permissions = loaded.data;
     }
     const capabilities = capabilitiesFor(parsed.value.user, parsed.value.supplier, permissions);
@@ -205,8 +225,10 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
   async function restoreResult(): Promise<ApiResult<Session>> {
     const result = await readSession();
     if (!result.ok) {
-      // ۴۰۱/۴۰۳ یعنی «وارد نیستید / اجازه ندارید» — یک پاسخِ معتبر است، نه شکست.
-      if (result.error.kind === "UNAUTHORIZED" || result.error.kind === "FORBIDDEN") {
+      // ۴۰۱/۴۰۳ روی خودِ نشست یعنی «وارد نیستید / اجازه ندارید» — یک پاسخِ معتبر
+      // است، نه شکست. اما همان وضعیت از قراردادِ capability باید اعلام شود.
+      const notSignedIn = result.error.kind === "UNAUTHORIZED" || result.error.kind === "FORBIDDEN";
+      if (result.stage === "identity" && notSignedIn) {
         return { ok: true, data: anonymousSession(), meta: result.meta };
       }
       return { ok: false, error: result.error };
