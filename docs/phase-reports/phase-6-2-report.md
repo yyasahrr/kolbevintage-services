@@ -452,11 +452,12 @@ visual parity evidence exists (Phase 6.7 gate).
 |---|---|
 | `125fd8a` | Phase 6.0 closure (branch point) |
 | `2a66f07` | Phase 6.1 + Phase 6.2 implementation, tests, docs (already on remote) |
-| `708a830` | supplier team vertical slice (controller/policy/audit + DB tests) |
-| `ac6939d` | supplier team adapter + canonical TeamPage |
-| `cf42bad` | `?page=` deep-link resolution + capability-gated page entry |
-| `431bf4d` | mobile drawer a11y (closed drawer leaves the tab order) + e2e harness |
-| `9983f62` | real visual-regression baselines (15 projects) |
+| `ff1d29d` | supplier team vertical slice (controller/policy/audit + DB tests) |
+| `6e3491a` | supplier team adapter + canonical TeamPage |
+| `da3d1ab` | `?page=` deep-link resolution + capability-gated page entry |
+| `dd70961` | mobile drawer a11y (closed drawer leaves the tab order) + e2e harness |
+| `2558f09` | real visual-regression baselines (15 projects) |
+| `56195d0` | e2e seed identities + opt-in `/api/v1` proxy for the browser gate |
 | *(this commit)* | report closure; final local/remote head recorded in the push confirmation |
 
 The closure push was verified with `git push origin
