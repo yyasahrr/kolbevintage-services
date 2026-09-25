@@ -44,7 +44,7 @@ const SupplierApp = dynamic(() => import("../../supplier-src/App"), {
 
 export default function SupplierPage() {
   useEffect(() => {
-    const links = ["styles.css", "auth.css", "workflows.css", "design-system.css"].map((file) => {
+    const links = ["styles.css", "auth.css", "workflows.css", "design-system.css", "portal.css"].map((file) => {
       const link = document.createElement("link");
       link.rel = "stylesheet";
       link.href = `/supplier-portal/${file}`;
