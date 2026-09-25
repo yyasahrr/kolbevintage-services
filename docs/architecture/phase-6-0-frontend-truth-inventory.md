@@ -104,4 +104,3 @@ No backend ownership blocker was found. The frontend gaps are contract-consumpti
 7. Compatibility removal requires portal E2E parity and is deferred to 6.7.
 
 These are not schema or canonical-domain defects. Phase 6.0 changes no runtime behavior.
-

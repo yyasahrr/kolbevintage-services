@@ -66,4 +66,3 @@ Data-driven entries select from: `LOADING`, `READY_WITH_DATA`, `READY_EMPTY`, `V
 A fixture, localStorage record or compatibility route is removable only when canonical read/write behavior, actor isolation, error mapping, pagination, empty states and existing feature visibility are covered by tests. Visual snapshots or focused browser assertions must protect layout and RTL behavior. Critical commerce paths additionally require server-state verification so an apparently successful UI cannot mask a failed mutation.
 
 Phase 6.0 creates contracts and tests only. It performs no client rewrite, portal wiring, fixture deletion, schema change, visual change or Phase 6.1 implementation.
-
