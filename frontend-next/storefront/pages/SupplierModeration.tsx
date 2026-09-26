@@ -102,6 +102,9 @@ export function SupplierModerationPage({ api = SHARED_DEFAULT_API }: { api?: Sup
   const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   const [confirm, setConfirm] = useState<null | 'new' | 'existing' | 'reject'>(null)
+  const [publishBusy, setPublishBusy] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
+  const [publishNotice, setPublishNotice] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [search, setSearch] = useState('')
   const [candidates, setCandidates] = useState<Candidate[] | null>(null)
@@ -216,6 +219,30 @@ export function SupplierModerationPage({ api = SHARED_DEFAULT_API }: { api?: Sup
     [api, openId, note, chosenProductId, refreshAfterAction],
   )
 
+  /**
+   * انتشارِ محصولِ کانونیکال در کانالِ عمده‌فروشی.
+   *
+   * تأیید، محصول را `approved` می‌کند؛ مرورِ عمده‌فروشی فقط `published` را نشان
+   * می‌دهد. این کنش همان `POST /catalog/products/:id/status` واقعی است تا
+   * زنجیرهٔ «تأمین‌کننده → تأییدِ ادمین → کاتالوگِ عمده» در UI بن‌بست نشود.
+   * نتیجه از سرور بازخوانی می‌شود و هیچ وضعیتی در مرورگر ساخته نمی‌شود.
+   */
+  const publishProduct = useCallback(async () => {
+    const productId = detail?.approvedProductId
+    if (!productId) return
+    setPublishBusy(true)
+    setPublishError(null)
+    setPublishNotice(null)
+    const result = await api.catalogSearch.transition(productId, 'published')
+    setPublishBusy(false)
+    if (result.ok) {
+      setPublishNotice('محصول در کانالِ عمده‌فروشی منتشر شد.')
+    } else {
+      setPublishError(result.error.message || 'انتشار انجام نشد')
+    }
+    await loadDetail(openId ?? '', { resetFeedback: false })
+  }, [api, detail?.approvedProductId, loadDetail, openId])
+
   const rows = useMemo(() => submissions ?? [], [submissions])
   const chosen = candidates?.find(item => item.id === chosenProductId) ?? null
 
@@ -327,6 +354,10 @@ export function SupplierModerationPage({ api = SHARED_DEFAULT_API }: { api?: Sup
               actionNotice={actionNotice}
               confirm={confirm}
               setConfirm={setConfirm}
+          publishBusy={publishBusy}
+          publishError={publishError}
+          publishNotice={publishNotice}
+          onPublish={() => void publishProduct()}
               note={note}
               setNote={setNote}
               search={search}
@@ -360,6 +391,10 @@ function SubmissionDetail(props: {
   actionNotice: string | null
   confirm: null | 'new' | 'existing' | 'reject'
   setConfirm: (value: null | 'new' | 'existing' | 'reject') => void
+  publishBusy: boolean
+  publishError: string | null
+  publishNotice: string | null
+  onPublish: () => void
   note: string
   setNote: (value: string) => void
   search: string
@@ -599,10 +634,32 @@ function SubmissionDetail(props: {
       {/* ── اقدام‌ها ──────────────────────────────────────────────────────── */}
       <Block title="اقدام" className="mt-4">
         {!canAct ? (
-          <p className="text-[10.5px] text-neutral-500">
-            این پیشنهاد پیش‌تر بررسی شده است ({statusLabel(detail.status)}). برای جلوگیری از تکرار، اقدامِ تازه‌ای
-            ممکن نیست — وضعیت از سرور خوانده می‌شود.
-          </p>
+          <div className="space-y-3">
+            <p className="text-[10.5px] text-neutral-500">
+              این پیشنهاد پیش‌تر بررسی شده است ({statusLabel(detail.status)}). برای جلوگیری از تکرار، اقدامِ تازه‌ای
+              ممکن نیست — وضعیت از سرور خوانده می‌شود.
+            </p>
+            {detail.status === 'approved_new_product' && detail.approvedProductId ? (
+              <div className="border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-[10.5px] font-medium">انتشار در کانالِ عمده‌فروشی</p>
+                <p className="mt-1 text-[10.5px] text-neutral-500">
+                  محصولِ ساخته‌شده اکنون «تأییدشده» است، ولی کاتالوگِ عمده فقط محصولِ «منتشرشده» را نشان می‌دهد.
+                  تا انتشار، خریدارانِ VIP آن را نمی‌بینند.
+                </p>
+                <div dir="ltr" className="mt-1 text-[10.5px] text-neutral-500">{detail.approvedProductId}</div>
+                <button
+                  type="button"
+                  disabled={props.publishBusy}
+                  onClick={props.onPublish}
+                  className={`mt-2 bg-[#011c3a] px-4 py-2 text-[10.5px] font-medium text-white transition hover:bg-[#0a2c55] disabled:opacity-50 ${RING}`}
+                >
+                  {props.publishBusy ? 'در حالِ انتشار…' : 'انتشارِ محصول'}
+                </button>
+                {props.publishNotice ? <p role="status" className="mt-2 text-[10.5px] text-emerald-700">{props.publishNotice}</p> : null}
+                {props.publishError ? <p role="alert" className="mt-2 text-[10.5px] text-red-700">{props.publishError}</p> : null}
+              </div>
+            ) : null}
+          </div>
         ) : props.confirm === null ? (
           <div className="flex flex-wrap gap-2">
             <button

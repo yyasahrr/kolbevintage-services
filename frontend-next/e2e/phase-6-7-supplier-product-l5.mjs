@@ -341,15 +341,31 @@ try {
   check('supplier list reflects the server-owned state', supplierAfter.includes(PRODUCT_NAME))
 
   /* ── 5. Wholesale consumer boundary ───────────────────────────────────── */
-  const browse = await page.request.get(`${BASE}/api/v1/catalog/browse?channel=wholesale&limit=50`)
+  /**
+   * Approval leaves the canonical product `approved`, and the wholesale channel
+   * only lists `published` - that two-step lifecycle is intentional. Publishing
+   * is a real admin action (`POST /catalog/products/:id/status`), so it is
+   * driven through the UI instead of mutating the database directly.
+   */
+  await adminPage.locator(`tr:has-text("${PRODUCT_NAME}") button:has-text("بازبینی")`).first().click()
+  await adminPage.waitForSelector('text=انتشار در کانالِ عمده‌فروشی', { timeout: 60000 })
+  await adminPage.click('button:has-text("انتشارِ محصول")')
+  await adminPage.waitForFunction(() => document.body.innerText.includes('منتشر شد'), null, { timeout: 60000 })
+  check('admin can publish the approved product to the wholesale channel', true)
+
+  const browse = await page.request.get(`${BASE}/api/v1/catalog/browse?channel=wholesale&limit=100`)
   const browseBody = await browse.json().catch(() => ({}))
   const found = (browseBody.results ?? []).find(item => item.id === productId)
   check('approved product is reachable through the canonical wholesale catalog', Boolean(found), found ? found.name : 'not in browse results')
 
   const detail = await page.request.get(`${BASE}/api/v1/catalog/products/${productId}?channel=wholesale`)
   const detailBody = await detail.json().catch(() => ({}))
-  check('wholesale detail exposes variants', Array.isArray(detailBody.variants) && detailBody.variants.length === 6, `${(detailBody.variants ?? []).length}`)
-  check('wholesale detail exposes the offer with MOQ unit', Boolean(detailBody.offers?.[0]?.moqUnit ?? detailBody.offers?.[0]?.moq_unit), JSON.stringify(detailBody.offers?.[0] ?? {}).slice(0, 200))
+  check('wholesale detail exposes variants', Array.isArray(detailBody.variants) && detailBody.variants.length >= 6, `${(detailBody.variants ?? []).length}`)
+  const buyerOffer = detailBody.offers?.[0] ?? {}
+  check('wholesale detail exposes the offer with MOQ and its real unit', buyerOffer.moq === 2 && buyerOffer.moqUnit === 'SERIES', JSON.stringify({ moq: buyerOffer.moq, moqUnit: buyerOffer.moqUnit }).slice(0, 160))
+  check('wholesale detail exposes package composition', Array.isArray(buyerOffer.packages) && buyerOffer.packages.length === 1 && buyerOffer.packages[0].packageType === 'SIZE_RUN' && buyerOffer.packages[0].totalPieces === 6 && buyerOffer.packages[0].items.length === 3, JSON.stringify(buyerOffer.packages ?? null).slice(0, 220))
+  check('wholesale detail exposes all three pricing tiers as decimal strings', Array.isArray(buyerOffer.pricingTiers) && buyerOffer.pricingTiers.map(t => t.unitPrice).join(',') === '1250000,1180000,1090000' && buyerOffer.pricingTiers[2].maxQuantity === null, JSON.stringify((buyerOffer.pricingTiers ?? []).map(t => [t.minQuantity, t.maxQuantity, t.unitPrice])).slice(0, 220))
+  check('wholesale offer keeps money as a decimal string, not a JS number', typeof buyerOffer.price === 'string' && buyerOffer.price === '1250000', String(buyerOffer.price))
 
   /* ── 6. Responsive: no page-level horizontal overflow ─────────────────── */
   const viewports = [

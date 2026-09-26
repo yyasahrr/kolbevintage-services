@@ -278,6 +278,18 @@ export function createSupplierApi(client: ApiClient) {
        */
       products: (q: string, limit = 20) =>
         get<Array<Record<string, unknown>>>("/catalog/products", { q, channel: "wholesale", limit: String(limit) }),
+
+      /**
+       * `POST /catalog/products/:id/status` — گذارِ وضعیتِ محصولِ کانونیکال.
+       *
+       * چرا این لازم است؟ تأییدِ ادمین محصول را `approved` می‌کند، ولی مرورِ
+       * کانالِ عمده‌فروشی فقط `p.status = 'published'` را نشان می‌دهد. بدونِ این
+       * کنش، محصولِ تأییدشده هرگز در کاتالوگ عمده دیده نمی‌شد — یعنی یک
+       * قابلیتِ واقعیِ بک‌اند که از UI حذف شده بود. وضعیت از سرور خوانده می‌شود
+       * و هیچ تطبیق یا حدسی در مرورگر انجام نمی‌شود.
+       */
+      transition: (productId: string, status: "draft" | "pending_review" | "approved" | "published" | "suspended" | "archived") =>
+        post<Record<string, unknown>>(`/catalog/products/${encodeURIComponent(productId)}/status`, { status }),
     },
 
     /* ── ۴. RFQ و پیشنهاد قیمت ───────────────────────────────────────────── */

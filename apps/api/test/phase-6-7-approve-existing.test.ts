@@ -479,4 +479,29 @@ describe("Phase 6.7 — approve-as-existing materializes the full supplier graph
     const [submission] = await db.select().from(schema.supplierProductSubmission).where(eq(schema.supplierProductSubmission.id, submissionId));
     expect(submission.status).toBe("pending_review");
   });
+
+  /**
+   * Approve-as-existing is also a commercial authorization event: the attached
+   * offer must be `published`, because nothing in the service can publish a
+   * draft offer afterwards and the wholesale channel only reads `published`.
+   * The canonical product's own status must not be touched.
+   */
+  it("publishes the attached offer without changing the canonical product's own status", async () => {
+    const { productId, canonical } = await seedCanonicalProduct();
+    const [productBefore] = await db.select().from(schema.product).where(eq(schema.product.id, productId));
+
+    const tag = makeId("t").toUpperCase();
+    const { submissionId } = await stageSubmission(tag);
+    await catalog.approveSubmissionAsExisting(submissionId, productId, ids.adminUser, "تأیید به‌عنوانِ محصولِ موجود");
+
+    const offers = await db.select().from(schema.sellerOffer).where(eq(schema.sellerOffer.productId, productId));
+    const mine = offers.filter((o) => o.sellerId === ids.sellerId);
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((o) => o.status === "published"), JSON.stringify(mine.map((o) => o.status))).toBe(true);
+
+    const [productAfter] = await db.select().from(schema.product).where(eq(schema.product.id, productId));
+    expect(productAfter.status).toBe(productBefore.status);
+    expect(productAfter.name).toBe(productBefore.name);
+    expect(canonical.S).toBeTruthy();
+  });
 });

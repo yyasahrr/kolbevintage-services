@@ -317,7 +317,18 @@ export class CatalogService {
         const id = uid("offer", 0);
         await tx.insert(sellerOffer).values({
           id, productId: created.id, sellerId: submission.sellerId, variantId: boundVariantId,
-          sku: offerSku, status: "draft",
+          /**
+           * تأییدِ ادمین **رویدادِ مجوزِ تجاری** است؛ پس پیشنهاد باید منتشر شود.
+           *
+           * چرا نه `draft`؟ هیچ endpoint‌ای در سرویس وجود ندارد که پیشنهاد را از
+           * `draft` به `published` ببرد (offers.controller فقط create/packages/
+           * pricing-tiers/compliance دارد و `createOffer` هم `draft` می‌نویسد)،
+           * و `channel_offers` در مرورِ کاتالوگ `o.status = 'published'` را
+           * الزامی می‌کند. یعنی با `draft`، تأییدِ ادمین هیچ اثرِ تجاری نداشت و
+           * محصولِ تأییدشده هرگز در کانال عمده‌فروشی دیده نمی‌شد — زنجیرهٔ
+           * تأمین‌کننده → عمده‌فروشی در همان مرحلهٔ تأیید بن‌بست می‌شد.
+           */
+          sku: offerSku, status: "published",
           wholesalePrice: BigInt(stagedCommercial.wholesalePrice as string),
           retailPrice: stagedCommercial.retailPrice != null ? BigInt(stagedCommercial.retailPrice) : null,
           currency: stagedCommercial.currency ?? "IRR",
@@ -501,7 +512,18 @@ export class CatalogService {
         offerId = uid("offer", 0);
         await tx.insert(sellerOffer).values({
           id: offerId, productId, sellerId: submission.sellerId, variantId: boundVariantId,
-          sku: offerSku, status: "draft",
+          /**
+           * تأییدِ ادمین **رویدادِ مجوزِ تجاری** است؛ پس پیشنهاد باید منتشر شود.
+           *
+           * چرا نه `draft`؟ هیچ endpoint‌ای در سرویس وجود ندارد که پیشنهاد را از
+           * `draft` به `published` ببرد (offers.controller فقط create/packages/
+           * pricing-tiers/compliance دارد و `createOffer` هم `draft` می‌نویسد)،
+           * و `channel_offers` در مرورِ کاتالوگ `o.status = 'published'` را
+           * الزامی می‌کند. یعنی با `draft`، تأییدِ ادمین هیچ اثرِ تجاری نداشت و
+           * محصولِ تأییدشده هرگز در کانال عمده‌فروشی دیده نمی‌شد — زنجیرهٔ
+           * تأمین‌کننده → عمده‌فروشی در همان مرحلهٔ تأیید بن‌بست می‌شد.
+           */
+          sku: offerSku, status: "published",
           wholesalePrice: BigInt(stagedCommercial.wholesalePrice as string),
           retailPrice: stagedCommercial.retailPrice != null ? BigInt(stagedCommercial.retailPrice) : null,
           currency: stagedCommercial.currency ?? "IRR",
@@ -983,6 +1005,17 @@ export class CatalogService {
       if (!kolbeSellerId) return empty(); // No KOLBE seller → no retail offers exist.
     }
 
+    /**
+     * `channel_offers` uses a LEFT JOIN plus an explicit active-variant condition.
+     *
+     * A seller offer may legitimately be **product-level** (`variant_id IS NULL`):
+     * a supplier declares one offer SKU and one wholesale price for the whole
+     * product, which is exactly what the approved submission path writes when the
+     * offer SKU is not one of the variant SKUs. The previous INNER JOIN dropped
+     * every such offer, so an admin-approved product could never be priced in the
+     * wholesale channel. For variant-bound offers the "variant must be active"
+     * requirement is unchanged.
+     */
     // Static fragments chosen by booleans — never interpolated user input.
     const priceCol = retail ? sql`"retail_price"` : sql`"wholesale_price"`;
     const sellerFence = retail ? sql`AND o."seller_id" = ${kolbeSellerId}` : sql``;
@@ -995,8 +1028,11 @@ export class CatalogService {
       channel_offers AS (
         SELECT o."product_id", o.${priceCol} AS "price", o."currency", o."variant_id", o."seller_id"
         FROM "seller_offer" AS o
-        JOIN "product_variant" AS v ON v."id" = o."variant_id" AND v."status" = 'active'
-        WHERE o."status" = 'published' AND o.${priceCol} IS NOT NULL ${sellerFence}
+        LEFT JOIN "product_variant" AS v ON v."id" = o."variant_id"
+        WHERE o."status" = 'published'
+          AND o.${priceCol} IS NOT NULL
+          AND (o."variant_id" IS NULL OR v."status" = 'active')
+          ${sellerFence}
       ),
       priced AS (
         SELECT
@@ -1167,10 +1203,19 @@ export class CatalogService {
       .select()
       .from(sellerOffer)
       .where(and(eq(sellerOffer.productId, id), eq(sellerOffer.status, "published")));
+    /**
+     * A product-level offer (`variantId === null`) is legitimate in this domain:
+     * a supplier declares one offer SKU and one wholesale price for the whole
+     * product. The previous `offer.variantId &&` guard dropped every such offer,
+     * so the detail payload reported `offers: []` for an approved supplier
+     * product even though `browse` priced it correctly - the MOQ, MOQ unit,
+     * package type and pricing tiers were invisible to the buyer.
+     *
+     * For variant-bound offers the "variant must be active" rule is unchanged.
+     */
     const offers = allOffers.filter(
       (offer) =>
-        offer.variantId &&
-        activeVariantIds.has(offer.variantId) &&
+        (offer.variantId == null || activeVariantIds.has(offer.variantId)) &&
         (retail ? offer.retailPrice != null : offer.wholesalePrice != null) &&
         (!retail || offer.sellerId === kolbeSellerId),
     );
@@ -1218,6 +1263,27 @@ export class CatalogService {
             .orderBy(productVariantMedia.position, productVariantMedia.id)
         : [];
 
+    /**
+     * حقیقتِ تجاریِ کاملِ هر پیشنهاد، با واکشیِ دسته‌ای (بدونِ N+1).
+     *
+     * پیش‌تر خروجیِ پیشنهاد فقط `{id, sellerId, variantId, price, currency}` بود؛
+     * یعنی خریدارِ عمده MOQ، **واحدِ MOQ**، نوعِ بسته، ترکیبِ بسته و پله‌های
+     * قیمت را نمی‌دید و عملاً نمی‌توانست یک پیشنهادِ «سری» را از «تک‌فروشی»
+     * تشخیص دهد. این داده‌ها در دیتابیس هستند و بک‌اند مالکِ آن‌هاست؛ حذف‌شان از
+     * پاسخ، حذفِ قابلیت است نه ساده‌سازی. پول به‌صورتِ رشتهٔ ده‌دهی بیرون می‌رود.
+     */
+    const offerIds = offers.map((offer) => offer.id);
+    const offerPackages = offerIds.length
+      ? await this.db.select().from(wholesalePackage).where(inArray(wholesalePackage.offerId, offerIds))
+      : [];
+    const packageIds = offerPackages.map((row) => row.id);
+    const packageItems = packageIds.length
+      ? await this.db.select().from(wholesalePackageItem).where(inArray(wholesalePackageItem.packageId, packageIds))
+      : [];
+    const offerTiers = offerIds.length
+      ? await this.db.select().from(wholesalePricingTier).where(inArray(wholesalePricingTier.offerId, offerIds))
+      : [];
+
     return {
       id: prod.id,
       name: prod.name,
@@ -1237,8 +1303,41 @@ export class CatalogService {
         id: offer.id,
         sellerId: offer.sellerId,
         variantId: offer.variantId,
+        sku: offer.sku,
+        status: offer.status,
         price: (retail ? offer.retailPrice : offer.wholesalePrice)!.toString(),
+        // قیمتِ خرده فقط وقتی که در دامنه معنا دارد؛ هرگز ساخته نمی‌شود.
+        retailPrice: offer.retailPrice == null ? null : offer.retailPrice.toString(),
         currency: offer.currency,
+        moq: offer.moq,
+        // واحدِ MOQ دقیقاً همان چیزی است که تأمین‌کننده اعلام کرده و ادمین تأیید
+        // کرده است؛ هرگز به PIECE تقلیل نمی‌یابد.
+        moqUnit: offer.moqUnit,
+        pricingUnit: offer.pricingUnit,
+        packageType: offer.packageType,
+        packages: offerPackages
+          .filter((row) => row.offerId === offer.id)
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            packageType: row.packageType,
+            totalPieces: row.totalPieces,
+            items: packageItems
+              .filter((item) => item.packageId === row.id)
+              .map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
+          })),
+        pricingTiers: offerTiers
+          .filter((row) => row.offerId === offer.id)
+          .sort((a, b) => a.minQuantity - b.minQuantity)
+          .map((row) => ({
+            minQuantity: row.minQuantity,
+            // پلهٔ آخرِ باز: `null` یعنی «از این تعداد به بالا».
+            maxQuantity: row.maxQuantity,
+            unitPrice: row.unitPrice.toString(),
+            currency: row.currency,
+            moqUnit: row.moqUnit,
+            pricingUnit: row.pricingUnit,
+          })),
       })),
       media: media.map((row) => ({ id: row.id, url: row.url, type: row.type, position: row.position })),
       priceFrom: cheapest ? priceOf(cheapest).toString() : null,

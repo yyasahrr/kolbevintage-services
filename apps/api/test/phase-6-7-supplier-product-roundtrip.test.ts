@@ -701,4 +701,48 @@ describe("Phase 6.7 — Supplier Product lossless lifecycle roundtrip (real Post
     };
   }
 
+  /**
+   * Downstream commercial boundary.
+   *
+   * Approval is the commercial authorization event, so the materialized offer
+   * must be `published`: no endpoint in the service can move an offer out of
+   * `draft`, and the catalog's `channel_offers` CTE requires `published`. With
+   * `draft` the whole supplier -> wholesale chain dead-ended at approval.
+   *
+   * It also covers a product-level offer (`variant_id IS NULL`), which the
+   * previous INNER JOIN on product_variant silently dropped from the channel.
+   */
+  it("an approved supplier product is reachable and correctly priced in the wholesale channel", async () => {
+    const { submission, graph } = await submitRich();
+    const created = await catalog.approveSubmissionAsNew(submission.id, ids.adminUser, "تأیید شد");
+
+    const offers = await db.select().from(schema.sellerOffer).where(eq(schema.sellerOffer.productId, created.id));
+    expect(offers).toHaveLength(1);
+    // Approval is the commercial authorization for the offer: nothing in the
+    // service can move an offer out of `draft` afterwards.
+    expect(offers[0].status).toBe("published");
+    expect(String(offers[0].wholesalePrice)).toBe(graph.commercial.wholesalePrice);
+
+    // The product lifecycle is deliberately two-step: approval sets `approved`,
+    // and an admin publishes it into the channel through the real endpoint.
+    const [approved] = await db.select().from(schema.product).where(eq(schema.product.id, created.id));
+    expect(approved.status).toBe("approved");
+    const transition = await request(http)
+      .post(`/api/v1/catalog/products/${created.id}/status`)
+      .set("Cookie", await login(`${ids.adminUser}@kolbe.test`))
+      .send({ status: "published" });
+    expect(transition.status, JSON.stringify(transition.body)).toBeLessThan(400);
+
+    const res = await request(http)
+      .get("/api/v1/catalog/browse")
+      .query({ channel: "wholesale", limit: 100 });
+    expect(res.status).toBe(200);
+    const found = res.body.results.find((row: any) => row.id === created.id);
+    expect(found, "approved product missing from wholesale browse results").toBeDefined();
+    expect(found.ownerType).toBe("SUPPLIER");
+    expect(found.priceFrom).toBe(graph.commercial.wholesalePrice);
+    expect(found.priceCurrency).toBe(graph.commercial.currency ?? "IRR");
+  });
+
+
 });
