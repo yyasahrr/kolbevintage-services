@@ -228,3 +228,78 @@ backend features.
 
 Any backend capability deliberately without public UI is recorded here with: capability · reason ·
 phase · future UI owner. (None registered yet.)
+
+---
+
+## Addendum (2026-09-26) — Supplier Product L5 evidence and the 6.3-C boundary
+
+### Supplier Product: L5 achieved
+
+Verified against a real stack (embedded PostgreSQL :55432, NestJS :4000,
+Next.js :3000) with a real Chromium browser, real file uploads through the
+server media seam, and re-queried canonical tables.
+
+`frontend-next/e2e/phase-6-7-supplier-product-l5.mjs` → **58/58 checks passed**.
+
+| Level | Status | Evidence |
+|---|---|---|
+| L0 schema | ✅ | 48 migrations, 199 tables, 461 FKs, 589 CHECKs |
+| L1 domain | ✅ | `catalog.logic.ts` validators, staged graph normalisation |
+| L2 API | ✅ | canonical submission + review + approve endpoints |
+| L3 lossless lifecycle | ✅ | roundtrip 14/14, approve-existing 10/10 (DB-backed) |
+| L4 frontend capability | ✅ | phase-6-7 51/51 |
+| **L5 real browser workflow** | **✅** | **58/58 browser + DB checks** |
+| L6 production UX | ⏳ | viewports partially verified; content extremes, dark theme, 200% zoom, reduced motion and motion design NOT DONE |
+
+Materialized truth verified by re-querying the database after a browser
+approval: one product with attributes, six variants with preserved attributes,
+distinct per-variant inventory ("not supplied" not defaulted to zero), one
+offer (MOQ 2, MOQ unit SERIES, decimal-string money), one SIZE_RUN package with
+`total_pieces = 6` and three items of 2 mapped to real canonical variant ids,
+three pricing tiers (2–9 / 10–49 / 50+ open-ended) at 1250000 / 1180000 /
+1090000, and product media.
+
+### Defects found by the browser workflow (all fixed)
+
+1. **The admin portal could not log in.** `signInAdmin` / `signOutAdmin` /
+   `restoreAdminSession` called `/store/kolbe/auth/login`,
+   `/store/kolbe/auth/logout` and `/store/kolbe/admin/tickets` — none exist on
+   the Nest service (all 404). The 404 was reported to the operator as "wrong
+   credentials". Now on the canonical `/api/v1/auth/*` seam, with the admin role
+   read from `GET /auth/me` (derived from the signed session cookie) instead of
+   being asserted by the browser in the request body.
+2. **Unbounded refetch loop** in `SupplierModerationPage`: `{ api = defaultApi() }`
+   re-created the client on every render. Measured **517 list requests in ~9.5 s**
+   (~54/s), which also made rows un-clickable. Now a stable module-level
+   instance: **517 → 2**.
+3. **Media upload silently did nothing** (state-then-sync-click race, and a
+   reducer rowId override).
+4. **The approval→wholesale chain dead-ended.** Approval left the offer in
+   `draft` (nothing can publish an offer); `channel_offers` used an INNER JOIN
+   that dropped product-level offers; the detail filter required
+   `offer.variantId`; and the offer projection exposed only
+   `{id, sellerId, variantId, price, currency}` — no MOQ, no MOQ unit, no
+   package type, no tiers. All four fixed; the two-step `approved → published`
+   product lifecycle is preserved and the publish action is now exposed in the
+   moderation UI.
+
+### 6.3-C Wholesale catalog UI: **NOT COMPLETE**
+
+The backend and the typed adapter now expose the full commercial truth:
+`GET /catalog/products/:id?channel=wholesale` returns `offers[]` with `sku`,
+`status`, `moq`, `moqUnit`, `pricingUnit`, `packageType`, `packages[]` (with
+items) and `pricingTiers[]`, all money as decimal strings, batch-loaded.
+
+`shared/wholesale/catalog.ts` maps all of it losslessly
+(`test/phase-6-3-wholesale-catalog.test.ts` 12/12).
+
+**The UI does not render it.** Measured before this wave: across
+`storefront/pages/VIPPortal.tsx` and `storefront/pages/Wholesale.tsx`, `moq`
+appears once in total and `package`/`tier` appear zero times. Neither file
+imports `fetchWholesaleProductDetail` or `mapWholesaleProductDetail`, so the
+wholesale product detail — and therefore MOQ, MOQ unit, package composition and
+pricing tiers — has **no rendering surface at all**.
+
+That is the first task of 6.3-C. Per the registry, `vip-wholesale-catalog` is
+classified `RESTRUCTURE`; the adapter and API work above is the prerequisite,
+not the deliverable. **6.3-C must not be marked complete on this evidence.**

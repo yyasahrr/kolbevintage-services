@@ -55,13 +55,51 @@ export type WholesaleVariant = {
   colorHex: string;
 };
 
+/** یک قلمِ بستهٔ عمده: چند عدد از کدام واریانت. */
+export type WholesalePackageItem = { variantId: string; quantity: number };
+
+export type WholesalePackage = {
+  id: string;
+  name: string;
+  /** SIZE_RUN | FIXED_QUANTITY | COLOR_MIX | CUSTOM_BUNDLE — از سرور، نه حدسِ مرورگر. */
+  packageType: string;
+  totalPieces: number;
+  items: WholesalePackageItem[];
+};
+
+/** یک پلهٔ قیمت. `maxQuantity: null` یعنی پلهٔ باز («از این تعداد به بالا»). */
+export type WholesalePricingTier = {
+  minQuantity: number;
+  maxQuantity: number | null;
+  /** قیمتِ واحد به‌صورت رشتهٔ اعشاری — هرگز number. */
+  unitPrice: string;
+  currency: string;
+  moqUnit: string;
+  pricingUnit: string;
+};
+
 export type WholesaleOffer = {
   id: string;
+  /** ممکن است خالی باشد: پیشنهادِ سطحِ محصول هیچ واریانتِ مقیدی ندارد. */
   variantId: string;
   sellerId: string;
+  sku: string;
+  status: string;
   /** قیمتِ پیشنهادیِ عمده به‌صورت رشتهٔ اعشاری — هرگز number. */
   price: string;
+  retailPrice: string | null;
   currency: string;
+  /** حداقلِ سفارش. */
+  moq: number;
+  /**
+   * واحدِ واقعیِ MOQ (PIECE/PACKAGE/SERIES/BOX/CARTON/SET).
+   * هرگز به PIECE تقلیل نمی‌یابد — خریدار باید «سری» را از «عدد» تشخیص دهد.
+   */
+  moqUnit: string;
+  pricingUnit: string;
+  packageType: string | null;
+  packages: WholesalePackage[];
+  pricingTiers: WholesalePricingTier[];
 };
 
 export type WholesaleProductDetail = {
@@ -150,12 +188,46 @@ function mapOffer(raw: unknown): WholesaleOffer | null {
   if (!isRecord(raw)) return null;
   const id = text(raw.id);
   if (id.length === 0) return null;
+  const packages = Array.isArray(raw.packages)
+    ? raw.packages.map((entry) => (isRecord(entry) ? {
+        id: text(entry.id),
+        name: text(entry.name),
+        packageType: text(entry.packageType),
+        totalPieces: nonNegativeInt(entry.totalPieces),
+        items: Array.isArray(entry.items)
+          ? entry.items.map((item) => (isRecord(item)
+              ? { variantId: text(item.variantId), quantity: nonNegativeInt(item.quantity) }
+              : null)).filter((item): item is WholesalePackageItem => item !== null)
+          : [],
+      } : null)).filter((entry): entry is WholesalePackage => entry !== null)
+    : [];
+  const pricingTiers = Array.isArray(raw.pricingTiers)
+    ? raw.pricingTiers.map((entry) => (isRecord(entry) ? {
+        minQuantity: nonNegativeInt(entry.minQuantity),
+        // پلهٔ باز: null یعنی «بدونِ سقف». صفر گذاشتنِ آن دروغ است.
+        maxQuantity: entry.maxQuantity === null || entry.maxQuantity === undefined ? null : nonNegativeInt(entry.maxQuantity),
+        unitPrice: decimalString(entry.unitPrice),
+        currency: text(entry.currency) || "IRR",
+        moqUnit: text(entry.moqUnit),
+        pricingUnit: text(entry.pricingUnit),
+      } : null)).filter((entry): entry is WholesalePricingTier => entry !== null)
+    : [];
   return {
     id,
     variantId: text(raw.variantId),
     sellerId: text(raw.sellerId),
+    sku: text(raw.sku),
+    status: text(raw.status),
     price: decimalString(raw.price),
+    retailPrice: raw.retailPrice === null || raw.retailPrice === undefined ? null : decimalString(raw.retailPrice),
     currency: text(raw.currency) || "IRR",
+    // MOQ از سرور می‌آید؛ اگر نبود ۱ فرض می‌شود که همان پیش‌فرضِ دامنه است.
+    moq: nonNegativeInt(raw.moq) || 1,
+    moqUnit: text(raw.moqUnit) || "PIECE",
+    pricingUnit: text(raw.pricingUnit),
+    packageType: raw.packageType === null || raw.packageType === undefined ? null : text(raw.packageType),
+    packages,
+    pricingTiers,
   };
 }
 

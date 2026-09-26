@@ -127,4 +127,55 @@ describe("Phase 6.3-C wholesale catalog adapter", () => {
     expect(result.ok).toBe(false);
     expect(mapWholesaleProductDetail({ nope: true })).toBeNull();
   });
+
+  /**
+   * حقیقتِ تجاریِ پیشنهاد نباید در آداپتور گم شود: MOQ، **واحدِ واقعیِ MOQ**،
+   * ترکیبِ بسته و پله‌های قیمت — همه به‌صورتِ رشتهٔ اعشاری.
+   */
+  it("preserves MOQ, its real unit, package composition and pricing tiers on the offer", () => {
+    const detail = mapWholesaleProductDetail({
+      id: "prod_1",
+      name: "پیراهن لینن",
+      ownerType: "SUPPLIER",
+      offers: [{
+        id: "offer_1",
+        variantId: null,
+        sellerId: "sel_1",
+        sku: "LIN-SHIRT",
+        status: "published",
+        price: "1250000",
+        retailPrice: null,
+        currency: "IRR",
+        moq: 2,
+        moqUnit: "SERIES",
+        pricingUnit: "PACKAGE",
+        packageType: null,
+        packages: [{
+          id: "wpkg_1", name: "سری سایزبندی S-L", packageType: "SIZE_RUN", totalPieces: 6,
+          items: [{ variantId: "var_s", quantity: 2 }, { variantId: "var_m", quantity: 2 }, { variantId: "var_l", quantity: 2 }],
+        }],
+        pricingTiers: [
+          { minQuantity: 2, maxQuantity: 9, unitPrice: "1250000", currency: "IRR", moqUnit: "SERIES", pricingUnit: "PACKAGE" },
+          { minQuantity: 10, maxQuantity: 49, unitPrice: "1180000", currency: "IRR", moqUnit: "SERIES", pricingUnit: "PACKAGE" },
+          { minQuantity: 50, maxQuantity: null, unitPrice: "1090000", currency: "IRR", moqUnit: "SERIES", pricingUnit: "PACKAGE" },
+        ],
+      }],
+    });
+    expect(detail).not.toBeNull();
+    const offer = detail!.offers[0];
+    // «سری» هرگز به «عدد» تقلیل نمی‌یابد.
+    expect(offer.moq).toBe(2);
+    expect(offer.moqUnit).toBe("SERIES");
+    // پیشنهادِ سطحِ محصول معتبر است؛ variantId خالی نباید پیشنهاد را بیندازد.
+    expect(offer.variantId).toBe("");
+    expect(offer.price).toBe("1250000");
+    expect(offer.packages).toHaveLength(1);
+    expect(offer.packages[0].packageType).toBe("SIZE_RUN");
+    expect(offer.packages[0].totalPieces).toBe(6);
+    expect(offer.packages[0].items.map((item) => item.quantity)).toEqual([2, 2, 2]);
+    expect(offer.pricingTiers.map((tier) => tier.unitPrice)).toEqual(["1250000", "1180000", "1090000"]);
+    // پلهٔ آخر باز است: null باید null بماند، نه صفر.
+    expect(offer.pricingTiers[2].maxQuantity).toBeNull();
+    expect(typeof offer.price).toBe("string");
+  });
 });

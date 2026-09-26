@@ -128,3 +128,45 @@ has always existed so each category declares its own attribute schema, `product_
 already uses exactly this `jsonb` shape, and `assertSubmissionSeparation` already polices what may
 not appear inside product-level attributes — a rule that is meaningless unless those attributes are
 a real canonical concept.
+
+---
+
+## 8. Closure (2026-09-26)
+
+The pipeline is lossless end to end and proven in a real browser.
+
+**Approve as new** writes, in one transaction: product (ownerType SUPPLIER,
+status `approved`, attributes) → variants → product media → variant media →
+variant inventory (seller-scoped) → **one published seller offer** → wholesale
+package + items → pricing tiers → submission `approved_new_product`.
+
+**Approve as existing** never mutates the canonical product: staged SKUs are
+checked globally (`VARIANT_SKU_CONFLICT`), an exact SKU or a deep attribute
+match reuses the canonical variant, otherwise a new variant is created; supplier
+product-level media lands in `offer_media` (canonical `product_media` untouched);
+inventory is upserted scoped to `(variantId, sellerId)`; one offer, packages and
+tiers map SKU → canonical variant id.
+
+**Offer status.** Approval is the commercial authorization event, so the
+materialized offer is `published`. This is load-bearing: no endpoint in the
+service can move an offer out of `draft`, and the catalog channel only reads
+`published`. Before this fix, approval had no commercial effect whatsoever.
+
+**Product status.** Deliberately two-step: approval sets `approved`; an admin
+publishes into the channel via the existing `POST /catalog/products/:id/status`.
+That action was missing from the UI and is now exposed on the moderation page.
+
+**Media ownership.** Supplier media for an existing canonical product goes to
+`offer_media` (the only seller-scoped media table); canonical `product_media`
+is never written by a supplier approval.
+
+**Downstream visibility.** `GET /catalog/browse?channel=wholesale` and
+`GET /catalog/products/:id?channel=wholesale` now return the approved product
+with its MOQ, MOQ unit, package composition and pricing tiers. Product-level
+offers (`variant_id IS NULL`) are supported in both.
+
+**Remaining debt.** The wholesale catalog **UI** still does not render any of
+this — see the 6.3-C section of `frontend-capability-parity.md`. Admin
+`createProduct` (`POST /catalog/products`) still ignores `attributes`.
+Object storage remains `not_configured` (`/api/v1/health` reports
+`storage: not_configured`); media uses the real local provider.
