@@ -11,6 +11,7 @@
  */
 import { chromium } from 'playwright'
 import pg from 'pg'
+import { apiLogin, browserLogin } from './lib/auth.mjs'
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:3000'
 const API = process.env.API_URL ?? 'http://127.0.0.1:4000/api/v1'
@@ -28,13 +29,9 @@ function check(name, ok, detail = '') {
   else { failures.push(`${name} — ${detail}`); console.log(`FAIL  ${name} — ${detail}`) }
 }
 
+/** ورودِ آگاهانه به نرخ: `POST /auth/login` سقفِ ۵ درخواست در ۶۰ ثانیه دارد. */
 async function login(email) {
-  const res = await fetch(`${API}/auth/login`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  })
-  const raw = (res.headers.getSetCookie?.() ?? [res.headers.get('set-cookie')]).filter(Boolean)[0]
-  return { status: res.status, cookie: raw ? String(raw).split(';')[0] : '' }
+  return apiLogin(API, email, PASSWORD)
 }
 
 const db = new pg.Client({ connectionString: DATABASE_URL })
@@ -85,11 +82,17 @@ try {
 
   await page.goto(`${BASE}/vip`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('input[type="email"]', { timeout: 60000 })
-  await page.fill('input[type="email"]', VIP_CATALOG)
-  await page.fill('input[type="password"]', PASSWORD)
   // The VIP login button carries no type attribute; it submits via the form.
-  await page.click('form button:has-text("ورود به پنل VIP")')
-  await page.waitForTimeout(3000)
+  await browserLogin(page, {
+    userSelector: 'input[type="email"]',
+    passSelector: 'input[type="password"]',
+    submitSelector: 'form button:has-text("ورود به پنل VIP")',
+    email: VIP_CATALOG,
+    password: PASSWORD,
+    // 'کاتالوگ' روی صفحهٔ ورود هم هست؛ این رشته فقط در هدرِ احرازشده دیده می‌شود.
+    readyText: 'کاتالوگ عمده',
+  })
+  await page.waitForTimeout(1500)
   check('catalog-only VIP reaches the portal', !(await page.locator('body').innerText()).includes('عضویت VIP فعال نیست'))
 
   await page.goto(`${BASE}/vip/catalog`, { waitUntil: 'domcontentloaded' })

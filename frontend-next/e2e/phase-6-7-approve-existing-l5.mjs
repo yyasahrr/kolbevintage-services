@@ -14,6 +14,7 @@
  */
 import { chromium } from 'playwright'
 import pg from 'pg'
+import { browserLogin } from './lib/auth.mjs'
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:3000'
 const EXECUTABLE = process.env.CHROMIUM_PATH ?? '/home/user/kolbevintage-services/.browsers/bin/chromium'
@@ -57,10 +58,14 @@ try {
   /* ── 1. ساپلایر: ساختِ محصول + ویرایشِ کامل تجاری ─────────────────────── */
   await page.goto(`${BASE}/supplier`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('input[type="email"]', { timeout: 60000 })
-  await page.fill('input[type="email"]', SUPPLIER)
-  await page.fill('input[type="password"]', PASSWORD)
-  await page.click('button.auth-submit')
-  await waitForText(page, 'ثبت محصول جدید')
+  await browserLogin(page, {
+    userSelector: 'input[type="email"]',
+    passSelector: 'input[type="password"]',
+    submitSelector: 'button.auth-submit',
+    email: SUPPLIER,
+    password: PASSWORD,
+    readyText: 'ثبت محصول جدید',
+  })
   check('supplier login reaches the portal', true)
 
   await page.goto(`${BASE}/supplier?page=product-editor`, { waitUntil: 'domcontentloaded' })
