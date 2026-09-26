@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, sql, inArray } from "drizzle-orm";
-import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory, wholesalePackage, wholesalePackageItem, wholesalePricingTier } from "@kolbe/database";
+import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory, wholesalePackage, wholesalePackageItem, wholesalePricingTier, offerMedia } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { DomainError } from "@kolbe/shared";
 import { ProductComplianceService } from "../compliance/product-compliance.service";
@@ -18,6 +18,7 @@ import {
   normalizeStagedMedia,
   normalizeStagedCommercial,
   normalizeStagedAttributes,
+  stagedVariantMatchKey,
   CatalogDomainError,
 } from "./catalog.logic";
 
@@ -377,18 +378,227 @@ export class CatalogService {
     });
   }
 
+  /**
+   * ماده‌سازیِ **بدونِ اتلافِ** پیشنهاد روی یک محصولِ کانونیکالِ موجود.
+   *
+   * پیش از این، این مسیر فقط یک `seller_offer` تک‌ردیفی می‌ساخت: `variantId`
+   * همیشه `null`، `moqUnit` سخت‌کدشده روی `PIECE` (یعنی `SERIES` پاک می‌شد)،
+   * `currency`/`retailPrice`/`packageType` نادیده، و واریانت/رسانه/موجودی/
+   * بسته/پلهٔ قیمت کلاً دور ریخته می‌شدند. از آنجا که
+   * `wholesale_package_item.variant_id` در schema «NOT NULL» است، این مسیر
+   * عملاً نمی‌توانست هیچ سری/بسته‌ای را نگه دارد.
+   *
+   * قواعدِ مالکیت (همه از خودِ schema خوانده شده‌اند):
+   *
+   *  - **محصولِ کانونیک تغییر نمی‌کند:** نه name/slug/description/owner/status
+   *    و نه `isKolbeExclusive`. محصولِ انحصاریِ کلبه پیشنهادِ تأمین‌کننده
+   *    نمی‌پذیرد.
+   *  - **نگاشتِ واریانت.** `product_variant.sku` در schema یکتایِ سراسری است،
+   *    پس SKU هویتِ قوی است: اگر واریانتِ کانونیکِ **همین محصول** همان SKU را
+   *    دارد، همان استفاده می‌شود. اگر SKU به محصولِ دیگری تعلق دارد → خطا
+   *    (هیچ ربایشِ بی‌صدایی). اگر SKU آزاد است، بر اساسِ `attributes` دنبالِ
+   *    واریانتِ هم‌صفات می‌گردیم و در نبودِ آن واریانتِ کانونیکِ تازه
+   *    می‌سازیم؛ بدونِ واریانت نه موجودی ممکن است نه بسته، چون هر دو به
+   *    `variant_id` NOT NULL وابسته‌اند. واریانتِ ازقبل‌موجود هرگز تغییر یا
+   *    حذف نمی‌شود.
+   *  - **رسانه.** رسانهٔ سطحِ محصول به `offer_media` می‌رود — لایهٔ مالکیتِ
+   *    فروشنده — و `product_media` کانونیک دست‌نخورده می‌ماند. رسانهٔ واریانت
+   *    چون در schema مقصدِ «فروشنده + واریانت» ندارد، **فقط افزودنی** در
+   *    `product_variant_media` می‌نشیند؛ این تنها نگاشتی است که ارتباطِ
+   *    رسانه↔واریانت را حفظ کند و هیچ رسانهٔ کانونیکی را جایگزین/حذف نمی‌کند.
+   *  - **موجودی.** `product_variant_inventory` کلیدِ یکتایِ
+   *    `(variant_id, seller_id)` دارد، پس فقط ردیفِ خودِ فروشنده upsert می‌شود
+   *    و موجودیِ فروشندهٔ دیگر هرگز لمس نمی‌شود.
+   *  - **پیشنهاد/بسته/پله.** `moq`، `moqUnit`، `packageType`، `currency` و
+   *    `retailPrice` عیناً حفظ می‌شوند؛ بسته‌ها با همان قواعدِ دامنهٔ `offers`
+   *    اعتبارسنجی می‌شوند و پول همیشه `bigint` از رشتهٔ ده‌دهی ساخته می‌شود.
+   *
+   * کلِ مسیر یک تراکنش است: هر شکست یعنی هیچ نوشتنی باقی نمی‌ماند و پیشنهاد
+   * `pending_review` و قابلِ بررسیِ دوباره است. idempotency با
+   * `SELECT … FOR UPDATE` + گاردِ وضعیت + گاردِ صریحِ SKU تکراریِ پیشنهاد.
+   */
   async approveSubmissionAsExisting(id: string, productId: string, reviewedBy: string, note?: string) {
-    const [target] = await this.db.select().from(product).where(eq(product.id, productId)).limit(1);
-    if (!target) throw new NotFoundError("محصول کانونیکال یافت نشد");
-    if (target.isKolbeExclusive) throw new CatalogDomainError("KOLBE_EXCLUSIVE_NO_SUPPLIER", "محصول انحصاری کلبه پیشنهاد تأمین‌کننده نمی‌پذیرد");
     return this.db.transaction(async (tx) => {
-      const [submission] = await tx.select().from(supplierProductSubmission).where(and(eq(supplierProductSubmission.id, id), eq(supplierProductSubmission.status, "pending_review"))).limit(1);
-      if (!submission) throw new CatalogDomainError("SUBMISSION_NOT_PENDING", "درخواست در انتظار بررسی نیست");
-      const commercial = (submission.commercial ?? {}) as { sku?: string; wholesalePrice?: string | number; moq?: number };
-      if (!commercial.sku) throw new CatalogDomainError("SUBMISSION_SKU_REQUIRED", "شناسهٔ تجاری پیشنهاد موجود نیست");
-      await tx.insert(sellerOffer).values({ id: `offer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, productId, sellerId: submission.sellerId, variantId: null, sku: commercial.sku, status: "draft", wholesalePrice: BigInt(commercial.wholesalePrice ?? 0), retailPrice: null, moq: Math.max(1, commercial.moq ?? 1), moqUnit: "PIECE" });
-      const [updated] = await tx.update(supplierProductSubmission).set({ status: "approved_existing_product", approvedProductId: productId, reviewedBy, reviewedAt: new Date(), adminReviewNote: note ?? null, updatedAt: new Date() }).where(eq(supplierProductSubmission.id, id)).returning();
-      return updated;
+      const [submission] = await tx.select().from(supplierProductSubmission).where(eq(supplierProductSubmission.id, id)).for("update").limit(1);
+      if (!submission) throw new NotFoundError("درخواست محصول یافت نشد");
+      if (submission.status !== "pending_review") throw new CatalogDomainError("SUBMISSION_NOT_PENDING", "درخواست در انتظار بررسی نیست");
+
+      const [target] = await tx.select().from(product).where(eq(product.id, productId)).for("update").limit(1);
+      if (!target) throw new NotFoundError("محصول کانونیکال یافت نشد");
+      if (target.isKolbeExclusive) throw new CatalogDomainError("KOLBE_EXCLUSIVE_NO_SUPPLIER", "محصول انحصاری کلبه پیشنهاد تأمین‌کننده نمی‌پذیرد");
+
+      const stagedVariants = normalizeStagedVariants(submission.variants);
+      const stagedMedia = normalizeStagedMedia(submission.media);
+      const stagedCommercial = normalizeStagedCommercial(submission.commercial);
+      // اعتبارسنجیِ صریحِ کلِ گراف **پیش از** هر نوشتن — جایِ ردِ بی‌صدا.
+      validateStagedCommercialGraph({ variants: stagedVariants, media: stagedMedia, commercial: stagedCommercial });
+
+      const stamp = Date.now();
+      const uid = (prefix: string, index: number) => `${prefix}_${stamp}_${index}_${Math.random().toString(36).slice(2, 8)}`;
+
+      // ── نگاشتِ واریانتِ مرحله‌بندی‌شده به واریانتِ کانونیک ──────────────────
+      const canonicalVariants = await tx.select().from(productVariant).where(eq(productVariant.productId, productId));
+      const canonicalBySku = new Map(canonicalVariants.map((variant) => [variant.sku, variant]));
+      const canonicalByAttributes = new Map<string, string>();
+      for (const variant of canonicalVariants) {
+        const key = stagedVariantMatchKey((variant.attributes ?? {}) as Record<string, unknown>);
+        if (!canonicalByAttributes.has(key)) canonicalByAttributes.set(key, variant.id);
+      }
+
+      // `product_variant.sku` در schema یکتایِ **سراسری** است. پس پیش از هر
+      // ساختنی، SKUهای آزاد را در کلِ جدول بررسی می‌کنیم؛ وگرنه به‌جای خطای
+      // دامنه، یک خطای خامِ قیدِ یکتایی از دیتابیس بیرون می‌زند و SKU محصولِ
+      // دیگر عملاً ربوده می‌شود.
+      const unmappedSkus = stagedVariants.map((staged) => staged.sku).filter((sku) => !canonicalBySku.has(sku));
+      if (unmappedSkus.length > 0) {
+        const elsewhere = await tx
+          .select({ sku: productVariant.sku, productId: productVariant.productId })
+          .from(productVariant)
+          .where(inArray(productVariant.sku, unmappedSkus));
+        const clash = elsewhere.find((row) => row.productId !== productId);
+        if (clash) {
+          throw new CatalogDomainError("VARIANT_SKU_CONFLICT", `SKU «${clash.sku}» به واریانتِ محصولِ دیگری تعلق دارد`);
+        }
+      }
+
+      const variantIdBySku = new Map<string, string>();
+      let createdVariants = 0;
+      for (let index = 0; index < stagedVariants.length; index += 1) {
+        const staged = stagedVariants[index]!;
+        const exact = canonicalBySku.get(staged.sku);
+        if (exact) {
+          variantIdBySku.set(staged.sku, exact.id);
+          continue;
+        }
+        const key = stagedVariantMatchKey(staged.attributes ?? {});
+        const sameAttributes = canonicalByAttributes.get(key);
+        if (sameAttributes) {
+          variantIdBySku.set(staged.sku, sameAttributes);
+          continue;
+        }
+        const [created] = await tx.insert(productVariant).values({
+          id: uid("var", index), productId, sku: staged.sku,
+          attributes: staged.attributes ?? {}, status: staged.status ?? "active",
+        }).returning();
+        canonicalByAttributes.set(key, created.id);
+        variantIdBySku.set(staged.sku, created.id);
+        createdVariants += 1;
+      }
+
+      // ── پیشنهادِ تجاری (پیش از رسانه، چون `offer_media` به offerId نیاز دارد) ─
+      const packages = stagedCommercial.packages ?? [];
+      const tiers = stagedCommercial.pricingTiers ?? [];
+      const hasCommercial = stagedCommercial.wholesalePrice != null;
+      const offerSku = stagedCommercial.sku ?? stagedVariants[0]?.sku;
+      let offerId: string | null = null;
+      if (hasCommercial) {
+        if (!offerSku) throw new CatalogDomainError("SUBMISSION_SKU_REQUIRED", "شناسهٔ تجاری پیشنهاد موجود نیست");
+        const [duplicate] = await tx.select({ id: sellerOffer.id }).from(sellerOffer).where(eq(sellerOffer.sku, offerSku)).limit(1);
+        if (duplicate) throw new CatalogDomainError("OFFER_SKU_EXISTS", `پیشنهادی با SKU «${offerSku}» از قبل ثبت شده است`);
+        const boundVariantId = stagedCommercial.variantSku != null
+          ? variantIdBySku.get(stagedCommercial.variantSku) ?? null
+          : variantIdBySku.get(offerSku) ?? null;
+        offerId = uid("offer", 0);
+        await tx.insert(sellerOffer).values({
+          id: offerId, productId, sellerId: submission.sellerId, variantId: boundVariantId,
+          sku: offerSku, status: "draft",
+          wholesalePrice: BigInt(stagedCommercial.wholesalePrice as string),
+          retailPrice: stagedCommercial.retailPrice != null ? BigInt(stagedCommercial.retailPrice) : null,
+          currency: stagedCommercial.currency ?? "IRR",
+          moq: stagedCommercial.moq ?? 1,
+          // قصدِ تأمین‌کننده حفظ می‌شود؛ PIECE فقط وقتی که واحدی اعلام نشده.
+          moqUnit: stagedCommercial.moqUnit ?? "PIECE",
+          packageType: stagedCommercial.packageType ?? null,
+        });
+      }
+      if ((packages.length > 0 || tiers.length > 0) && !offerId) {
+        throw new CatalogDomainError("PACKAGE_REQUIRES_OFFER", "بسته و پلهٔ قیمت بدونِ پیشنهادِ تجاری قابلِ ساخت نیست");
+      }
+
+      // ── رسانه: سطحِ محصول → لایهٔ فروشنده؛ واریانت → افزودنیِ کانونیک ──────
+      let mediaIndex = 0;
+      for (const item of stagedMedia) {
+        const targetVariantId = item.variantSku != null ? variantIdBySku.get(item.variantSku) : undefined;
+        if (targetVariantId) {
+          await tx.insert(productVariantMedia).values({
+            id: uid("pvm", mediaIndex), variantId: targetVariantId, url: item.url,
+            type: item.type ?? "image", position: item.position ?? mediaIndex,
+          });
+        } else {
+          if (!offerId) throw new CatalogDomainError("MEDIA_REQUIRES_OFFER", "رسانهٔ سطحِ محصول بدونِ پیشنهادِ تجاری قابلِ ثبت نیست");
+          await tx.insert(offerMedia).values({
+            id: uid("om", mediaIndex), offerId, url: item.url,
+            type: item.type ?? "image", position: item.position ?? mediaIndex,
+          });
+        }
+        mediaIndex += 1;
+      }
+      for (let index = 0; index < stagedVariants.length; index += 1) {
+        const variantId = variantIdBySku.get(stagedVariants[index]!.sku)!;
+        const embedded = stagedVariants[index]!.media ?? [];
+        for (let m = 0; m < embedded.length; m += 1) {
+          await tx.insert(productVariantMedia).values({
+            id: uid("pve", index * 100 + m), variantId, url: embedded[m]!.url,
+            type: embedded[m]!.type ?? "image", position: embedded[m]!.position ?? m,
+          });
+        }
+      }
+
+      // ── موجودی: فقط ردیفِ (واریانت، همین فروشنده) ──────────────────────────
+      for (let index = 0; index < stagedVariants.length; index += 1) {
+        const staged = stagedVariants[index]!;
+        const onHand = staged.inventory?.onHand;
+        if (onHand == null) continue;
+        const variantId = variantIdBySku.get(staged.sku)!;
+        const scope = and(eq(productVariantInventory.variantId, variantId), eq(productVariantInventory.sellerId, submission.sellerId));
+        const [existing] = await tx.select({ id: productVariantInventory.id }).from(productVariantInventory).where(scope).limit(1);
+        if (existing) {
+          await tx.update(productVariantInventory).set({ onHand, status: "active" }).where(scope);
+        } else {
+          await tx.insert(productVariantInventory).values({
+            id: uid("pvi", index), variantId, sellerId: submission.sellerId, onHand, reserved: 0, status: "active",
+          });
+        }
+      }
+
+      // ── بسته‌ها / سری‌ها (SKU مرحله‌بندی‌شده → شناسهٔ واریانتِ کانونیک) ─────
+      for (let p = 0; p < packages.length; p += 1) {
+        const pkg = packages[p]!;
+        const mapped = pkg.items.map((item) => ({ variantId: variantIdBySku.get(item.sku) as string | undefined, quantity: item.quantity }));
+        if (mapped.some((item) => item.variantId == null)) {
+          throw new CatalogDomainError("INVALID_PACKAGE_VARIANT", "واریانتِ بسته به واریانتِ کانونیکِ این محصول نگاشت نشد");
+        }
+        const items = mapped as Array<{ variantId: string; quantity: number }>;
+        const totalPieces = calculatePackageTotalPieces(items);
+        validateWholesalePackage({ offerId: offerId!, packageType: pkg.packageType, name: pkg.name, totalPieces, items });
+        const packageId = uid("wpkg", p);
+        await tx.insert(wholesalePackage).values({
+          id: packageId, offerId: offerId!, packageType: pkg.packageType, name: pkg.name,
+          description: pkg.description ?? null, totalPieces,
+        });
+        for (let i = 0; i < items.length; i += 1) {
+          await tx.insert(wholesalePackageItem).values({
+            id: uid("wpit", p * 100 + i), packageId, variantId: items[i]!.variantId, quantity: items[i]!.quantity,
+          });
+        }
+      }
+
+      // ── پله‌های قیمت (با ارز و واحدِ اعلام‌شده، نه پیش‌فرض) ─────────────────
+      for (let t = 0; t < tiers.length; t += 1) {
+        const tier = tiers[t]!;
+        await tx.insert(wholesalePricingTier).values({
+          id: uid("wpt", t), offerId: offerId!, minQuantity: tier.minQuantity,
+          maxQuantity: tier.maxQuantity ?? null, unitPrice: BigInt(tier.unitPrice),
+          currency: stagedCommercial.currency ?? "IRR",
+          moqUnit: tier.moqUnit ?? stagedCommercial.moqUnit ?? "PIECE",
+        });
+      }
+
+      const [updated] = await tx.update(supplierProductSubmission).set({
+        status: "approved_existing_product", approvedProductId: productId, reviewedBy,
+        reviewedAt: new Date(), adminReviewNote: note ?? null, updatedAt: new Date(),
+      }).where(eq(supplierProductSubmission.id, id)).returning();
+      return { ...updated, createdVariants };
     });
   }
 

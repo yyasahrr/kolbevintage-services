@@ -678,3 +678,16 @@ export function normalizeStagedCommercial(raw: unknown): StagedCommercialInput {
     }),
   };
 }
+
+/**
+ * کلیدِ تطبیقِ واریانت بر اساسِ صفات.
+ *
+ * برای اتصالِ پیشنهادِ تأمین‌کننده به یک محصولِ کانونیکالِ **موجود**، باید
+ * واریانتِ مرحله‌بندی‌شده به واریانتِ کانونیک نگاشت شود. ترتیبِ کلیدها در
+ * JSONِ خام تضمین‌شده نیست، پس کلیدها مرتب می‌شوند تا `{a:1,b:2}` و
+ * `{b:2,a:1}` یک واریانت شناخته شوند. این تابع خالص است و مستقیم تست می‌شود.
+ */
+export function stagedVariantMatchKey(attributes: Record<string, unknown> | null | undefined): string {
+  const record = attributes ?? {};
+  return JSON.stringify(Object.keys(record).sort().map((key) => [key, record[key] ?? null]));
+}

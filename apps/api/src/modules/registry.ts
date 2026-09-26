@@ -34,6 +34,12 @@ export type ModuleDefinition = {
 export const MODULES: readonly ModuleDefinition[] = [
   // ماژول‌های زیرساختی
   { name: "health", tables: [], dependsOn: [], status: "live", phase: 0 },
+  /**
+   * Phase 6.7 — درزِ بارگذاریِ رسانه. جدول اختصاصی ندارد: محتوا روی دیسک/
+   * object store می‌نشیند و فقط **نشانیِ** آن در گرافِ محصول/پیشنهاد ذخیره
+   * می‌شود. پس هیچ ماژول دیگری را دور نمی‌زند.
+   */
+  { name: "media", tables: [], dependsOn: [], status: "live", phase: 7 },
   { name: "auth", tables: ["account_user", "login_attempt", "user_session"], dependsOn: ["audit"], status: "live", phase: 2 },
   { name: "users", tables: [], dependsOn: ["auth", "audit"], status: "planned", phase: 2 },
   { name: "customers", tables: [], dependsOn: ["auth", "audit"], status: "planned", phase: 4 },
