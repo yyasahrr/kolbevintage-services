@@ -13,15 +13,15 @@
  * نمایش داده می‌شوند. قیمت یک **رشتهٔ ده‌دهی** است و هرگز `Number()` نمی‌شود.
  */
 
-import { AlertTriangle, Check, Package, Plus, RefreshCw, Search } from 'lucide-react'
+import { AlertTriangle, Package, Plus, RefreshCw, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { SupplierProduct } from '@shared/supplier/contracts'
 import { money, quantity, submissionStatusLabel, statusTone } from '@shared/supplier/present'
 import { dataOrNull } from '@shared/ui/async-state'
 import { useSupplierPortal } from '../context'
-import { usePortalDataVersion, useSupplierMutation, useSupplierResource } from '../hooks'
+import { usePortalDataVersion, useSupplierResource } from '../hooks'
 import type { SupplierPage } from '../navigation'
-import { DataTable, Field, Notice, SectionHeading, StateView, Status, SubmitBar } from '../ui'
+import { DataTable, Notice, SectionHeading, StateView, Status } from '../ui'
 
 export function ProductsPage({ onNavigate }: { onNavigate: (page: SupplierPage) => void }) {
   const portal = useSupplierPortal()
@@ -122,94 +122,6 @@ function ProductDetailHints({ products }: { products: SupplierProduct[] }) {
         ))}
       </ul>
     </section>
-  )
-}
-
-/* ── فرمِ ثبتِ محصول ──────────────────────────────────────────────────────── */
-
-const CATEGORIES = ['پوشاک مردانه', 'پوشاک زنانه', 'کفش و اکسسوری']
-
-export function ProductEditorPage({ onDone }: { onDone: () => void }) {
-  const portal = useSupplierPortal()
-  const mutation = useSupplierMutation({ onSuccess: onDone })
-  const [form, setForm] = useState({ name: '', sku: '', category: '', description: '', wholesalePrice: '', stock: '', size: '', color: '', imageUrl: '' })
-
-  const set = (key: keyof typeof form) => (event: { target: { value: string } }) => setForm(current => ({ ...current, [key]: event.target.value }))
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const price = form.wholesalePrice.trim().replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))).replace(/[^\d]/g, '')
-    const stock = Number(form.stock.replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))).replace(/[^\d]/g, '') || '0')
-    // قیمت یک رشتهٔ ده‌دهی می‌ماند؛ هیچ float‌ای به سرور فرستاده نمی‌شود.
-    await mutation.run(() =>
-      portal.api.products.submit({
-        name: form.name.trim(),
-        sku: form.sku.trim().toUpperCase(),
-        category: form.category,
-        description: form.description.trim(),
-        wholesalePrice: price || '0',
-        stock,
-        size: form.size.trim() || undefined,
-        color: form.color.trim() || undefined,
-        imageUrl: form.imageUrl.trim() || null,
-      }),
-    )
-  }
-
-  return (
-    <>
-      <div className="page-head">
-        <div>
-          <p className="crumbs">کاتالوگ / ثبت محصول</p>
-          <h1>ثبت محصول جدید</h1>
-          <p>اطلاعات را کامل کنید؛ اعتبارسنجی نهایی سمت سرور انجام می‌شود.</p>
-        </div>
-        <button type="button" className="button secondary" onClick={onDone}>بازگشت</button>
-      </div>
-
-      <Notice tone="info" title="شناسهٔ تأمین‌کننده از نشست سرور خوانده می‌شود">
-        هیچ شناسه‌ای از مرورگر به‌عنوان مالکیت ارسال نمی‌شود؛ سرور آن را از کوکیِ نشست استخراج می‌کند.
-      </Notice>
-
-      <form className="surface form-surface" onSubmit={submit} noValidate>
-        <div className="sp-grid">
-          <Field label="نام محصول" required>
-            <input value={form.name} onChange={set('name')} required minLength={3} />
-          </Field>
-          <Field label="SKU" required hint="حروف بزرگ لاتین؛ مثلاً KH-OXF-241">
-            <input value={form.sku} onChange={set('sku')} required className="ltr-inline" />
-          </Field>
-          <Field label="دستهٔ تولید" required>
-            <select value={form.category} onChange={set('category')} required>
-              <option value="" disabled>انتخاب کنید</option>
-              {CATEGORIES.map(category => <option key={category} value={category}>{category}</option>)}
-            </select>
-          </Field>
-          <Field label="قیمت عمده (ریال)" required hint="فقط عدد؛ به‌صورت رشتهٔ ده‌دهی ارسال می‌شود">
-            <input value={form.wholesalePrice} onChange={set('wholesalePrice')} inputMode="numeric" required className="ltr-inline" />
-          </Field>
-          <Field label="موجودی پیشنهادی" required>
-            <input value={form.stock} onChange={set('stock')} inputMode="numeric" required className="ltr-inline" />
-          </Field>
-          <Field label="سایز">
-            <input value={form.size} onChange={set('size')} placeholder="تک‌سایز" />
-          </Field>
-          <Field label="رنگ">
-            <input value={form.color} onChange={set('color')} placeholder="بدون رنگ" />
-          </Field>
-          <Field label="نشانی تصویر" hint="URL معتبر یا مسیرِ داخلی؛ در غیر این صورت سرور آن را رد می‌کند">
-            <input value={form.imageUrl} onChange={set('imageUrl')} className="ltr-inline" dir="ltr" />
-          </Field>
-        </div>
-        <Field label="توضیحات">
-          <textarea value={form.description} onChange={set('description')} rows={4} />
-        </Field>
-        <SubmitBar busy={mutation.busy} error={mutation.error}>
-          <button type="submit" className="button primary" disabled={mutation.busy}><Check size={16} />ارسال برای بررسی</button>
-        </SubmitBar>
-        {mutation.message ? <Notice tone="info" title="ثبت شد">{mutation.message}</Notice> : null}
-      </form>
-    </>
   )
 }
 

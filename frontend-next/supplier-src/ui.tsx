@@ -260,7 +260,12 @@ export function Toast({ message, tone = 'info', onDismiss }: { message: string; 
 
 /* ── نوارِ هشدار ──────────────────────────────────────────────────────────── */
 
-export function Notice({ tone = 'info', title, children }: { tone?: 'info' | 'warn' | 'danger'; title: string; children?: ReactNode }) {
+/**
+ * `success` افزوده شد چون ویرایشگرِ محصول باید «ارسال شد» را از «هشدار» و
+ * «خطا» جدا نشان دهد؛ پیش‌تر فقط سه لحن وجود داشت و موفقیت به info تنزل
+ * می‌کرد. رنگ تنها حاملِ معنا نیست: عنوان و متن هم وضعیت را می‌گویند.
+ */
+export function Notice({ tone = 'info', title, children }: { tone?: 'info' | 'warn' | 'danger' | 'success'; title: string; children?: ReactNode }) {
   return (
     <div className={`sp-notice ${tone}`} role="note">
       <b>{title}</b>

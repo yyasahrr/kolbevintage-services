@@ -210,8 +210,14 @@ export type StagedInventoryInput = {
 export type StagedVariantInput = {
   sku: string;
   attributes: Record<string, string | number | null>;
-  /** قصدِ تأمین‌کننده برای وضعیت؛ سرور آن را حفظ می‌کند. */
-  status?: "draft" | "pending_review" | "approved" | "published" | "suspended" | "archived";
+  /**
+   * قصدِ تأمین‌کننده برای وضعیت؛ سرور آن را حفظ می‌کند.
+   *
+   * مقادیر مجاز = `PRODUCT_VARIANT_STATUSES` در اسکیما (`draft`/`active`/
+   * `archived`) که با قیدِ `product_variant_status_allowed` محافظت می‌شود. این
+   * فهرست با `PRODUCT_STATUSES` (وضعیتِ خودِ محصول) **یکی نیست**.
+   */
+  status?: "draft" | "active" | "archived";
   media?: Array<{ url: string; type?: "image" | "video"; position?: number }>;
   inventory?: StagedInventoryInput;
 };
@@ -863,4 +869,39 @@ export const SUPPLIER_PAGINATION: Record<string, PaginationMode> = {
 export type SupplierList<T> = {
   items: readonly T[];
   page: Page<T> | null;
+};
+
+/* ── دسته‌بندی/برند کانونیک و رسانهٔ بارگذاری‌شده ──────────────────────────────
+ *
+ * این انواع از پاسخِ واقعیِ `GET /catalog/categories`، `GET /catalog/brands` و
+ * `POST /media/upload` آمده‌اند. دسته‌بندی درختی است و `attributesSchema` را
+ * همراه دارد تا ویرایشگر ورودیِ ویژگی‌ها را از همان طرح بسازد.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export type SupplierCategoryNode = {
+  id: string;
+  name: string;
+  slug: string;
+  /**
+   * طرحِ ویژگی‌های همان دسته. ساختارِ آن در مخزن آزاد است (JSONB)، پس مقادیر
+   * را بدونِ فرضِ نوع خاصی نگه می‌داریم و در لایهٔ نمایش تفسیر می‌کنیم.
+   */
+  attributesSchema: Record<string, unknown>;
+  children: SupplierCategoryNode[];
+};
+
+export type SupplierBrand = {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+};
+
+/** پاسخِ `POST /media/upload` — هیچ اعتبارنامه‌ای در آن نیست. */
+export type SupplierUploadedMedia = {
+  url: string;
+  key: string;
+  size: number;
+  kind: "image" | "video";
+  provider: string;
 };

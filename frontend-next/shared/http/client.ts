@@ -115,7 +115,17 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     const headers = new Headers(resolved.defaultHeaders);
     for (const [key, value] of Object.entries(init.headers ?? {})) headers.set(key, value);
-    if (init.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
+    /**
+     * بدنهٔ `FormData` را همان‌طور که هست می‌فرستیم.
+     *
+     * دو نکته: (۱) `JSON.stringify` روی FormData بی‌معنی است؛ (۲) برای multipart
+     * **نباید** `content-type` را خودمان ست کنیم، چون مرورگر باید `boundary` را
+     * تولید کند و هر مقدارِ دستی، درخواست را خراب می‌کند.
+     */
+    const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+    if (init.body !== undefined && !isFormData && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
     if (init.requestId) headers.set(resolved.requestIdHeader, init.requestId);
 
     let signal = init.signal;
@@ -136,7 +146,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         method,
         headers,
         credentials: init.credentials ?? resolved.credentials,
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+        body: init.body === undefined ? undefined : isFormData ? (init.body as FormData) : JSON.stringify(init.body),
         ...(signal ? { signal } : {}),
       });
     } catch (cause) {

@@ -463,3 +463,119 @@ export const PACKAGE_TYPE_LABELS_FA: Record<PackageType, string> = {
   COLOR_MIX: "ترکیب رنگ",
   CUSTOM_BUNDLE: "بستهٔ دلخواه",
 };
+
+/* ── تفسیرِ `category.attributes_schema` ─────────────────────────────────────
+ *
+ * ساختارِ این ستون در اسکیما JSONBِ آزاد است و مخزن هیچ قالبِ ثابتی برایش
+ * تعریف نکرده. پس به‌جای اختراعِ یک قالب، **چند قالبِ رایج** را به‌صورتِ
+ * محافظه‌کارانه تشخیص می‌دهیم و در بقیهٔ موارد یک ورودیِ متنیِ کنترل‌شده می‌دهیم
+ * که مقدارِ دقیقِ تایپ‌شده را حفظ می‌کند.
+ *
+ * هرگز یک «ویرایشگرِ JSONِ خام» به کاربر نشان نمی‌دهیم.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export type AttributeFieldSpec = {
+  key: string;
+  label: string;
+  /** `text` پیش‌فرضِ محافظه‌کارانه است. */
+  input: "text" | "number" | "select";
+  options?: string[];
+  required: boolean;
+};
+
+function asRecordOrNull(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+  return items.length > 0 ? items : undefined;
+}
+
+/** برچسبِ خوانا از کلید: `color_family` → `Color family`. */
+export function humanizeAttributeKey(key: string): string {
+  const words = key.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (words.length === 0) return key;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * تفسیرِ طرحِ ویژگی‌های یک دسته.
+ *
+ * قالب‌های پذیرفته‌شده (همه اختیاری):
+ *   - `"string"` / `"number"` / `"select"` → فقط نوع
+ *   - `{ type: "select", options: [...] }` → کنترلِ انتخابی با گزینه‌های واقعی
+ *   - `{ type: "number", label: "...", required: true }`
+ *   - `[...]` → فهرستِ گزینه‌ها (معادلِ select)
+ *
+ * اگر طرح خالی یا نامفهوم باشد، نتیجه آرایهٔ خالی است و ویرایشگر ورودیِ
+ * کنترل‌شدهٔ عمومی نشان می‌دهد — نه یک JSONِ خام.
+ */
+export function interpretAttributeSchema(schema: Record<string, unknown> | null | undefined): AttributeFieldSpec[] {
+  const record = asRecordOrNull(schema)
+  if (!record) return []
+
+  const specs: AttributeFieldSpec[] = []
+  for (const [key, raw] of Object.entries(record)) {
+    if (key.trim().length === 0) continue
+
+    if (typeof raw === "string") {
+      const type = raw.toLowerCase()
+      const options = asStringArray(undefined)
+      specs.push({
+        key,
+        label: humanizeAttributeKey(key),
+        input: type === "number" || type === "integer" ? "number" : type === "select" || type === "enum" ? "select" : "text",
+        ...(options ? { options } : {}),
+        required: false,
+      })
+      continue
+    }
+
+    const options = asStringArray(raw)
+    if (options) {
+      specs.push({ key, label: humanizeAttributeKey(key), input: "select", options, required: false })
+      continue
+    }
+
+    const descriptor = asRecordOrNull(raw)
+    if (descriptor) {
+      const type = typeof descriptor.type === "string" ? descriptor.type.toLowerCase() : ""
+      const descriptorOptions = asStringArray(descriptor.options) ?? asStringArray(descriptor.values) ?? asStringArray(descriptor.enum)
+      const input: AttributeFieldSpec["input"] =
+        type === "number" || type === "integer" ? "number" : type === "select" || type === "enum" || descriptorOptions ? "select" : "text"
+      specs.push({
+        key,
+        label: typeof descriptor.label === "string" && descriptor.label.trim() ? descriptor.label : humanizeAttributeKey(key),
+        input,
+        ...(descriptorOptions ? { options: descriptorOptions } : {}),
+        required: descriptor.required === true,
+      })
+      continue
+    }
+
+    // مقدارِ نامفهوم → ورودیِ متنیِ محافظه‌کارانه (بدونِ دور ریختنِ کلید).
+    specs.push({ key, label: humanizeAttributeKey(key), input: "text", required: false })
+  }
+  return specs
+}
+
+/** جمعِ کلیدهای طرحِ یک دسته (برای تشخیصِ ویژگی‌های «یتیم» پس از تغییرِ دسته). */
+export function schemaKeys(schema: Record<string, unknown> | null | undefined): string[] {
+  return interpretAttributeSchema(schema).map((spec) => spec.key)
+}
+
+/**
+ * ویژگی‌هایی که در مقدارِ فعلی هستند ولی در طرحِ دستهٔ انتخابی وجود ندارند.
+ *
+ * این‌ها **حذف نمی‌شوند**؛ فقط به کاربر نشان داده می‌شوند تا خودش تصمیم بگیرد.
+ */
+export function orphanedAttributes(
+  attributes: Record<string, string>,
+  schema: Record<string, unknown> | null | undefined,
+): string[] {
+  const allowed = new Set(schemaKeys(schema))
+  if (allowed.size === 0) return []
+  return Object.keys(attributes).filter((key) => !allowed.has(key))
+}

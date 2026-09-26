@@ -78,7 +78,10 @@ import type {
   SupportCaseDetail,
   WithdrawalRequest,
   SupplierStagedProductInput,
-  SupplierSubmissionReview,} from "./contracts";
+  SupplierSubmissionReview,
+  SupplierCategoryNode,
+  SupplierBrand,
+  SupplierUploadedMedia,} from "./contracts";
 
 /* ── کلیدِ یکتای عملیات ─────────────────────────────────────────────────────
  * این کلید یک «نانسِ ضدِ تکرار» است، نه یک شناسهٔ تجاری. برخلاف کد رهگیری یا
@@ -195,6 +198,33 @@ export function createSupplierApi(client: ApiClient) {
        */
       submit: (input: Record<string, unknown>) =>
         post<{ product: SupplierSubmissionResult }>("/catalog/compat/supplier-submissions", input),
+    },
+
+    /* ── ۳الف. دسته‌بندی/برند کانونیک و بارگذاریِ رسانه ──────────────────── */
+    taxonomy: {
+      /**
+       * دسته‌بندیِ کانونیکِ سرور (درختی) **همراه با `attributesSchema`**.
+       *
+       * ویرایشگر، ورودیِ ویژگی‌های محصول را از همین طرح می‌سازد؛ هیچ فهرستِ
+       * سخت‌کدشده‌ای در UI استفاده نمی‌شود.
+       */
+      categories: () => get<SupplierCategoryNode[]>("/catalog/categories"),
+      /** برندهای تأییدشده و فعال. */
+      brands: () => get<SupplierBrand[]>("/catalog/brands"),
+    },
+
+    media: {
+      /**
+       * بارگذاریِ واقعیِ فایل از راهِ seamِ سمتِ سرور.
+       *
+       * مرورگر فایل را می‌فرستد و `url` می‌گیرد؛ هیچ کلید/رمزِ ذخیره‌سازی به
+       * مرورگر نمی‌رسد. همان `url` در گرافِ مرحله‌بندی‌شده قرار می‌گیرد.
+       */
+      upload: (file: File) => {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        return client.requestResult<SupplierUploadedMedia>("/media/upload", { method: "POST", body: form });
+      },
     },
 
     /* ── ۳ب. بازبینیِ ادمین بر پیشنهادها ─────────────────────────────────── */

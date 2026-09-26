@@ -14,7 +14,8 @@
     "test:phase-6-1": "vitest run --config vitest.phase-6-1.config.ts",
     "test:phase-6-2": "vitest run --config vitest.phase-6-2.config.ts",
     "tokens:build": "node --no-warnings shared/design/generate-tokens.mts",
-    "test:e2e:supplier": "playwright test"
+    "test:e2e:supplier": "playwright test",
+    "test:phase-6-7": "vitest run --config vitest.phase-6-7.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.545.0",
