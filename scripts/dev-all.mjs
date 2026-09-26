@@ -1,9 +1,21 @@
 #!/usr/bin/env node
 /** اجرای پلتفرم مستقل کلبه: PostgreSQL + Next.js. */
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
+
+/*
+ * بارگذاری `.env` ریشه به `process.env`. Next از `frontend-next` اجرا می‌شود و
+ * فقط `frontend-next/.env` را خودکار می‌خواند، پس متغیرهای ریشه — به‌ویژه
+ * `KOLBE_API_INTERNAL_URL` که rewrite پروکسی `/api/v1` (نشستِ قانونیِ فروشگاه)
+ * به آن وابسته است — بدون این کار به Next نمی‌رسند. مقدار از `.env` خوانده
+ * می‌شود (کپیِ `.env.example`)، نه hardcode در کد؛ اگر `.env` نباشد هیچ
+ * متغیری تزریق نمی‌شود و رفتارِ بدونِ آن دست‌نخورده می‌ماند.
+ */
+const rootEnvFile = path.join(ROOT, ".env");
+if (fs.existsSync(rootEnvFile)) process.loadEnvFile(rootEnvFile);
 const isWindows = process.platform === "win32";
 const npmCommand = isWindows ? process.env.ComSpec ?? "cmd.exe" : "npm";
 const npmArgs = (args) => isWindows ? ["/d", "/s", "/c", `npm ${args.join(" ")}`] : args;
