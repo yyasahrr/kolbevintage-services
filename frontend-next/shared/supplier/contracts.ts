@@ -178,6 +178,134 @@ export type SupplierCommercialInput = {
   packageType?: PackageType;
 };
 
+/* ── قراردادِ کانونیکِ «گرافِ مرحله‌بندی‌شده» ──────────────────────────────────
+ *
+ * این انواع **دقیقاً** همان چیزی است که `POST /catalog/supplier-submissions`
+ * می‌پذیرد و `approveSubmissionAsNew` ماده‌سازی می‌کند؛ نه آنچه حدس زده شده.
+ * مرجعِ صحت: `apps/api/test/phase-6-7-supplier-product-roundtrip.test.ts`.
+ *
+ * دو تفاوتِ مهم با قراردادِ جداگانهٔ `POST /offers*` (که پایین‌تر آمده و برای
+ * ویرایشِ پس‌ازتأیید است):
+ *   ۱) بسته‌ها و پله‌های قیمت **داخلِ `commercial`** مرحله‌بندی می‌شوند، چون پیش
+ *      از تأیید هیچ `offerId` ای وجود ندارد.
+ *   ۲) ارجاع به واریانت با **SKU** است نه `variantId`، چون واریانت‌ها هنوز ساخته
+ *      نشده‌اند؛ سرور هنگامِ ماده‌سازی SKU را به شناسهٔ کانونیکال نگاشت می‌کند.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** رسانهٔ مرحله‌بندی‌شده؛ ارجاع به واریانت با SKU. */
+export type StagedMediaInput = {
+  url: string;
+  type?: "image" | "video";
+  position?: number;
+  /** SKU واریانتی که این رسانه به آن تعلق دارد؛ `null` یعنی رسانهٔ سطحِ محصول. */
+  variantSku?: string | null;
+};
+
+/** موجودیِ پیشنهادیِ یک واریانت (مقدارِ مطلق، نه دلتا). */
+export type StagedInventoryInput = {
+  onHand: number;
+};
+
+/** واریانتِ مرحله‌بندی‌شده با صفاتِ انعطاف‌پذیر، رسانه و موجودیِ خودش. */
+export type StagedVariantInput = {
+  sku: string;
+  attributes: Record<string, string | number | null>;
+  /** قصدِ تأمین‌کننده برای وضعیت؛ سرور آن را حفظ می‌کند. */
+  status?: "draft" | "pending_review" | "approved" | "published" | "suspended" | "archived";
+  media?: Array<{ url: string; type?: "image" | "video"; position?: number }>;
+  inventory?: StagedInventoryInput;
+};
+
+/** قلمِ یک بسته؛ ارجاع با SKU. */
+export type StagedPackageItemInput = {
+  sku: string;
+  quantity: number;
+};
+
+/** بسته/سریِ مرحله‌بندی‌شده. `totalPieces` را سرور محاسبه و اعتبارسنجی می‌کند. */
+export type StagedPackageInput = {
+  packageType: PackageType;
+  name: string;
+  description?: string;
+  items: StagedPackageItemInput[];
+};
+
+/** پلهٔ قیمتِ مرحله‌بندی‌شده؛ `maxQuantity` نبودن یعنی بدونِ سقف. */
+export type StagedPricingTierInput = {
+  minQuantity: number;
+  maxQuantity?: number;
+  unitPrice: Money;
+  moqUnit?: MoqUnit;
+};
+
+/** بخشِ تجاریِ مرحله‌بندی‌شده — شاملِ بسته‌ها و پله‌های قیمت. */
+export type StagedCommercialInput = {
+  sku: string;
+  wholesalePrice: Money;
+  retailPrice?: Money;
+  currency?: string;
+  moq: number;
+  moqUnit: MoqUnit;
+  packageType?: PackageType;
+  /** SKU واریانتی که پیشنهاد به آن مقید است؛ پیش‌فرض `sku`. */
+  variantSku?: string | null;
+  packages?: StagedPackageInput[];
+  pricingTiers?: StagedPricingTierInput[];
+};
+
+/** گرافِ کاملِ مرحله‌بندی‌شده برای `POST /catalog/supplier-submissions`. */
+export type SupplierStagedProductInput = {
+  name: string;
+  slug: string;
+  description?: string;
+  brandId?: string;
+  proposedBrandId?: string;
+  categoryId?: string;
+  /** ویژگی‌های سطحِ محصول؛ فیلدهای تجاری در آن ممنوع است. */
+  attributes?: Record<string, unknown>;
+  variants: StagedVariantInput[];
+  media: StagedMediaInput[];
+  commercial?: StagedCommercialInput;
+};
+
+/**
+ * آنچه ادمین پیش از تأیید می‌بیند (`GET /catalog/supplier-submissions/:id`).
+ *
+ * ادمین نباید دادهٔ تجاریِ پنهان را تأیید کند؛ پس این قرارداد کلِ گراف را دارد.
+ */
+export type SupplierSubmissionReview = {
+  id: string;
+  status: string;
+  supplierId: string;
+  sellerId: string;
+  createdBy: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  adminReviewNote: string | null;
+  matchedProductId: string | null;
+  approvedProductId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  product: {
+    name: string;
+    slug: string;
+    description: string;
+    brandId: string | null;
+    proposedBrandId: string | null;
+    categoryId: string | null;
+    attributes: Record<string, unknown>;
+  };
+  variants: StagedVariantInput[];
+  media: StagedMediaInput[];
+  commercial: StagedCommercialInput;
+  packageTotals: Array<{
+    name: string;
+    packageType: PackageType;
+    totalPieces: number;
+    items: StagedPackageItemInput[];
+  }>;
+};
+
 /** گرافِ کاملِ محصول برای `POST /catalog/supplier-submissions`. */
 export type SupplierProductGraphInput = {
   name: string;

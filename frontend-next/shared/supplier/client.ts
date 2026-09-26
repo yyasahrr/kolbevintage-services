@@ -77,7 +77,8 @@ import type {
   TeamMemberUpdateInput,
   SupportCaseDetail,
   WithdrawalRequest,
-} from "./contracts";
+  SupplierStagedProductInput,
+  SupplierSubmissionReview,} from "./contracts";
 
 /* ── کلیدِ یکتای عملیات ─────────────────────────────────────────────────────
  * این کلید یک «نانسِ ضدِ تکرار» است، نه یک شناسهٔ تجاری. برخلاف کد رهگیری یا
@@ -174,9 +175,42 @@ export function createSupplierApi(client: ApiClient) {
         }).then(result =>
           mapOk(result, data => ({ products: normalizeList((data as { products?: unknown }).products, normalizeSupplierProduct) })),
         ),
-      /** ثبتِ پیشنهاد محصول (مسیرِ انتقالیِ ثبت‌شده در truth-registry). */
+      /**
+       * ثبتِ پیشنهاد محصول از مسیرِ **کانونیکِ غنی**.
+       *
+       * این مسیرِ صحیح است: کلِ گراف (واریانت‌ها با صفات/رسانه/موجودی، رسانهٔ
+       * محصول و واریانت، بخشِ تجاری با واحدِ MOQ، بسته‌ها و پله‌های قیمت) را
+       * یک‌جا مرحله‌بندی می‌کند و ادمین همان را تأیید می‌کند.
+       * `POST /catalog/compat/supplier-submissions` تنها برای سازگاریِ backward
+       * نگه داشته شده و یک واریانت/یک رسانه/`moq:1` می‌سازد.
+       */
+      submitStaged: (input: SupplierStagedProductInput) =>
+        post<SupplierSubmissionResult>("/catalog/supplier-submissions", input),
+
+      /**
+       * مسیرِ انتقالیِ ثبت‌شده (compat).
+       *
+       * @deprecated از `submitStaged` استفاده کنید. این مسیر گراف را به یک
+       * واریانت و `moq: 1` تقلیل می‌دهد و قصدِ تأمین‌کننده را از دست می‌دهد.
+       */
       submit: (input: Record<string, unknown>) =>
         post<{ product: SupplierSubmissionResult }>("/catalog/compat/supplier-submissions", input),
+    },
+
+    /* ── ۳ب. بازبینیِ ادمین بر پیشنهادها ─────────────────────────────────── */
+    reviews: {
+      /**
+       * فهرستِ پیشنهادها برای بازبینی. ادمین باید پیش از تأیید بتواند ببیند.
+       * `GET /catalog/supplier-submissions` — فقط ادمین با `retail:catalog:manage`.
+       */
+      list: (query?: { supplierId?: string; status?: string }) =>
+        get<SupplierSubmissionReview[]>("/catalog/supplier-submissions", {
+          supplierId: query?.supplierId,
+          status: query?.status,
+        }),
+      /** کلِ گرافِ یک پیشنهاد — همان چیزی که ادمین تأیید می‌کند. */
+      get: (id: string) =>
+        get<SupplierSubmissionReview>(`/catalog/supplier-submissions/${encodeURIComponent(id)}`),
     },
 
     /* ── ۴. RFQ و پیشنهاد قیمت ───────────────────────────────────────────── */
