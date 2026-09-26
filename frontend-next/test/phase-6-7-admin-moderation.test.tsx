@@ -99,7 +99,14 @@ function boundary(options: {
     if (method === 'GET' && path === '/api/v1/catalog/supplier-submissions') return respond(options.list, [REVIEW])
     if (method === 'GET' && path === '/api/v1/catalog/supplier-submissions/sps_1') return respond(options.detail, REVIEW)
     if (method === 'GET' && path === '/api/v1/catalog/products') {
-      return respond(options.search, [{ id: 'prod_existing', name: 'پیراهن لینن موجود', sku: 'PSKU-1' }])
+      // قراردادِ واقعیِ کنترلر یک **پاکتِ صفحه‌بندی** است، نه آرایهٔ خام.
+      // پیش‌تر این fake آرایهٔ خام برمی‌گرداند — همان شکلِ غلطی که آداپتور هم
+      // فرض کرده بود — و به همین دلیل باگِ `.map` روی object هرگز در تست دیده
+      // نشد. fake باید با حقیقتِ سرور یکی باشد.
+      return respond(options.search, {
+        results: [{ id: 'prod_existing', name: 'پیراهن لینن موجود', sku: 'PSKU-1' }],
+        nextCursor: null,
+      })
     }
     if (method === 'POST' && path.includes('/approve-new')) return respond(options.action, { ...REVIEW, status: 'approved_new_product' })
     if (method === 'POST' && path.includes('/approve-existing')) return respond(options.action, { ...REVIEW, status: 'approved_existing_product' })
