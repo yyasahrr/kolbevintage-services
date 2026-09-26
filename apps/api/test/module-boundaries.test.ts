@@ -260,6 +260,15 @@ describe("مرزهای کد ماژول‌ها (A2/A3)", () => {
         "product_media",
         "product_variant_media",
         "product_variant_inventory",
+        // ── درزِ ماده‌سازیِ تأییدِ پیشنهادِ تأمین‌کننده (ثبتِ صریحِ بدهی) ──
+        // `approveSubmissionAsNew` باید گرافِ تجاریِ کامل (پیشنهاد + بسته/سری +
+        // پلهٔ قیمت) را در **یک تراکنش** و بدونِ اتلاف ماده‌سازی کند. مالکِ این
+        // جداول ماژولِ `offers` است، اما `offers dependsOn catalog`؛ پس وابستگیِ
+        // معکوس حلقهٔ DI می‌سازد. این استثنایِ صریح جایِ تکیه بر نقطهٔ کورِ آزمون
+        // را می‌گیرد و به‌عنوان بدهیِ فاز ۶.۷ ثبت می‌شود.
+        "wholesale_package",
+        "wholesale_package_item",
+        "wholesale_pricing_tier",
         "rfq",
         "quote",
         "wholesale_order_item",

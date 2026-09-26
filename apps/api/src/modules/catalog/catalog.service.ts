@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, sql, inArray } from "drizzle-orm";
-import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory } from "@kolbe/database";
+import { product, productVariant, productMedia, productVariantMedia, brand, category, seller, sellerOffer, supplierMember, supplierProductSubmission, productVariantInventory, wholesalePackage, wholesalePackageItem, wholesalePricingTier } from "@kolbe/database";
 import { KOLBE_DB, type KolbeDatabase } from "../../database/database.module";
 import { DomainError } from "@kolbe/shared";
 import { ProductComplianceService } from "../compliance/product-compliance.service";
@@ -11,6 +11,12 @@ import {
   assertProductStatusTransition,
   assertSubmissionSeparation,
   findDuplicateCandidates,
+  calculatePackageTotalPieces,
+  validateWholesalePackage,
+  validateStagedCommercialGraph,
+  normalizeStagedVariants,
+  normalizeStagedMedia,
+  normalizeStagedCommercial,
   CatalogDomainError,
 } from "./catalog.logic";
 
@@ -144,6 +150,13 @@ export class CatalogService {
     categoryId?: string; attributes?: Record<string, unknown>; variants?: unknown[]; media?: unknown[]; commercial?: Record<string, unknown>; createdBy: string;
   }) {
     assertSubmissionSeparation({ attributes: input.attributes as any, commercial: input.commercial as any });
+    // اعتبارسنجیِ زودهنگامِ گرافِ تجاریِ مرحله‌بندی‌شده تا تأمین‌کننده همان لحظه
+    // بازخورد بگیرد، نه هنگامِ تأییدِ ادمین. همان قواعدِ ماده‌سازی.
+    validateStagedCommercialGraph({
+      variants: normalizeStagedVariants(input.variants),
+      media: normalizeStagedMedia(input.media),
+      commercial: normalizeStagedCommercial(input.commercial),
+    });
 
     const [membership] = await this.db.select().from(supplierMember).where(eq(supplierMember.userId, input.createdBy)).limit(1);
     if (!membership) throw new ForbiddenError("عضویت فعال تأمین‌کننده یافت نشد");
@@ -178,33 +191,184 @@ export class CatalogService {
     return { submission, duplicateCandidates: candidates };
   }
 
+  /**
+   * ماده‌سازیِ **بدونِ اتلافِ** پیشنهادِ تأمین‌کننده به گرافِ کانونیکال.
+   *
+   * ثابتِ حاکم: «آنچه ادمین تأیید می‌کند = آنچه کانونیکال می‌شود». پیش‌تر این
+   * مسیر `moqUnit` را به `PIECE` سخت‌کد می‌کرد (پاک‌کردنِ SERIES)، رسانه و
+   * رسانهٔ واریانت را هرگز نمی‌ساخت، `retailPrice`/`currency`/`packageType` را
+   * نمی‌خواند، بسته‌ها و پله‌های قیمت را ماده‌سازی نمی‌کرد، و در صورتِ قیمتِ
+   * نامعتبر **بی‌صدا** هیچ پیشنهادی نمی‌ساخت. همهٔ اینها اینجا اصلاح شده است.
+   *
+   * - تمام‌یا-هیچ: هر خطا تراکنش را برمی‌گرداند؛ محصولِ نیمه‌ماده‌سازی‌شده ممنوع.
+   * - idempotency: قفلِ سطری `FOR UPDATE` + نگهبانِ وضعیت؛ کلیکِ دوبارهٔ ادمین
+   *   محصول/واریانت/پیشنهادِ تکراری نمی‌سازد.
+   * - سازگاریِ backward: پیشنهادِ ساده/قدیمی (بدونِ `moqUnit` و بسته) همچنان به
+   *   محصولِ سادهٔ معتبر تبدیل می‌شود؛ `PIECE` یک **پیش‌فرضِ صریحِ دامنه** است
+   *   برای وقتی که تأمین‌کننده واحدی اعلام نکرده، نه پاک‌کردنِ قصدِ او.
+   *
+   * نکتهٔ مالکیت: جداولِ تجاری (`seller_offer`, `wholesale_package`,
+   * `wholesale_package_item`, `wholesale_pricing_tier`) مالکشان ماژولِ `offers`
+   * است و `product_variant_inventory` مالکِ `inventory`. چون `offers dependsOn
+   * catalog`، وابستگیِ معکوس حلقهٔ DI می‌سازد؛ پس این «درزِ ماده‌سازیِ تأیید»
+   * همان الگوی ازقبل‌موجود است (همین متد پیش‌تر هم `seller_offer` را می‌نوشت) و
+   * در `READ_EXCEPTIONS` به‌صورت **صریح و ثبت‌شده** قابلِ مشاهده است — نه تکیه بر
+   * نقطهٔ کورِ آزمون. بدهیِ ثبت‌شده برای فاز ۶.۷.
+   */
   async approveSubmissionAsNew(id: string, reviewedBy: string, note?: string) {
     return this.db.transaction(async (tx) => {
-      const [submission] = await tx.select().from(supplierProductSubmission).where(eq(supplierProductSubmission.id, id)).limit(1);
+      const [submission] = await tx
+        .select()
+        .from(supplierProductSubmission)
+        .where(eq(supplierProductSubmission.id, id))
+        .for("update")
+        .limit(1);
       if (!submission) throw new NotFoundError("درخواست محصول یافت نشد");
       if (submission.status !== "pending_review") throw new CatalogDomainError("SUBMISSION_NOT_PENDING", "درخواست در انتظار بررسی نیست");
       if (submission.proposedBrandId) {
         const [proposedBrand] = await tx.select().from(brand).where(eq(brand.id, submission.proposedBrandId)).limit(1);
         if (!proposedBrand || proposedBrand.verificationStatus !== "approved") throw new CatalogDomainError("BRAND_REVIEW_REQUIRED", "برند پیشنهادی ابتدا باید تأیید شود");
       }
+
+      const stagedVariants = normalizeStagedVariants(submission.variants);
+      const stagedMedia = normalizeStagedMedia(submission.media);
+      const stagedCommercial = normalizeStagedCommercial(submission.commercial);
+      // اعتبارسنجیِ صریحِ کلِ گراف **پیش از** هر نوشتن — جایِ ردِ بی‌صدا.
+      validateStagedCommercialGraph({ variants: stagedVariants, media: stagedMedia, commercial: stagedCommercial });
+
+      const stamp = Date.now();
+      const uid = (prefix: string, index: number) => `${prefix}_${stamp}_${index}_${Math.random().toString(36).slice(2, 8)}`;
+
       const [created] = await tx.insert(product).values({
-        id: `prod_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: submission.proposedName,
+        id: uid("prod", 0), name: submission.proposedName,
         slug: submission.proposedSlug, description: submission.proposedDescription,
+        // SKU پایه/مرجعِ محصول از بخشِ تجاری — پیش‌تر فقط در attributes می‌ماند.
+        sku: stagedCommercial.sku ?? stagedVariants[0]?.sku ?? null,
         brandId: submission.brandId ?? submission.proposedBrandId, categoryId: submission.categoryId,
         ownerType: "SUPPLIER", isKolbeExclusive: false, status: "approved", createdBy: submission.createdBy,
       }).returning();
-      const proposedVariants = Array.isArray(submission.variants) ? submission.variants as Array<{ sku?: string; attributes?: Record<string, unknown> }> : [];
-      const createdVariants: Array<{ id: string; sku: string }> = [];
-      for (const proposed of proposedVariants) {
-        if (!proposed.sku) continue;
-        const [variant] = await tx.insert(productVariant).values({ id: `var_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, productId: created.id, sku: proposed.sku, attributes: proposed.attributes ?? {}, status: "active" }).returning();
-        createdVariants.push(variant);
+
+      // ── واریانت‌ها ─────────────────────────────────────────────────────────
+      const variantIdBySku = new Map<string, string>();
+      for (let index = 0; index < stagedVariants.length; index += 1) {
+        const staged = stagedVariants[index]!;
+        const [variant] = await tx.insert(productVariant).values({
+          id: uid("var", index), productId: created.id, sku: staged.sku,
+          attributes: staged.attributes ?? {},
+          // قصدِ تأمین‌کننده برای وضعیت حفظ می‌شود (پیش‌فرضِ دامنه: active).
+          status: staged.status ?? "active",
+        }).returning();
+        variantIdBySku.set(staged.sku, variant.id);
       }
-      const commercial = (submission.commercial ?? {}) as { sku?: string; wholesalePrice?: string | number; moq?: number };
-      const offerSku = createdVariants[0]?.sku ?? commercial.sku;
-      if (offerSku && /^\d+$/.test(String(commercial.wholesalePrice ?? "0"))) {
-        await tx.insert(sellerOffer).values({ id: `offer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, productId: created.id, sellerId: submission.sellerId, variantId: createdVariants[0]?.id ?? null, sku: offerSku, status: "draft", wholesalePrice: BigInt(commercial.wholesalePrice ?? 0), retailPrice: null, moq: Math.max(1, commercial.moq ?? 1), moqUnit: "PIECE" });
+
+      // ── رسانهٔ محصول و رسانهٔ واریانت ─────────────────────────────────────
+      let mediaIndex = 0;
+      for (const item of stagedMedia) {
+        const targetVariantId = item.variantSku != null ? variantIdBySku.get(item.variantSku) : undefined;
+        if (targetVariantId) {
+          await tx.insert(productVariantMedia).values({
+            id: uid("pvm", mediaIndex), variantId: targetVariantId, url: item.url,
+            type: item.type ?? "image", position: item.position ?? mediaIndex,
+          });
+        } else {
+          await tx.insert(productMedia).values({
+            id: uid("pm", mediaIndex), productId: created.id, url: item.url,
+            type: item.type ?? "image", position: item.position ?? mediaIndex,
+          });
+        }
+        mediaIndex += 1;
       }
+      for (let index = 0; index < stagedVariants.length; index += 1) {
+        const staged = stagedVariants[index]!;
+        const variantId = variantIdBySku.get(staged.sku)!;
+        const embedded = staged.media ?? [];
+        for (let m = 0; m < embedded.length; m += 1) {
+          await tx.insert(productVariantMedia).values({
+            id: uid("pve", index * 100 + m), variantId, url: embedded[m]!.url,
+            type: embedded[m]!.type ?? "image", position: embedded[m]!.position ?? m,
+          });
+        }
+      }
+
+      // ── موجودیِ هر واریانت (مرجعِ کانونیکال) ───────────────────────────────
+      for (let index = 0; index < stagedVariants.length; index += 1) {
+        const staged = stagedVariants[index]!;
+        const onHand = staged.inventory?.onHand;
+        if (onHand == null) continue;
+        await tx.insert(productVariantInventory).values({
+          id: uid("pvi", index), variantId: variantIdBySku.get(staged.sku)!,
+          sellerId: submission.sellerId, onHand, reserved: 0, status: "active",
+        });
+      }
+
+      // ── پیشنهادِ تجاری (بدونِ پاک‌کردنِ واحدِ MOQ) ─────────────────────────
+      let offerId: string | null = null;
+      const hasCommercial = stagedCommercial.wholesalePrice != null;
+      if (hasCommercial) {
+        const offerSku = stagedCommercial.sku ?? stagedVariants[0]?.sku;
+        if (!offerSku) throw new CatalogDomainError("SUBMISSION_SKU_REQUIRED", "شناسهٔ تجاری پیشنهاد موجود نیست");
+        const boundVariantId = stagedCommercial.variantSku != null
+          ? variantIdBySku.get(stagedCommercial.variantSku) ?? null
+          : variantIdBySku.get(offerSku) ?? null;
+        const id = uid("offer", 0);
+        await tx.insert(sellerOffer).values({
+          id, productId: created.id, sellerId: submission.sellerId, variantId: boundVariantId,
+          sku: offerSku, status: "draft",
+          wholesalePrice: BigInt(stagedCommercial.wholesalePrice as string),
+          retailPrice: stagedCommercial.retailPrice != null ? BigInt(stagedCommercial.retailPrice) : null,
+          currency: stagedCommercial.currency ?? "IRR",
+          moq: stagedCommercial.moq ?? 1,
+          // قصدِ تأمین‌کننده حفظ می‌شود؛ PIECE فقط وقتی که واحدی اعلام نشده.
+          moqUnit: stagedCommercial.moqUnit ?? "PIECE",
+          packageType: stagedCommercial.packageType ?? null,
+        });
+        offerId = id;
+      }
+
+      // ── بسته‌ها / سری‌ها (SKU مرحله‌بندی‌شده → شناسهٔ واریانتِ ساخته‌شده) ────
+      const packages = stagedCommercial.packages ?? [];
+      if (packages.length > 0) {
+        if (!offerId) throw new CatalogDomainError("PACKAGE_REQUIRES_OFFER", "بسته بدونِ پیشنهادِ تجاری قابلِ ساخت نیست");
+        for (let p = 0; p < packages.length; p += 1) {
+          const pkg = packages[p]!;
+          const items = pkg.items.map((item) => ({
+            variantId: variantIdBySku.get(item.sku)!,
+            quantity: item.quantity,
+          }));
+          if (items.some((item) => item.variantId == null)) {
+            throw new CatalogDomainError("INVALID_PACKAGE_VARIANT", "واریانتِ بسته متعلق به این محصول نیست");
+          }
+          const totalPieces = calculatePackageTotalPieces(items);
+          // بازاستفاده از همان قواعدِ دامنهٔ `offers` (نوع + مجموع + ترکیب).
+          validateWholesalePackage({ offerId, packageType: pkg.packageType, name: pkg.name, totalPieces, items });
+          const packageId = uid("wpkg", p);
+          await tx.insert(wholesalePackage).values({
+            id: packageId, offerId, packageType: pkg.packageType, name: pkg.name,
+            description: pkg.description ?? null, totalPieces,
+          });
+          for (let i = 0; i < items.length; i += 1) {
+            await tx.insert(wholesalePackageItem).values({
+              id: uid("wpit", p * 100 + i), packageId, variantId: items[i]!.variantId, quantity: items[i]!.quantity,
+            });
+          }
+        }
+      }
+
+      // ── پله‌های قیمت (همان قاعدهٔ هم‌پوشانیِ `offers.service`) ──────────────
+      const tiers = stagedCommercial.pricingTiers ?? [];
+      if (tiers.length > 0) {
+        if (!offerId) throw new CatalogDomainError("PRICING_TIER_REQUIRES_OFFER", "پلهٔ قیمت بدونِ پیشنهادِ تجاری قابلِ ساخت نیست");
+        for (let t = 0; t < tiers.length; t += 1) {
+          const tier = tiers[t]!;
+          await tx.insert(wholesalePricingTier).values({
+            id: uid("wpt", t), offerId, minQuantity: tier.minQuantity,
+            maxQuantity: tier.maxQuantity ?? null, unitPrice: BigInt(tier.unitPrice),
+            currency: stagedCommercial.currency ?? "IRR",
+            moqUnit: tier.moqUnit ?? stagedCommercial.moqUnit ?? "PIECE",
+          });
+        }
+      }
+
       await tx.update(supplierProductSubmission).set({ status: "approved_new_product", approvedProductId: created.id, reviewedBy, reviewedAt: new Date(), adminReviewNote: note ?? null, updatedAt: new Date() }).where(eq(supplierProductSubmission.id, id));
       return created;
     });
@@ -223,6 +387,76 @@ export class CatalogService {
       const [updated] = await tx.update(supplierProductSubmission).set({ status: "approved_existing_product", approvedProductId: productId, reviewedBy, reviewedAt: new Date(), adminReviewNote: note ?? null, updatedAt: new Date() }).where(eq(supplierProductSubmission.id, id)).returning();
       return updated;
     });
+  }
+
+  /**
+   * قراردادِ بازبینیِ ادمین.
+   *
+   * ادمین نباید چیزی را تأیید کند که نمی‌تواند ببیند؛ پیش‌تر هیچ `GET` ای وجود
+   * نداشت و approve/reject تنها مسیرها بودند. این متد **کلِ** گرافِ
+   * مرحله‌بندی‌شده را برمی‌گرداند: اطلاعاتِ پایه، واریانت‌ها، رسانه، بخشِ تجاری
+   * (قیمت، ارز، MOQ، «واحدِ MOQ»، نوعِ بسته)، بسته‌ها با ترکیبشان، و پله‌های قیمت.
+   * هیچ فیلدی برای بازبینی پنهان نمی‌ماند.
+   */
+  async listSupplierSubmissions(filter: { supplierId?: string; status?: string } = {}) {
+    const conditions = [];
+    if (filter.supplierId) conditions.push(eq(supplierProductSubmission.supplierId, filter.supplierId));
+    if (filter.status) conditions.push(eq(supplierProductSubmission.status, filter.status));
+    const rows = await this.db
+      .select()
+      .from(supplierProductSubmission)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(supplierProductSubmission.createdAt);
+    return rows.map((row) => this.toSubmissionReview(row));
+  }
+
+  async getSupplierSubmission(id: string) {
+    const [row] = await this.db.select().from(supplierProductSubmission).where(eq(supplierProductSubmission.id, id)).limit(1);
+    if (!row) throw new NotFoundError("درخواست محصول یافت نشد");
+    return this.toSubmissionReview(row);
+  }
+
+  /** نگاشتِ رکوردِ پیشنهاد به قراردادِ بازبینی (بدونِ هیچ حذفِ بی‌صدا). */
+  private toSubmissionReview(row: typeof supplierProductSubmission.$inferSelect) {
+    const variants = normalizeStagedVariants(row.variants);
+    const media = normalizeStagedMedia(row.media);
+    const commercial = normalizeStagedCommercial(row.commercial);
+    return {
+      id: row.id,
+      status: row.status,
+      supplierId: row.supplierId,
+      sellerId: row.sellerId,
+      createdBy: row.createdBy,
+      reviewedBy: row.reviewedBy,
+      reviewedAt: row.reviewedAt,
+      adminReviewNote: row.adminReviewNote,
+      matchedProductId: row.matchedProductId,
+      approvedProductId: row.approvedProductId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      product: {
+        name: row.proposedName,
+        slug: row.proposedSlug,
+        description: row.proposedDescription,
+        brandId: row.brandId,
+        proposedBrandId: row.proposedBrandId,
+        categoryId: row.categoryId,
+        // صریح: ستونِ `attributes` در جدولِ `product` وجود ندارد، پس attributes
+        // سطحِ محصول مقصدِ کانونیکال ندارد و در ماده‌سازی حفظ نمی‌شود. اینجا
+        // **دیده می‌شود** تا ادمین بداند، و به‌عنوان شکافِ ثبت‌شده باقی می‌ماند.
+        attributes: row.attributes,
+      },
+      variants,
+      media,
+      commercial,
+      // جمعِ قطعاتِ هر بسته برای بازبینی (مرجعِ نهایی `validateWholesalePackage`).
+      packageTotals: (commercial.packages ?? []).map((pkg) => ({
+        name: pkg.name,
+        packageType: pkg.packageType,
+        totalPieces: calculatePackageTotalPieces(pkg.items.map((item) => ({ variantId: item.sku, quantity: item.quantity }))),
+        items: pkg.items,
+      })),
+    };
   }
 
   async rejectSubmission(id: string, reviewedBy: string, note: string) {

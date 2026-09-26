@@ -182,6 +182,27 @@ export class CatalogController {
     return { status: String(body.status), canonicalStatus: updated.status };
   }
 
+  /**
+   * بازبینیِ ادمین — ادمین باید **پیش از** تأیید بتواند کلِ گرافِ پیشنهادشده را
+   * ببیند (واریانت‌ها، رسانه، بخشِ تجاری با واحدِ MOQ، بسته‌ها، پله‌های قیمت).
+   * پیش‌تر هیچ GET ای وجود نداشت.
+   */
+  @Get("supplier-submissions")
+  @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
+  async listSupplierSubmissions(@Query("supplierId") supplierId?: string, @Query("status") status?: string) {
+    return this.catalog.listSupplierSubmissions({ supplierId, status });
+  }
+
+  @Get("supplier-submissions/:id")
+  @Roles("admin")
+  @UseGuards(AdminPermissionGuard)
+  @RequireAdminPermission("retail:catalog:manage")
+  async getSupplierSubmission(@Param("id") id: string) {
+    return this.catalog.getSupplierSubmission(id);
+  }
+
   @Post("supplier-submissions/:id/approve-new")
   @Roles("admin")
   @UseGuards(AdminPermissionGuard)

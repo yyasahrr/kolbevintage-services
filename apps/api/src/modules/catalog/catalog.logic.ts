@@ -415,3 +415,254 @@ export function calculateSearchRank(factors: RankingFactors): number {
   // مقیاس 0..100
   return Math.round(score * 100);
 }
+
+/* ── گرافِ تجاریِ مرحله‌بندی‌شده در پیشنهادِ تأمین‌کننده ────────────────────────
+ * ظرفیتِ مرحله‌بندی از قبل در `supplier_product_submission` وجود دارد
+ * (variants/media/commercial به‌صورت JSONB)؛ پس برای حفظِ گرافِ کاملِ تجاریِ
+ * تأمین‌کننده پیش از تأیید، هیچ مهاجرتی لازم نیست. این تایپ‌ها و اعتبارسنجِ خالص
+ * همان قراردادی است که `approveSubmissionAsNew` بدونِ اتلاف ماده‌سازی می‌کند.
+ *
+ * قاعدهٔ کلیدی: کلیدِ واریانت در بسته‌ها **SKU** است (نه شناسهٔ واریانت)، چون
+ * واریانت‌ها پیش از تأیید وجود ندارند؛ در ماده‌سازی به شناسهٔ ساخته‌شده نگاشت می‌شود.
+ * پول همیشه رشتهٔ ده‌دهیِ تمام‌رقم است؛ هرگز عددِ شناور.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export type StagedMediaInput = { url: string; type?: string; position?: number; variantSku?: string | null };
+export type StagedVariantInput = {
+  sku: string;
+  attributes?: Record<string, unknown>;
+  status?: string;
+  media?: StagedMediaInput[];
+  inventory?: { onHand?: number };
+};
+export type StagedPackageInput = {
+  packageType: (typeof PACKAGE_TYPES)[number];
+  name: string;
+  description?: string;
+  items: Array<{ sku: string; quantity: number }>;
+};
+export type StagedPricingTierInput = {
+  minQuantity: number;
+  maxQuantity?: number | null;
+  unitPrice: string;
+  moqUnit?: (typeof MOQ_UNITS)[number];
+};
+export type StagedCommercialInput = {
+  sku?: string;
+  wholesalePrice?: string;
+  retailPrice?: string | null;
+  currency?: string;
+  moq?: number;
+  moqUnit?: (typeof MOQ_UNITS)[number];
+  packageType?: (typeof PACKAGE_TYPES)[number] | null;
+  variantSku?: string | null;
+  packages?: StagedPackageInput[];
+  pricingTiers?: StagedPricingTierInput[];
+};
+
+const DECIMAL_MONEY = /^\d+$/;
+
+function isDecimalMoney(value: unknown): value is string {
+  return typeof value === "string" && DECIMAL_MONEY.test(value);
+}
+
+/**
+ * اعتبارسنجیِ گرافِ تجاریِ مرحله‌بندی‌شده — خالص و قابلِ آزمون.
+ *
+ * «شکستِ صریح» جای «ردِ بی‌صدا» را می‌گیرد: پیش‌تر قیمتِ نامعتبر باعث می‌شد
+ * پیشنهاد **اصلاً** ساخته نشود بدون هیچ خطایی (ماده‌سازیِ نیمه‌کاره).
+ * پیکربندیِ ساده/قدیمی (بدونِ moqUnit و بسته) معتبر می‌ماند تا سازگاریِ
+ * backward حفظ شود.
+ */
+export function validateStagedCommercialGraph(input: {
+  variants: StagedVariantInput[];
+  media: StagedMediaInput[];
+  commercial: StagedCommercialInput;
+}): void {
+  const { variants, media, commercial } = input;
+
+  const skus = variants.map((variant) => variant.sku);
+  if (skus.some((sku) => typeof sku !== "string" || sku.trim().length === 0)) {
+    throw new CatalogDomainError("VARIANT_SKU_REQUIRED", "هر واریانت باید SKU غیرخالی داشته باشد");
+  }
+  if (new Set(skus).size !== skus.length) {
+    throw new CatalogDomainError("DUPLICATE_VARIANT_SKU", "SKU واریانت‌ها باید یکتا باشد");
+  }
+  const skuSet = new Set(skus);
+
+  for (const item of media) {
+    if (typeof item.url !== "string" || item.url.trim().length === 0) {
+      throw new CatalogDomainError("INVALID_MEDIA_URL", "نشانی رسانه نامعتبر است");
+    }
+    if (item.variantSku != null && !skuSet.has(item.variantSku)) {
+      throw new CatalogDomainError("MEDIA_VARIANT_NOT_FOUND", "رسانه به واریانتِ ناموجود ارجاع دارد");
+    }
+  }
+  for (const variant of variants) {
+    for (const item of variant.media ?? []) {
+      if (typeof item.url !== "string" || item.url.trim().length === 0) {
+        throw new CatalogDomainError("INVALID_MEDIA_URL", "نشانی رسانهٔ واریانت نامعتبر است");
+      }
+    }
+    const onHand = variant.inventory?.onHand;
+    if (onHand != null && (!Number.isInteger(onHand) || onHand < 0)) {
+      throw new CatalogDomainError("INVALID_INVENTORY_ON_HAND", "موجودی پیشنهادی باید عددِ صحیحِ نامنفی باشد");
+    }
+  }
+
+  // پیشنهادِ تجاری اختیاری است؛ اما اگر باشد باید کامل و صریح باشد.
+  if (commercial.wholesalePrice != null || commercial.moq != null || commercial.moqUnit != null) {
+    if (!isDecimalMoney(commercial.wholesalePrice)) {
+      throw new CatalogDomainError("INVALID_WHOLESALE_PRICE", "قیمت عمده باید رشتهٔ ده‌دهیِ تمام‌رقم باشد");
+    }
+    if (commercial.retailPrice != null && !isDecimalMoney(commercial.retailPrice)) {
+      throw new CatalogDomainError("INVALID_RETAIL_PRICE", "قیمت خرده باید رشتهٔ ده‌دهیِ تمام‌رقم باشد");
+    }
+    if (!Number.isInteger(commercial.moq) || (commercial.moq as number) <= 0) {
+      throw new CatalogDomainError("INVALID_MOQ", "حداقل تعداد سفارش باید عددِ صحیحِ مثبت باشد");
+    }
+    if (commercial.moqUnit != null && !MOQ_UNITS.includes(commercial.moqUnit as any)) {
+      throw new CatalogDomainError("INVALID_MOQ_UNIT", "واحدِ حداقل تعداد نامعتبر است");
+    }
+    if (commercial.packageType != null && !PACKAGE_TYPES.includes(commercial.packageType as any)) {
+      throw new CatalogDomainError("INVALID_PACKAGE_TYPE", "نوع بسته نامعتبر است");
+    }
+    if (commercial.variantSku != null && !skuSet.has(commercial.variantSku)) {
+      throw new CatalogDomainError("OFFER_VARIANT_NOT_FOUND", "پیشنهاد به واریانتِ ناموجود ارجاع دارد");
+    }
+  }
+
+  for (const tier of commercial.pricingTiers ?? []) {
+    if (!Number.isInteger(tier.minQuantity) || tier.minQuantity <= 0) {
+      throw new CatalogDomainError("INVALID_PRICING_RANGE", "بازهٔ قیمت‌گذاری نامعتبر است");
+    }
+    if (tier.maxQuantity != null && (!Number.isInteger(tier.maxQuantity) || tier.maxQuantity < tier.minQuantity)) {
+      throw new CatalogDomainError("INVALID_PRICING_RANGE", "بازهٔ قیمت‌گذاری نامعتبر است");
+    }
+    if (!isDecimalMoney(tier.unitPrice)) {
+      throw new CatalogDomainError("INVALID_TIER_PRICE", "قیمتِ پله باید رشتهٔ ده‌دهیِ تمام‌رقم باشد");
+    }
+    if (tier.moqUnit != null && !MOQ_UNITS.includes(tier.moqUnit as any)) {
+      throw new CatalogDomainError("INVALID_MOQ_UNIT", "واحدِ پلهٔ قیمت‌گذاری نامعتبر است");
+    }
+  }
+  // هم‌پوشانیِ پله‌ها — همان قاعدهٔ `offers.service.ts`.
+  const tiers = commercial.pricingTiers ?? [];
+  for (let i = 0; i < tiers.length; i += 1) {
+    for (let j = i + 1; j < tiers.length; j += 1) {
+      const a = tiers[i]!; const b = tiers[j]!;
+      const aMax = a.maxQuantity ?? Number.POSITIVE_INFINITY;
+      const bMax = b.maxQuantity ?? Number.POSITIVE_INFINITY;
+      if (a.minQuantity <= bMax && b.minQuantity <= aMax) {
+        throw new CatalogDomainError("OVERLAPPING_PRICING_TIER", "بازهٔ قیمت‌گذاری هم‌پوشان است");
+      }
+    }
+  }
+
+  for (const pkg of commercial.packages ?? []) {
+    if (typeof pkg.name !== "string" || pkg.name.trim().length === 0) {
+      throw new CatalogDomainError("INVALID_PACKAGE_NAME", "نام بسته الزامی است");
+    }
+    if (pkg.items.some((item) => !skuSet.has(item.sku))) {
+      throw new CatalogDomainError("INVALID_PACKAGE_VARIANT", "واریانتِ بسته متعلق به این محصول نیست");
+    }
+    if (new Set(pkg.items.map((item) => item.sku)).size !== pkg.items.length) {
+      throw new CatalogDomainError("INVALID_PACKAGE_ITEMS", "اقلام بسته باید غیرتکراری باشند");
+    }
+    // بازاستفاده از همان قاعدهٔ دامنه (نوعِ بسته + مجموع + ترکیبِ SIZE_RUN).
+    validateWholesalePackage({
+      offerId: "staged",
+      packageType: pkg.packageType,
+      name: pkg.name,
+      totalPieces: calculatePackageTotalPieces(pkg.items.map((item) => ({ variantId: item.sku, quantity: item.quantity }))),
+      items: pkg.items.map((item) => ({ variantId: item.sku, quantity: item.quantity })),
+    });
+  }
+}
+
+/* ── نرمال‌سازهای ورودیِ مرحله‌بندی‌شده (JSONB → تایپِ قوی) ────────────────────
+ * JSONB تایپ ندارد؛ این توابع تنها فیلدهای معتبر را برمی‌دارند تا ماده‌سازی
+ * هرگز روی `any` تکیه نکند. هیچ محاسبهٔ پولی انجام نمی‌دهند.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export function normalizeStagedVariants(raw: unknown): StagedVariantInput[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    const record = asRecord(entry);
+    const mediaRaw = Array.isArray(record.media) ? record.media : [];
+    const inventory = asRecord(record.inventory);
+    return {
+      sku: asString(record.sku) ?? "",
+      attributes: asRecord(record.attributes),
+      status: asString(record.status),
+      media: mediaRaw.map((item) => {
+        const mediaRecord = asRecord(item);
+        return {
+          url: asString(mediaRecord.url) ?? "",
+          type: asString(mediaRecord.type),
+          position: typeof mediaRecord.position === "number" ? mediaRecord.position : undefined,
+        };
+      }),
+      inventory: typeof inventory.onHand === "number" ? { onHand: inventory.onHand } : undefined,
+    };
+  });
+}
+
+export function normalizeStagedMedia(raw: unknown): StagedMediaInput[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    const record = asRecord(entry);
+    return {
+      url: asString(record.url) ?? "",
+      type: asString(record.type),
+      position: typeof record.position === "number" ? record.position : undefined,
+      variantSku: asString(record.variantSku) ?? null,
+    };
+  });
+}
+
+export function normalizeStagedCommercial(raw: unknown): StagedCommercialInput {
+  const record = asRecord(raw);
+  const packagesRaw = Array.isArray(record.packages) ? record.packages : [];
+  const tiersRaw = Array.isArray(record.pricingTiers) ? record.pricingTiers : [];
+  return {
+    sku: asString(record.sku),
+    wholesalePrice: asString(record.wholesalePrice),
+    retailPrice: asString(record.retailPrice) ?? null,
+    currency: asString(record.currency),
+    moq: typeof record.moq === "number" ? record.moq : undefined,
+    moqUnit: asString(record.moqUnit) as StagedCommercialInput["moqUnit"],
+    packageType: (asString(record.packageType) ?? null) as StagedCommercialInput["packageType"],
+    variantSku: asString(record.variantSku) ?? null,
+    packages: packagesRaw.map((entry) => {
+      const pkg = asRecord(entry);
+      const itemsRaw = Array.isArray(pkg.items) ? pkg.items : [];
+      return {
+        packageType: asString(pkg.packageType) as StagedPackageInput["packageType"],
+        name: asString(pkg.name) ?? "",
+        description: asString(pkg.description),
+        items: itemsRaw.map((item) => {
+          const itemRecord = asRecord(item);
+          return { sku: asString(itemRecord.sku) ?? "", quantity: typeof itemRecord.quantity === "number" ? itemRecord.quantity : 0 };
+        }),
+      };
+    }),
+    pricingTiers: tiersRaw.map((entry) => {
+      const tier = asRecord(entry);
+      return {
+        minQuantity: typeof tier.minQuantity === "number" ? tier.minQuantity : 0,
+        maxQuantity: typeof tier.maxQuantity === "number" ? tier.maxQuantity : null,
+        unitPrice: asString(tier.unitPrice) ?? "",
+        moqUnit: asString(tier.moqUnit) as StagedPricingTierInput["moqUnit"],
+      };
+    }),
+  };
+}
