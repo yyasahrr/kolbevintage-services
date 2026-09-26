@@ -1,0 +1,11 @@
+# Design decision log
+
+Format: date | surface | policy | decision | evidence
+
+2026-09-26 | supplier-products-intake | RESTRUCTURE | keep the eight domain sections and Kolbe identity; add persistent accumulated state, section-level validation summary and small-screen density | eight-step wizard verified in real browser; only one section mounted at a time; ~24 domain error codes surface only at submit
+2026-09-26 | vip-wholesale-catalog | RESTRUCTURE | expose seller, variant selection, MOQ + real unit, package type, package composition and pricing tiers; keep cursor pagination and entitlement boundary | measured: package=0 and tier=0 mentions across VIPPortal.tsx and Wholesale.tsx; moq=1 total; backend already returns all of it
+2026-09-26 | admin-supplier-product-moderation | EXTEND | keep structure; add full uiStates, CONFLICT recovery, replay protection on destructive actions | page already reads only canonical reviews API and exposes only the three real backend actions
+2026-09-26 | shared-theme | EXTEND | add governed density/motion/reduced-motion and LTR-isolation tokens | screens currently invent one-off radii and durations
+2026-09-26 | supplier-auth-application | PRESERVE | no structural change | shell and session lifecycle already serve the workflow
+2026-09-26 | vip-membership | PRESERVE | no structural change | this is the entitlement security boundary for 6.3-C; do not restructure it while exposing the catalog
+2026-09-26 | registry governance | POLICY | replace `visualFreeze: true` with typed `designChangePolicy` + mandatory written rationale for RESTRUCTURE | freeze retired now that truth cutover is done; ungoverned freedom is not a governance model

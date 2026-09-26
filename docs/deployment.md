@@ -101,13 +101,25 @@ npm run db:adopt-legacy
 ### ۲.۴ اجرای اپلیکیشن‌ها
 
 ```bash
-# همه با هم (postgres + next + api)
+# postgres (embedded) + build پکیج‌ها + Next.js
+# ⚠️ برخلاف نام `dev-all`، این دستور NestJS API را بالا **نمی‌آورد**.
 npm run dev
 
-# یا جداگانه:
-npm run dev:next   # http://localhost:3000
+# API قانونی باید جداگانه اجرا شود:
 npm run dev:api    # http://localhost:4000/api/v1/health
+
+# یا به‌جای `npm run dev`، فقط Next:
+npm run dev:next   # http://localhost:3000
 ```
+
+> `scripts/dev-all.mjs` دقیقاً این سه گام را انجام می‌دهد: `scripts/pg.mjs ensure`،
+> سپس `npm run build:packages`، سپس `npm run dev --workspace kolbe-next`.
+> هیچ گام چهارمی برای NestJS وجود ندارد.
+>
+> پیش‌نیازها: فایل `.env` ریشه (کپی `.env.example`) با `KOLBE_API_INTERNAL_URL`
+> تنظیم‌شده **پیش از شروع Next**، و اجرای صریح `npm run db:migrate`.
+> زمان اجرا اسکیما نمی‌سازد؛ دیتابیس مهاجرت‌نشده به `503 SERVICE_UNAVAILABLE`
+> ختم می‌شود (fail closed).
 
 ### ۲.۵ سلامت
 

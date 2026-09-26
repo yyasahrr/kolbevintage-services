@@ -2,7 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DatabaseNotMigratedError, assertDatabaseReady, resolveMigrationsDir } from "../../packages/database/src/verify";
+/**
+ * ⚠️ از مرز پکیج (`@kolbe/database/verify`) وارد می‌شویم، نه از
+ * `packages/database/src/verify`.
+ *
+ * چرا این تفاوت مهم است؟ کد زمان اجرا (`server/database.ts`) همین کلاس را از
+ * `@kolbe/database/verify` می‌گیرد که به `dist/src/verify.js` نگاشت می‌شود.
+ * اگر آزمون از سورس خام import کند، دو نمونهٔ مجزای همان ماژول در حافظه بار
+ * می‌شوند و `instanceof` بین آن‌ها **هرگز** برقرار نیست؛ در نتیجه نگاشتِ
+ * «اسکیما مهاجرت‌نشده → ۵۰۳» به ۵۰۰ عمومی سقوط می‌کند و آزمون، خطای واقعیِ
+ * زمان اجرا را گزارش می‌دهد در حالی که مشکل از مرز ماژولِ خودِ آزمون است.
+ */
+import { DatabaseNotMigratedError, assertDatabaseReady, resolveMigrationsDir } from "@kolbe/database/verify";
 import { publicError } from "../server/kolbe-api";
 import { rows } from "../server/database";
 
@@ -116,6 +127,32 @@ describe("مرجع واحد اسکیما در لایهٔ Next.js (گام ۱.۲)"
     expect(mapped.message).not.toContain("drizzle");
     // کد SQLSTATE هم هیچ‌وقت به بیرون نمی‌رود (اصلاح D26).
     expect(mapped.code).not.toMatch(/^[0-9A-Z]{5}$/);
+  });
+
+  /**
+   * این آزمون شاخهٔ «شناخت ساختاری» در `publicError` را واقعاً اجرا می‌کند:
+   * خطایی با همان نام و کدِ دامنه ولی **هویتِ کلاسِ متفاوت**. اگر روزی همان ماژول
+   * از دو مسیر بار شود، قراردادِ ۵۰۳ نباید به ۵۰۰ سقوط کند.
+   */
+  it("۵۰۳ را حتی وقتی هویتِ کلاسِ نگهبان دو تکه شده باشد حفظ می‌کند", () => {
+    class ForeignDatabaseNotMigratedError extends Error {
+      code = "MIGRATIONS_NOT_APPLIED";
+      constructor() {
+        super("Database migrations are required. Run the documented migration command (npm run db:migrate).");
+        this.name = "DatabaseNotMigratedError";
+      }
+    }
+    const foreign = new ForeignDatabaseNotMigratedError();
+    expect(foreign).not.toBeInstanceOf(DatabaseNotMigratedError);
+
+    const mapped = publicError(foreign);
+    expect(mapped.status).toBe(503);
+    expect(mapped.code).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  it("خطای ناشناس با نامِ مشابه ولی کدِ نامعتبر را ۵۰۳ جا نمی‌زند", () => {
+    const impostor = Object.assign(new Error("boom"), { name: "DatabaseNotMigratedError", code: "NOT_A_GUARD_CODE" });
+    expect(publicError(impostor).status).not.toBe(503);
   });
 
   it("کد زمان اجرای Next.js هیچ DDL نمی‌سازد (اسکن ایستا)", () => {

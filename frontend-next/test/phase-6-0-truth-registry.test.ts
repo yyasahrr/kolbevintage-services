@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   BACKEND_OWNERS,
   COMPATIBILITY_ROUTE_SUMMARY,
+  DESIGN_CHANGE_POLICIES,
   FRONTEND_TRUTH_REGISTRY,
 } from "../truth-registry";
 
@@ -95,10 +96,58 @@ describe("Phase 6.0 frontend truth registry", () => {
     }
   });
 
-  it("freezes visuals and defines UI state contracts for every feature", () => {
+  /**
+   * CONTROLLED DESIGN EVOLUTION replaces the retired Hard Design Freeze.
+   * The registry no longer claims that every surface is frozen; it claims that
+   * every surface has been *deliberately classified*, and that the two things
+   * which must never be traded for design freedom - backend truth and the
+   * declared UI state contract - still hold everywhere.
+   */
+  it("gives every surface a deliberate design-change policy and a UI state contract", () => {
     for (const entry of FRONTEND_TRUTH_REGISTRY) {
-      expect(entry.visualFreeze, entry.id).toBe(true);
+      expect(DESIGN_CHANGE_POLICIES, entry.id).toContain(entry.designChangePolicy);
       expect(entry.uiStates.length, entry.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("requires written justification for every RESTRUCTURE decision", () => {
+    for (const entry of FRONTEND_TRUTH_REGISTRY) {
+      if (entry.designChangePolicy !== "RESTRUCTURE") continue;
+      const rationale = (entry.designChangeRationale ?? "").trim();
+      // A rationale that does not name the workflow being blocked is bureaucracy, not governance.
+      expect(rationale.length, `${entry.id} rationale`).toBeGreaterThan(120);
+    }
+  });
+
+  it("keeps the retired hard freeze out of the executable registry", () => {
+    for (const entry of FRONTEND_TRUTH_REGISTRY) {
+      expect("visualFreeze" in entry, `${entry.id} still carries visualFreeze`).toBe(false);
+    }
+  });
+
+  /**
+   * Controlled design evolution may change composition; it may never launder
+   * unresolved business truth. Where the browser still holds business truth the
+   * registry must say so explicitly and must schedule the cutover - the design
+   * policy is not an escape hatch from that record.
+   */
+  it("tracks every surface whose business truth is still held in the browser", () => {
+    const browserHeld = ["LOCAL_STORAGE", "STATIC_FIXTURE", "HARDCODED_RUNTIME", "MIXED", "UNKNOWN"];
+    const debt = FRONTEND_TRUTH_REGISTRY.filter((entry) => entry.businessTruth && browserHeld.includes(entry.classification));
+    expect(debt.length).toBeGreaterThan(0); // the record must not be silently emptied
+    for (const entry of debt) {
+      expect(entry.classification, `${entry.id} must be classified, never UNKNOWN`).not.toBe("UNKNOWN");
+      expect(entry.cutoverPhase, `${entry.id} browser-held truth needs a scheduled cutover`).toBeTruthy();
+    }
+  });
+
+  it("never grants a RESTRUCTURE policy to a surface whose backend truth is still unresolved", () => {
+    // Redesigning a screen is only worthwhile once its data ownership is real;
+    // otherwise the redesign is theatre over a fake workflow.
+    const unresolved = ["LOCAL_STORAGE", "STATIC_FIXTURE", "HARDCODED_RUNTIME", "UNKNOWN"];
+    for (const entry of FRONTEND_TRUTH_REGISTRY) {
+      if (entry.designChangePolicy !== "RESTRUCTURE") continue;
+      expect(unresolved, `${entry.id} is RESTRUCTURE but its truth is unresolved`).not.toContain(entry.classification);
     }
   });
 });

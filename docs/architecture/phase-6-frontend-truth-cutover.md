@@ -66,3 +66,79 @@ Data-driven entries select from: `LOADING`, `READY_WITH_DATA`, `READY_EMPTY`, `V
 A fixture, localStorage record or compatibility route is removable only when canonical read/write behavior, actor isolation, error mapping, pagination, empty states and existing feature visibility are covered by tests. Visual snapshots or focused browser assertions must protect layout and RTL behavior. Critical commerce paths additionally require server-state verification so an apparently successful UI cannot mask a failed mutation.
 
 Phase 6.0 creates contracts and tests only. It performs no client rewrite, portal wiring, fixture deletion, schema change, visual change or Phase 6.1 implementation.
+
+---
+
+## Addendum (2026-09-26) — the Hard Design Freeze is retired
+
+> This addendum is **additive**. The text above remains accurate as a record of
+> the Phase 6.0–6.2 cutover strategy and is deliberately not rewritten.
+
+### What changed
+
+The Hard Design Freeze (`visualFreeze: true` on every registry entry) applied to
+the **original cutover strategy**. While backend truth was being moved out of
+the browser, page composition, navigation and visible capabilities had to stay
+byte-stable so that every diff was provably about data ownership and nothing
+else. That was the correct constraint for that migration.
+
+That migration has completed for the migrated surfaces. The freeze is therefore
+**no longer the active design rule**.
+
+### What did NOT change
+
+These rules are unaffected and remain fully in force:
+
+- **Backend truth is authoritative.** No frontend-invented business state, no
+  fake calculations, no silent degradation (`catch { return [] }` for a business
+  read remains banned).
+- **Domain ownership is authoritative.** A surface reads the module that owns
+  the data.
+- **Business invariants are authoritative.** Money is a decimal string at the
+  boundary; identity is server-derived; the backend owns idempotency and
+  concurrency.
+- **The completeness ladder is unchanged.** Not complete below L5; not
+  production-ready below L6.
+- Historical Phase 6.0/6.1/6.2 reports remain historical evidence as written.
+
+### What replaces it
+
+**Controlled Design Evolution.** The registry now carries a typed policy per
+surface instead of a blanket freeze:
+
+```ts
+export const DESIGN_CHANGE_POLICIES = ["PRESERVE", "EXTEND", "RESTRUCTURE"] as const;
+
+type FrontendTruthEntry = {
+  // ...
+  designChangePolicy: DesignChangePolicy;   // required on every entry
+  designChangeRationale?: string;           // required in practice for RESTRUCTURE
+};
+```
+
+| Policy | Meaning |
+|---|---|
+| `PRESERVE` | structure already serves the workflow; only wiring, states, correctness and small usability/a11y fixes |
+| `EXTEND` | keep the visual/interaction language; add the missing backend-supported capabilities |
+| `RESTRUCTURE` | the current IA or interaction model prevents a complete, usable workflow; structural redesign allowed while retaining Kolbe identity |
+
+`frontend-next/test/phase-6-0-truth-registry.test.ts` now enforces:
+
+1. every entry carries a policy from the vocabulary and a non-empty `uiStates`;
+2. every `RESTRUCTURE` carries a written rationale (>120 characters);
+3. `visualFreeze` no longer exists on any entry;
+4. every surface whose business truth is still browser-held is explicitly
+   classified and has a scheduled cutover phase (design policy is not an escape
+   hatch from that record);
+5. **no `RESTRUCTURE` may be granted to a surface whose business truth is still
+   unresolved** (`LOCAL_STORAGE`, `STATIC_FIXTURE`, `HARDCODED_RUNTIME`,
+   `UNKNOWN`) — redesigning a screen whose data is fake is theatre.
+
+Controlled structural redesign is now permitted. Ungoverned visual churn is not.
+
+### Governance documents
+
+- `docs/design/kolbe-design-engineering-standard.md` — the standard
+- `docs/design/kolbe-interface-decisions.md` — per-surface decisions + evidence
+- `.tastemaker/style-lock.md` — the locked Kolbe style, derived from existing tokens
+- `.tastemaker/decisions.log` — append-only decision log

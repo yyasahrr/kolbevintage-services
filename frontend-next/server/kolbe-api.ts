@@ -1284,6 +1284,18 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
  * `export` شده تا تست رگرسیون D26 بتواند مستقیماً خطاهای شبیه‌سازِ درایور
  * (مثل `{code:"22P02"}`) را به آن بدهد و ثابت کند کد SQLSTATE به بیرون درز نمی‌کند.
  */
+const DATABASE_NOT_MIGRATED_CODES = new Set(["MIGRATIONS_NOT_APPLIED", "SCHEMA_SHAPE_MISMATCH"]);
+
+/** مرزِ پایدارِ شناسایی خطای نگهبانِ اسکیما، مستقل از هویتِ نمونهٔ ماژول. */
+function isDatabaseNotMigrated(error: unknown): boolean {
+  if (error instanceof DatabaseNotMigratedError) return true;
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { name?: unknown; code?: unknown };
+  return candidate.name === "DatabaseNotMigratedError"
+    && typeof candidate.code === "string"
+    && DATABASE_NOT_MIGRATED_CODES.has(candidate.code);
+}
+
 export function publicError(error: unknown): { status: number; code: string; message: string } {
   if (isHttpError(error)) {
     return {
@@ -1310,7 +1322,16 @@ export function publicError(error: unknown): { status: number; code: string; mes
    * (نام جدول/ستون/مهاجرت) هرگز به کلاینت نمی‌رود؛ فقط در لاگ سرور ثبت می‌شود
    * (`initialize()` در `database.ts` آن‌ها را چاپ می‌کند).
    */
-  if (error instanceof DatabaseNotMigratedError) {
+  /**
+   * اسکیمای مهاجرت‌نشده یک وضعیتِ «سرویس در دسترس نیست» است، نه خطای سرور.
+   *
+   * تنها به `instanceof` تکیه نمی‌کنیم: این کلاس از مرز پکیج
+   * (`@kolbe/database/verify` → `dist/…`) می‌آید و اگر همان ماژول از مسیر دیگری
+   * هم بار شود، هویتِ کلاس دو تکه می‌شود و `instanceof` بی‌صدا شکست می‌خورد.
+   * در آن حالت یک ۵۰۳ِ مستند به ۵۰۰ عمومی تبدیل می‌شد. بنابراین نام کلاس و
+   * کدِ دامنه هم بررسی می‌شود؛ هیچ جزئیات اسکیما به بیرون درز نمی‌کند.
+   */
+  if (isDatabaseNotMigrated(error)) {
     return { status: 503, code: "SERVICE_UNAVAILABLE", message: "سرویس موقتاً در دسترس نیست" };
   }
   return { status: 500, code: "INTERNAL_ERROR", message: "خطای داخلی سرور" };
