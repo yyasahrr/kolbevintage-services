@@ -103,6 +103,23 @@ API contract (controllers):
 
 **Classification: PARTIAL — capability mismatch.** Backend = full product graph; UI = single flat form.
 
+### 3.3b Backend gaps discovered during contract tracing (must fix at the domain layer)
+
+The frontend currently posts to `POST /catalog/compat/supplier-submissions`, which flattens the graph
+to one variant / one media / `moq:1`. The canonical `POST /catalog/supplier-submissions` already
+accepts `attributes`, `variants[]`, `media[]`, `commercial`. Tracing `catalog.service.ts` approval:
+
+| Gap | Evidence | Fix (domain layer, phase 6.2-hardening) |
+|---|---|---|
+| MOQ unit lost on approval | `approveSubmissionAsNew` inserts `sellerOffer` with `moqUnit:"PIECE"` hardcoded (`catalog.service.ts:206`) | Persist `commercial.moqUnit` (PIECE/PACKAGE/SERIES/BOX/CARTON/SET) |
+| Only one offer created | approval creates a single offer from `commercial` (`catalog.service.ts:203-206`) | Support the offer set, or create offers via `POST /offers` post-approval |
+| Media not persisted on approval | approval inserts variants + offer; no `productMedia` insert observed | Persist `media[]` → `productMedia` on approve-new |
+| Packages/tiers outside submission | `POST /offers/packages`, `POST /offers/pricing-tiers` need an existing `offerId` | Define the supplier sequence: submit → approve → offer → package/tier, or accept them in `commercial` |
+| Inventory is delta-based | `POST /inventory/variant` takes `onHandDelta` + `idempotency-key`; server rejects client `sellerId` (`CLIENT_CANNOT_CHOOSE_SELLER_ID`) | UI must present an inventory matrix that posts deltas with idempotency keys |
+
+Positive: identity is server-derived throughout (`resolveActorSeller`, `resolveRequester`); money is
+decimal-string → `BigInt` at the boundary; `POST /inventory/variant` already supports idempotency.
+
 ### 3.4 Required remediation (execution order)
 
 1. `supplier-product-contract` — typed contracts for product/media/variant/offer/package/tier/inventory.
