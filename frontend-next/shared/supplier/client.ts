@@ -14,7 +14,8 @@
  *    وضعیتِ تکراری نسازد.
  */
 
-import type { ApiClient, ApiResult } from "../http/types";
+import type {
+  ApiClient, ApiResult } from "../http/types";
 import {
   normalizeChildOrder,
   normalizeHistoryEntry,
@@ -81,7 +82,9 @@ import type {
   SupplierSubmissionReview,
   SupplierCategoryNode,
   SupplierBrand,
-  SupplierUploadedMedia,} from "./contracts";
+  SupplierUploadedMedia,
+  SupplierStagedSubmissionResult,
+} from "./contracts";
 
 /* ── کلیدِ یکتای عملیات ─────────────────────────────────────────────────────
  * این کلید یک «نانسِ ضدِ تکرار» است، نه یک شناسهٔ تجاری. برخلاف کد رهگیری یا
@@ -188,7 +191,7 @@ export function createSupplierApi(client: ApiClient) {
        * نگه داشته شده و یک واریانت/یک رسانه/`moq:1` می‌سازد.
        */
       submitStaged: (input: SupplierStagedProductInput) =>
-        post<SupplierSubmissionResult>("/catalog/supplier-submissions", input),
+        post<SupplierStagedSubmissionResult>("/catalog/supplier-submissions", input),
 
       /**
        * مسیرِ انتقالیِ ثبت‌شده (compat).

@@ -256,19 +256,30 @@ export function MediaSection({
   uploadError: string | null
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [targetRowId, setTargetRowId] = useState<string | null>(null)
+  /**
+   * ردیفِ هدفِ آپلود در یک **ref** نگه داشته می‌شود، نه state.
+   *
+   * پیش‌تر `pick` مقدار را با `setState` می‌گذاشت و بلافاصله `input.click()` را
+   * صدا می‌زد. چون به‌روزرسانیِ state ناهم‌گام است، وقتی `onChange` اجرا می‌شد
+   * هنوز `null` بود و شرطِ `if (!file || !targetRowId) return` **هر فایل را
+   * بی‌صدا دور می‌ریخت** — یعنی مسیرِ اصلیِ بارگذاری هرگز کار نمی‌کرد. ref هم
+   * در همان tick نوشته می‌شود و هم خوانده.
+   */
+  const pendingRowId = useRef<string | null>(null)
   const variantSkus = draft.variants.filter(v => v.include).map(v => v.sku).filter(Boolean)
 
   const pick = (rowId: string) => {
-    setTargetRowId(rowId)
+    pendingRowId.current = rowId
     fileRef.current?.click()
   }
 
   const onFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file || !targetRowId) return
-    await onUpload(file, targetRowId)
+    const rowId = pendingRowId.current
+    pendingRowId.current = null
+    if (!file || !rowId) return
+    await onUpload(file, rowId)
   }
 
   return (
@@ -285,7 +296,8 @@ export function MediaSection({
           disabled={uploading}
           onClick={() => {
             const rowId = newDraftRowId('med')
-            dispatch({ type: 'addMedia', media: { url: '' } })
+            // همان rowId که هدفِ آپلود است؛ وگرنه نشانیِ برگشتی گم می‌شود.
+            dispatch({ type: 'addMedia', media: { rowId, url: '' } })
             // ردیفِ تازه آخرین است؛ همان را هدفِ آپلود قرار می‌دهیم.
             setTimeout(() => pick(rowId), 0)
           }}

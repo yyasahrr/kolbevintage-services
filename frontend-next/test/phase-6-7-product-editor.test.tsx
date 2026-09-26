@@ -47,7 +47,11 @@ function boundary(options: { submitStatus?: number; submitBody?: unknown } = {})
       return new Response(JSON.stringify(BRANDS), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     if (method === 'POST' && path === '/api/v1/catalog/supplier-submissions') {
-      return new Response(JSON.stringify(options.submitBody ?? { id: 'sps_1', status: 'pending_review' }), {
+      // Real backend envelope for POST /catalog/supplier-submissions.
+      return new Response(JSON.stringify(options.submitBody ?? {
+        submission: { id: 'sps_1', status: 'pending_review', matchedProductId: null, createdAt: '2026-01-01T00:00:00.000Z' },
+        duplicateCandidates: [],
+      }), {
         status: options.submitStatus ?? 201,
         headers: { 'content-type': 'application/json' },
       })
@@ -359,7 +363,7 @@ describe('ویرایشگرِ محصول — بازبینی و ارسال', () =>
   })
 
   it('پس از ارسالِ موفق، وضعیتِ واقعیِ سرور را نشان می‌دهد', async () => {
-    renderEditor({ submitBody: { id: 'sps_42', status: 'pending_review' } })
+    renderEditor({ submitBody: { submission: { id: 'sps_42', status: 'pending_review', matchedProductId: null }, duplicateCandidates: [] } })
     await buildRichProduct()
     await gotoStep('بازبینی')
     const submitButton = screen.getByRole('button', { name: /ارسال برای بررسی/ })

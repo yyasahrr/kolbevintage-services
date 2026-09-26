@@ -69,7 +69,13 @@ export type DraftAction =
   /** تغییرِ SKU + به‌روزرسانیِ همهٔ ارجاع‌های وابسته در یک گام. */
   | { type: 'renameVariantSku'; rowId: string; sku: string }
   | { type: 'removeVariant'; rowId: string }
-  | { type: 'addMedia'; media?: { url?: string; variantSku?: string | null } }
+  /**
+   * `rowId` اختیاری است: فراخوان باید بتواند شناسهٔ ردیف را خودش تعیین کند،
+   * وگرنه reducer یک شناسهٔ دیگر می‌سازد و هر `patchMedia` بعدی (مثلاً نشانیِ
+   * برگشتی از آپلود) به ردیفی می‌خورد که وجود ندارد و بی‌صدا نادیده گرفته
+   * می‌شود. این دقیقاً همان باگی بود که بارگذاریِ رسانه را بی‌اثر می‌کرد.
+   */
+  | { type: 'addMedia'; media?: { rowId?: string; url?: string; variantSku?: string | null } }
   | { type: 'patchMedia'; rowId: string; patch: { url?: string; variantSku?: string | null; include?: boolean } }
   | { type: 'removeMedia'; rowId: string }
   | { type: 'moveMedia'; rowId: string; direction: -1 | 1 }

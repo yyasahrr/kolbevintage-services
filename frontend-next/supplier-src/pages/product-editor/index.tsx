@@ -55,7 +55,11 @@ export function ProductEditorPage({ onDone }: { onDone: () => void }) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   /** نتیجهٔ واقعیِ سرور پس از ارسالِ موفق. */
-  const [serverOutcome, setServerOutcome] = useState<{ id: string | null; status: string | null } | null>(null)
+  const [serverOutcome, setServerOutcome] = useState<{
+    id: string
+    status: string
+    candidates: Array<{ id: string; name: string; slug: string }>
+  } | null>(null)
 
   const categories = useSupplierResource(() => portal.api.taxonomy.categories(), [version], { isEmpty: data => data.length === 0 })
   const brands = useSupplierResource(() => portal.api.taxonomy.brands(), [version], { isEmpty: data => data.length === 0 })
@@ -115,8 +119,12 @@ export function ProductEditorPage({ onDone }: { onDone: () => void }) {
     const result = await mutation.run(() => portal.api.products.submitStaged(staged))
     if (result.ok) {
       // وضعیت از **سرور** خوانده می‌شود؛ هرگز از stateِ مرورگر ساخته نمی‌شود.
-      const data = result.data as { id?: string; status?: string } | undefined
-      setServerOutcome({ id: data?.id ?? null, status: data?.status ?? null })
+      // پاسخِ واقعی `{ submission, duplicateCandidates }` است.
+      setServerOutcome({
+        id: result.data.submission.id,
+        status: result.data.submission.status,
+        candidates: result.data.duplicateCandidates ?? [],
+      })
     }
   }
 
@@ -232,13 +240,16 @@ export function ProductEditorPage({ onDone }: { onDone: () => void }) {
                 <Notice tone="success" title="برای بررسی ارسال شد">
                   وضعیتِ برگشتی از سرور:{' '}
                   <b>{serverOutcome.status ? submissionStateLabel(serverOutcome.status) : 'نامشخص'}</b>
-                  {serverOutcome.id ? (
+                  {' '}
+                  — شناسهٔ پیشنهاد: <span className="ltr-inline">{serverOutcome.id}</span>. تأییدِ نهایی با
+                  تیم کلبه است؛ «ارسال‌شده» به معنای «تأییدشده» یا «منتشرشده» نیست.
+                  {serverOutcome.candidates.length > 0 ? (
                     <>
                       {' '}
-                      — شناسهٔ پیشنهاد: <span className="ltr-inline">{serverOutcome.id}</span>
+                      سرور {serverOutcome.candidates.length.toLocaleString('fa-IR')} محصولِ کانونیکالِ شبیه به این
+                      پیشنهاد را تشخیص داده است؛ تصمیمِ نهایی با ادمین است.
                     </>
                   ) : null}
-                  . تأییدِ نهایی با تیم کلبه است؛ «ارسال‌شده» به معنای «تأییدشده» یا «منتشرشده» نیست.
                   <div className="spe-actions">
                     <button type="button" className="button secondary" onClick={onDone}>
                       مشاهدهٔ محصولات

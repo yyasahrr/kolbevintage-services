@@ -130,6 +130,28 @@ export type SupplierSubmissionResult = {
   status: SupplierSubmissionStatus;
 };
 
+/**
+ * پاسخِ واقعیِ `POST /catalog/supplier-submissions`.
+ *
+ * کنترلر خروجیِ `createSupplierSubmission` را بدونِ تغییر برمی‌گرداند، یعنی
+ * `{ submission, duplicateCandidates }` — نه یک آبجکتِ تخت. پیش‌تر قراردادِ
+ * سمتِ کلاینت `{id,name,sku,status}` ادعا می‌کرد، پس شناسه و وضعیت در UI
+ * «نامشخص» می‌شد. این تایپ همان چیزی است که سرور واقعاً می‌فرستد.
+ */
+export type SupplierStagedSubmissionResult = {
+  submission: {
+    id: string;
+    status: string;
+    matchedProductId: string | null;
+    createdAt?: string;
+  };
+  /**
+   * محصول‌های کانونیکالی که سرور شبیه این پیشنهاد تشخیص داده. فقط برای
+   * آگاهی‌رسانی است؛ هیچ تطبیقِ خودکاری انجام نمی‌شود.
+   */
+  duplicateCandidates: Array<{ id: string; name: string; slug: string }>;
+};
+
 /* ── محصولِ کامل (capability parity) ──────────────────────────────────────────
  * قراردادهای تایپ‌شده برای گرافِ کاملِ محصولِ تأمین‌کننده، منطبق بر بک‌اند:
  *   POST /catalog/supplier-submissions  (attributes, variants[], media[], commercial)

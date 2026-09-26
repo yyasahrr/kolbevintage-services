@@ -36,6 +36,11 @@ const tabs: Array<{ id: WholesaleTab; label: string; icon: string }> = [
   { id: "accounts", label: "خریداران VIP", icon: "shield" },
   { id: "orders", label: "سفارش‌های عمده", icon: "truck" },
   { id: "support", label: "پشتیبانی", icon: "mail" },
+  /**
+   * این تب پیش‌تر در `tabs` وجود نداشت، با این‌که شاخهٔ رندرِ `catalog`
+   * نوشته شده بود؛ یعنی صفحهٔ بازبینی هرگز از UI قابلِ رسیدن نبود.
+   */
+  { id: "catalog", label: "بازبینی محصولات ساپلایر", icon: "shield" },
 ];
 
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
