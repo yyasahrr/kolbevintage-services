@@ -92,4 +92,39 @@ approval. **No schema migration is needed** — the loss is purely in the materi
 lossless · `L4` frontend exposes capability · `L5` real browser workflow passes · `L6` production
 UX/visual/a11y complete. **Nothing is "complete" below L5; production-ready requires L6.**
 
-Supplier Product today: **L2** (schema L0 ✓, service L1 ✓, API L2 ✓, roundtrip **L3 ✗** — lossy).
+Supplier Product today: **L3** (schema L0 ✓, service L1 ✓, API L2 ✓, roundtrip **L3 ✓ — proven**).
+`L4` (frontend capability) is not started; `L5` (real browser workflow) and `L6` (production UX) are
+not reached, so this vertical is **not complete**.
+
+## 7. Resolution — what was actually done, and how it was proven
+
+The audit above is kept unchanged as the record of what was wrong. This section records the fix.
+
+**Checkpoint `supplier-product-materialization`** (`e092b2a`) rewrote `approveSubmissionAsNew` into a
+single transactional materialization: it validates the entire staged graph *before* any write and
+fails closed, then writes product → variants (with the declared `status`, not hardcoded `active`) →
+product media → variant media → per-variant inventory → seller offer (preserving `currency`,
+`retailPrice` and the real `moqUnit`) → wholesale packages + items (staged SKU → created variant id)
+→ pricing tiers. A `FOR UPDATE` row lock plus the status guard makes admin double-click idempotent
+at the domain level. Every field marked LOST in §2 now has a canonical destination.
+
+**Checkpoint `supplier-product-roundtrip-tests`** (`c023986`) proves it against real PostgreSQL
+rather than by inspection. `apps/api/test/phase-6-7-supplier-product-roundtrip.test.ts` (13/13)
+submits a genuinely rich fixture (6 variants with flexible colour/size/material attributes, product
+and variant media, IRR decimal-string prices, MOQ 2 × SERIES, a SIZE_RUN series totalling 6 pieces,
+three non-overlapping tiers, per-variant inventory), then **re-queries each canonical table** after
+approval. It also covers domain-level idempotency, concurrent approval, transactional rollback on a
+genuine mid-transaction failure, 19 negative domain rules, and admin/supplier authorization.
+
+Two further gaps were found *because* the roundtrip was written, not by reading code:
+
+| Gap | Why it mattered | Resolution |
+|---|---|---|
+| `product` had no `attributes` column | Product-level attributes were accepted, staged and shown to Admin, then silently discarded — a direct violation of "no accepted input may disappear" | Forward-only migration `0047_supplier_product_attributes` adds `jsonb NOT NULL DEFAULT '{}'::jsonb`; `approveSubmissionAsNew` now persists it. Fresh + upgrade migration tests prove existing rows survive (`phase-6-7-product-attributes-migration.test.ts`, 9/9) |
+| `POST /catalog/compat/supplier-submissions` placed `sku` in `attributes` | `assertSubmissionSeparation` forbids commercial fields in `attributes`, so the legacy path the Supplier UI actually posts to failed with `COMMERCIAL_IN_ATTRIBUTES` — suppliers could not submit at all | `sku` now lives only in `commercial.sku` (and the variant SKU); legacy `proposedStock` is mapped into variant inventory so it reaches `product_variant_inventory` |
+
+**Why option A (add the column) rather than rejecting product-level attributes:** `category.attributes_schema`
+has always existed so each category declares its own attribute schema, `product_variant.attributes`
+already uses exactly this `jsonb` shape, and `assertSubmissionSeparation` already polices what may
+not appear inside product-level attributes — a rule that is meaningless unless those attributes are
+a real canonical concept.

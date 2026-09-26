@@ -45,6 +45,7 @@ conflated: **BACKEND MODEL EXISTS** ≠ **BACKEND WORKFLOW COMPLETE** ≠ **FRON
 VIP, Admin and Storefront. The Supplier Product discovery (see
 `supplier-product-pipeline-audit.md`) is the reference case: it reached `L2` while its approval path
 silently discarded MOQ unit, media, packages, pricing tiers and inventory — i.e. **`L3` failed**.
+That `L3` gap has since been closed and is covered by DB-backed tests; the model itself is unchanged.
 
 The same roundtrip question must be asked of every domain: does VIP order creation preserve
 package/variant semantics? Does admin publish preserve variant/media/offer truth? Does storefront
@@ -128,10 +129,39 @@ API contract (controllers):
 
 **Classification: PARTIAL — capability mismatch.** Backend = full product graph; UI = single flat form.
 
-**Level: `L2`** — schema `L0` ✓, domain/service `L1` ✓, API `L2` ✓, but **`L3` (lossless roundtrip)
-FAILS**: approval discards `moqUnit` (SERIES→PIECE), media, variant media, `retailPrice`, `currency`,
-`packageType`, packages, pricing tiers and inventory. See `supplier-product-pipeline-audit.md`.
-Frontend builders must not be built until `L3` is green.
+**Level: `L3`** — schema `L0` ✓, domain/service `L1` ✓, API `L2` ✓, **lossless lifecycle `L3` ✓
+(proven)**. `L4` (frontend capability) is not started; `L5`/`L6` are not reached, so this feature
+must not be called complete.
+
+`L3` was previously **FAILING**: approval discarded `moqUnit` (SERIES→PIECE), all media, variant
+media, `retailPrice`, `currency`, `packageType`, packages, pricing tiers and inventory. That is
+fixed and now backed by evidence rather than by reading the code:
+
+| Evidence | Command | Result |
+|---|---|---|
+| Lossless rich roundtrip, DB-backed | `apps/api/test/phase-6-7-supplier-product-roundtrip.test.ts` | 13/13 |
+| Supplier workflow regression | `apps/api/test/phase-4-4-supplier-workflow.test.ts` | 11/11 |
+| Module ownership ledger | `apps/api/test/module-boundaries.test.ts` | 8/8 |
+| Schema-shape pins | `phase-5-10-d` + `phase-5-11-d` static guards | 16/16 |
+| Typecheck | `tsc -p apps/api/tsconfig.json --noEmit` | 0 errors |
+
+The roundtrip test re-queries every canonical table after approval (product, variants, product and
+variant media, inventory, seller offer, package, package items, pricing tiers), so it proves
+persistence and not merely a success return value. It also proves domain-level idempotency
+(second approval → `SUBMISSION_NOT_PENDING`, snapshot unchanged; two concurrent approvals → exactly
+one product), transactional atomicity (a genuine mid-transaction unique-violation rolls back the
+whole graph), 19 negative domain rules, and admin/supplier authorization.
+
+Two backend gaps were found and closed while proving `L3`:
+
+1. **`product.attributes` did not exist** — product-level attributes were accepted, staged and shown
+   to Admin, then silently discarded. Added by forward-only migration `0047_supplier_product_attributes`
+   (`jsonb NOT NULL DEFAULT '{}'::jsonb`), with fresh and upgrade migration tests proving existing
+   rows survive. See `packages/database/test/phase-6-7-product-attributes-migration.test.ts` (9/9).
+2. **`POST /catalog/compat/supplier-submissions` was broken** — it placed `sku` inside `attributes`,
+   which `assertSubmissionSeparation` forbids, so the legacy path the current Supplier UI posts to
+   failed with `COMMERCIAL_IN_ATTRIBUTES`. `sku` now lives only in `commercial.sku`, and the legacy
+   `proposedStock` is mapped into variant inventory so it reaches `product_variant_inventory`.
 
 ### 3.3b Backend gaps discovered during contract tracing (must fix at the domain layer)
 
