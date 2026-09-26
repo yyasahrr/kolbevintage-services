@@ -35,8 +35,7 @@ import { SettingsPage } from './pages/settings'
 import { SupportPage } from './pages/support'
 import { TeamPage } from './pages/team'
 import { LoadingRows, Notice, StateBlock, TextButton } from './ui'
-
-const THEME_KEY = 'kolbe-supplier-theme'
+import { useThemePreference } from '../storefront/theme'
 
 export default function App() {
   return (
@@ -115,7 +114,7 @@ function Portal() {
   )
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [noticeOpen, setNoticeOpen] = useState(false)
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const { resolved: theme, setPreference: setTheme } = useThemePreference()
 
   // اگر تاریخچهٔ مرورگر عوض شد (عقب/جلو)، نشانی منبعِ حقیقت می‌ماند و از آن پیروی می‌کنیم.
   useEffect(() => {
@@ -134,28 +133,6 @@ function Portal() {
       window.history.replaceState({}, '', url.toString())
     }
   }, [])
-
-  // تم: فقط ترجیحِ نمایشی؛ در localStorage نگه داشته می‌شود و business نیست.
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(THEME_KEY)
-      if (stored === 'dark' || stored === 'light') setTheme(stored)
-      else if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) setTheme('dark')
-    } catch {
-      /* دسترسی نداشتن به localStorage نباید پورتال را بشکند */
-    }
-  }, [])
-
-  useEffect(() => {
-    const root = document.documentElement
-    root.dataset.supplierTheme = theme
-    root.style.colorScheme = theme
-    try {
-      window.localStorage.setItem(THEME_KEY, theme)
-    } catch {
-      /* ignore */
-    }
-  }, [theme])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -190,7 +167,7 @@ function Portal() {
           noticeOpen={noticeOpen}
           onNotices={() => setNoticeOpen(open => !open)}
           theme={theme}
-          onToggleTheme={() => setTheme(current => (current === 'dark' ? 'light' : 'dark'))}
+          onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         />
         <div className="page-content">
           {portal.demoMode ? (

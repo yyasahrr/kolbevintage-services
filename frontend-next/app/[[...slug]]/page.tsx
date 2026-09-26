@@ -7,12 +7,9 @@
  */
 
 import dynamic from "next/dynamic";
-import { applyStorefrontTheme, readStorefrontTheme } from "@/theme";
+import { initializeTheme } from "@/theme";
 
-// اعمال تم ذخیرهشده قبل از رندر (فقط در مرورگر)
-if (typeof document !== "undefined") {
-  applyStorefrontTheme(readStorefrontTheme());
-}
+initializeTheme();
 
 const StorefrontApp = dynamic(() => import("@/App"), {
   ssr: false,

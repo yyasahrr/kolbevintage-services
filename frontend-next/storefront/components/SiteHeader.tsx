@@ -5,7 +5,7 @@ import { useStore } from "../store";
 import { products } from "../data/catalog";
 import { fa } from "../utils/format";
 import Icon from "./Icon";
-import { readStorefrontTheme, saveStorefrontTheme, type StorefrontTheme } from "../theme";
+import { useThemePreference } from "../theme";
 import { useSiteSettings } from "../siteSettings";
 
 const categoryNavLabels = new Set(["کت و بلیزر", "پیراهن", "بافت و پلیور", "شلوار", "اکسسوری"]);
@@ -17,7 +17,7 @@ export default function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [theme, setTheme] = useState<StorefrontTheme>(readStorefrontTheme);
+  const { preference: theme, resolved: resolvedTheme, setPreference: setTheme } = useThemePreference();
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { path } = useRouter();
@@ -63,9 +63,7 @@ export default function SiteHeader() {
   }, [open]);
 
   const toggleTheme = () => {
-    const nextTheme: StorefrontTheme = theme === "dark" ? "liquid" : "dark";
-    setTheme(nextTheme);
-    saveStorefrontTheme(nextTheme);
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
   };
 
   const results = q.trim()
@@ -99,8 +97,8 @@ export default function SiteHeader() {
           </Link>
 
           <div className="mr-auto flex shrink-0 items-center gap-4 lg:gap-4">
-            {settings.header.showThemeToggle && <button type="button" onClick={toggleTheme} aria-label={theme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
-              <Icon name={theme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
+            {settings.header.showThemeToggle && <button type="button" onClick={toggleTheme} aria-label={resolvedTheme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "system" ? "تم سیستم" : resolvedTheme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
+              <Icon name={resolvedTheme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
             </button>}
             {settings.header.showSearch && <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
               <Icon name="search" />

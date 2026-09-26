@@ -17,14 +17,17 @@ import {
   BREAKPOINTS,
   COLOR_TOKENS,
   CONTROL_TOKENS,
+  DENSITY_TOKENS,
   DARK_TOKENS,
   DEFAULT_THEME,
   LAYOUT_TOKENS,
+  MOTION_TOKENS,
   LEGACY_VARIABLE_ALIASES,
   LIGHT_TOKENS,
   SHAPE_TOKENS,
   THEME_MODES,
   TYPOGRAPHY_TOKENS,
+  Z_INDEX_TOKENS,
   flattenTokenSet,
   mergeTokenSets,
   tokenNamesOf,
@@ -89,7 +92,7 @@ describe("Phase 6.1-F design token foundation", () => {
     const dark = flattenTokenSet(DARK_TOKENS);
     expect(Object.keys(dark).sort()).toEqual(Object.keys(light).sort());
     expect(Object.keys(light)).toHaveLength(
-      COLOR_TOKENS.length + TYPOGRAPHY_TOKENS.length + LAYOUT_TOKENS.length + SHAPE_TOKENS.length + CONTROL_TOKENS.length,
+      COLOR_TOKENS.length + TYPOGRAPHY_TOKENS.length + LAYOUT_TOKENS.length + SHAPE_TOKENS.length + CONTROL_TOKENS.length + MOTION_TOKENS.length + DENSITY_TOKENS.length + Z_INDEX_TOKENS.length,
     );
     for (const [name, value] of Object.entries(light)) {
       expect(value.trim().length, name).toBeGreaterThan(0);
@@ -205,7 +208,7 @@ describe("Phase 6.1-H future visual-editor compatibility", () => {
   });
 
   it("keeps token names stable across groups", () => {
-    for (const group of ["color", "typography", "layout", "shape", "control"] as const) {
+    for (const group of ["color", "typography", "layout", "shape", "control", "motion", "density", "zIndex"] as const) {
       for (const name of tokenNamesOf(group)) {
         expect(tokenVariableName(group, name)).toMatch(/^--kolbe-[a-z]+-[a-z0-9-]+$/);
       }

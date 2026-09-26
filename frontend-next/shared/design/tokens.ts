@@ -31,6 +31,7 @@ export const COLOR_TOKENS = [
   "surface",
   "surfaceMuted",
   "surfaceElevated",
+  "surfaceSunken",
   "primary",
   "primaryHover",
   "primaryText",
@@ -39,6 +40,8 @@ export const COLOR_TOKENS = [
   "textSecondary",
   "textInverse",
   "muted",
+  "info",
+  "infoSurface",
   "border",
   "borderStrong",
   "accent",
@@ -50,6 +53,10 @@ export const COLOR_TOKENS = [
   "error",
   "errorSurface",
   "focus",
+  "glassSurface",
+  "glassBorder",
+  "overlay",
+  "skeleton",
 ] as const;
 
 export type ColorTokenName = (typeof COLOR_TOKENS)[number];
@@ -60,11 +67,15 @@ export type ColorTokens = Record<ColorTokenName, string>;
 export const TYPOGRAPHY_TOKENS = [
   "fontFamily",
   "fontFamilyHeading",
+  "fontFamilyCode",
   "sizeDisplay",
+  "sizeHero",
   "sizeH1",
   "sizeH2",
   "sizeH3",
   "sizeBody",
+  "sizeBodySmall",
+  "sizeLabel",
   "sizeMeta",
   "sizeCaption",
   "weightRegular",
@@ -77,6 +88,7 @@ export const TYPOGRAPHY_TOKENS = [
   "lineHeightRelaxed",
   "letterSpacingNormal",
   "letterSpacingWide",
+  "letterSpacingTight",
 ] as const;
 
 export type TypographyTokenName = (typeof TYPOGRAPHY_TOKENS)[number];
@@ -145,7 +157,26 @@ export const CONTROL_TOKENS = [
 export type ControlTokenName = (typeof CONTROL_TOKENS)[number];
 export type ControlTokens = Record<ControlTokenName, string>;
 
-export type TokenGroup = "color" | "typography" | "layout" | "shape" | "control";
+export const MOTION_TOKENS = [
+  "durationInstant",
+  "durationFast",
+  "durationNormal",
+  "durationSlow",
+  "easeStandard",
+  "easeEmphasized",
+] as const;
+export type MotionTokenName = (typeof MOTION_TOKENS)[number];
+export type MotionTokens = Record<MotionTokenName, string>;
+
+export const DENSITY_TOKENS = ["comfortable", "compact", "touchTarget"] as const;
+export type DensityTokenName = (typeof DENSITY_TOKENS)[number];
+export type DensityTokens = Record<DensityTokenName, string>;
+
+export const Z_INDEX_TOKENS = ["base", "sticky", "dropdown", "overlay", "modal", "toast"] as const;
+export type ZIndexTokenName = (typeof Z_INDEX_TOKENS)[number];
+export type ZIndexTokens = Record<ZIndexTokenName, string>;
+
+export type TokenGroup = "color" | "typography" | "layout" | "shape" | "control" | "motion" | "density" | "zIndex";
 
 export type ThemeTokenSet = {
   color: ColorTokens;
@@ -153,6 +184,9 @@ export type ThemeTokenSet = {
   layout: LayoutTokens;
   shape: ShapeTokens;
   control: ControlTokens;
+  motion: MotionTokens;
+  density: DensityTokens;
+  zIndex: ZIndexTokens;
 };
 
 export type PartialThemeTokenSet = {
@@ -161,6 +195,9 @@ export type PartialThemeTokenSet = {
   layout?: Partial<LayoutTokens>;
   shape?: Partial<ShapeTokens>;
   control?: Partial<ControlTokens>;
+  motion?: Partial<MotionTokens>;
+  density?: Partial<DensityTokens>;
+  zIndex?: Partial<ZIndexTokens>;
 };
 
 /** breakpointها عدد هستند (نمی‌توان آن‌ها را در متغیر CSS گذاشت و در media query استفاده کرد). */
@@ -195,7 +232,7 @@ export function kebab(value: string): string {
 }
 
 export function tokenVariableName(group: TokenGroup, name: string): string {
-  return `${CSS_VAR_PREFIX}${group}-${kebab(name)}`;
+  return `${CSS_VAR_PREFIX}${kebab(group)}-${kebab(name)}`;
 }
 
 /** تخت‌کردنِ ساختارِ گروه‌بندی‌شده به نگاشتِ «نام متغیر CSS ← مقدار» (خالص و قطعی). */
@@ -207,6 +244,9 @@ export function flattenTokenSet(set: ThemeTokenSet): Record<string, string> {
     ["layout", set.layout],
     ["shape", set.shape],
     ["control", set.control],
+    ["motion", set.motion],
+    ["density", set.density],
+    ["zIndex", set.zIndex],
   ];
   for (const [group, tokens] of groups) {
     for (const [name, value] of Object.entries(tokens)) {
@@ -225,17 +265,24 @@ export function mergeTokenSets(base: ThemeTokenSet, override?: PartialThemeToken
     layout: { ...base.layout, ...(override.layout ?? {}) },
     shape: { ...base.shape, ...(override.shape ?? {}) },
     control: { ...base.control, ...(override.control ?? {}) },
+    motion: { ...base.motion, ...(override.motion ?? {}) },
+    density: { ...base.density, ...(override.density ?? {}) },
+    zIndex: { ...base.zIndex, ...(override.zIndex ?? {}) },
   };
 }
 
 /* ── مقدارهای پیش‌فرض = هویت بصریِ تأییدشده ────────────────────────────────── */
 
 const SHARED_TYPOGRAPHY: Omit<TypographyTokens, "fontFamily" | "fontFamilyHeading"> = {
+  fontFamilyCode: 'ui-monospace, "SFMono-Regular", Consolas, monospace',
   sizeDisplay: "clamp(2.25rem, 5vw, 4.25rem)",
+  sizeHero: "clamp(2rem, 4vw, 3.5rem)",
   sizeH1: "clamp(1.75rem, 3vw, 2.5rem)",
   sizeH2: "clamp(1.375rem, 2vw, 1.875rem)",
   sizeH3: "clamp(1.125rem, 1.4vw, 1.375rem)",
   sizeBody: "0.9375rem",
+  sizeBodySmall: "0.875rem",
+  sizeLabel: "0.8125rem",
   sizeMeta: "0.8125rem",
   sizeCaption: "0.75rem",
   weightRegular: "400",
@@ -248,6 +295,7 @@ const SHARED_TYPOGRAPHY: Omit<TypographyTokens, "fontFamily" | "fontFamilyHeadin
   lineHeightRelaxed: "1.9",
   letterSpacingNormal: "0",
   letterSpacingWide: "0.08em",
+  letterSpacingTight: "-0.02em",
 };
 
 const SHARED_LAYOUT: LayoutTokens = {
@@ -296,6 +344,30 @@ const SHARED_CONTROL: ControlTokens = {
   tableRowMinHeight: "3rem",
 };
 
+const SHARED_MOTION: MotionTokens = {
+  durationInstant: "80ms",
+  durationFast: "140ms",
+  durationNormal: "220ms",
+  durationSlow: "360ms",
+  easeStandard: "cubic-bezier(0.2, 0, 0, 1)",
+  easeEmphasized: "cubic-bezier(0.16, 1, 0.3, 1)",
+};
+
+const SHARED_DENSITY: DensityTokens = {
+  comfortable: "1",
+  compact: "0.82",
+  touchTarget: "2.75rem",
+};
+
+const SHARED_Z_INDEX: ZIndexTokens = {
+  base: "0",
+  sticky: "20",
+  dropdown: "30",
+  overlay: "40",
+  modal: "50",
+  toast: "60",
+};
+
 const FONT_STACK = '"Vazirmatn", ui-sans-serif, system-ui, sans-serif';
 
 export const LIGHT_TOKENS: ThemeTokenSet = {
@@ -304,6 +376,7 @@ export const LIGHT_TOKENS: ThemeTokenSet = {
     surface: "#fffdfa",
     surfaceMuted: "#efede7",
     surfaceElevated: "#ffffff",
+    surfaceSunken: "#e8e5de",
     primary: "#0b2a46",
     primaryHover: "#09233a",
     primaryText: "#ffffff",
@@ -312,6 +385,8 @@ export const LIGHT_TOKENS: ThemeTokenSet = {
     textSecondary: "#17354d",
     textInverse: "#fffdfa",
     muted: "#66727d",
+    info: "#35657e",
+    infoSurface: "#e7f0f4",
     border: "#d8d3ca",
     borderStrong: "#b9b3a8",
     accent: "#c9654d",
@@ -323,6 +398,10 @@ export const LIGHT_TOKENS: ThemeTokenSet = {
     error: "#a4463d",
     errorSurface: "#f9ebea",
     focus: "#547a98",
+    glassSurface: "rgba(255, 253, 250, 0.82)",
+    glassBorder: "rgba(255, 255, 255, 0.68)",
+    overlay: "rgba(7, 28, 49, 0.48)",
+    skeleton: "#e2ded6",
   },
   typography: { fontFamily: FONT_STACK, fontFamilyHeading: FONT_STACK, ...SHARED_TYPOGRAPHY },
   layout: SHARED_LAYOUT,
@@ -332,6 +411,9 @@ export const LIGHT_TOKENS: ThemeTokenSet = {
     shadowOverlay: "0 18px 50px rgba(7, 28, 49, 0.14)",
   },
   control: SHARED_CONTROL,
+  motion: SHARED_MOTION,
+  density: SHARED_DENSITY,
+  zIndex: SHARED_Z_INDEX,
 };
 
 export const DARK_TOKENS: ThemeTokenSet = {
@@ -340,6 +422,7 @@ export const DARK_TOKENS: ThemeTokenSet = {
     surface: "#18222c",
     surfaceMuted: "#202d38",
     surfaceElevated: "#1f2b36",
+    surfaceSunken: "#0b1117",
     primary: "#d9bd91",
     primaryHover: "#e6cda6",
     primaryText: "#17130e",
@@ -348,6 +431,8 @@ export const DARK_TOKENS: ThemeTokenSet = {
     textSecondary: "#d9dee4",
     textInverse: "#18222c",
     muted: "#acb8c2",
+    info: "#8fc7df",
+    infoSurface: "#172934",
     border: "#354552",
     borderStrong: "#4a5c6b",
     accent: "#e07a61",
@@ -359,6 +444,10 @@ export const DARK_TOKENS: ThemeTokenSet = {
     error: "#ef8f84",
     errorSurface: "#2e1a18",
     focus: "#e2c89e",
+    glassSurface: "rgba(24, 34, 44, 0.86)",
+    glassBorder: "rgba(255, 255, 255, 0.14)",
+    overlay: "rgba(2, 6, 10, 0.72)",
+    skeleton: "#2a3945",
   },
   typography: { fontFamily: FONT_STACK, fontFamilyHeading: FONT_STACK, ...SHARED_TYPOGRAPHY },
   layout: SHARED_LAYOUT,
@@ -368,6 +457,9 @@ export const DARK_TOKENS: ThemeTokenSet = {
     shadowOverlay: "0 18px 50px rgba(0, 0, 0, 0.5)",
   },
   control: SHARED_CONTROL,
+  motion: SHARED_MOTION,
+  density: SHARED_DENSITY,
+  zIndex: SHARED_Z_INDEX,
 };
 
 /** تمِ پیش‌فرض — همان قالبِ «میراث کلبه» که امروز فعال است. */
@@ -381,14 +473,17 @@ export const HERITAGE_THEME: ThemeConfig = {
 
 export const DEFAULT_THEME: ThemeConfig = HERITAGE_THEME;
 
-export const THEME_TOKEN_GROUPS: readonly TokenGroup[] = ["color", "typography", "layout", "shape", "control"];
+export const THEME_TOKEN_GROUPS: readonly TokenGroup[] = ["color", "typography", "layout", "shape", "control", "motion", "density", "zIndex"];
 
 export function tokenNamesOf(group: TokenGroup): readonly string[] {
   if (group === "color") return COLOR_TOKENS;
   if (group === "typography") return TYPOGRAPHY_TOKENS;
   if (group === "layout") return LAYOUT_TOKENS;
   if (group === "shape") return SHAPE_TOKENS;
-  return CONTROL_TOKENS;
+  if (group === "control") return CONTROL_TOKENS;
+  if (group === "motion") return MOTION_TOKENS;
+  if (group === "density") return DENSITY_TOKENS;
+  return Z_INDEX_TOKENS;
 }
 
 /**
