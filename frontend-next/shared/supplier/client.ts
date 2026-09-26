@@ -241,6 +241,40 @@ export function createSupplierApi(client: ApiClient) {
       /** کلِ گرافِ یک پیشنهاد — همان چیزی که ادمین تأیید می‌کند. */
       get: (id: string) =>
         get<SupplierSubmissionReview>(`/catalog/supplier-submissions/${encodeURIComponent(id)}`),
+
+      /**
+       * تأیید به‌عنوانِ **محصولِ تازه**: یک محصولِ کانونیکالِ کامل ساخته می‌شود.
+       * `POST /catalog/supplier-submissions/:id/approve-new`
+       */
+      approveAsNew: (id: string, note?: string) =>
+        post<SupplierSubmissionReview>(`/catalog/supplier-submissions/${encodeURIComponent(id)}/approve-new`, { note }),
+
+      /**
+       * تأیید به‌عنوانِ **محصولِ موجود**: کلِ گرافِ تجاریِ تأمین‌کننده به یک
+       * محصولِ کانونیکالِ ازقبل‌موجود متصل می‌شود؛ محصولِ تکراری ساخته نمی‌شود.
+       * `productId` را ادمین صریحاً انتخاب می‌کند — هیچ حدسِ خودکاری نیست.
+       * `POST /catalog/supplier-submissions/:id/approve-existing`
+       */
+      approveAsExisting: (id: string, productId: string, note?: string) =>
+        post<SupplierSubmissionReview>(`/catalog/supplier-submissions/${encodeURIComponent(id)}/approve-existing`, { productId, note }),
+
+      /**
+       * ردِ پیشنهاد. تنها «یادداشت» آزاد است؛ سرور وضعیتِ جداگانه‌ای به نامِ
+       * «درخواستِ اصلاح» ندارد، پس این همان بازخوردِ اصلاح است — نه یک action
+       * ساختگیِ چهارم. `POST /catalog/supplier-submissions/:id/reject`
+       */
+      reject: (id: string, note: string) =>
+        post<SupplierSubmissionReview>(`/catalog/supplier-submissions/${encodeURIComponent(id)}/reject`, { note }),
+    },
+
+    /* ── ۳ب. جست‌وجوی محصولِ کانونیکال (برای اتصالِ پیشنهاد به محصولِ موجود) ── */
+    catalogSearch: {
+      /**
+       * `GET /catalog/products?q=…` — همان مسیری که کنترلرِ واقعی دارد.
+       * برای انتخابِ آگاهانهٔ محصولِ مقصد؛ هیچ تطبیقِ فازی در مرورگر نیست.
+       */
+      products: (q: string, limit = 20) =>
+        get<Array<Record<string, unknown>>>("/catalog/products", { q, channel: "wholesale", limit: String(limit) }),
     },
 
     /* ── ۴. RFQ و پیشنهاد قیمت ───────────────────────────────────────────── */

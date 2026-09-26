@@ -8,6 +8,7 @@ import { loadWholesaleMembership } from "../wholesaleMembership";
 import { isBackendConfigured } from "../lib/api";
 import { answerSupplierTicket, approveWholesaleOrder, bulkUpdateWholesalePrice, cancelWholesaleOrder, listSupplierApplications, listSupplierCatalogProducts, listSupplierTickets, listSuppliers, listWholesaleAccounts, listWholesaleFulfillmentOrders, updateSupplierApplication, updateSupplierProductStatus, updateWholesaleAccountStatus, type AdminSupplier, type AdminSupplierProduct, type AdminWholesaleAccount } from "../lib/wholesaleApi";
 import WholesaleCatalogManager from "./WholesaleCatalogManager";
+import SupplierModerationPage from "./SupplierModeration";
 
 type WholesaleTab = "overview" | "direct" | "marketplace" | "fulfillment" | "plans" | "members" | "accounts" | "orders" | "support" | "catalog";
 type WholesaleOrder = { id?: string; code: string; totalQty: number; totalAmount?: number; status: string; date: string; storeName?: string; lines?: Array<{ productName: string; productCode: string; colour: string; size: string; qty: number }>; purchaseOrders?: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null }> };
@@ -98,7 +99,12 @@ export default function WholesaleAdmin() {
         {tab === "accounts" && <AccountsPanel accounts={accounts} onChange={setAccounts} onNotice={setNotice} onError={setRemoteError} />}
         {tab === "orders" && <OrdersPanel orders={orders} onChange={persistOrders} />}
         {tab === "support" && <SupportPanel tickets={tickets} onChange={persistTickets} />}
-        {tab === "catalog" && <CatalogPanel supplierProducts={supplierProducts} onChange={setSupplierProducts} onNotice={setNotice} onError={setRemoteError} />}
+        {/*
+          پیش‌تر این تب همان `CatalogPanel` بود که وضعیت‌های
+          draft/submitted/approved/rejected را در مرورگر می‌ساخت و هیچ مقصدِ
+          سروری نداشت. اکنون بازبینیِ واقعیِ `supplier_product_submission` است.
+        */}
+        {tab === "catalog" && <SupplierModerationPage />}
       </div>
     </main>
   );
