@@ -303,3 +303,91 @@ pricing tiers — has **no rendering surface at all**.
 That is the first task of 6.3-C. Per the registry, `vip-wholesale-catalog` is
 classified `RESTRUCTURE`; the adapter and API work above is the prerequisite,
 not the deliverable. **6.3-C must not be marked complete on this evidence.**
+
+---
+
+## Addendum — 6.3-C closed, and two defects the browser exposed
+
+**Status change: 6.3-C wholesale catalog is L5-proven.** The canonical buyer
+surface now exists at `/vip/catalog` and `/vip/catalog/:id`
+(`storefront/pages/WholesaleCatalog.tsx`), reading `/catalog/browse` and
+`/catalog/products/:id` through `shared/wholesale/catalog.ts`. Verified by
+`e2e/phase-6-3-wholesale-catalog-l5.mjs` at **27/27** on the real stack
+(PostgreSQL + NestJS + Next + Chromium), including: MOQ rendered with its real
+unit (`۲ سری`, never `۲ عدد`), the SIZE_RUN package with its composition and
+6-piece total, all three pricing tiers with the open final tier as `به بالا`,
+money kept as the server's decimal string, server-derived entitlements for three
+distinct VIP identities, and no page-level horizontal overflow across 12
+viewports.
+
+Two defects were found **only** by driving the workflow in a real browser. Both
+are worth recording because each had a passing test suite behind it.
+
+### 1. Every catalog domain error returned HTTP 500
+
+`CatalogDomainError` carried a `code` but no `status`. `isDomainError()` in
+`@kolbe/shared` requires **both**, so it returned `false` for all **283** throw
+sites in the catalog and fulfillment modules. The global
+`DomainExceptionFilter` then fell through to `500 INTERNAL_ERROR`, and the client
+never saw the real code — directly contradicting the "stable error contract" the
+filter's own doc comment promises.
+
+Concretely: re-approving an already-decided submission returned
+`500 {"error":"INTERNAL_ERROR"}` instead of `409 SUBMISSION_NOT_PENDING`.
+
+**Why the tests missed it:** every error assertion in
+`test/phase-6-7-approve-existing.test.ts` used
+`rejects.toMatchObject({ code })` against the **service**, so it never crossed
+the HTTP boundary. A green suite was consistent with a broken contract. Four
+tests now assert status **and** code over real HTTP, plus a unit test asserting
+no catalog code ever maps to 500.
+
+**Fix:** `CatalogDomainError` derives its status from an explicit code map with a
+documented rule-based fallback (404 `*_NOT_FOUND`, 403 ownership/permission, 409
+conflict/duplicate, 422 eligibility, otherwise 400). The third constructor
+argument is optional, so none of the 283 call sites changed.
+
+### 2. The approve-as-existing canonical search never worked
+
+`GET /catalog/products` returns `{results, nextCursor}`, but
+`catalogSearch.products` declared `Array<Record<string, unknown>>`. The consumer
+called `.map` on an object and threw a `TypeError` inside an async
+`useCallback`; the rejection was swallowed, `searchBusy` stayed `true` forever,
+and no error was shown. The button sat on `در حالِ جست‌وجو…` permanently, so an
+admin could never attach a supplier graph to an existing canonical product
+through the UI.
+
+**Why the tests missed it:** the component test's fetch fake returned a bare
+array — the same wrong shape the adapter assumed. The fake reproduced the bug
+instead of catching it. The fake now returns the real envelope, so the component
+test and the browser gate can no longer disagree about the contract.
+
+### 3. Scoping the `channel_offers` relaxation
+
+The earlier LEFT JOIN change (to stop product-level supplier offers being
+dropped from wholesale browse) was too broad: it made *any* `variant_id IS NULL`
+offer browsable, including on a product with no variants at all — a price with
+nothing to order. That broke the `phase-5-10-b` fixture whose comment states the
+original intent ("offer without a variant — unfulfillable"). The rule is now
+scoped: a product-level offer is accepted only when the product still has at
+least one active variant. Both the discovery fixture (16/16) and the supplier
+approval flow are satisfied.
+
+### Verification at this commit
+
+| Check | Result |
+| --- | --- |
+| `e2e/phase-6-7-supplier-product-l5.mjs` | 58/58 |
+| `e2e/phase-6-7-approve-existing-l5.mjs` (new) | 32/32 |
+| `e2e/phase-6-3-wholesale-catalog-l5.mjs` (new) | 27/27 |
+| API `phase-6-7-approve-existing` | 14/14 (was 10) |
+| API `phase-6-7-supplier-product-roundtrip` | 14/14 |
+| API `phase-5-10-b-discovery` | 16/16 |
+| Full API suite | 1454/1454 (136 files) |
+| Frontend root | 604/604 (45 files) |
+| `tsc` frontend + API | 0 errors |
+
+**Still NOT PROVEN / NOT IMPLEMENTED:** L6 for the wholesale surface (content
+extremes, dark mode, 200% zoom, reduced motion, anti-slop pass); 6.3-D VIP RFQ
+(`GET /api/v1/vip/requests` does not exist); 6.3-E wholesale orders; 6.3-F
+money/local-storage cleanup of the legacy `/vip/store` fixture path.
