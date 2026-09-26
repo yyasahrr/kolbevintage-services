@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "node scripts/dev-all.mjs",
     "dev:all": "node scripts/dev-all.mjs",
-    "dev:next": "npm run dev --workspace kolbe-next",
+    "dev:next": "npm run build:packages && npm run dev --workspace kolbe-next",
     "dev:kolbe": "npm run dev --workspace kolbe-storefront",
     "dev:supplier": "npm run dev --workspace kolbe-supplier-portal",
     "pg": "node scripts/pg.mjs",

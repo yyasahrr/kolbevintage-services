@@ -20,6 +20,22 @@ if (postgres.status !== 0) {
 console.log("\nکلبه وینتیج — Next.js + PostgreSQL");
 
 /*
+ * بسته‌های workspace پیش از Next ساخته می‌شوند. لایهٔ سرورِ Next
+ * (`server/database.ts` و `server/kolbe-api.ts`) `assertDatabaseReady` را از
+ * مرز عمومی `@kolbe/database/verify` (→ `dist/src/verify.js`) وارد می‌کند؛ بدون
+ * این ساخت، `dist` وجود ندارد و import در شروعِ تازه شکست می‌خورد. Turbopack هم
+ * سورسِ ESM را در بستهٔ commonjs رد می‌کند، پس ساختِ بسته‌ها الزامی است.
+ */
+const packages = spawnSync(npmCommand, npmArgs(["run", "build:packages"]), {
+  cwd: ROOT,
+  stdio: "inherit",
+});
+if (packages.status !== 0) {
+  console.error("ساخت بسته‌های workspace ناموفق بود؛ اجرای برنامه متوقف شد.");
+  process.exit(packages.status ?? 1);
+}
+
+/*
  * دادهٔ نمایشی (حساب‌های admin/vip/supplier و کاتالوگ نمونه) از اصلاح D18
  * پیش‌فرض خاموش است و فقط با درخواست صریح کاشته می‌شود. `npm run dev` مسیر
  * توسعهٔ محلی است، پس اینجا صریحاً روشن می‌شود تا تجربهٔ توسعه‌دهنده عوض نشود.

@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafe
 import type { NextRequest } from "next/server";
 import type { PoolClient } from "pg";
 import { NextResponse } from "next/server";
-import { assertDatabaseReady } from "../../packages/database/dist/src/verify";
+import { assertDatabaseReady } from "@kolbe/database/verify";
 import { DatabaseNotMigratedError, database, makeId, passwordRecord, rows, transaction } from "./database";
 import { ErrorCodes, HttpError, isHttpError } from "./http-error";
 import { parseMoneyInput, parseNonNegativeInteger } from "./money-input";

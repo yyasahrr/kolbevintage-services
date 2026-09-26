@@ -3,13 +3,17 @@ import { Pool, type PoolClient, type QueryResultRow } from "pg";
 /**
  * نگهبان سازگاری اسکیما — از گام ۱.۲ جای DDL زمان‌اجرا را گرفته است.
  *
- * ⚠️ چرا import نسبی و نه `@kolbe/database`؟ چون این اپ لایهٔ گذار (strangler)
- * است و عمداً گراف وابستگی‌اش تغییر نکرده تا حذفش در فاز ۲ گران نباشد. ماژول
- * `verify` هیچ وابستگی‌ای (نه drizzle، نه pg) جز `node:fs` ندارد و تنها مصنوعات
- * **تولیدشده از اسکیمای Drizzle** را می‌خواند؛ پس «مرجع واحد اسکیما» همچنان
- * `packages/database` است. (بدهی ثبت‌شده در گزارش فاز ۱.۲.)
+ * ⚠️ چرا `@kolbe/database/verify` و نه خودِ `@kolbe/database`؟ چون این اپ لایهٔ
+ * گذار (strangler) است و عمداً گراف وابستگی‌اش سبک نگه داشته شده تا حذفش در فاز ۲
+ * گران نباشد. ماژول `verify` هیچ وابستگی‌ای (نه drizzle، نه pg) جز `node:fs` ندارد
+ * و تنها مصنوعات **تولیدشده از اسکیمای Drizzle** را می‌خواند؛ پس «مرجع واحد
+ * اسکیما» همچنان `packages/database` است. این import از **مرز عمومی بسته**
+ * (subpath export `./verify` → `dist/src/verify.js`) انجام می‌شود، نه مسیر نسبیِ
+ * سورس، تا با Turbopack (که سورسِ ESM را در بستهٔ commonjs رد می‌کند) نسوزد؛
+ * بنابراین `npm run build:packages` پیش از بالا آمدنِ Next تضمین می‌شود.
+ * (بدهی ثبت‌شده در گزارش فاز ۱.۲.)
  */
-import { assertDatabaseReady, DatabaseNotMigratedError } from "../../packages/database/src/verify";
+import { assertDatabaseReady, DatabaseNotMigratedError } from "@kolbe/database/verify";
 
 const DEFAULT_DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:55432/kolbe";
 
