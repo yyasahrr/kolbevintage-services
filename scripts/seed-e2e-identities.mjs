@@ -105,9 +105,51 @@ await db.query(
 const brandId = stableId("brand:kolbe-linen", "brn");
 await ensure("brand", ["id", "slug", "name", "verification_status"], [brandId, "kolbe-linen", "Kolbe Linen", "approved"]);
 
+/* ── VIP identities ───────────────────────────────────────────────────────────
+ * Entitlements are derived by the API (auth.service.ts) as:
+ *   catalog: wholesale_account.status === 'approved' && !expired
+ *   rfq:     catalog && an active, unexpired vip_subscription
+ *   orders:  catalog
+ * So the three identities below produce three genuinely different server-side
+ * capability sets. Nothing here invents an entitlement the API will not grant.
+ */
+const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+// (a) catalog-only: approved account, NO subscription -> rfq must be false.
+const vipCatalogUserId = await upsertUser("vip-catalog@kolbe.test", "customer", "خریدار عمده — فقط کاتالوگ");
+const vipCatalogAccountId = stableId("vipaccount:catalog-only", "wac");
+await ensure("wholesale_account", ["id", "user_id", "member_name", "store_name", "phone", "city", "plan_name", "status", "activated_at", "expires_at"], [
+  vipCatalogAccountId, vipCatalogUserId, "بوتیک نیلوفر", "بوتیک نیلوفر", "02100000001", "تهران", "پایه", "approved", new Date().toISOString(), farFuture,
+]);
+
+// (b) full VIP: approved account PLUS an active subscription -> rfq true.
+const vipFullUserId = await upsertUser("vip-full@kolbe.test", "customer", "خریدار عمده — دسترسی کامل");
+const vipFullAccountId = stableId("vipaccount:full", "wac");
+await ensure("wholesale_account", ["id", "user_id", "member_name", "store_name", "phone", "city", "plan_name", "status", "activated_at", "expires_at"], [
+  vipFullAccountId, vipFullUserId, "گالری آرش", "گالری آرش", "02100000002", "تهران", "حرفه‌ای", "approved", new Date().toISOString(), farFuture,
+]);
+const vipPlanId = stableId("vipplan:e2e", "vpl");
+await ensure("vip_plan", ["id", "name", "slug", "price", "duration_days", "features", "limits", "status"], [
+  vipPlanId, "پلن آزمایشی عمده", "vip-e2e", "0", 365, JSON.stringify([]), JSON.stringify({}), "active",
+]);
+await ensure("vip_subscription", ["id", "user_id", "plan_id", "status", "started_at", "expires_at"], [
+  stableId("vipsub:full", "vsub"), vipFullUserId, vipPlanId, "active", new Date().toISOString(), farFuture,
+]);
+
+// (c) pending VIP: account awaiting approval -> no entitlement at all.
+const vipPendingUserId = await upsertUser("vip-pending@kolbe.test", "customer", "خریدار عمده — در انتظار");
+await ensure("wholesale_account", ["id", "user_id", "member_name", "store_name", "phone", "city", "plan_name", "status"], [
+  stableId("vipaccount:pending", "wac"), vipPendingUserId, "فروشگاه سایه", "فروشگاه سایه", "02100000003", "شیراز", "پایه", "pending",
+]);
+
 console.log(
   JSON.stringify(
-    { supplierEmail, adminEmail, password, supplierId, sellerId, categoryId, brandId },
+    {
+      supplierEmail, adminEmail, password, supplierId, sellerId, categoryId, brandId,
+      vipCatalogEmail: "vip-catalog@kolbe.test",
+      vipFullEmail: "vip-full@kolbe.test",
+      vipPendingEmail: "vip-pending@kolbe.test",
+    },
     null,
     2,
   ),

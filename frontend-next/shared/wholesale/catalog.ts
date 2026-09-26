@@ -53,6 +53,12 @@ export type WholesaleVariant = {
   size: string;
   color: string;
   colorHex: string;
+  /**
+   * کلِ ویژگی‌های واریانت همان‌طور که سرور برگردانده (مثلاً `material`).
+   * پیش‌تر فقط size/color/colorHex استخراج می‌شد و بقیهٔ صفات **دور ریخته
+   * می‌شد** — یعنی بخشی از حقیقتِ محصول در آداپتور گم می‌شد.
+   */
+  attributes: Record<string, unknown>;
 };
 
 /** یک قلمِ بستهٔ عمده: چند عدد از کدام واریانت. */
@@ -181,6 +187,7 @@ function mapVariant(raw: unknown): WholesaleVariant | null {
     size: text(attributes.size ?? raw.size),
     color: text(attributes.color ?? raw.color),
     colorHex: text(attributes.color_hex ?? raw.colorHex) || "#d6d3d1",
+    attributes,
   };
 }
 
