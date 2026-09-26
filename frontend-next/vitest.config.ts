@@ -20,9 +20,24 @@ export default defineConfig({
       "@shared": path.resolve(import.meta.dirname, "shared"),
     },
   },
+  /**
+   * Next با SWC و runtime خودکارِ JSX کامپایل می‌کند؛ esbuildِ vitest به‌صورت
+   * پیش‌فرض runtime کلاسیک (`React.createElement`) می‌سازد. بدون این تنظیم،
+   * فایل‌های `.tsx` با «React is not defined» می‌شکنند.
+   */
+  esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
-    include: ["test/**/*.test.ts"],
+    /**
+     * `.test.tsx` هم باید شامل شود.
+     *
+     * پیش‌تر فقط `test/**\/*.test.ts` بود، یعنی **هیچ** آزمونِ کامپوننتی با
+     * `vitest run` معمولی اجرا نمی‌شد — سکوتِ کامل، بدونِ هیچ هشداری. تست‌های
+     * `.tsx` فقط از راهِ پیکربندیِ فازِ خودشان (`test:phase-6-2` و مانند آن)
+     * اجرا می‌شدند. پیکربندی‌های فاز، فایلِ جدا هستند و این را merge نمی‌کنند،
+     * پس افزودنِ `.tsx` در اینجا باعثِ اجرای دوبارهٔ چیزی در آن‌ها نمی‌شود.
+     */
+    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     globalSetup: ["./test/global-setup.ts"],
     setupFiles: ["./test/setup.ts"],
     // تست‌ها روی یک دیتابیس مشترک اجرا می‌شوند؛ اجرای موازی فایل‌ها
