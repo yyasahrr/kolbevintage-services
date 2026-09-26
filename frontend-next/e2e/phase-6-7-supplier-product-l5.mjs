@@ -25,6 +25,12 @@ const EXECUTABLE = '/home/user/kolbevintage-services/.browsers/bin/chromium'
 const TAG = Date.now().toString(36).toUpperCase()
 const PRODUCT_NAME = `پیراهن لینن E2E ${TAG}`
 const SLUG = `linen-e2e-${TAG.toLowerCase()}`
+/**
+ * `product_variant.sku` is GLOBALLY unique, so a fixed prefix makes every run
+ * after the first collide with the previously approved product. Derive it from
+ * the unique run tag (ASCII-only, since matrixCellSku filters non-ASCII).
+ */
+const SKU_PREFIX = `LINE${TAG}`
 
 const results = []
 function check(name, passed, detail = '') {
@@ -44,12 +50,20 @@ async function gotoStep(page, label) {
   await page.waitForTimeout(350)
 }
 
+/** Poll for real rendered content instead of trusting load states: both portals
+ *  keep a polling interval alive, so `networkidle` never settles, and a cold
+ *  `next dev` compile can outlast a fixed selector timeout. */
+async function waitForText(page, text, timeout = 60000) {
+  await page.waitForFunction((needle) => document.body.innerText.includes(needle), text, { timeout })
+}
+
 async function login(page, email) {
-  await page.goto(`${BASE}/supplier`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE}/supplier`, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('input[type="email"]', { timeout: 60000 })
   await page.fill('input[type="email"]', email)
   await page.fill('input[type="password"]', PASSWORD)
   await page.click('button.auth-submit')
-  await page.waitForLoadState('networkidle')
+  await waitForText(page, 'ثبت محصول جدید')
 }
 
 /** 1x1 transparent PNG so the upload seam gets a real, decodable image. */
@@ -72,8 +86,9 @@ try {
   await login(page, SUPPLIER_EMAIL)
   check('supplier login reaches the portal', (await page.textContent('body')).includes('نساجی نیلگون') || (await page.url()).includes('/supplier'))
 
-  await page.goto(`${BASE}/supplier?page=product-editor`, { waitUntil: 'networkidle' })
-  await page.waitForSelector('label:has-text("نام محصول")', { timeout: 20000 })
+  await page.goto(`${BASE}/supplier?page=product-editor`, { waitUntil: 'domcontentloaded' })
+  await waitForText(page, 'نام محصول')
+  await page.waitForSelector('label:has-text("نام محصول") input', { timeout: 60000 })
 
   // Basic information
   await page.fill('label:has-text("نام محصول") input', PRODUCT_NAME)
@@ -88,7 +103,7 @@ try {
 
   // Variants: Black/Cream x S/M/L
   await gotoStep(page, 'واریانت‌ها')
-  await page.fill('label:has-text("پیشوندِ SKU") input', 'LINENE2E')
+  await page.fill('label:has-text("پیشوندِ SKU") input', SKU_PREFIX)
   await page.fill('label:has-text("مقادیرِ ردیف") input', 'Black, Cream')
   await page.fill('label:has-text("مقادیرِ ستون") input', 'S, M, L')
   const cells = page.locator('.spe-bulk-row button')
@@ -131,7 +146,7 @@ try {
 
   // Commercial offer
   await gotoStep(page, 'پیشنهادِ تجاری')
-  await page.fill('label:has-text("SKU تجاری") input', `LINENE2E-SHIRT-${TAG}`)
+  await page.fill('label:has-text("SKU تجاری") input', `${SKU_PREFIX}-SHIRT`)
   await page.fill('label:has-text("قیمت عمده") input', '1250000')
   await page.fill('label:has-text("قیمت خرده") input', '1890000')
   await page.fill('label:has-text("حداقل تعداد سفارش") input', '2')
@@ -197,7 +212,8 @@ try {
   const sid = (submissionId ?? '').trim()
 
   // Refresh: status must come from the server, not localStorage
-  await page.goto(`${BASE}/supplier?page=products`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE}/supplier?page=products`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(2500)
   await page.waitForTimeout(1500)
   const listText = await page.locator('body').innerText()
   check('submission survives refresh at the products deep link', listText.includes(PRODUCT_NAME))
@@ -226,7 +242,7 @@ try {
   await adminPage.locator(`tr:has-text("${PRODUCT_NAME}") button:has-text("بازبینی")`).first().click()
   await adminPage.waitForSelector('text=پیشنهادِ تجاری و MOQ', { timeout: 20000 })
   const detailText = await adminPage.locator('body').innerText()
-  check('admin detail shows all six variants', (detailText.match(/LINENE2E-/g) ?? []).length >= 6)
+  check('admin detail shows all six variants', (detailText.match(new RegExp(`${SKU_PREFIX}-`, 'g')) ?? []).length >= 6)
   check('admin detail shows distinct inventory', detailText.includes('۴۰') && detailText.includes('۶۰'))
   check('admin detail shows the series with its total', detailText.includes('سری سایزبندی S-L'))
   check('admin detail shows the open-ended 50+ tier', detailText.includes('۵۰+'))
@@ -239,10 +255,29 @@ try {
   check('admin approval succeeds through the browser', true)
 
   await adminPage.reload({ waitUntil: 'domcontentloaded' })
-  await adminPage.waitForTimeout(2500)
+  // The workspace selector is browser-owned state and resets to retail on a hard
+  // reload, so the moderation page must be re-entered before its state is read.
+  await adminPage.waitForSelector('role=tab[name="مدیریت عمده‌فروشی"]', { timeout: 60000 })
+  await adminPage.click('role=tab[name="مدیریت عمده‌فروشی"]')
+  await adminPage.waitForTimeout(1200)
+  await adminPage.click('button:has-text("بازبینی محصولات ساپلایر")')
+  await adminPage.waitForSelector('text=بازبینیِ محصولِ تأمین‌کنندگان', { timeout: 60000 })
   await adminPage.waitForTimeout(1500)
-  const afterReload = await adminPage.locator('body').innerText()
-  check('approved status persists after admin refresh', afterReload.includes(PRODUCT_NAME))
+  /**
+   * After approval the submission leaves `pending_review`, which is the list's
+   * default filter - so its disappearance from that view is *correct* server
+   * truth, not a regression. Re-read it under the "all" filter and assert the
+   * status the server actually stored.
+   */
+  await adminPage.selectOption('select >> nth=0', { label: 'همه' }).catch(async () => {
+    const options = await adminPage.locator('select').first().locator('option').allTextContents()
+    const all = options.find(o => o.includes('همه'))
+    if (all) await adminPage.selectOption('select >> nth=0', { label: all })
+  })
+  await adminPage.waitForFunction(name => document.body.innerText.includes(name), PRODUCT_NAME, { timeout: 60000 })
+  const approvedRow = await adminPage.locator(`tr:has-text("${PRODUCT_NAME}")`).first().innerText()
+  check('approved status persists after admin refresh', approvedRow.includes('تأیید شد — محصولِ تازه'), approvedRow.replace(/\n+/g, ' | ').slice(0, 160))
+  check('approved submission no longer claims pending review', !approvedRow.includes('در انتظارِ بررسی'), approvedRow.replace(/\n+/g, ' | ').slice(0, 160))
 
   /* ── 3. Database verification ─────────────────────────────────────────── */
   const [submission] = (
@@ -264,17 +299,29 @@ try {
   check('inventory materialized with distinct values', inventory.length === 5 && inventory[0].on_hand === 60, JSON.stringify(inventory.map(r => r.on_hand)))
   check('"not supplied" was not defaulted to zero', inventory.length === 5)
 
-  const [offer] = (await db.query('select wholesale_price, retail_price, currency, moq, moq_unit, package_type from seller_offer where product_id = $1', [productId])).rows
+  // `id` is required: packages and tiers hang off seller_offer, not off product.
+  const [offer] = (await db.query('select id, wholesale_price, retail_price, currency, moq, moq_unit, package_type from seller_offer where product_id = $1', [productId])).rows
+  check('exactly one seller offer materialized', offer !== undefined)
   check('offer keeps MOQ 2', offer?.moq === 2, String(offer?.moq))
   check('offer keeps SERIES (not degraded to PIECE)', offer?.moq_unit === 'SERIES', offer?.moq_unit ?? 'missing')
-  check('offer keeps SIZE_RUN', offer?.package_type === 'SIZE_RUN', offer?.package_type ?? 'missing')
   check('money stored as bigint from the decimal string', offer?.wholesale_price === '1250000' && offer?.retail_price === '1890000', `${offer?.wholesale_price}/${offer?.retail_price}`)
 
-  const packages = (await db.query('select id, package_type, total_pieces from wholesale_package where offer_id = $1', [offer.id ?? ''])).rows
+  const packages = (await db.query('select id, package_type, name, total_pieces from wholesale_package where offer_id = $1', [offer?.id ?? ''])).rows
   check('one series package materialized', packages.length === 1 && packages[0].total_pieces === 6, JSON.stringify(packages))
+  /**
+   * SIZE_RUN lives on the PACKAGE, not on the offer. The staged commercial graph
+   * carries no offer-level packageType - only packages[].packageType - so
+   * asserting it on seller_offer.package_type tested a column the domain never
+   * populates. Verified against the real schema and the real row.
+   */
+  check('package keeps SIZE_RUN', packages[0]?.package_type === 'SIZE_RUN', packages[0]?.package_type ?? 'missing')
+  const packageItems = (await db.query('select variant_id, quantity from wholesale_package_item where package_id = $1 order by quantity desc', [packages[0]?.id ?? ''])).rows
+  check('package holds three variant items of 2 each', packageItems.length === 3 && packageItems.every(i => i.quantity === 2), JSON.stringify(packageItems))
+  check('package items map onto real canonical variant ids', packageItems.every(i => String(i.variant_id).startsWith('var_')), JSON.stringify(packageItems.map(i => i.variant_id)))
 
-  const tiers = (await db.query('select min_quantity, max_quantity, unit_price, moq_unit from wholesale_pricing_tier where offer_id = $1 order by min_quantity', [offer.id ?? ''])).rows
+  const tiers = (await db.query('select min_quantity, max_quantity, unit_price, moq_unit from wholesale_pricing_tier where offer_id = $1 order by min_quantity', [offer?.id ?? ''])).rows
   check('three pricing tiers preserved', tiers.length === 3, `${tiers.length}`)
+  check('tier prices preserved exactly as decimal strings', tiers.map(t => t.unit_price).join(',') === '1250000,1180000,1090000', tiers.map(t => t.unit_price).join(','))
   check('final tier is open-ended', tiers[2]?.max_quantity === null, String(tiers[2]?.max_quantity))
   check('tiers keep the SERIES unit', tiers.every(t => t.moq_unit === 'SERIES'))
 
@@ -287,7 +334,8 @@ try {
   check('product media materialized', Number(mediaCounts.rows[0].product_media) >= 2, String(mediaCounts.rows[0].product_media))
 
   /* ── 4. Supplier sees server-owned state ──────────────────────────────── */
-  await page.goto(`${BASE}/supplier?page=products`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE}/supplier?page=products`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(2500)
   await page.waitForTimeout(1500)
   const supplierAfter = await page.locator('body').innerText()
   check('supplier list reflects the server-owned state', supplierAfter.includes(PRODUCT_NAME))
@@ -320,19 +368,51 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
 
   /* ── 7. Accessibility: keyboard reachability of the editor ────────────── */
-  await page.goto(`${BASE}/supplier?page=product-editor`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE}/supplier?page=product-editor`, { waitUntil: 'domcontentloaded' })
+  await waitForText(page, 'نام محصول')
   await page.waitForTimeout(1500)
+  /**
+   * Compute an accessible name per control type.
+   *
+   * The previous version used `el.closest('label')` for *every* element, which
+   * flagged every ordinary button that is not wrapped in a <label> - 28 false
+   * positives - while being blind to a button that is genuinely unnamed. A
+   * button's name comes from its own text content; a form control's name comes
+   * from a wrapping/for-label, aria-label, aria-labelledby, title or placeholder.
+   */
   const a11y = await page.evaluate(() => {
-    const inputs = [...document.querySelectorAll('input, select, textarea, button')]
-    const unlabeled = inputs.filter(el => {
-      if (el.type === 'hidden') return false
-      const label = el.closest('label')
-      const hasText = (label?.textContent ?? '').trim().length > 0
-      return !hasText && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby') && !el.getAttribute('placeholder')
-    })
-    return { total: inputs.length, unlabeled: unlabeled.map(el => el.tagName + ':' + (el.type ?? '')) }
+    const nameOf = (el) => {
+      const ariaLabelledBy = el.getAttribute('aria-labelledby')
+      if (ariaLabelledBy) {
+        const text = ariaLabelledBy.split(/\s+/).map(id => document.getElementById(id)?.textContent ?? '').join(' ').trim()
+        if (text) return text
+      }
+      const ariaLabel = (el.getAttribute('aria-label') ?? '').trim()
+      if (ariaLabel) return ariaLabel
+      if (el.tagName === 'BUTTON') {
+        const own = (el.textContent ?? '').trim()
+        if (own) return own
+        return (el.getAttribute('title') ?? '').trim()
+      }
+      const wrapper = el.closest('label')
+      if (wrapper && (wrapper.textContent ?? '').trim()) return wrapper.textContent.trim()
+      if (el.id) {
+        const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`)
+        if (forLabel && (forLabel.textContent ?? '').trim()) return forLabel.textContent.trim()
+      }
+      const title = (el.getAttribute('title') ?? '').trim()
+      if (title) return title
+      return (el.getAttribute('placeholder') ?? '').trim()
+    }
+    const controls = [...document.querySelectorAll('input, select, textarea, button')]
+      .filter(el => el.type !== 'hidden' && !el.disabled)
+    const unlabeled = controls.filter(el => !nameOf(el))
+    return {
+      total: controls.length,
+      unlabeled: unlabeled.map(el => `${el.tagName}:${el.type ?? ''}${el.className ? '.' + String(el.className).split(' ')[0] : ''}`),
+    }
   })
-  check('every interactive control in the editor has an accessible name', a11y.unlabeled.length === 0, a11y.unlabeled.join(', '))
+  check('every interactive control in the editor has an accessible name', a11y.unlabeled.length === 0, `${a11y.unlabeled.length}/${a11y.total} unnamed: ${a11y.unlabeled.slice(0, 8).join(', ')}`)
 
   await context.close()
   await adminContext.close()

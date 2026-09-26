@@ -71,7 +71,22 @@ function defaultApi(): SupplierApi {
   return createSupplierApi(createApiClient())
 }
 
-export function SupplierModerationPage({ api = defaultApi() }: { api?: SupplierApi }) {
+/**
+ * یک نمونهٔ **پایدار** در سطح ماژول.
+ *
+ * چرا این لازم است؟ پارامترِ پیش‌فرضِ جاوااسکریپت در **هر** فراخوانی تابع
+ * ارزیابی می‌شود؛ یعنی `{ api = defaultApi() }` در هر render یک کلاینتِ تازه
+ * می‌ساخت. چون `loadList` به `[api, statusFilter]` وابسته است و `useEffect`
+ * به `[loadList]`، هر setState یک render و هر render یک کلاینتِ جدید و در نتیجه
+ * یک واکشیِ دوباره تولید می‌کرد: حلقهٔ بی‌پایان.
+ *
+ * اندازه‌گیری پیش از اصلاح: **۵۱۷ درخواستِ فهرست در ~۹.۵ ثانیه** (~۵۴ در ثانیه)
+ * — یعنی صفحه هم API خودش را زیر بار می‌برد و هم چون DOM مدام بازسازی می‌شد،
+ * کلیک روی ردیف‌ها هرگز نمی‌نشست.
+ */
+const SHARED_DEFAULT_API: SupplierApi = defaultApi()
+
+export function SupplierModerationPage({ api = SHARED_DEFAULT_API }: { api?: SupplierApi }) {
   const [statusFilter, setStatusFilter] = useState<string>('pending_review')
   const [submissions, setSubmissions] = useState<SupplierSubmissionReview[] | null>(null)
   const [listError, setListError] = useState<string | null>(null)

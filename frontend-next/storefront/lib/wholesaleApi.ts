@@ -46,29 +46,60 @@ export type AdminWholesaleOrder = {
   purchaseOrders: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null }>;
 };
 
+/**
+ * نشستِ مدیر — روی **درز قانونی** (`/api/v1/auth/*`).
+ *
+ * چرا بازنویسی شد؟ این سه تابع پیش‌تر به مسیرهای سازگاری
+ * `/store/kolbe/auth/login`، `/store/kolbe/auth/logout` و `/store/kolbe/admin/tickets`
+ * درخواست می‌زدند که در سرویس Nest **وجود ندارند** (۴۰۴). نتیجه این بود که
+ * ورود به پنل مدیریت هرگز موفق نمی‌شد و خطای ۴۰۴ به کاربر به‌شکل گمراه‌کنندهٔ
+ * «ایمیل یا رمز عبور درست نیست» نشان داده می‌شد.
+ *
+ * دو اصلاح هم‌زمان:
+ *  ۱) مسیر قانونی: `POST /api/v1/auth/login` (۲۰۱) + `GET /api/v1/auth/me`.
+ *  ۲) **هویت از سرور، نه از مرورگر.** نسخهٔ پیشین `role: "admin"` را در بدنهٔ
+ *     درخواست می‌فرستاد و سپس به همان مقدار اعتماد می‌کرد. حالا نقش فقط از
+ *     پاسخِ `/auth/me` خوانده می‌شود که خود از کوکیِ نشستِ امضاشده مشتق شده است.
+ */
+async function readServerSessionRole(): Promise<string | null> {
+  const me = await api<{ role?: unknown }>("/api/v1/auth/me");
+  return typeof me?.role === "string" ? me.role : null;
+}
+
 export async function signInAdmin(email: string, password: string) {
-  const data = await api<{ user: { role: string } }>("/store/kolbe/auth/login", {
+  await api("/api/v1/auth/login", {
     method: "POST",
-    body: { email: email.trim(), password, role: "admin" },
+    body: { email: email.trim(), password },
   }).catch((error) => {
-    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY" || error.code.startsWith("HTTP_5"))) throw new Error("اتصال به بک‌اند برقرار نیست؛ اگر این پیام را می‌بینید احتمالاً روی پیش‌نمایش قدیمی هستید — از آخرین تب پیش‌نمایش استفاده کنید.");
-    throw new Error("ایمیل یا رمز عبور درست نیست.");
+    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY" || error.code.startsWith("HTTP_5"))) {
+      throw new Error("اتصال به بک‌اند برقرار نیست؛ اگر این پیام را می‌بینید احتمالاً روی پیش‌نمایش قدیمی هستید — از آخرین تب پیش‌نمایش استفاده کنید.");
+    }
+    // ۴۰۱ یعنی اعتبارنامه نامعتبر؛ هر چیز دیگری باید صادقانه گزارش شود.
+    if (error instanceof ApiError && error.code === "HTTP_401") throw new Error("ایمیل یا رمز عبور درست نیست.");
+    throw new Error(error instanceof Error ? error.message : "ورود انجام نشد.");
   });
-  if (data.user.role !== "admin") throw new Error("این حساب دسترسی مدیریت کلبه را ندارد.");
+
+  const role = await readServerSessionRole();
+  if (role !== "admin") {
+    await signOutAdmin();
+    throw new Error("این حساب دسترسی مدیریت کلبه را ندارد.");
+  }
 }
 
 export async function signOutAdmin() {
   try {
-    await api("/store/kolbe/auth/logout", { method: "POST" });
-  } catch { /* ignore */ }
+    await api("/api/v1/auth/logout", { method: "POST" });
+  } catch { /* خروج محلی حتی اگر سرور در دسترس نباشد */ }
 }
 
+/**
+ * بازگردانی نشست: فقط وقتی «وارد» هستیم که **سرور** نقشِ مدیر را برگرداند.
+ * پیش‌تر موفقیتِ یک endpoint نامرتبط (تیکت‌ها) به‌جای بررسی نشست استفاده می‌شد.
+ */
 export async function restoreAdminSession(): Promise<boolean> {
   try {
-    await api("/store/kolbe/admin/tickets");
-    return true;
-  } catch (error) {
-    if (error instanceof ApiError && error.code === "NETWORK") return false;
+    return (await readServerSessionRole()) === "admin";
+  } catch {
     return false;
   }
 }
