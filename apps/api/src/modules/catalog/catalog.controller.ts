@@ -159,8 +159,14 @@ export class CatalogController {
     const result = await this.catalog.createSupplierSubmission({
       name, slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${idPart}`,
       description: String(body.description ?? "").trim(), categoryId: undefined,
-      attributes: { sku, category, proposedStock: stock },
-      variants: [{ sku: `${sku}-${size}`.toUpperCase(), attributes: { size, color, color_hex: body.colorHex ?? null } }],
+      // `sku` یک فیلدِ **تجاری** است و طبقِ `assertSubmissionSeparation` نباید داخلِ
+      // attributes بیاید؛ پیش‌تر اینجا بود و همین باعث می‌شد کلِ مسیرِ سازگار با
+      // `COMMERCIAL_IN_ATTRIBUTES` بشکند (یعنی ثبتِ محصول از UI قدیمی ممکن نبود).
+      // SKU همچنان در `commercial.sku` و در SKU واریانت حفظ می‌شود.
+      attributes: { category, proposedStock: stock },
+      // موجودیِ پیشنهادیِ مسیرِ قدیمی به تنها مقصدِ کانونیکالش نگاشت می‌شود
+      // (`product_variant_inventory`)؛ وگرنه عددی بدونِ معنا در attributes می‌ماند.
+      variants: [{ sku: `${sku}-${size}`.toUpperCase(), attributes: { size, color, color_hex: body.colorHex ?? null }, inventory: { onHand: stock } }],
       media, commercial: { sku, wholesalePrice: price, moq: 1 }, createdBy: claims.sub,
     });
     return { product: { id: result.submission.id, name: result.submission.proposedName, sku, status: result.submission.status } };
