@@ -1045,9 +1045,23 @@ export class CatalogService {
   /** Active-only category tree; dangling parents dropped, cycles cut. */
   async listCategories(): Promise<Array<Record<string, unknown>>> {
     const rows = await this.db.select().from(category).where(eq(category.status, "active"));
-    type Node = { id: string; name: string; slug: string; children: Node[] };
+    /**
+     * `attributesSchema` هم برگردانده می‌شود چون هر دسته «طرحِ ویژگی‌های» خودش
+     * را اعلام می‌کند و ویرایشگرِ محصول باید ورودیِ ویژگی‌ها را از همان طرح
+     * بسازد. پیش‌تر این ستون خوانده نمی‌شد، پس فرانت‌اند راهی جز حدس‌زدنِ
+     * ویژگی‌ها نداشت.
+     */
+    type Node = { id: string; name: string; slug: string; attributesSchema: Record<string, unknown>; children: Node[] };
     const byId = new Map<string, Node>();
-    for (const row of rows) byId.set(row.id, { id: row.id, name: row.name, slug: row.slug, children: [] });
+    for (const row of rows) {
+      byId.set(row.id, {
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        attributesSchema: (row.attributesSchema ?? {}) as Record<string, unknown>,
+        children: [],
+      });
+    }
     const roots: Node[] = [];
     for (const row of rows) {
       const node = byId.get(row.id)!;

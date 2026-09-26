@@ -41,3 +41,6 @@ var/cms-public-media/
 
 # کوکیِ نشستِ تست‌های مرورگری (storageState) — هرگز commit نشود
 frontend-next/e2e/.auth/
+
+# رسانهٔ بارگذاری‌شدهٔ پروایدرِ محلی (خارج از git)
+.media-storage/
