@@ -119,11 +119,11 @@ describe("Phase 5.10-D10 static guards", () => {
     expect(rankUsers).toEqual([]);
   });
 
-  it("D10.8 pins the schema shape: 199 tables, journal idx 46 (0046 adds return replay columns/index only)", () => {
+  it("D10.8 pins the schema shape: 199 tables, journal idx 47 (0047 adds product.attributes only)", () => {
     const journal = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(47);
-    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 46, tag: "0046_phase_5_11_return_filing_idempotency" });
-    const snapshot = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "0046_snapshot.json"), "utf8"));
+    expect(journal.entries).toHaveLength(48);
+    expect(journal.entries[journal.entries.length - 1]).toMatchObject({ idx: 47, tag: "0047_supplier_product_attributes" });
+    const snapshot = JSON.parse(readFileSync(path.join(ROOT, "packages", "database", "migrations", "meta", "0047_snapshot.json"), "utf8"));
     expect(Object.keys(snapshot.tables)).toHaveLength(199);
   });
 });

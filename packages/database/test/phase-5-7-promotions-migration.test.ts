@@ -49,10 +49,10 @@ describe("Phase 5.7 PostgreSQL migration and invariants", () => {
       "promotion_usage",
     ]);
     const journal = JSON.parse(fs.readFileSync(path.join(MIGRATIONS_DIR, "meta", "_journal.json"), "utf8"));
-    expect(journal.entries).toHaveLength(47);
+    expect(journal.entries).toHaveLength(48);
     expect(journal.entries[journal.entries.length - 1]).toMatchObject({
-      idx: 46,
-      tag: "0046_phase_5_11_return_filing_idempotency",
+      idx: 47,
+      tag: "0047_supplier_product_attributes",
     });
   });
 

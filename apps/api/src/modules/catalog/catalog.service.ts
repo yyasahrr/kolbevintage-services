@@ -17,6 +17,7 @@ import {
   normalizeStagedVariants,
   normalizeStagedMedia,
   normalizeStagedCommercial,
+  normalizeStagedAttributes,
   CatalogDomainError,
 } from "./catalog.logic";
 
@@ -245,6 +246,8 @@ export class CatalogService {
         // SKU پایه/مرجعِ محصول از بخشِ تجاری — پیش‌تر فقط در attributes می‌ماند.
         sku: stagedCommercial.sku ?? stagedVariants[0]?.sku ?? null,
         brandId: submission.brandId ?? submission.proposedBrandId, categoryId: submission.categoryId,
+        // ویژگی‌های سطحِ محصول اکنون مقصدِ کانونیک دارند (product.attributes).
+        attributes: normalizeStagedAttributes(submission.attributes),
         ownerType: "SUPPLIER", isKolbeExclusive: false, status: "approved", createdBy: submission.createdBy,
       }).returning();
 
@@ -441,9 +444,9 @@ export class CatalogService {
         brandId: row.brandId,
         proposedBrandId: row.proposedBrandId,
         categoryId: row.categoryId,
-        // صریح: ستونِ `attributes` در جدولِ `product` وجود ندارد، پس attributes
-        // سطحِ محصول مقصدِ کانونیکال ندارد و در ماده‌سازی حفظ نمی‌شود. اینجا
-        // **دیده می‌شود** تا ادمین بداند، و به‌عنوان شکافِ ثبت‌شده باقی می‌ماند.
+        // این مقدار اکنون مقصدِ کانونیکال دارد: `product.attributes` (مهاجرت ۰۰۴۷)،
+        // و در بازبینی هم دیده می‌شود تا ادمین دقیقاً همان چیزی را تأیید کند که
+        // ماده‌سازی می‌شود.
         attributes: row.attributes,
       },
       variants,

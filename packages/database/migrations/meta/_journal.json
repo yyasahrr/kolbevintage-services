@@ -330,6 +330,13 @@
       "when": 1791523200000,
       "tag": "0046_phase_5_11_return_filing_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791609600000,
+      "tag": "0047_supplier_product_attributes",
+      "breakpoints": true
     }
   ]
 }

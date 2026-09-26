@@ -1465,6 +1465,18 @@ export const product = pgTable(
     description: text("description").notNull().default(""),
     brandId: text("brand_id"),
     categoryId: text("category_id"),
+    /**
+     * ویژگی‌های منعطفِ سطحِ محصول (color/material/fit و …).
+     *
+     * چرا این ستون لازم است: `category.attributes_schema` از ابتدا وجود دارد تا
+     * هر دسته «طرحِ ویژگی‌های» خودش را اعلام کند، و `product_variant.attributes`
+     * هم دقیقاً همین شکل را دارد؛ اما مقصدِ کانونیکِ مقادیرِ سطحِ محصول هرگز
+     * ساخته نشده بود. نتیجه این بود که `supplier_product_submission.attributes`
+     * پذیرفته و در بازبینیِ ادمین نمایش داده می‌شد ولی هنگامِ تأیید **بی‌صدا
+     * دور ریخته می‌شد** — نقضِ قاعدهٔ «هیچ ورودیِ پذیرفته‌شده‌ای نباید ناپدید
+     * شود». این ستون همان شکلِ `product_variant.attributes` را دارد.
+     */
+    attributes: jsonb("attributes").notNull().default({}),
     ownerType: text("owner_type").notNull().default("KOLBE"),
     isKolbeExclusive: boolean("is_kolbe_exclusive").notNull().default(false),
     status: text("status").notNull().default("draft"),

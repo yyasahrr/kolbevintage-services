@@ -593,6 +593,18 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * ویژگی‌های سطحِ محصول (نه واریانت).
+ *
+ * مقصدِ کانونیکِ این مقدار ستونِ `product.attributes` است (مهاجرت ۰۰۴۷)؛ پیش از
+ * آن این داده پذیرفته می‌شد ولی جایی برای ماندن نداشت. اینجا فقط «شیء بودن» را
+ * تضمین می‌کنیم — اعتبارسنجیِ معنا در `assertSubmissionSeparation` انجام می‌شود
+ * که اجازه نمی‌دهد فیلدهای تجاری داخل attributes بیایند.
+ */
+export function normalizeStagedAttributes(raw: unknown): Record<string, unknown> {
+  return asRecord(raw);
+}
+
 export function normalizeStagedVariants(raw: unknown): StagedVariantInput[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((entry) => {
