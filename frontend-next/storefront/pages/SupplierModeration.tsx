@@ -165,19 +165,21 @@ export function SupplierModerationPage({ api = SHARED_DEFAULT_API }: { api?: Sup
     if (search.trim().length < 2) return
     setSearchBusy(true)
     setSearchError(null)
-    const result = await api.catalogSearch.products(search.trim())
-    setSearchBusy(false)
-    if (result.ok) {
-      setCandidates(
-        (result.data as Array<Record<string, unknown>>).map(row => ({
-          id: String(row.id ?? ''),
-          name: String(row.name ?? ''),
-          sku: row.sku == null ? null : String(row.sku),
-        })),
-      )
-    } else {
+    // `finally` حیاتی است: اگر هر خطای ناهمگامی رخ دهد، بی‌آن‌که وضعیتِ
+    // «در حالِ جست‌وجو…» را رها کند، آن را پاک می‌کند و خطا را صادقانه نشان می‌دهد.
+    try {
+      const result = await api.catalogSearch.products(search.trim())
+      if (result.ok) {
+        setCandidates(result.data)
+      } else {
+        setCandidates(null)
+        setSearchError(result.error.message || 'جست‌وجوی محصولِ کانونیکال ناموفق بود')
+      }
+    } catch (error) {
       setCandidates(null)
-      setSearchError(result.error.message || 'جست‌وجوی محصولِ کانونیکال ناموفق بود')
+      setSearchError(error instanceof Error ? error.message : 'جست‌وجوی محصولِ کانونیکال ناموفق بود')
+    } finally {
+      setSearchBusy(false)
     }
   }, [api, search])
 

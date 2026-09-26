@@ -105,6 +105,52 @@ await db.query(
 const brandId = stableId("brand:kolbe-linen", "brn");
 await ensure("brand", ["id", "slug", "name", "verification_status"], [brandId, "kolbe-linen", "Kolbe Linen", "approved"]);
 
+/* ── A canonical target product for the approve-as-EXISTING browser flow ──────
+ * Deliberately a Kolbe-owned product with its own variants, so the browser flow
+ * has a real target to attach a supplier graph to. Re-running is idempotent.
+ */
+const canonicalProductId = stableId("canonical:linen-target", "prod");
+// `seller_kolbe_singleton` allows exactly one KOLBE seller, so look it up
+// rather than inserting a second one.
+const kolbeSellerRow = await db.query(`SELECT id FROM seller WHERE type = 'KOLBE' ORDER BY created_at LIMIT 1`);
+let kolbeSellerId = kolbeSellerRow.rows[0]?.id ?? null;
+if (!kolbeSellerId) {
+  kolbeSellerId = stableId("seller:kolbe", "sel");
+  await ensure("seller", ["id", "type", "display_name", "status"], [kolbeSellerId, "KOLBE", "Kolbe Vintage", "active"]);
+}
+await db.query(
+  `INSERT INTO product (id, name, slug, status, owner_type, category_id, attributes)
+   VALUES ($1,$2,$3,'published','KOLBE',$4,'{}'::jsonb)
+   ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, owner_type = EXCLUDED.owner_type`,
+  [canonicalProductId, "پیراهن لینن کانونیکال", "canonical-linen-shirt", categoryId],
+);
+for (const [suffix, size] of [["S", "S"], ["M", "M"], ["L", "L"]]) {
+  await db.query(
+    `INSERT INTO product_variant (id, product_id, sku, status, attributes)
+     VALUES ($1,$2,$3,'active',$4::jsonb)
+     ON CONFLICT (id) DO UPDATE SET sku = EXCLUDED.sku, status = EXCLUDED.status`,
+    [stableId(`canonical-variant:${suffix}`, "var"), canonicalProductId, `KANON-LINEN-${suffix}`, JSON.stringify({ color: "مشکی", size, material: "لینن" })],
+  );
+}
+// Kolbe's own inventory rows, so the flow can prove a supplier's inventory is
+// scoped to its own seller and Kolbe's stock is never overwritten.
+for (const [suffix, onHand] of [["S", 500], ["M", 600], ["L", 700]]) {
+  await db.query(
+    `INSERT INTO product_variant_inventory (id, variant_id, seller_id, on_hand, reserved, status)
+     VALUES ($1,$2,$3,$4,0,'active')
+     ON CONFLICT (id) DO NOTHING`,
+    [stableId(`canonical-inventory:${suffix}`, "pvi"), stableId(`canonical-variant:${suffix}`, "var"), kolbeSellerId, onHand],
+  );
+}
+
+// Kolbe's own offer, so the flow can prove a supplier does NOT overwrite it.
+await db.query(
+  `INSERT INTO seller_offer (id, product_id, seller_id, variant_id, sku, status, wholesale_price, currency, moq, moq_unit)
+   VALUES ($1,$2,$3,$4,$5,'published','2000000','IRR',1,'PIECE')
+   ON CONFLICT (id) DO UPDATE SET wholesale_price = EXCLUDED.wholesale_price, moq = EXCLUDED.moq, moq_unit = EXCLUDED.moq_unit`,
+  [stableId("canonical-offer:kolbe", "offer"), canonicalProductId, kolbeSellerId, stableId("canonical-variant:S", "var"), "KANON-LINEN-S"],
+);
+
 /* ── VIP identities ───────────────────────────────────────────────────────────
  * Entitlements are derived by the API (auth.service.ts) as:
  *   catalog: wholesale_account.status === 'approved' && !expired
@@ -149,6 +195,8 @@ console.log(
       vipCatalogEmail: "vip-catalog@kolbe.test",
       vipFullEmail: "vip-full@kolbe.test",
       vipPendingEmail: "vip-pending@kolbe.test",
+      canonicalProductId,
+      kolbeSellerId,
     },
     null,
     2,

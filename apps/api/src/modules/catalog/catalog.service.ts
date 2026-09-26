@@ -1015,6 +1015,12 @@ export class CatalogService {
      * every such offer, so an admin-approved product could never be priced in the
      * wholesale channel. For variant-bound offers the "variant must be active"
      * requirement is unchanged.
+     *
+     * But a product-level offer on a product that has **no active variant at all**
+     * is genuinely unfulfillable — the buyer would see a price with nothing to
+     * order. So the relaxation is scoped: `variant_id IS NULL` is accepted only
+     * when the product still carries at least one active variant (the buyer then
+     * orders through the product's variants / the offer's SIZE_RUN package).
      */
     // Static fragments chosen by booleans — never interpolated user input.
     const priceCol = retail ? sql`"retail_price"` : sql`"wholesale_price"`;
@@ -1031,7 +1037,13 @@ export class CatalogService {
         LEFT JOIN "product_variant" AS v ON v."id" = o."variant_id"
         WHERE o."status" = 'published'
           AND o.${priceCol} IS NOT NULL
-          AND (o."variant_id" IS NULL OR v."status" = 'active')
+          AND (
+            (o."variant_id" IS NOT NULL AND v."status" = 'active')
+            OR (o."variant_id" IS NULL AND EXISTS (
+              SELECT 1 FROM "product_variant" AS pv
+              WHERE pv."product_id" = o."product_id" AND pv."status" = 'active'
+            ))
+          )
           ${sellerFence}
       ),
       priced AS (

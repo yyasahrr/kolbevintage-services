@@ -56,13 +56,154 @@ export type WholesalePackageInput = {
   items: WholesalePackageItemInput[];
 };
 
+/**
+ * نگاشتِ کدِ خطای دامنه → وضعیتِ HTTP.
+ *
+ * چرا این لازم است؟ فیلترِ سراسری (`DomainExceptionFilter`) خطاها را با
+ * `isDomainError` از `@kolbe/shared` تشخیص می‌دهد و آن تابع **هم** `code` (رشته)
+ * **و هم** `status` (عدد) را می‌خواهد. `CatalogDomainError` تا پیش از این فقط
+ * `code` داشت، پس `isDomainError` برای همهٔ ۲۸۳ نقطهٔ `throw` در این ماژول و
+ * ماژولِ fulfillment مقدارِ `false` می‌داد و هر خطای دامنه به
+ * `500 INTERNAL_ERROR` تبدیل می‌شد.
+ *
+ * نتیجهٔ عملیِ آن باگ: کلاینت هرگز کدِ واقعی را نمی‌دید، پس نمی‌توانست روی فیلد
+ * `error` تصمیم بگیرد — دقیقاً خلافِ «قراردادِ خطای پایدار» که خودِ فیلتر
+ * مستند کرده است. این باگ در تست‌های لایهٔ سرویس دیده نمی‌شد، چون آن تست‌ها
+ * `rejects.toMatchObject({ code })` را روی خودِ سرویس صدا می‌زدند و هرگز از
+ * مرزِ HTTP رد نمی‌شدند؛ مسیرِ مرورگریِ «اتصال به محصولِ موجود» آن را آشکار کرد.
+ *
+ * قاعدهٔ نگاشت (به‌جای فهرستِ دستیِ ۱۱۲ کد، یک قاعدهٔ قابلِ بازبینی):
+ *   ۴۰۴ برایِ *_NOT_FOUND؛ ۴۰۳ برایِ مالکیت/مجوز؛ ۴۰۹ برایِ تضادِ وضعیت و
+ *   تکرار؛ ۴۲۲ برایِ عدمِ اهلیت؛ و در غیرِ این صورت ۴۰۰ (اعتبارسنجی).
+ * استثناهای صریح در `CATALOG_ERROR_STATUS` می‌آیند.
+ */
+export const CATALOG_ERROR_STATUS: Readonly<Record<string, number>> = {
+  NOT_FOUND: 404,
+  ORDER_NOT_FOUND: 404,
+  RESERVATION_NOT_FOUND: 404,
+  INVENTORY_NOT_FOUND: 404,
+  EXCEPTION_NOT_FOUND: 404,
+  WHOLESALE_ACCOUNT_NOT_FOUND: 404,
+  WHOLESALE_REQUEST_NOT_FOUND: 404,
+  OFFER_VARIANT_NOT_FOUND: 404,
+  MEDIA_VARIANT_NOT_FOUND: 404,
+  AFFECTED_ITEMS_NOT_FOUND: 404,
+
+  ORDER_OWNERSHIP_VIOLATION: 403,
+  SUPPLIER_OWNERSHIP_VIOLATION: 403,
+  VIP_OWNERSHIP_VIOLATION: 403,
+  RESERVATION_OWNERSHIP_VIOLATION: 403,
+  RESERVATION_FORBIDDEN: 403,
+  ROLE_NOT_ALLOWED: 403,
+  INVALID_ROLE_FOR_INVENTORY: 403,
+  PERMISSION_NOT_CONFIGURED: 403,
+  SELLER_MISMATCH: 403,
+  PACKAGE_SELLER_MISMATCH: 403,
+  RETAIL_ONLY_KOLBE: 403,
+  KOLBE_EXCLUSIVE_NO_SUPPLIER: 422,
+  KOLBE_EXCLUSIVE_NO_SUPPLIER_OFFER: 422,
+
+  SUBMISSION_NOT_PENDING: 409,
+  SUBSCRIPTION_NOT_PENDING: 409,
+  DUPLICATE_VARIANT_SKU: 409,
+  VARIANT_SKU_CONFLICT: 409,
+  OFFER_SKU_EXISTS: 409,
+  BRAND_EXISTS: 409,
+  COMMAND_IN_PROGRESS: 409,
+  IDEMPOTENCY_KEY_REUSED: 409,
+  REQUEST_VERSION_CONFLICT: 409,
+  REPLACEMENT_ALREADY_LINKED: 409,
+  REPLACEMENT_REQUEST_ALREADY_LINKED: 409,
+  REVISION_ALREADY_RESPONDED: 409,
+  RESERVATION_ALREADY_CONFIRMED: 409,
+  EXCEPTION_ALREADY_RESOLVED: 409,
+  OVERLAPPING_PRICING_TIER: 409,
+  PACKAGE_DUPLICATE_VARIANT: 409,
+  AMBIGUOUS_BRAND: 409,
+  REQUEST_SELECTOR_AMBIGUOUS: 409,
+  REQUEST_NOT_ACCEPTABLE: 422,
+  REQUEST_NOT_ACCEPTED: 422,
+  REQUEST_ACCEPTANCE_EXPIRED: 422,
+  RESERVATION_EXPIRED: 422,
+  RESERVATION_OVERCONSUMED: 422,
+  RESERVATION_RATIO_NOT_INTEGRAL: 422,
+  RESERVATION_INSUFFICIENT: 422,
+  INSUFFICIENT_STOCK: 422,
+  ON_HAND_UNDERFLOW: 422,
+  RESERVED_UNDERFLOW: 422,
+  RESERVED_EXCEEDS_ON_HAND: 422,
+  SHORTAGE_BELOW_RESERVED: 422,
+  OFFER_NOT_ELIGIBLE: 422,
+  OFFER_NOT_PUBLISHED: 422,
+  OFFER_NOT_WHOLESALE_ELIGIBLE: 422,
+  PRODUCT_NOT_ELIGIBLE: 422,
+  SELLER_NOT_ELIGIBLE: 422,
+  BRAND_NOT_APPROVED: 422,
+  BRAND_REVIEW_REQUIRED: 422,
+  SUPPLIER_NOT_ACTIVE: 422,
+  INVENTORY_NOT_ACTIVE: 422,
+  VIP_REQUIRED: 403,
+  VIP_EXPIRED: 403,
+  ACCEPTED_TERMS_HASH_MISMATCH: 409,
+  ACCEPTED_TERMS_MISSING: 400,
+  REQUEST_HASH_MISMATCH: 409,
+  REQUEST_MISSING_HASH: 400,
+  REQUEST_MISSING_SNAPSHOT: 400,
+  IDEMPOTENCY_KEY_REQUIRED: 400,
+  VIP_RELEASE_REQUIRES_REQUEST_ID: 400,
+  INVALID_STATUS_TRANSITION: 422,
+  INVALID_REQUEST_TRANSITION: 422,
+  INVALID_EXCEPTION_STATUS: 422,
+};
+
+/** وضعیتِ HTTP یک کدِ خطای دامنه؛ ناشناخته‌ها ۴۰۰ (اعتبارسنجی) می‌گیرند. */
+export function catalogErrorStatus(code: string): number {
+  const explicit = CATALOG_ERROR_STATUS[code];
+  if (explicit != null) return explicit;
+  if (code.endsWith("_NOT_FOUND")) return 404;
+  if (code.includes("OWNERSHIP") || code.includes("_FORBIDDEN") || code.includes("NOT_ALLOWED")) return 403;
+  if (
+    code.includes("EXISTS") ||
+    code.includes("DUPLICATE") ||
+    code.includes("CONFLICT") ||
+    code.includes("ALREADY_") ||
+    code.includes("NOT_PENDING") ||
+    code.includes("REUSED") ||
+    code.includes("AMBIGUOUS")
+  ) {
+    return 409;
+  }
+  if (
+    code.includes("NOT_ELIGIBLE") ||
+    code.includes("NOT_PUBLISHED") ||
+    code.includes("NOT_ACTIVE") ||
+    code.includes("NOT_ACCEPT") ||
+    code.includes("INSUFFICIENT") ||
+    code.includes("UNDERFLOW") ||
+    code.includes("EXPIRED") ||
+    code.includes("REQUIRED_REVIEW")
+  ) {
+    return 422;
+  }
+  return 400;
+}
+
 export class CatalogDomainError extends Error {
+  /**
+   * `status` بخشی از قراردادِ عمومیِ خطاست: فیلترِ سراسری تنها با وجودِ آن این
+   * خطا را «دامنه» می‌شناسد. آرگومانِ سوم اختیاری است تا هیچ‌کدام از ۲۸۳ نقطهٔ
+   * `throw` موجود نیاز به تغییر نداشته باشد.
+   */
+  public readonly status: number;
+
   constructor(
     public readonly code: string,
     message: string,
+    status: number = catalogErrorStatus(code),
   ) {
     super(message);
     this.name = "CatalogDomainError";
+    this.status = status;
   }
 }
 

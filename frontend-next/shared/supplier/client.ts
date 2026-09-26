@@ -131,6 +131,9 @@ function mapOk<T, R>(result: ApiResult<T>, map: (data: T) => R): ApiResult<R> {
 
 export type SupplierApi = ReturnType<typeof createSupplierApi>;
 
+/** سه فیلدی که UI برای انتخابِ آگاهانهٔ محصولِ مقصد لازم دارد. */
+export type CanonicalProductCandidate = { id: string; name: string; sku: string | null };
+
 export function createSupplierApi(client: ApiClient) {
   const get = <T>(path: string, query?: Record<string, unknown>) =>
     client.requestResult<T>(path, { method: "GET", query: queryOf(query) as never });
@@ -275,9 +278,35 @@ export function createSupplierApi(client: ApiClient) {
       /**
        * `GET /catalog/products?q=…` — همان مسیری که کنترلرِ واقعی دارد.
        * برای انتخابِ آگاهانهٔ محصولِ مقصد؛ هیچ تطبیقِ فازی در مرورگر نیست.
+       *
+       * ⚠️ کنترلر یک **پاکتِ صفحه‌بندی** برمی‌گرداند (`{results, nextCursor}`)،
+       * نه یک آرایهٔ خام. پیش‌تر این متد نتیجه را `Array<Record<string, unknown>>`
+       * اعلام می‌کرد، پس مصرف‌کننده روی یک object متدِ `.map` صدا می‌زد و
+       * `TypeError` می‌گرفت؛ چون خطا داخلِ یک `useCallback` ناهمگام گم می‌شد،
+       * دکمهٔ «جست‌وجو» برای همیشه در «در حالِ جست‌وجو…» می‌ماند و هیچ خطایی هم
+       * نشان داده نمی‌شد. یعنی مسیرِ «اتصال به محصولِ موجود» عملاً کار نمی‌کرد.
+       * حالا پاکت باز می‌شود و فقط سه فیلدی که UI نیاز دارد بیرون می‌آید.
        */
-      products: (q: string, limit = 20) =>
-        get<Array<Record<string, unknown>>>("/catalog/products", { q, channel: "wholesale", limit: String(limit) }),
+      products: async (q: string, limit = 20): Promise<ApiResult<CanonicalProductCandidate[]>> => {
+        const result = await get<{ results?: unknown }>("/catalog/products", {
+          q,
+          channel: "wholesale",
+          limit: String(limit),
+        });
+        if (!result.ok) return result;
+        const rows = Array.isArray(result.data?.results) ? result.data.results : [];
+        return {
+          ...result,
+          data: rows
+            .filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null)
+            .map((row) => ({
+              id: String(row.id ?? ""),
+              name: String(row.name ?? ""),
+              sku: row.sku == null ? null : String(row.sku),
+            }))
+            .filter((row) => row.id.length > 0),
+        };
+      },
 
       /**
        * `POST /catalog/products/:id/status` — گذارِ وضعیتِ محصولِ کانونیکال.

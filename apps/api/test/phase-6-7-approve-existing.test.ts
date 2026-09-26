@@ -19,6 +19,7 @@ import { Client, Pool } from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../packages/database/src/schema/tables";
+import { CatalogDomainError, catalogErrorStatus } from "../src/modules/catalog/catalog.logic";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const ADMIN_URL = "postgres://postgres:postgres@127.0.0.1:55432/postgres";
@@ -503,5 +504,94 @@ describe("Phase 6.7 — approve-as-existing materializes the full supplier graph
     expect(productAfter.status).toBe(productBefore.status);
     expect(productAfter.name).toBe(productBefore.name);
     expect(canonical.S).toBeTruthy();
+  });
+  /**
+   * قراردادِ خطا در مرزِ HTTP.
+   *
+   * تا پیش از این، همهٔ آزمون‌های خطا در این فایل `rejects.toMatchObject({ code })`
+   * را روی **خودِ سرویس** صدا می‌زدند؛ هیچ‌کدام از مرزِ HTTP رد نمی‌شدند. به همین
+   * دلیل یک باگِ واقعی پنهان ماند: `CatalogDomainError` فیلدِ `status` نداشت و
+   * `isDomainError` در `@kolbe/shared` هم `code` و هم `status` را می‌خواهد، پس
+   * `false` می‌داد و فیلترِ سراسری همهٔ ۲۸۳ خطای دامنهٔ کاتالوگ را به
+   * `500 INTERNAL_ERROR` تبدیل می‌کرد. کلاینت هرگز کدِ واقعی را نمی‌دید.
+   *
+   * این آزمون‌ها همان مسیر را از HTTP می‌سنجند تا بازگشتِ آن باگ ممکن نباشد.
+   */
+  it("returns the real domain code and 409 over HTTP when re-approving a decided submission", async () => {
+    const { productId } = await seedCanonicalProduct();
+    const { submissionId } = await stageSubmission(makeId("t").toUpperCase());
+    const adminCookie = await login(`${ids.adminUser}@kolbe.test`);
+
+    const first = await request(http)
+      .post(`/api/v1/catalog/supplier-submissions/${submissionId}/approve-existing`)
+      .set("Cookie", adminCookie)
+      .send({ productId });
+    expect([200, 201]).toContain(first.status);
+
+    const again = await request(http)
+      .post(`/api/v1/catalog/supplier-submissions/${submissionId}/approve-existing`)
+      .set("Cookie", adminCookie)
+      .send({ productId });
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe("SUBMISSION_NOT_PENDING");
+    // پیامِ انسانی می‌ماند، ولی stack و SQL هرگز نباید نشت کند.
+    expect(JSON.stringify(again.body)).not.toContain("at ");
+    expect(again.body.message).toBeTruthy();
+
+    const offers = await db.select().from(schema.sellerOffer).where(eq(schema.sellerOffer.productId, productId));
+    expect(offers).toHaveLength(1);
+  });
+
+  it("returns 422 with KOLBE_EXCLUSIVE_NO_SUPPLIER over HTTP for an exclusive canonical product", async () => {
+    const { productId } = await seedCanonicalProduct({ exclusive: true });
+    const { submissionId } = await stageSubmission(makeId("t").toUpperCase());
+    const adminCookie = await login(`${ids.adminUser}@kolbe.test`);
+
+    const res = await request(http)
+      .post(`/api/v1/catalog/supplier-submissions/${submissionId}/approve-existing`)
+      .set("Cookie", adminCookie)
+      .send({ productId });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("KOLBE_EXCLUSIVE_NO_SUPPLIER");
+
+    const [submission] = await db.select().from(schema.supplierProductSubmission)
+      .where(eq(schema.supplierProductSubmission.id, submissionId));
+    expect(submission.status).toBe("pending_review");
+  });
+
+  it("returns 404 over HTTP for an unknown canonical product instead of a 500", async () => {
+    const { submissionId } = await stageSubmission(makeId("t").toUpperCase());
+    const adminCookie = await login(`${ids.adminUser}@kolbe.test`);
+
+    const res = await request(http)
+      .post(`/api/v1/catalog/supplier-submissions/${submissionId}/approve-existing`)
+      .set("Cookie", adminCookie)
+      .send({ productId: "prod_does_not_exist" });
+    expect(res.status).toBe(404);
+  });
+
+  /**
+   * هر کدی که دامنه پرتاب می‌کند باید یک وضعیتِ HTTP معنادار داشته باشد — نه
+   * پیش‌فرضِ ۵۰۰. این آزمون روی خودِ نگاشت است تا افزودنِ کدِ تازه بدونِ وضعیت
+   * ممکن نباشد.
+   */
+  it("gives every catalog domain code an HTTP status that is never 500", () => {
+    const sample = [
+      "SUBMISSION_NOT_PENDING", "VARIANT_SKU_CONFLICT", "OFFER_SKU_EXISTS",
+      "KOLBE_EXCLUSIVE_NO_SUPPLIER", "INVALID_PACKAGE_TYPE", "INVALID_MOQ_UNIT",
+      "OVERLAPPING_PRICING_TIER", "SIZE_RUN_TOO_SMALL", "NO_PRICING_TIERS",
+      "MEDIA_REQUIRES_OFFER", "INVALID_PACKAGE_VARIANT", "SUBMISSION_SKU_REQUIRED",
+      "SOME_BRAND_NEW_CODE_NOBODY_MAPPED",
+    ];
+    for (const code of sample) {
+      const status = catalogErrorStatus(code);
+      expect(status, code).toBeGreaterThanOrEqual(400);
+      expect(status, code).toBeLessThan(500);
+      expect(new CatalogDomainError(code, "x").status, code).toBe(status);
+    }
+    expect(new CatalogDomainError("ORDER_NOT_FOUND", "x").status).toBe(404);
+    expect(new CatalogDomainError("SUPPLIER_OWNERSHIP_VIOLATION", "x").status).toBe(403);
+    expect(new CatalogDomainError("IDEMPOTENCY_KEY_REUSED", "x").status).toBe(409);
+    expect(new CatalogDomainError("INVALID_PRICE", "x").status).toBe(400);
   });
 });
