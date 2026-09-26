@@ -26,6 +26,31 @@ carries **evidence**, a **responsible phase**, and **required remediation**.
 Validation · Error states · Pagination · Money semantics · Concurrency/idempotency · Cross-account
 isolation · Real browser workflow · Responsive · Accessibility · Production UX`
 
+### 2.1 Completeness levels (mandatory)
+
+A schema table existing does **not** equal a working workflow. Three distinct claims must never be
+conflated: **BACKEND MODEL EXISTS** ≠ **BACKEND WORKFLOW COMPLETE** ≠ **FRONTEND EXPOSES CAPABILITY**.
+
+| Level | Meaning |
+|---|---|
+| `L0` | Schema exists |
+| `L1` | Domain/service exists |
+| `L2` | API exists |
+| `L3` | **Lifecycle roundtrip is lossless** (no field silently disappears between domain stages) |
+| `L4` | Frontend exposes the capability |
+| `L5` | Real browser workflow passes |
+| `L6` | Production UX / visual / accessibility complete |
+
+**Do not call a feature complete below `L5`. Production-ready requires `L6`.** Apply across Supplier,
+VIP, Admin and Storefront. The Supplier Product discovery (see
+`supplier-product-pipeline-audit.md`) is the reference case: it reached `L2` while its approval path
+silently discarded MOQ unit, media, packages, pricing tiers and inventory — i.e. **`L3` failed**.
+
+The same roundtrip question must be asked of every domain: does VIP order creation preserve
+package/variant semantics? Does admin publish preserve variant/media/offer truth? Does storefront
+checkout preserve the exact selected variant? **A feature is not complete if data is lost between
+domain stages.**
+
 ## 3. SUPPLIER — Product Management (proven incomplete; remediation owner: 6.2-hardening)
 
 ### 3.1 Backend capability (evidence)
@@ -102,6 +127,11 @@ API contract (controllers):
 | Production UX | **NO** | No draft/review/submit lifecycle surfacing → **6.2-hardening** |
 
 **Classification: PARTIAL — capability mismatch.** Backend = full product graph; UI = single flat form.
+
+**Level: `L2`** — schema `L0` ✓, domain/service `L1` ✓, API `L2` ✓, but **`L3` (lossless roundtrip)
+FAILS**: approval discards `moqUnit` (SERIES→PIECE), media, variant media, `retailPrice`, `currency`,
+`packageType`, packages, pricing tiers and inventory. See `supplier-product-pipeline-audit.md`.
+Frontend builders must not be built until `L3` is green.
 
 ### 3.3b Backend gaps discovered during contract tracing (must fix at the domain layer)
 
