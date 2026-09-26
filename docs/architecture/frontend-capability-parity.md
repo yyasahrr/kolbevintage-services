@@ -1,0 +1,153 @@
+# Frontend Capability Parity Audit
+
+**Status:** living document · **Owner:** phase 6.x capability-parity gate · **Last evidence pass:** repository HEAD `4bebab0`
+
+## 1. Why this document exists
+
+Migration phases 6.0–6.3 correctly replaced *fake/browser truth* with *backend truth*. That exposed a
+second defect class: **a frontend can call a real API and still expose only a fraction of the
+capability the backend already supports.**
+
+A feature is therefore **not** complete because it calls a real API, dropped `localStorage`, returns
+200, renders, or passes unit tests. It is complete only when **the user can actually perform the
+important backend-supported workflow through the UI**.
+
+Every significant feature must satisfy **both**:
+
+1. **Data / truth parity** — server owns the truth.
+2. **Capability / workflow parity** — the UI exposes the meaningful backend dimensions.
+
+## 2. Completeness matrix dimensions
+
+For each feature, each row is `YES` / `PARTIAL` / `NO` / `INTENTIONAL_DEFER`. Every `PARTIAL`/`NO`
+carries **evidence**, a **responsible phase**, and **required remediation**.
+
+`Backend model · Domain/service · API contract · Frontend adapter · Frontend UI · Permission ·
+Validation · Error states · Pagination · Money semantics · Concurrency/idempotency · Cross-account
+isolation · Real browser workflow · Responsive · Accessibility · Production UX`
+
+## 3. SUPPLIER — Product Management (proven incomplete; remediation owner: 6.2-hardening)
+
+### 3.1 Backend capability (evidence)
+
+Schema (`packages/database/src/schema/tables.ts`):
+
+| Capability | Table | Line |
+|---|---|---|
+| Product | `product` | 1458 |
+| Product media (gallery, ordered) | `productMedia` | 1506 |
+| Variants | `productVariant` | 1526 |
+| Variant-specific media | `productVariantMedia` | 1548 |
+| Seller commercial offer | `sellerOffer` | 1636 |
+| Offer media | `offerMedia` | 1683 |
+| Wholesale package / series | `wholesalePackage` | 1702 |
+| Package composition lines | `wholesalePackageItem` | 1725 |
+| Per-variant inventory | `productVariantInventory` | 2006 |
+| Inventory reservation / ledger | `inventoryReservation` 2038, `inventoryLedger` 2122 | — |
+
+Enums (`packages/database/src/schema/state-values.ts`):
+
+- `PACKAGE_TYPES = [SIZE_RUN, FIXED_QUANTITY, COLOR_MIX, CUSTOM_BUNDLE]` (line 99)
+- `MOQ_UNITS = [PIECE, PACKAGE, SERIES, BOX, CARTON, SET]` (line 104)
+- `PRICING_UNITS = [PIECE, PACKAGE, SERIES, BOX, CARTON, SET, PER_PIECE]` (line 394)
+
+API contract (controllers):
+
+| Capability | Endpoint | File |
+|---|---|---|
+| Create product | `POST /catalog/products` | `catalog.controller.ts:78` |
+| Product status | `POST /catalog/products/:id/status` | `catalog.controller.ts:122` |
+| Submit for review | `POST /catalog/supplier-submissions` | `catalog.controller.ts:130` |
+| Admin approve/reject | `POST /catalog/supplier-submissions/:id/{approve-new,approve-existing,reject}` | `catalog.controller.ts:185,193,204` |
+| Server taxonomy | `GET /catalog/categories`, `GET /catalog/brands` | `catalog.controller.ts:55,61` |
+| Seller offer | `POST /offers` | `offers.controller.ts:11` |
+| Offers for a product | `GET /offers/product/:productId` | `offers.controller.ts:61` |
+| Wholesale package / series | `POST /offers/packages` | `offers.controller.ts:66` |
+| Pricing tiers | `POST /offers/pricing-tiers` | `offers.controller.ts:82` |
+| Variant inventory | `POST /inventory/variant`, `GET /inventory/variant/:variantId` | `inventory.controller.ts:49,72` |
+| Package availability | `GET /inventory/package/:packageId/availability` | `inventory.controller.ts:169` |
+
+### 3.2 Current frontend (evidence)
+
+`frontend-next/supplier-src/pages/products.tsx` (218 lines). Editor form state is exactly:
+
+```
+{ name, sku, category, description, wholesalePrice, stock, size, color, imageUrl }
+```
+
+- `category` is a **hardcoded `CATEGORIES` list** (`products.tsx:185`), not `GET /catalog/categories`.
+- **One** size, **one** color, **one** `imageUrl`, **one** price, **one** stock number.
+- No variant builder, no media manager, no offer/MOQ, no package/series builder, no pricing tiers,
+  no per-variant inventory matrix.
+
+### 3.3 Capability matrix — Supplier Product
+
+| Dimension | State | Evidence / remediation |
+|---|---|---|
+| Backend model | YES | Tables above |
+| Domain/service | YES | `catalog.service.ts`, `offers`, `inventory` modules |
+| API contract | YES | Endpoints above |
+| Frontend adapter | **PARTIAL** | Only flat create-product; no variant/media/offer/package/tier/inventory adapters → **6.2-hardening** |
+| Frontend UI | **NO** | Flat form; missing variant builder, media manager, offer/MOQ, series/package builder, pricing tiers, inventory matrix → **6.2-hardening** |
+| Permission | PARTIAL | Supplier-owned create exists; admin moderation endpoints exist but UI review depth unverified → **6.2-hardening** |
+| Validation | PARTIAL | Client min-length only; package composition / MOQ semantics not surfaced → **6.2-hardening** |
+| Error states | PARTIAL | Generic; needs EMPTY/ERROR/FORBIDDEN/CONFLICT/RATE_LIMITED differentiation → **6.2-hardening** |
+| Pagination | PARTIAL | Product list paginated; variant/inventory matrices unbounded → **6.2-hardening** |
+| Money semantics | PARTIAL | Price sent as decimal string (good); tiers/MOQ totals must stay decimal-string, backend-authoritative → **6.2-hardening** |
+| Concurrency/idempotency | **NO** | No idempotency/expectedVersion on product/offer/package mutations → **6.2-hardening** |
+| Cross-account isolation | PARTIAL | Server derives supplierId; needs DB-backed denial tests → **6.2-hardening** |
+| Real browser workflow | **NO** | No golden "Supplier Product Lifecycle" E2E → **6.2-hardening** |
+| Responsive | PARTIAL | Current form responsive; new builders must be → **6.2-hardening** |
+| Accessibility | PARTIAL | Flat form labelled; matrices/builders need keyboard + a11y → **6.2-hardening** |
+| Production UX | **NO** | No draft/review/submit lifecycle surfacing → **6.2-hardening** |
+
+**Classification: PARTIAL — capability mismatch.** Backend = full product graph; UI = single flat form.
+
+### 3.4 Required remediation (execution order)
+
+1. `supplier-product-contract` — typed contracts for product/media/variant/offer/package/tier/inventory.
+2. `supplier-variant-builder` — multi-variant creation (size/color/material/fit + flexible attributes).
+3. `supplier-media` — media manager (main/gallery/variant media, reorder, remove, preview) on real storage.
+4. `supplier-commercial-offer` — offer with wholesale price (decimal string), currency, MOQ, MOQ unit (incl. SERIES).
+5. `supplier-series-package` — SIZE_RUN / FIXED_QUANTITY / COLOR_MIX / CUSTOM_BUNDLE builder; backend validates composition + totals.
+6. `supplier-pricing-tier` — tier editor via `POST /offers/pricing-tiers`; decimal strings; backend-authoritative totals.
+7. `supplier-product-review` — draft → review → submit; server-owned status; show server reason on changes-requested.
+8. `supplier-admin-product-moderation` — admin reviews variants/media/offer/MOQ/series/tiers/inventory; approve/reject.
+9. `supplier-product-e2e` — golden workflow browser test (Supplier → Admin → wholesale catalog → VIP view).
+
+## 4. VIP / WHOLESALE (phase 6.3, in progress)
+
+| Feature | State | Evidence / note |
+|---|---|---|
+| VIP identity + membership | YES | `shared/vip/membership.ts`, `SessionProvider`, server `vip` context; gate browser-verified |
+| Membership vs capability (RFQ) | YES | `entitlements{catalog,rfq,orders}`; `vip-catalog` identity proves approved-no-sub cannot RFQ |
+| Wholesale catalog adapter | YES | `shared/wholesale/catalog.ts` — cursor, decimal-string price, seller preserved (11 tests) |
+| Wholesale catalog **UI** capability | **PARTIAL** | UI renders a list only; must expose variants, MOQ + unit, packages/series + composition, pricing tiers, availability → **6.3-C** |
+| RFQ / requests / offers | **NO** | `GET /vip/requests` + `/:id/offers` missing; frontend not cut over → **6.3-D** |
+| Orders (package/variant semantics) | **NO** | Still `Date.now` codes + local history; must use real package/variant + server totals → **6.3-E** |
+| Money / localStorage cleanup | PARTIAL | Catalog decimal-string done; orders/money pending → **6.3-F** |
+
+## 5. ADMIN (phase 6.4 — capability gate applies before each page)
+
+Control plane over real domains. Before implementing each page, inspect backend capability first.
+Audit targets: catalog, supplier approval, product moderation, VIP membership, wholesale, retail
+orders, finance, production, QC, CMS, settings, audit logs. Remove fake KPI authority,
+`localStorage` operational state, hardcoded workflows. **State: not started (6.4).**
+
+## 6. STOREFRONT / CUSTOMER (phase 6.6)
+
+Capability parity for: catalog, variants, media, inventory availability, cart, checkout, account,
+orders, returns, reviews, promotions, Try-On. Product Detail must understand the canonical
+variant/media model — not fixtures behind API calls. **State: not started (6.6).**
+
+## 7. Traceability rule
+
+Every important frontend control traces to a backend capability; every important backend
+user-facing capability traces `API → adapter → UI → browser test`. Avoid: backend capability with
+no UI, UI control with no real backend, frontend-invented business state, fake calculations, dead
+backend features.
+
+## 8. Intentional omissions register
+
+Any backend capability deliberately without public UI is recorded here with: capability · reason ·
+phase · future UI owner. (None registered yet.)
