@@ -130,6 +130,113 @@ export type SupplierSubmissionResult = {
   status: SupplierSubmissionStatus;
 };
 
+/* ── محصولِ کامل (capability parity) ──────────────────────────────────────────
+ * قراردادهای تایپ‌شده برای گرافِ کاملِ محصولِ تأمین‌کننده، منطبق بر بک‌اند:
+ *   POST /catalog/supplier-submissions  (attributes, variants[], media[], commercial)
+ *   POST /offers                        (wholesalePrice/Money, moq, moqUnit, packageType)
+ *   POST /offers/packages               (SIZE_RUN/FIXED_QUANTITY/COLOR_MIX/CUSTOM_BUNDLE)
+ *   POST /offers/pricing-tiers          (unitPrice/Money, minQuantity, maxQuantity?)
+ *   POST /inventory/variant             (onHandDelta + idempotency-key)
+ * پول همیشه `Money` (رشتهٔ ده‌دهی) است؛ هرگز number. شناسهٔ فروشنده از نشستِ
+ * سرور مشتق می‌شود و هرگز از کلاینت گرفته نمی‌شود.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export const MOQ_UNITS = ["PIECE", "PACKAGE", "SERIES", "BOX", "CARTON", "SET"] as const;
+export type MoqUnit = (typeof MOQ_UNITS)[number];
+export function isMoqUnit(value: unknown): value is MoqUnit {
+  return typeof value === "string" && (MOQ_UNITS as readonly string[]).includes(value);
+}
+
+export const PACKAGE_TYPES = ["SIZE_RUN", "FIXED_QUANTITY", "COLOR_MIX", "CUSTOM_BUNDLE"] as const;
+export type PackageType = (typeof PACKAGE_TYPES)[number];
+export function isPackageType(value: unknown): value is PackageType {
+  return typeof value === "string" && (PACKAGE_TYPES as readonly string[]).includes(value);
+}
+
+/** یک واریانتِ پیشنهادی: SKU + صفاتِ انعطاف‌پذیر (size/color/material/fit/…). */
+export type SupplierVariantInput = {
+  sku: string;
+  attributes: Record<string, string | number | null>;
+};
+
+/** رسانهٔ محصول/واریانت (URL واقعیِ ذخیره‌سازی؛ هرگز URL جعلی). */
+export type SupplierMediaInput = {
+  url: string;
+  type?: "image" | "video";
+  position?: number;
+  /** اگر رسانه مخصوصِ یک واریانت است. */
+  variantId?: string | null;
+};
+
+/** بخشِ تجاریِ پیشنهاد (پولِ ده‌دهی + MOQ + واحدِ MOQ + نوعِ بسته). */
+export type SupplierCommercialInput = {
+  sku: string;
+  wholesalePrice: Money;
+  retailPrice?: Money;
+  moq: number;
+  moqUnit: MoqUnit;
+  packageType?: PackageType;
+};
+
+/** گرافِ کاملِ محصول برای `POST /catalog/supplier-submissions`. */
+export type SupplierProductGraphInput = {
+  name: string;
+  slug: string;
+  description?: string;
+  brandId?: string;
+  proposedBrandId?: string;
+  categoryId?: string;
+  attributes?: Record<string, unknown>;
+  variants: SupplierVariantInput[];
+  media: SupplierMediaInput[];
+  commercial?: SupplierCommercialInput;
+};
+
+/** `POST /offers` — sellerId/sellerType از نشستِ سرور. */
+export type SupplierOfferInput = {
+  productId: string;
+  variantId?: string | null;
+  sku: string;
+  wholesalePrice: Money;
+  retailPrice?: Money;
+  moq: number;
+  moqUnit: MoqUnit;
+  packageType?: PackageType;
+};
+
+/** `POST /offers/packages` — ترکیبِ بسته؛ اعتبارسنجیِ نهایی با سرور است. */
+export type SupplierPackageInput = {
+  offerId: string;
+  packageType: PackageType;
+  name: string;
+  description?: string;
+  items: Array<{ variantId: string; quantity: number }>;
+};
+
+/** `POST /offers/pricing-tiers` — unitPrice ده‌دهی؛ جمعِ تجاری با سرور است. */
+export type SupplierPricingTierInput = {
+  offerId: string;
+  minQuantity: number;
+  maxQuantity?: number;
+  unitPrice: Money;
+  moqUnit?: MoqUnit;
+};
+
+/** `POST /inventory/variant` — دلتا (نه مقدارِ مطلق) + کلیدِ idempotency. */
+export type SupplierInventoryDeltaInput = {
+  variantId: string;
+  onHandDelta: number;
+  reason?: string;
+};
+
+/**
+ * جمعِ قطعاتِ یک بسته فقط برای **پیش‌نمایش** — مرجعِ نهایی سرور است.
+ * (هیچ محاسبهٔ پولی اینجا انجام نمی‌شود.)
+ */
+export function packageTotalUnits(items: ReadonlyArray<{ quantity: number }>): number {
+  return items.reduce((sum, item) => sum + (Number.isFinite(item.quantity) ? Math.max(0, Math.trunc(item.quantity)) : 0), 0);
+}
+
 /* ── RFQ / پیشنهاد ─────────────────────────────────────────────────────────── */
 
 export type RfqStatus = "open" | "quoted" | "awarded" | "closed" | "cancelled" | string;
