@@ -16,26 +16,26 @@
 .app-shell,
 .auth-shell,
 .portal-boot {
-  --sp-canvas: var(--kolbe-color-canvas, #f7f5f0);
+  --sp-canvas: var(--kolbe-color-background, #f7f5f0);
   --sp-surface: var(--kolbe-color-surface, #fcfbf8);
   --sp-surface-muted: var(--kolbe-color-surface-muted, #efede7);
-  --sp-ink: var(--kolbe-color-ink, #071c31);
-  --sp-ink-soft: var(--kolbe-color-ink-soft, #17354d);
+  --sp-ink: var(--kolbe-color-text, #071c31);
+  --sp-ink-soft: var(--kolbe-color-text-secondary, #17354d);
   --sp-muted: var(--kolbe-color-muted, #66727d);
   --sp-border: var(--kolbe-color-border, rgba(7, 28, 49, 0.14));
   --sp-accent: var(--kolbe-color-accent, #c9654d);
   --sp-success: var(--kolbe-color-success, #477154);
   --sp-warning: var(--kolbe-color-warning, #93691f);
-  --sp-danger: var(--kolbe-color-danger, #a4463d);
+  --sp-danger: var(--kolbe-color-error, #a4463d);
   --sp-focus: var(--kolbe-color-focus, #6f91aa);
-  --sp-radius-control: var(--kolbe-radius-control, 0.625rem);
-  --sp-radius-surface: var(--kolbe-radius-surface, 1rem);
-  --sp-space-1: var(--kolbe-space-1, 4px);
-  --sp-space-2: var(--kolbe-space-2, 8px);
-  --sp-space-3: var(--kolbe-space-3, 12px);
-  --sp-space-4: var(--kolbe-space-4, 16px);
-  --sp-space-6: var(--kolbe-space-6, 24px);
-  --sp-overlay: var(--kolbe-shadow-overlay, 0 18px 44px rgba(7, 28, 49, 0.16));
+  --sp-radius-control: var(--kolbe-shape-radius-control, 0.625rem);
+  --sp-radius-surface: var(--kolbe-shape-radius-surface, 1rem);
+  --sp-space-1: var(--kolbe-layout-space1, 4px);
+  --sp-space-2: var(--kolbe-layout-space2, 8px);
+  --sp-space-3: var(--kolbe-layout-space3, 12px);
+  --sp-space-4: var(--kolbe-layout-space4, 16px);
+  --sp-space-6: var(--kolbe-layout-space5, 24px);
+  --sp-overlay: var(--kolbe-shape-shadow-overlay, 0 18px 44px rgba(7, 28, 49, 0.16));
 }
 
 /* ── ۲. حالتِ تیره: فقط بازنویسیِ متغیرها ─────────────────────────────────── */
@@ -157,7 +157,7 @@
 .skeleton-line {
   display: block;
   height: 12px;
-  border-radius: var(--kolbe-radius-control, 6px);
+  border-radius: var(--kolbe-shape-radius-control, 6px);
   background: linear-gradient(90deg, var(--sp-surface-muted), var(--sp-border), var(--sp-surface-muted));
   background-size: 220% 100%;
   animation: kolbe-skeleton 1.4s ease-in-out infinite;

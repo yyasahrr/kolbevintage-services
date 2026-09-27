@@ -4,7 +4,7 @@ import { products, categories, specLabels, specOrder, type Product } from "../da
 import { styles, articles } from "../siteData";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
-import { AccessSecurity, CommerceOperations, IntegrationsAutomation, SystemCenter } from "./AdminOperations";
+import { AccessSecurity, IntegrationsAutomation } from "./AdminOperations";
 import AdminProductEditor from "./AdminProductEditor";
 import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
 import { loadHomepageJournalPins, saveHomepageJournalPins, saveManagedArticles } from "../journalSettings";
@@ -16,9 +16,14 @@ import CatalogTaxonomyManager from "./CatalogTaxonomyManager";
 
 const AdminLogs = lazy(() => import("./AdminLogs"));
 const SiteDesignCenter = lazy(() => import("./SiteDesignCenter"));
-const CampaignCenter = lazy(() => import("./CampaignCenter"));
 const AdminSupportCenter = lazy(() => import("./AdminSupportCenter"));
-const MessagingAutomationCenter = lazy(() => import("./MessagingAutomationCenter"));
+
+function CanonicalBoundary({ title, owner }: { title: string; owner: string }) {
+  return <section className="kolbe-ops-page" role="status" dir="rtl">
+    <header className="kolbe-ops-heading"><p>ADMIN / {owner.toUpperCase()}</p><h1>{title}</h1></header>
+    <div className="kolbe-ops-state"><h2>نمای عملیاتی هنوز به سرویس اصلی متصل نشده است</h2><p>داده‌ها و تغییرات این بخش باید از سرویس {owner} خوانده و در همان سرویس ثبت شوند. تا تکمیل این اتصال، دادهٔ نمونه یا تغییر محلی نمایش داده نمی‌شود.</p></div>
+  </section>;
+}
 
 const input =
   "h-9 w-full rounded-[3px] border border-neutral-300 px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
@@ -1017,22 +1022,22 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
 
         <main className="min-w-0 flex-1 p-4 lg:p-6">
           {page === "retail-settings" && <RetailPolicyCenter />}
-          {page === "dashboard" && <Dashboard />}
+          {page === "dashboard" && <CanonicalBoundary title="نمای کلی مدیریت" owner="analytics" />}
           {page === "design-center" && (
             <Suspense fallback={<div className="h-64 animate-pulse rounded-[6px] bg-neutral-100" aria-label="در حال بارگذاری مرکز طراحی" />}>
               <SiteDesignCenter />
             </Suspense>
           )}
-          {page === "products" && <ProductsPanel />}
-          {page === "orders" && <OrdersPanel onOpenCustomer={(name) => { localStorage.setItem("kv_crm_focus_customer", name); setPage("customers"); }} />}
-          {page === "commerce" && <CommerceOperations />}
+          {page === "products" && <CanonicalBoundary title="محصولات فروشگاه" owner="catalog" />}
+          {page === "orders" && <CanonicalBoundary title="سفارش‌های خرده" owner="orders" />}
+          {page === "commerce" && <CanonicalBoundary title="مرجوعی و ارسال" owner="returns" />}
           {page === "customers" && <AdminCRM />}
           {page === "vip-customers" && <AdminCRM initialView="vip" />}
           {page === "support" && <Suspense fallback={<div className="h-64 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری پشتیبانی" />}><AdminSupportCenter /></Suspense>}
-          {page === "messaging" && <Suspense fallback={<div className="h-64 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری مرکز پیامک" />}><MessagingAutomationCenter /></Suspense>}
-          {page === "campaigns" && <Suspense fallback={<div className="h-56 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری جشنواره‌ها" />}><CampaignCenter /></Suspense>}
+          {page === "messaging" && <CanonicalBoundary title="پیامک و اتوماسیون" owner="notifications" />}
+          {page === "campaigns" && <CanonicalBoundary title="جشنواره و تخفیف" owner="promotions" />}
           {page === "content" && <ContentPanel />}
-          {page === "reports" && <ReportsPanel />}
+          {page === "reports" && <CanonicalBoundary title="گزارش‌ها" owner="analytics" />}
           {page === "logs" && (
             <Suspense fallback={<div className="h-48 animate-pulse bg-neutral-100" aria-label="در حال بارگذاری مرکز خطاها" />}>
               <AdminLogs />
@@ -1040,7 +1045,7 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
           )}
           {page === "access" && <AccessSecurity />}
           {page === "integrations" && <IntegrationsAutomation />}
-          {page === "system" && <SystemCenter />}
+          {page === "system" && <CanonicalBoundary title="مرکز سیستم" owner="admin settings" />}
         </main>
       </div>
     </div>

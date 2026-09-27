@@ -437,7 +437,7 @@ Each capability is classified into one of these categories:
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| admin-crm | Customer management | crm | localStorage/hardcoded | PARTIAL | ⚠️ Needs canonical | `GET /api/v1/admin/crm/customers` exists |
+| admin-crm | Contact list, search and detail | crm | Canonical CRM API | PARTIAL | ⚠️ Read surface implemented; browser proof pending | `GET /api/v1/admin/crm/contacts` and `GET /api/v1/admin/crm/contacts/:id`; VIP join, notes and tasks remain deferred |
 
 #### 5.9 Support
 
