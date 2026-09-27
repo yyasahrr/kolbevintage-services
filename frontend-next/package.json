@@ -17,7 +17,8 @@
     "test:e2e:supplier": "playwright test",
     "test:phase-6-7": "vitest run --config vitest.phase-6-7.config.ts",
     "test:checkpoint-02": "vitest run --config vitest.checkpoint-02.config.ts",
-    "test:checkpoint-03": "vitest run --config vitest.checkpoint-03.config.ts"
+    "test:checkpoint-03": "vitest run --config vitest.checkpoint-03.config.ts",
+    "test:checkpoint-04": "vitest run --config vitest.checkpoint-04.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.545.0",
