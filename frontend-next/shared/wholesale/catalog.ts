@@ -33,6 +33,12 @@ export type WholesaleCatalogItem = {
   categoryId: string | null;
   brandId: string | null;
   createdAt: string | null;
+  /** تصویر فقط وقتی نمایش داده می‌شود که خودِ کاتالوگ canonical آن را بدهد. */
+  imageUrl: string | null;
+  moq: number | null;
+  moqUnit: string | null;
+  packageLabel: string | null;
+  sellerName: string | null;
 };
 
 export type WholesaleCatalogPage = Page<WholesaleCatalogItem>;
@@ -173,6 +179,13 @@ export function mapWholesaleCatalogItem(raw: unknown): WholesaleCatalogItem | nu
     categoryId: nullableText(raw.categoryId),
     brandId: nullableText(raw.brandId),
     createdAt: nullableText(raw.createdAt),
+    imageUrl: Array.isArray(raw.media)
+      ? raw.media.map(mapMediaUrl).find((url): url is string => url !== null) ?? null
+      : nullableText(raw.imageUrl ?? raw.image_url),
+    moq: raw.moq === null || raw.moq === undefined ? null : nonNegativeInt(raw.moq),
+    moqUnit: nullableText(raw.moqUnit ?? raw.moq_unit),
+    packageLabel: nullableText(raw.packageName ?? raw.packageLabel ?? raw.packageType),
+    sellerName: nullableText(raw.sellerName ?? raw.seller_name),
   };
 }
 

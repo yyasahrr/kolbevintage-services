@@ -133,7 +133,7 @@ export function errorCopy(kind: ApiErrorKind, fallback: string): string {
 
 /* ── قطعاتِ مشترکِ ظاهری ─────────────────────────────────────────────────── */
 
-const RING = "outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
+const RING = "outline-none focus-visible:ring-2 focus-visible:ring-[var(--kolbe-color-focus)] focus-visible:ring-offset-2";
 
 function Money({ value, currency }: { value: string; currency: string }) {
   return (
@@ -237,10 +237,13 @@ export function WholesaleCatalogList({
   }, [client, loadingMore, nextCursor, pageSize]);
 
   return (
-    <section aria-labelledby="wholesale-catalog-heading" className="space-y-4">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="wholesale-catalog-heading" className="text-[16px] font-semibold">کاتالوگِ عمده</h2>
-        <p className="text-[10.5px] text-neutral-500">قیمت‌ها و موجودی مستقیماً از سرور خوانده می‌شود.</p>
+    <section aria-labelledby="wholesale-catalog-heading" className="kolbe-wholesale-catalog space-y-4">
+      <header className="kolbe-wholesale-catalog__intro">
+        <div>
+          <p className="kolbe-wholesale-catalog__eyebrow">KOLBE WHOLESALE</p>
+          <h1 id="wholesale-catalog-heading">فروشگاه عمده</h1>
+        </div>
+        <p>قیمت، موجودی و شرایط فروش مستقیماً از سرور خوانده می‌شود.</p>
       </header>
 
       {state.kind === "LOADING" ? <LoadingPanel label="در حالِ خواندنِ کاتالوگ…" /> : null}
@@ -253,25 +256,29 @@ export function WholesaleCatalogList({
 
       {items.length > 0 ? (
         <>
-          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="kolbe-wholesale-grid">
             {items.map((item) => (
-              <li key={item.id} className="flex flex-col gap-2 border border-neutral-200 bg-[#fffdfa] p-3">
+              <li key={item.id} className="kolbe-wholesale-card">
                 <button
                   type="button"
                   onClick={() => onOpen(item.id)}
-                  className={`text-right text-[12.5px] font-medium text-[#0b2a46] underline-offset-4 hover:underline ${RING}`}
+                  className={`kolbe-wholesale-card__link ${RING}`}
                 >
-                  {item.name}
+                  <span className="kolbe-wholesale-card__media">
+                    {item.imageUrl ? <img src={item.imageUrl} alt={item.name} loading="lazy" /> : <span aria-hidden="true">K</span>}
+                    {item.sellerType === "KOLBE" ? <span className="kolbe-wholesale-card__badge">کلبه</span> : null}
+                  </span>
+                  <span className="kolbe-wholesale-card__body">
+                    <strong>{item.name}</strong>
+                    <span className="kolbe-wholesale-card__price">از <Money value={item.priceFrom} currency={item.currency} /></span>
+                    <span className="kolbe-wholesale-card__facts">
+                      {item.moq !== null && item.moqUnit ? <span><small>حداقل سفارش</small>{quantityWithUnit(item.moq, item.moqUnit)}</span> : null}
+                      {item.packageLabel ? <span><small>بسته / سری</small>{packageTypeLabel(item.packageLabel)}</span> : null}
+                      <span><small>موجودی قابل فروش</small>{toPersianDigits(item.availability)}</span>
+                    </span>
+                    <span className="kolbe-wholesale-card__seller">فروشنده: {item.sellerType === "SUPPLIER" && item.sellerName ? item.sellerName : SELLER_TYPE_LABELS_FA[item.sellerType]}</span>
+                  </span>
                 </button>
-                <p className="text-[10.5px] text-neutral-500">
-                  فروشنده: {SELLER_TYPE_LABELS_FA[item.sellerType]}
-                </p>
-                <p className="text-[11.5px]">
-                  از <Money value={item.priceFrom} currency={item.currency} />
-                </p>
-                <p className="text-[10.5px] text-neutral-500">
-                  موجودیِ قابلِ فروش: {toPersianDigits(item.availability)}
-                </p>
               </li>
             ))}
           </ul>
@@ -350,7 +357,7 @@ export function WholesaleProductDetailPage({
       {detail ? (
         <>
           <header className="space-y-1">
-            <h2 id="wholesale-detail-heading" className="text-[18px] font-semibold">{detail.name}</h2>
+            <h1 id="wholesale-detail-heading" className="text-[18px] font-semibold">{detail.name}</h1>
             <p className="text-[10.5px] text-neutral-500">
               فروشنده: {SELLER_TYPE_LABELS_FA[detail.sellerType]} · وضعیت: {detail.status || "—"}
             </p>

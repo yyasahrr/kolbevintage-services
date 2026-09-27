@@ -67,7 +67,7 @@ describe("BNPL فقط خرده‌فروشی است — قاعدهٔ کانال (
     }
   });
 
-  it("ProductPage و ProductCard پیش‌فرض خرده‌فروشی دارند و پورتال عمده صریحاً کانال می‌دهد", () => {
+  it("ProductPage و ProductCard خرده‌فروشی می‌مانند و VIP جزئیات canonical خودش را دارد", () => {
     const productPage = fs.readFileSync(path.join(STOREFRONT, "pages", "ProductPage.tsx"), "utf8");
     const productCard = fs.readFileSync(path.join(STOREFRONT, "components", "ProductCard.tsx"), "utf8");
     const vipPortal = fs.readFileSync(path.join(STOREFRONT, "pages", "VIPPortal.tsx"), "utf8");
@@ -75,8 +75,9 @@ describe("BNPL فقط خرده‌فروشی است — قاعدهٔ کانال (
     // هر دو مولفه، رندر بخش اقساط را به کانال مقید کرده‌اند.
     expect(productPage).toContain("isInstallmentAvailable(channel)");
     expect(productCard).toContain("isInstallmentAvailable(channel)");
-    // پورتال عمده، کانال عمده را صریح می‌دهد (وگرنه پیش‌فرض خرده‌فروشی می‌ماند).
-    expect(vipPortal).toContain('channel="wholesale"');
+    // پورتال عمده دیگر ProductPage خرده‌فروشی را سوار نمی‌کند؛ یک PDP canonical دارد.
+    expect(vipPortal).toContain("WholesaleProductDetailPage");
+    expect(vipPortal).not.toContain("<ProductPage");
   });
 });
 
