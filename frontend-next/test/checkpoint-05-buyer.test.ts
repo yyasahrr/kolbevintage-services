@@ -13,7 +13,7 @@ describe("Checkpoint 05 canonical buyer workflows", () => {
     const client = { request: async (path: string, init: any) => { calls.push({ path, init }); return { order: { orderCode: "W-1" }, replayed: false }; } } as unknown as ApiClient;
     const request = { id: "wr-1", productId: "p", offerId: "o", quantity: 12, status: "accepted", version: 4, createdAt: "", updatedAt: "" } satisfies BuyerRequest;
     const address = { id: "a-1", label: "انبار", recipientName: "خریدار", recipientPhone: "09120000000", province: "تهران", city: "تهران", addressLine: "خیابان", postalCode: "1234567890", isDefault: true, version: 2, createdAt: "", updatedAt: "" } satisfies BuyerAddress;
-    await buyerApi(client).createOrder(request, address, "transfer", "idem-fixed");
+    await buyerApi(client).createOrder([request], address, address, "transfer", "idem-fixed");
     expect(calls[0].path).toBe("/wholesale/orders");
     expect(calls[0].init.headers["Idempotency-Key"]).toBe("idem-fixed");
     expect(calls[0].init.body.requests).toEqual([{ requestId: "wr-1", expectedVersion: 4 }]);

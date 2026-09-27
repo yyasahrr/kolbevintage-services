@@ -39,7 +39,7 @@ export default function VIPPortal() {
   const handleLogout = () => { void logout().then(() => navigate("/wholesale")); };
   let page: ReactNode;
   if (path === "/vip" || path === "/vip/catalog" || path.startsWith("/vip/catalog/") || path.startsWith("/product/")) page = <VipCatalogRoute path={path} navigate={navigate} canRequest={capabilities.rfq} />;
-  else if (path === "/vip/orders") page = capabilities.orders ? <VipOrdersPage /> : <VipCapabilityDeniedPage capability="orders" />;
+  else if (path === "/vip/orders" || path.startsWith("/vip/orders/")) page = capabilities.orders ? <VipOrdersPage initialOrderId={path.startsWith("/vip/orders/") ? decodeURIComponent(path.slice("/vip/orders/".length)) : undefined} onNavigate={navigate} /> : <VipCapabilityDeniedPage capability="orders" />;
   else if (path === "/vip/requests") page = capabilities.rfq ? <VipRequestsPage /> : <VipCapabilityDeniedPage capability="rfq" />;
   else if (path === "/vip/invoices") page = capabilities.orders ? <VipInvoicesPage /> : <VipCapabilityDeniedPage capability="orders" />;
   else if (path === "/vip/membership") page = <VipMembershipPage membership={membership} />;

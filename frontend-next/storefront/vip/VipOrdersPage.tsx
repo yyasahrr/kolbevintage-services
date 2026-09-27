@@ -5,27 +5,27 @@ import { canonicalClient } from "../../shared/http/clients";
 import { buyerApi, type BuyerOrder } from "../../shared/vip/buyer";
 import { faDate, RemoteBoundary, statusLabel, useRemote, VipRoutePage } from "./VipPageParts";
 
-export function VipOrdersPage() {
+export function VipOrdersPage({ initialOrderId, onNavigate }: { initialOrderId?: string; onNavigate?: (path: string) => void } = {}) {
   const api = useMemo(() => buyerApi(canonicalClient()), []);
   const list = useRemote(() => api.orders(), [api]);
-  const [selected, setSelected] = useState<BuyerOrder | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialOrderId ?? null);
   const [loadingMore, setLoadingMore] = useState(false); const [moreError, setMoreError] = useState("");
   const loadMore = async () => { if (!list.data?.nextCursor || loadingMore) return; setLoadingMore(true); setMoreError(""); try { const next = await api.orders(list.data.nextCursor); list.setData((current) => current ? { ...next, orders: [...current.orders, ...next.orders.filter((item) => !current.orders.some((old) => old.id === item.id))] } : next); } catch (reason) { setMoreError(reason instanceof Error ? reason.message : "دریافت صفحهٔ بعد ممکن نشد"); } finally { setLoadingMore(false); } };
   return <VipRoutePage eyebrow="ORDER HISTORY" title="سفارش‌ها" description="وضعیت، ارسال، اسناد و رخدادهای سفارش‌های همین حساب.">
-    <RemoteBoundary state={list}>{({ orders, hasMore }) => orders.length ? <><div className="vip-card-grid">{orders.map((order) => <OrderCard key={order.id} title={`سفارش ${order.orderCode}`} orderCode={order.orderCode} total={order.grandTotal} placedAt={faDate(order.createdAt)} status={{ label: statusLabel(order.status) }} actions={<Button variant="secondary" onClick={() => setSelected(order)}>مشاهده جزئیات</Button>} />)}</div>{moreError ? <InlineNotice intent="danger">{moreError}</InlineNotice> : null}{hasMore ? <div className="vip-page-actions"><Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "در حال دریافت" : "نمایش سفارش‌های بیشتر"}</Button></div> : null}</> : <EmptyState title="هنوز سفارشی ثبت نشده است" description="پس از پذیرفته‌شدن درخواست عمده، سفارش‌های واقعی اینجا ظاهر می‌شوند." />}</RemoteBoundary>
-    {selected ? <OrderDetail order={selected} onClose={() => setSelected(null)} onChanged={() => { setSelected(null); list.reload(); }} api={api} /> : null}
+    <RemoteBoundary state={list}>{({ orders, hasMore }) => orders.length ? <><div className="vip-card-grid">{orders.map((order) => <OrderCard key={order.id} title={`سفارش ${order.orderCode}`} orderCode={order.orderCode} total={order.grandTotal} placedAt={faDate(order.createdAt)} status={{ label: statusLabel(order.status) }} actions={<Button variant="secondary" onClick={() => { setSelectedId(order.id); onNavigate?.(`/vip/orders/${order.id}`); }}>مشاهده جزئیات</Button>} />)}</div>{moreError ? <InlineNotice intent="danger">{moreError}</InlineNotice> : null}{hasMore ? <div className="vip-page-actions"><Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "در حال دریافت" : "نمایش سفارش‌های بیشتر"}</Button></div> : null}</> : <EmptyState title="هنوز سفارشی ثبت نشده است" description="پس از پذیرفته‌شدن درخواست عمده، سفارش‌های واقعی اینجا ظاهر می‌شوند." />}</RemoteBoundary>
+    {selectedId ? <OrderDetail orderId={selectedId} onClose={() => { setSelectedId(null); onNavigate?.("/vip/orders"); }} onChanged={() => { setSelectedId(null); onNavigate?.("/vip/orders"); list.reload(); }} api={api} /> : null}
   </VipRoutePage>;
 }
 
-function OrderDetail({ order, onClose, onChanged, api }: { order: BuyerOrder; onClose: () => void; onChanged: () => void; api: ReturnType<typeof buyerApi> }) {
+function OrderDetail({ orderId, onClose, onChanged, api }: { orderId: string; onClose: () => void; onChanged: () => void; api: ReturnType<typeof buyerApi> }) {
   const detail = useRemote(async () => {
-    const [core, timeline, shipments, invoices] = await Promise.all([api.order(order.id), api.timeline(order.id), api.shipments(order.id), api.invoices(order.id)]);
+    const [core, timeline, shipments, invoices] = await Promise.all([api.order(orderId), api.timeline(orderId), api.shipments(orderId), api.invoices(orderId)]);
     return { core, timeline: timeline.timeline, shipments: shipments.shipments, invoices: invoices.invoices };
-  }, [api, order.id]);
+  }, [api, orderId]);
   const [cancelOpen, setCancelOpen] = useState(false); const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const commandKey = useRef(crypto.randomUUID());
-  const cancel = async () => { setBusy(true); setError(""); try { await api.cancelOrder(order.id, reason.trim(), detail.data?.core.order.version, commandKey.current); setCancelOpen(false); onChanged(); } catch (cause) { setError(cause instanceof Error ? cause.message : "لغو سفارش ممکن نشد"); } finally { setBusy(false); } };
-  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={`جزئیات سفارش ${order.orderCode}`} description="اطلاعات زیر مستقیماً از سرویس‌های سفارش، ارسال و صدور فاکتور خوانده شده است." className="vip-detail-dialog">
+  const cancel = async () => { setBusy(true); setError(""); try { await api.cancelOrder(orderId, reason.trim(), detail.data?.core.order.version, commandKey.current); setCancelOpen(false); onChanged(); } catch (cause) { setError(cause instanceof Error ? cause.message : "لغو سفارش ممکن نشد"); } finally { setBusy(false); } };
+  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }} title={`جزئیات سفارش ${detail.data?.core.order.orderCode || orderId}`} description="اطلاعات زیر مستقیماً از سرویس‌های سفارش، ارسال و صدور فاکتور خوانده شده است." className="vip-detail-dialog">
     <RemoteBoundary state={detail}>{({ core, timeline, shipments, invoices }) => <div className="vip-detail-stack">
       <div className="vip-detail-summary"><StatusBadge>{statusLabel(core.order.status)}</StatusBadge><strong><Money value={core.order.grandTotal} /></strong><span>{core.order.totalUnits} واحد</span></div>
       <section><h3>اقلام</h3>{core.items.length ? <div className="vip-line-list">{core.items.map((item) => <div key={item.id}><span>{item.productNameSnapshot || item.skuSnapshot || "قلم سفارش"}</span><small>{item.pieceQuantity ?? item.quantity} عدد</small><Money value={item.lineTotal} /></div>)}</div> : <p>قلمی گزارش نشده است.</p>}</section>
