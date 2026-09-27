@@ -114,7 +114,7 @@ describe("پوستهٔ پورتال — بازیابیِ نشست", () => {
     const shell = renderShell([{ method: "GET", path: "/api/v1/auth/me", status: 500, body: { error: "INTERNAL_ERROR", message: "خطای سرور" } }]);
     try {
       await waitFor(() => expect(screen.getByText("بازیابی نشست ناموفق بود")).toBeTruthy());
-      expect(screen.getByText("خطای سرور")).toBeTruthy();
+      expect(screen.getByText(/خطای سرور/)).toBeTruthy();
     } finally {
       shell.restore();
     }

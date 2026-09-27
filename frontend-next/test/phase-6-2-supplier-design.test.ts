@@ -350,12 +350,13 @@ describe("فاز ۶.۲ — CSS هیچ حقیقتِ کسب‌وکاری ندار�
   });
 });
 
-describe("فاز ۶.۲ — تنها کلیدِ localStorage باقی‌مانده، ترجیحِ نمایشی است", () => {
-  it("فقط کلیدِ تم در پورتال نوشته می‌شود", () => {
+describe("فاز ۶.۲ — ترجیح تم فقط از مرجع مشترک ارائه می‌شود", () => {
+  it("پورتال مستقیماً localStorage را نمی‌خواند و از theme.ts استفاده می‌کند", () => {
     const appSource = fs.readFileSync(path.resolve(import.meta.dirname, "..", "supplier-src", "App.tsx"), "utf8");
     const keys = [...appSource.matchAll(/localStorage\.(?:get|set)Item\(\s*([A-Za-z_]+)/g)].map(match => match[1]);
-    expect(new Set(keys)).toEqual(new Set(["THEME_KEY"]));
-    expect(appSource).toMatch(/const THEME_KEY = ['"]kolbe-supplier-theme['"]/);
+    expect(new Set(keys)).toEqual(new Set());
+    expect(appSource).toContain("useThemePreference");
+    expect(appSource).not.toContain("kolbe-supplier-theme");
   });
 });
 
