@@ -13,6 +13,7 @@
     "test:phase-6-0": "vitest run --config vitest.phase-6-0.config.ts",
     "test:phase-6-1": "vitest run --config vitest.phase-6-1.config.ts",
     "test:phase-6-2": "vitest run --config vitest.phase-6-2.config.ts",
+    "test:phase-6-4": "vitest run --config vitest.phase-6-4.config.ts",
     "tokens:build": "node --no-warnings shared/design/generate-tokens.mts",
     "test:e2e:supplier": "playwright test",
     "test:phase-6-7": "vitest run --config vitest.phase-6-7.config.ts",
