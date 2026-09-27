@@ -16,7 +16,7 @@
 import { ApiError } from "../http/errors";
 import { LOADING, stateFromError, type AsyncState } from "../ui/async-state";
 import { anonymousSession, type SessionClient } from "./auth-client";
-import type { Session } from "./types";
+import type { LoginInput, Session } from "./types";
 
 export type SessionPhase = "idle" | "loading" | "ready";
 
@@ -31,6 +31,8 @@ export type SessionStore = {
   subscribe: (listener: () => void) => () => void;
   /** بازیابی از سرور؛ ۴۰۱ ⇒ anonymousِ معتبر. */
   refresh: () => Promise<SessionStoreState>;
+  /** ورود canonical: POST فقط کوکی را می‌سازد و نتیجهٔ نهایی از /auth/me می‌آید. */
+  login: (input: LoginInput) => Promise<SessionStoreState>;
   /** خروج از سرور و بازگشت به anonymous (حتی اگر سرور در دسترس نباشد). */
   logout: () => Promise<SessionStoreState>;
   /** پاک‌سازیِ محلی بدون فراخوانیِ سرور (مثلاً پس از ۴۰۱ در میان‌افزار). */
@@ -58,6 +60,12 @@ export function createSessionStore(client: SessionClient): SessionStore {
     async refresh(): Promise<SessionStoreState> {
       setState({ ...state, phase: "loading", error: null });
       const result = await client.restoreResult();
+      if (!result.ok) return setState({ session: anonymousSession(), phase: "ready", error: result.error });
+      return setState({ session: result.data, phase: "ready", error: null });
+    },
+    async login(input: LoginInput): Promise<SessionStoreState> {
+      setState({ ...state, phase: "loading", error: null });
+      const result = await client.loginResult(input);
       if (!result.ok) return setState({ session: anonymousSession(), phase: "ready", error: result.error });
       return setState({ session: result.data, phase: "ready", error: null });
     },

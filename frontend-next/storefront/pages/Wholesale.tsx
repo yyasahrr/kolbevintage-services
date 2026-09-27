@@ -3,15 +3,16 @@ import { Link, useRouter } from "../router";
 import { products, type Product } from "../data/catalog";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
-import { restoreSiteCustomer, signInSiteCustomer } from "../lib/siteAuthApi";
-import { restoreWholesaleVip, applyWholesaleVip, signInWholesaleVip, loadWholesaleMembership } from "../lib/wholesaleVipApi";
+import { applyWholesaleVip } from "../lib/wholesaleVipApi";
 import SiteHeader from "../components/SiteHeader";
 import SiteFooter from "../components/SiteFooter";
 import CartDrawer from "../components/CartDrawer";
 import CompareBar from "../components/CompareBar";
 import Toasts from "../components/Toasts";
-import { saveWholesaleMembership } from "../wholesaleMembership";
 import { loadKolbeWholesaleCatalog } from "./WholesaleCatalogManager";
+import { useStorefrontSession, useVipGate } from "../session/SessionProvider";
+import { PasswordField, TextField } from "../../shared/components";
+import { presentAuthError, requiresTotp } from "../../shared/auth";
 
 /* ================================================================
    بازار عمده کلبه — کاتالوگ عمومی با قیمت ویژه VIP
@@ -43,6 +44,8 @@ const VIP_PLANS = [
 
 export default function Wholesale() {
   const { query } = useRouter();
+  const { session, login, refresh } = useStorefrontSession();
+  const { gate } = useVipGate();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("همه");
   const [sort, setSort] = useState("new");
@@ -53,29 +56,18 @@ export default function Wholesale() {
   const [orderMode, setOrderMode] = useState<"quick"|"normal">("normal");
 
   /* وضعیت کاربر */
-  const [siteCustomer, setSiteCustomer] = useState<{ id:string; name: string; phone:string; email?: string } | null>(null);
-  const [vipAccount, setVipAccount] = useState<{ storeName: string; planName: string } | null>(null);
   const [showVipPlans, setShowVipPlans] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginTotp, setLoginTotp] = useState("");
+  const [loginTotpRequired, setLoginTotpRequired] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [vipError, setVipError] = useState("");
   /* وضعیت «در انتظار تأیید» عضویت — تأیید فقط توسط مدیر کلبه انجام می‌شود (اصلاح D2). */
-  const [vipPending, setVipPending] = useState(false);
   const [vipBusy, setVipBusy] = useState(false);
-
-  /* بازیابی نشستها */
-  useEffect(() => {
-    restoreSiteCustomer().then(customer => {
-      if (customer) setSiteCustomer({ id:customer.id, name: customer.name, phone:customer.phone, email: customer.email });
-    });
-    restoreWholesaleVip().then(account => {
-      if (account) setVipAccount({ storeName: account.storeName, planName: account.planName });
-    });
-    loadWholesaleMembership().then(membership => {
-      if (membership?.status === "pending") setVipPending(true);
-    });
-  }, []);
+  const siteCustomer = session.status === "authenticated" && (session.user.role === "customer" || session.user.role === "vip") ? { id: session.user.id, name: session.user.name ?? "مشتری کلبه", phone: session.user.phone ?? "", email: session.user.email ?? undefined } : null;
+  const vipAccount = gate.state === "active" ? { storeName: gate.storeName ?? "حساب عمده کلبه", planName: gate.planName ?? "VIP" } : null;
+  const vipPending = gate.state === "pending";
 
   const hasVip = Boolean(vipAccount);
   const isLoggedIn = Boolean(siteCustomer);
@@ -100,12 +92,12 @@ export default function Wholesale() {
     e.preventDefault();
     setLoginError("");
     try {
-      const customer = await signInSiteCustomer(loginForm.email, loginForm.password);
-      setSiteCustomer({ id:customer.id, name: customer.name, phone:customer.phone, email: customer.email });
+      await login({ email: loginForm.email, password: loginForm.password, ...(loginTotp ? { totpCode: loginTotp } : {}) });
       setShowLoginModal(false);
       /* بعد از ورود، اگر VIP هم هست قیمتها نمایش داده میشود */
     } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "ورود انجام نشد.");
+      if (requiresTotp(error)) setLoginTotpRequired(true);
+      setLoginError(presentAuthError(error).message);
     }
   };
 
@@ -116,11 +108,8 @@ export default function Wholesale() {
       const paymentReference=`VIP-${Date.now()}`;
       const account=await applyWholesaleVip({memberName:siteCustomer.name,storeName:`فروشگاه ${siteCustomer.name}`,phone:siteCustomer.phone||"ثبت نشده",city:"ثبت نشده",planName:plan.name,paymentReference});
       /* عضویت هرگز در مرورگر فعال نمی‌شود؛ فقط مدیر کلبه می‌تواند تأیید کند. */
-      if(account.status!=="approved"){setVipPending(true);setShowVipPlans(false);return}
-      const activatedAt=account.activatedAt??new Date().toISOString();
-      const expiresAt=account.expiresAt??new Date(Date.now()+365*86400000).toISOString();
-      saveWholesaleMembership({customerId:siteCustomer.id,planId:plan.id,planName:plan.name,memberName:siteCustomer.name,storeName:account.storeName,phone:siteCustomer.phone,city:account.city,activatedAt,expiresAt,status:"active",vip:true});
-      setVipAccount({storeName:account.storeName,planName:account.planName});
+      await refresh();
+      if(account.status!=="approved"){setShowVipPlans(false);return}
       setShowVipPlans(false);
     }catch(error){setVipError(error instanceof Error?error.message:"فعال‌سازی عضویت انجام نشد.")}
     finally{setVipBusy(false)}
@@ -245,8 +234,9 @@ export default function Wholesale() {
             <p className="mt-1 text-center text-[11px] text-neutral-500">برای مشاهده قیمت‌های عمده وارد شوید</p>
             {loginError && <p role="alert" className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">{loginError}</p>}
             <form onSubmit={handleLogin} className="mt-4 space-y-3">
-              <input type="email" required value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} placeholder="ایمیل" className="h-11 w-full rounded border border-neutral-300 px-3 text-[12px] outline-none focus:border-[#011c3a]" />
-              <input type="password" required value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} placeholder="رمز عبور" className="h-11 w-full rounded border border-neutral-300 px-3 text-[12px] outline-none focus:border-[#011c3a]" />
+              <TextField type="email" label="ایمیل" required autoComplete="email" dir="ltr" value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} />
+              <PasswordField label="رمز عبور" required autoComplete="current-password" value={loginForm.password} onChange={password => setLoginForm(f => ({ ...f, password }))} />
+              {loginTotpRequired ? <TextField label="کد یک‌بارمصرف" required autoComplete="one-time-code" inputMode="numeric" dir="ltr" value={loginTotp} onChange={event => setLoginTotp(event.target.value)} /> : null}
               <button type="submit" className="h-11 w-full rounded bg-[#011c3a] text-[12.5px] font-medium text-white transition hover:bg-[#0a2c55]">ورود</button>
             </form>
             <p className="mt-4 text-center text-[10.5px] text-neutral-400">حساب ندارید؟ <Link to="/account" className="text-[#011c3a] underline">ثبت‌نام</Link></p>

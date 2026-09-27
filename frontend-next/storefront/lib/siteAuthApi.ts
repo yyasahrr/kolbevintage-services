@@ -1,51 +1,50 @@
-import { api, ApiError } from "./api";
+/** Thin Retail adapter over the canonical shared cookie session boundary. */
+import { ApiError } from "../../shared/http/errors";
+import { canonicalClient } from "../../shared/http/clients";
+import { createSessionClient } from "../../shared/session/auth-client";
+import type { Session } from "../../shared/session/types";
 import type { CustomerIdentity } from "../customerIdentity";
 
-type LoginResponse = { user: { id: string; email: string; role: string; name: string | null; phone: string | null } };
+const sessionClient = createSessionClient(canonicalClient());
 
-async function identityFromMe(): Promise<CustomerIdentity | null> {
-  try {
-    const me = await api<{ id: string; name: string; phone: string; email?: string }>("/store/kolbe/me");
-    return { id: me.id, name: me.name, phone: me.phone, email: me.email };
-  } catch (error) {
-    if (error instanceof ApiError && error.code === "NETWORK") return null;
-    return null;
+function retailIdentity(session: Session): CustomerIdentity | null {
+  if (session.status !== "authenticated") return null;
+  if (session.user.role !== "customer" && session.user.role !== "vip") {
+    throw new ApiError({ kind: "FORBIDDEN", status: 403, code: "RETAIL_ROLE_REQUIRED", message: "این حساب دسترسی خریدار کلبه را ندارد." });
   }
+  return {
+    id: session.user.id,
+    name: session.user.name ?? session.user.email?.split("@")[0] ?? "مشتری کلبه",
+    phone: session.user.phone ?? "",
+    ...(session.user.email ? { email: session.user.email } : {}),
+  };
 }
 
-export async function restoreSiteCustomer() {
-  return identityFromMe();
+export async function restoreSiteCustomer(): Promise<CustomerIdentity | null> {
+  return retailIdentity(await sessionClient.restore());
 }
 
-export async function signInSiteCustomer(email: string, password: string) {
-  const data = await api<LoginResponse>("/store/kolbe/auth/login", {
-    method: "POST",
-    body: { email, password },
-  }).catch((error) => {
-    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "BAD_API_KEY" || error.code.startsWith("HTTP_5"))) throw new Error("اتصال به بک‌اند برقرار نیست؛ اگر این پیام را می‌بینید احتمالاً روی پیش‌نمایش قدیمی هستید — از آخرین تب پیش‌نمایش استفاده کنید.");
-    throw new Error("ایمیل یا رمز عبور درست نیست.");
-  });
-  // پس از ورود، کوکی HttpOnly ست شده؛ اطلاعات کاربر را از me می‌خوانیم
-  const identity = await identityFromMe();
-  if (identity) return identity;
-  return { id: data.user.id, name: data.user.name ?? email.split("@")[0], phone: data.user.phone ?? "—", email: data.user.email } as CustomerIdentity;
+export async function signInSiteCustomer(email: string, password: string): Promise<CustomerIdentity> {
+  const identity = retailIdentity(await sessionClient.login({ email: email.trim(), password }));
+  if (!identity) throw new ApiError({ kind: "MALFORMED_RESPONSE", code: "SESSION_NOT_ESTABLISHED", message: "نشست خریدار پس از ورود تأیید نشد." });
+  return identity;
 }
 
-export async function signUpSiteCustomer(input: { name: string; phone: string; email: string; password: string }) {
-  await api("/store/kolbe/auth/register", {
+export async function signUpSiteCustomer(input: { name: string; phone: string; email: string; password: string }): Promise<CustomerIdentity> {
+  await registerSiteCustomer(input);
+  const identity = await restoreSiteCustomer();
+  if (!identity) throw new ApiError({ kind: "MALFORMED_RESPONSE", code: "SESSION_NOT_ESTABLISHED", message: "نشست خریدار پس از ثبت‌نام تأیید نشد." });
+  return identity;
+}
+
+export async function registerSiteCustomer(input: { name: string; phone: string; email: string; password: string }): Promise<void> {
+  const result = await canonicalClient().requestResult("/auth/register", {
     method: "POST",
     body: { email: input.email.trim(), password: input.password, name: input.name.trim(), phone: input.phone.trim(), role: "customer" },
-  }).catch((error) => {
-    if (error instanceof ApiError && (error.code === "NETWORK" || error.code === "INVALID_INPUT")) throw new Error("ساخت حساب انجام نشد؛ اطلاعات را بررسی کنید.");
-    throw new Error("این ایمیل قبلاً ثبت شده است.");
   });
-  return signInSiteCustomer(input.email, input.password);
+  if (!result.ok) throw result.error;
 }
 
-export async function signOutSiteCustomer() {
-  try {
-    await api("/store/kolbe/auth/logout", { method: "POST" });
-  } catch {
-    // حتی اگر سرور در دسترس نباشد، خروج محلی انجام می‌شود
-  }
+export async function signOutSiteCustomer(): Promise<void> {
+  await sessionClient.logout();
 }

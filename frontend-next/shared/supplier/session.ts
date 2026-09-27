@@ -17,7 +17,7 @@ import { ApiError } from "../http/errors";
 import type { ApiClient, ApiResult } from "../http/types";
 import { createCapabilitySet, type CapabilitySet } from "../permissions/capabilities";
 import { ANONYMOUS_CAPABILITIES, canUseProduction } from "../permissions/capabilities";
-import { anonymousSession, capabilitiesFor, type Session, type SessionUser, type SupplierSessionContext } from "../session";
+import { anonymousSession, capabilitiesFor, createSessionClient, type Session, type SessionUser, type SupplierSessionContext } from "../session";
 import type { SupplierApi } from "./client";
 
 export const DEMO_FLAG_ENV = "NEXT_PUBLIC_SUPPLIER_DEMO";
@@ -76,8 +76,8 @@ export class SupplierSessionError extends Error {
 }
 
 export type SupplierSessionClient = {
-  login: (email: string, password: string) => Promise<SupplierSession>;
-  loginResult: (email: string, password: string) => Promise<ApiResult<SupplierSession>>;
+  login: (email: string, password: string, totpCode?: string) => Promise<SupplierSession>;
+  loginResult: (email: string, password: string, totpCode?: string) => Promise<ApiResult<SupplierSession>>;
   restore: () => Promise<SupplierSession>;
   restoreResult: () => Promise<ApiResult<SupplierSession>>;
   logout: () => Promise<void>;
@@ -86,6 +86,9 @@ export type SupplierSessionClient = {
 };
 
 export function createSupplierSessionClient(client: ApiClient, api: SupplierApi): SupplierSessionClient {
+  const canonicalSession = createSessionClient(client, {
+    paths: { login: "/auth/supplier/login", logout: "/auth/logout", me: "/auth/me" },
+  });
   async function readCapabilities(supplierSession: Session): Promise<{
     capabilities: CapabilitySet;
     productionCapabilities: readonly string[];
@@ -145,16 +148,11 @@ export function createSupplierSessionClient(client: ApiClient, api: SupplierApi)
   }
 
   async function restoreResult(): Promise<ApiResult<SupplierSession>> {
-    const me = await client.requestResult<Record<string, unknown>>("/auth/me");
-    if (!me.ok) {
-      if (me.error.kind === "UNAUTHORIZED" || me.error.kind === "FORBIDDEN") {
-        return { ok: true, data: toSupplierSession(anonymousSession()), meta: me.meta };
-      }
-      return me;
-    }
-    const session = parseSupplierMe(me.data);
+    const restored = await canonicalSession.restoreResult();
+    if (!restored.ok) return restored;
+    const session = restored.data;
     if (session.status === "anonymous") {
-      return { ok: true, data: toSupplierSession(session), meta: me.meta };
+      return { ok: true, data: toSupplierSession(session), meta: restored.meta };
     }
     try {
       assertSupplier(session);
@@ -163,21 +161,29 @@ export function createSupplierSessionClient(client: ApiClient, api: SupplierApi)
         error instanceof SupplierSessionError
           ? new ApiError({ kind: "FORBIDDEN", status: 403, code: error.code, message: error.message })
           : new ApiError({ kind: "UNKNOWN", message: "نشست تأمین‌کننده قابل تأیید نیست." });
-      return { ok: false, error: apiError, meta: me.meta };
+      return { ok: false, error: apiError, meta: restored.meta };
     }
-    return { ok: true, data: await decorate(session), meta: me.meta };
+    return { ok: true, data: await decorate(session), meta: restored.meta };
   }
 
-  async function loginResult(email: string, password: string): Promise<ApiResult<SupplierSession>> {
-    const login = await api.auth.login({ email, password });
+  async function loginResult(email: string, password: string, totpCode?: string): Promise<ApiResult<SupplierSession>> {
+    const login = await canonicalSession.loginResult({ email, password, ...(totpCode ? { totpCode } : {}) });
     if (!login.ok) return login;
-    return restoreResult();
+    try {
+      assertSupplier(login.data);
+    } catch (error) {
+      const apiError = error instanceof SupplierSessionError
+        ? new ApiError({ kind: "FORBIDDEN", status: 403, code: error.code, message: error.message })
+        : new ApiError({ kind: "UNKNOWN", message: "نشست تأمین‌کننده قابل تأیید نیست." });
+      return { ok: false, error: apiError, meta: login.meta };
+    }
+    return { ok: true, data: await decorate(login.data), meta: login.meta };
   }
 
   return {
     loginResult,
-    login: async (email: string, password: string) => {
-      const result = await loginResult(email, password);
+    login: async (email: string, password: string, totpCode?: string) => {
+      const result = await loginResult(email, password, totpCode);
       if (!result.ok) throw result.error;
       return result.data;
     },
@@ -187,9 +193,9 @@ export function createSupplierSessionClient(client: ApiClient, api: SupplierApi)
       if (!result.ok) throw result.error;
       return result.data;
     },
-    logoutResult: () => api.auth.logout(),
+    logoutResult: () => canonicalSession.logoutResult(),
     logout: async () => {
-      const result = await api.auth.logout();
+      const result = await canonicalSession.logoutResult();
       if (!result.ok) throw result.error;
     },
     health: async () => {

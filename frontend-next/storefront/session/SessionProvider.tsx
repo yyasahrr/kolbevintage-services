@@ -58,8 +58,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // Login is not identity authority: the client sets the HttpOnly cookie and
       // re-reads /auth/me; we then sync the store from the server.
       login: async (input) => {
-        await sessionClient.login(input);
-        return store.refresh();
+        const next = await store.login(input);
+        if (next.error) throw next.error;
+        return next;
       },
       logout: () => store.logout(),
       refresh: () => store.refresh(),

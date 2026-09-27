@@ -259,7 +259,7 @@ export function createSessionClient(client: ApiClient, options: SessionClientOpt
     if (!result.ok) {
       // ۴۰۱/۴۰۳ روی خودِ نشست یعنی «وارد نیستید / اجازه ندارید» — یک پاسخِ معتبر
       // است، نه شکست. اما همان وضعیت از قراردادِ capability باید اعلام شود.
-      const notSignedIn = result.error.kind === "UNAUTHORIZED" || result.error.kind === "FORBIDDEN";
+      const notSignedIn = result.error.kind === "UNAUTHORIZED";
       if (result.stage === "identity" && notSignedIn) {
         return { ok: true, data: anonymousSession(), meta: result.meta };
       }

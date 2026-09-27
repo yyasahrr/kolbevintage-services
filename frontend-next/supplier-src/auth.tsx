@@ -12,9 +12,11 @@
  *    جایگزینِ خاموشِ ورود نمی‌شود.
  */
 
-import { AlertTriangle, ArrowLeft, Check, Eye, EyeOff, Factory, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { isDemoModeAllowed } from '@shared/supplier/session'
+import { AuthError, AuthFooter, AuthHeader, AuthPanel, AuthShell as SharedAuthShell, AuthStory, presentAuthError, requiresTotp, type AuthErrorPresentation } from '@shared/auth'
+import { Button, PasswordField, TextField } from '@shared/components'
 import { useSupplierPortal } from './context'
 
 export type AuthView = 'login' | 'register'
@@ -24,38 +26,17 @@ export function AuthShell({ onAuthenticated }: { onAuthenticated: () => void }) 
   const [notice, setNotice] = useState('')
 
   return (
-    <main className="auth-shell">
-      <section className="auth-intro">
-        <div className="auth-brand">
-          <div className="brand-seal">K</div>
-          <div><strong>KOLBE</strong><span>Vintage · Supplier</span></div>
-        </div>
-        <div className="auth-intro-copy">
-          <p className="eyebrow">SUPPLIER OPERATIONS</p>
-          <h1>عملیات عمده‌فروشی<br />شما، <em>دقیق و یکپارچه.</em></h1>
-          <p>کولبه وینتیج، مسیر فروش، تولید و تسویهٔ تأمین‌کنندگان منتخب را در یک فضای عملیاتی شفاف مدیریت می‌کند.</p>
-        </div>
-        <div className="auth-assurance">
-          <div>
-            <span className="assurance-icon"><ShieldCheck size={18} /></span>
-            <p><b>حساب‌های تأییدشده</b><small>دسترسی فقط برای تیم‌های تأمین‌کنندهٔ فعال کولبه</small></p>
-          </div>
-          <div>
-            <span className="assurance-icon"><Factory size={18} /></span>
-            <p><b>شبکهٔ تولید منتخب</b><small>کارخانه‌های دارای capability اعلام‌شده</small></p>
-          </div>
-        </div>
-        <p className="auth-copyright">© ۱۴۰۴ Kolbe Vintage. همهٔ حقوق محفوظ است.</p>
-      </section>
-      <section className="auth-form-pane">
-        {notice ? <p className="auth-error" role="alert">{notice}</p> : null}
+    <SharedAuthShell tone="partner" story={<AuthStory eyebrow="SUPPLIER OPERATIONS" title="عملیات همکاری، دقیق و یکپارچه" description="فروش، تولید و تسویهٔ تأمین‌کنندگان تأییدشده در یک فضای عملیاتی روشن مدیریت می‌شود." />}>
+      <AuthPanel>
+        {notice ? <AuthError error={{ kind: 'UNKNOWN', title: 'درخواست کامل نشد', message: notice, retryAfterSeconds: null }} /> : null}
         {view === 'login' ? (
           <LoginForm onRegister={() => setView('register')} onSuccess={onAuthenticated} onError={setNotice} />
         ) : (
           <RegistrationForm onBack={() => setView('login')} onError={setNotice} />
         )}
-      </section>
-    </main>
+        <AuthFooter>هویت تأمین‌کننده و شناسهٔ مجموعه فقط از نشست سرور پذیرفته می‌شود.</AuthFooter>
+      </AuthPanel>
+    </SharedAuthShell>
   )
 }
 
@@ -63,8 +44,9 @@ function LoginForm({ onRegister, onSuccess, onError }: { onRegister: () => void;
   const portal = useSupplierPortal()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [totpCode, setTotpCode] = useState('')
+  const [totpRequired, setTotpRequired] = useState(false)
+  const [error, setError] = useState<AuthErrorPresentation | null>(null)
   const [busy, setBusy] = useState(false)
   const demoAllowed = isDemoModeAllowed()
 
@@ -72,59 +54,45 @@ function LoginForm({ onRegister, onSuccess, onError }: { onRegister: () => void;
     event.preventDefault()
     setError(null)
     onError('')
-    if (!email.includes('@') || password.length < 8) {
-      setError('ایمیل معتبر و رمز عبور حداقل ۸ کاراکتری را وارد کنید.')
+    if (!email.includes('@') || !password) {
+      setError({ kind: 'VALIDATION_ERROR', title: 'اطلاعات را بررسی کنید', message: 'ایمیل معتبر و رمز عبور را وارد کنید.', retryAfterSeconds: null })
       return
     }
     setBusy(true)
     try {
-      const session = await portal.session.login(email, password)
+      const session = await portal.session.login(email, password, totpCode || undefined)
       portal.setSessionState(session)
       portal.setDemoMode(false)
       onSuccess()
     } catch (caught) {
       // شکستِ ورود هرگز به «ورودِ نمایشی» تبدیل نمی‌شود.
-      setError(caught instanceof Error ? caught.message : 'ورود انجام نشد.')
+      if (requiresTotp(caught)) setTotpRequired(true)
+      setError(presentAuthError(caught))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="auth-form-wrap">
-      <div className="auth-form-heading">
-        <p className="eyebrow">ورود تأمین‌کننده</p>
-        <h2>به فضای کاری خود وارد شوید</h2>
-        <p>برای ادامه، اطلاعات حساب تأمین‌کنندهٔ تأییدشده را وارد کنید.</p>
-      </div>
-      <form onSubmit={submit} noValidate>
-        <label className="auth-label">
-          ایمیل سازمانی
-          <input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" aria-invalid={Boolean(error)} placeholder="name@factory.ir" dir="ltr" className="ltr-inline" />
-        </label>
-        <label className="auth-label">
-          رمز عبور
-          <span className="password-input">
-            <input type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" aria-invalid={Boolean(error)} placeholder="رمز عبور شما" dir="ltr" className="ltr-inline" />
-            <button type="button" onClick={() => setShowPassword(current => !current)} aria-label={showPassword ? 'پنهان کردن رمز عبور' : 'نمایش رمز عبور'}>
-              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
-          </span>
-        </label>
-        {error ? <p className="auth-error" role="alert">{error}</p> : null}
-        <button type="submit" disabled={busy} className="auth-submit">
-          {busy ? 'در حال بررسی…' : 'ورود به پنل'} <ArrowLeft size={17} />
-        </button>
+    <div>
+      <AuthHeader eyebrow="ورود تأمین‌کننده" title="به فضای کاری خود وارد شوید" description="اطلاعات حساب تأمین‌کنندهٔ تأییدشده را وارد کنید." />
+      <form onSubmit={submit} noValidate className="kolbe-auth__form">
+        <TextField type="email" label="ایمیل سازمانی" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" placeholder="name@factory.ir" dir="ltr" required disabled={busy} />
+        <PasswordField label="رمز عبور" value={password} onChange={setPassword} autoComplete="current-password" placeholder="رمز عبور شما" dir="ltr" required disabled={busy} />
+        {totpRequired ? <TextField label="کد یک‌بارمصرف" value={totpCode} onChange={event => setTotpCode(event.target.value)} autoComplete="one-time-code" inputMode="numeric" dir="ltr" required disabled={busy} /> : null}
+        <AuthError error={error} />
+        <Button type="submit" disabled={busy}>{busy ? 'در حال بررسی' : 'ورود به پنل'} <ArrowLeft size={17} /></Button>
       </form>
 
       {demoAllowed ? (
-        <button
+        <Button
           type="button"
-          className="button secondary demo-toggle"
+          variant="secondary"
+          className="demo-toggle"
           onClick={() => { portal.setDemoMode(true); onSuccess() }}
         >
           <AlertTriangle size={15} />حالت نمایشی (بدون دادهٔ واقعی)
-        </button>
+        </Button>
       ) : null}
 
       <div className="auth-divider"><span>یا</span></div>

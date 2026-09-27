@@ -4,7 +4,9 @@ import WholesaleAdmin from "./WholesaleAdmin";
 import Icon from "../components/Icon";
 import { Link } from "../router";
 import { isBackendConfigured } from "../lib/api";
-import { restoreAdminSession, signInAdmin, signOutAdmin } from "../lib/wholesaleApi";
+import { useStorefrontSession } from "../session/SessionProvider";
+import { AuthBackLink, AuthError, AuthFooter, AuthForm, AuthHeader, AuthPanel, AuthShell, AuthStatus, AuthStory, accessDenied, presentAuthError, requiresTotp, type AuthErrorPresentation } from "../../shared/auth";
+import { Button, InlineNotice, PasswordField, TextField } from "../../shared/components";
 
 type Workspace = "retail" | "wholesale";
 
@@ -47,38 +49,39 @@ function BackendStatus() {
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2";
 
 export default function AdminPortal() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [restoring, setRestoring] = useState(true);
+  const { session, resolving, error: restoreError, login, logout: endSession } = useStorefrontSession();
   const [workspace, setWorkspace] = useState<Workspace>("retail");
   const [credentials, setCredentials] = useState({ username: "", password: "" });
-  const [error, setError] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [error, setError] = useState<AuthErrorPresentation | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => {
-    restoreAdminSession().then(setAuthenticated).finally(() => setRestoring(false));
-  }, []);
-  const logout = () => { signOutAdmin().catch(() => undefined); setAuthenticated(false); setCredentials({ username: "", password: "" }); };
+  const authenticated = session.status === "authenticated" && session.user.role === "admin";
+  const forbidden = session.status === "authenticated" && session.user.role !== "admin";
+  const logout = () => { void endSession(); setCredentials({ username: "", password: "" }); setError(null); };
 
-  if (restoring) return <main className="admin-system grid min-h-screen place-items-center bg-[#f4f3ef]"><div role="status" className="text-center"><span className="mx-auto block h-8 w-8 animate-spin rounded-full border-2 border-[#011c3a]/20 border-t-[#011c3a]"/><p className="mt-4 text-[11px] text-neutral-500">در حال بررسی نشست امن…</p></div></main>;
+  if (resolving) return <AuthStatus label="در حال بررسی دسترسی مدیریت" />;
 
   if (!authenticated) return (
-    <main className="admin-system grid min-h-screen bg-[#f4f3ef] lg:grid-cols-[0.9fr_1.1fr]">
-      <section className="relative hidden min-h-screen overflow-hidden bg-[#011c3a] text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
-        <img src="/images/store.jpg" alt="فضای فروشگاه کلبه وینتیج" className="absolute inset-0 h-full w-full object-cover opacity-30" /><span className="absolute inset-0 bg-[#011c3a]/65" aria-hidden="true" />
-        <div className="relative"><p className="text-[18px] font-semibold tracking-[0.14em]">کلبه وینتیج</p><p className="mt-2 text-[8px] tracking-[0.38em] text-white/50">KOLBE VINTAGE</p></div>
-        <div className="relative max-w-lg"><p className="text-[10px] tracking-[0.22em] text-white/45">CONTROL ROOM</p><h1 className="mt-4 text-[34px] font-medium leading-[1.6]">یک مرکز کنترل برای فروشگاه و همکاری‌های عمده</h1><p className="mt-4 max-w-md text-[12px] leading-7 text-white/60">محصول، سفارش، محتوا و عملیات همکاران تجاری را از دو فضای کاری مستقل مدیریت کنید.</p></div>
-        <p className="relative text-[9.5px] text-white/35">دسترسی مدیریت · نشست امن مرورگر</p>
-      </section>
-      <section className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-8"><form onSubmit={async (event) => { event.preventDefault(); setSubmitting(true); setError(""); try { await signInAdmin(credentials.username, credentials.password); setAuthenticated(true); } catch (reason) { setError(reason instanceof Error ? reason.message : "ورود انجام نشد."); } finally { setSubmitting(false); } }} className="w-full max-w-sm">
-        <div className="mb-9 lg:hidden"><p className="text-[18px] font-semibold tracking-[0.14em]">کلبه وینتیج</p><p className="mt-2 text-[8px] tracking-[0.38em] text-neutral-400">KOLBE VINTAGE</p></div>
-        <p className="text-[9px] tracking-[0.24em] text-neutral-400">ADMIN ACCESS</p><h1 className="mt-3 text-[25px] font-medium tracking-tight">ورود به مرکز مدیریت</h1><p className="mt-2 text-[11px] leading-6 text-neutral-500">برای مدیریت فروشگاه و سرویس عمده‌فروشی وارد شوید.</p>
-        <div className="mt-7 space-y-4"><label className="block text-[10.5px] text-neutral-600">ایمیل مدیر<input autoFocus name="admin-username" type="email" autoComplete="username" value={credentials.username} onChange={(event) => setCredentials((value) => ({ ...value, username: event.target.value }))} className={`mt-1.5 h-11 w-full border border-neutral-300 bg-white px-3 text-[12px] ${focusRing}`} /></label><label className="block text-[10.5px] text-neutral-600">رمز عبور<input name="admin-password" type="password" autoComplete="current-password" value={credentials.password} onChange={(event) => setCredentials((value) => ({ ...value, password: event.target.value }))} className={`mt-1.5 h-11 w-full border border-neutral-300 bg-white px-3 text-[12px] ${focusRing}`} /></label></div>
-        {error && <p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2.5 text-[10.5px] text-red-700">{error}</p>}
-        {!isBackendConfigured && <p role="alert" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2.5 text-[10.5px] text-amber-800">اتصال بک‌اند تنظیم نشده است؛ ورود محلی غیرفعال است.</p>}
-        <button type="submit" disabled={submitting || !isBackendConfigured} className={`mt-5 h-11 w-full bg-[#011c3a] text-[12px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}>{submitting ? "در حال بررسی…" : "ورود به پنل مدیریت"}</button>
+    <AuthShell tone="control" story={<AuthStory eyebrow="ADMIN CONTROL" title="مدیریت دقیق فروشگاه و همکاری‌های تجاری" description="این ورودی تنها برای حساب‌هایی است که نقش مدیریت آن‌ها در نشست سرور تأیید شده است." />}>
+      <AuthPanel labelledBy="admin-auth-title">
+        <AuthBackLink href="/">بازگشت به وب‌سایت</AuthBackLink>
+        <AuthHeader id="admin-auth-title" eyebrow="دسترسی محدود" title="ورود به مرکز مدیریت" description="اطلاعات حساب مدیریت را وارد کنید. سطح دسترسی پس از ورود از سرور بازخوانی می‌شود." />
+        {restoreError ? <AuthError error={presentAuthError(restoreError)} /> : null}
+        {forbidden ? <><AuthError error={accessDenied("نشست فعلی متعلق به حساب مدیریت نیست.")} /><Button variant="secondary" onClick={logout}>خروج از حساب فعلی</Button></> : (
+          <AuthForm onSubmit={async (event) => { event.preventDefault(); setSubmitting(true); setError(null); try { const state = await login({ email: credentials.username, password: credentials.password, ...(totpCode ? { totpCode } : {}) }); if (state.session.status !== "authenticated" || state.session.user.role !== "admin") setError(accessDenied("این حساب دسترسی مدیریت کلبه را ندارد.")); } catch (reason) { if (requiresTotp(reason)) setTotpRequired(true); setError(presentAuthError(reason)); } finally { setSubmitting(false); } }}>
+            <TextField autoFocus name="admin-username" type="email" label="ایمیل مدیر" autoComplete="username" dir="ltr" value={credentials.username} onChange={(event) => setCredentials((value) => ({ ...value, username: event.target.value }))} required disabled={submitting} />
+            <PasswordField name="admin-password" label="رمز عبور" autoComplete="current-password" value={credentials.password} onChange={(password) => setCredentials((value) => ({ ...value, password }))} required disabled={submitting} />
+            {totpRequired ? <TextField name="admin-totp" label="کد یک‌بارمصرف" autoComplete="one-time-code" inputMode="numeric" dir="ltr" value={totpCode} onChange={(event) => setTotpCode(event.target.value)} required disabled={submitting} /> : null}
+            <AuthError error={error} />
+            {!isBackendConfigured ? <InlineNotice intent="warning">اتصال بک‌اند تنظیم نشده است؛ ورود محلی غیرفعال است.</InlineNotice> : null}
+            <Button type="submit" disabled={submitting || !isBackendConfigured}>{submitting ? "در حال تأیید هویت" : "ورود به پنل مدیریت"}</Button>
+          </AuthForm>
+        )}
         <BackendStatus />
-        <Link to="/" className={`mt-3 flex items-center justify-center gap-2 text-[10.5px] text-neutral-500 underline-offset-4 hover:underline ${focusRing}`}><Icon name="arrowLeft" className="h-3.5 w-3.5 rotate-180" />بازگشت به وب‌سایت</Link>
-      </form></section>
-    </main>
+        <AuthFooter>نشست با کوکی HttpOnly برقرار می‌شود و نقش مدیریت از پاسخ سرور خوانده می‌شود.</AuthFooter>
+      </AuthPanel>
+    </AuthShell>
   );
 
   return <div className="admin-system min-h-screen bg-[#f6f6f4]"><header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/95 backdrop-blur-md"><div className="mx-auto flex min-h-[73px] max-w-[1800px] items-center gap-3 px-4 lg:px-6">

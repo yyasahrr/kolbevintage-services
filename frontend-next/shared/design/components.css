@@ -156,3 +156,36 @@
 @media (prefers-reduced-transparency: reduce) { .kolbe-surface[data-surface="glass"], .kolbe-glass-nav, .kolbe-commerce-header { background: var(--kolbe-color-surface-elevated); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 @media (prefers-reduced-motion: no-preference) { @keyframes kolbe-spin { to { transform: rotate(1turn); } } @keyframes kolbe-shimmer { to { background-position: -200% 0; } } @keyframes kolbe-overlay-in { from { opacity: 0; transform: translateY(.75rem) scale(.985); } } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } :where(.kolbe-button, .kolbe-input, .kolbe-product-card__media img, .kolbe-overlay__surface, .kolbe-skeleton, .kolbe-state__spinner) { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* Shared authentication composition: one material language, portal-owned copy. */
+.kolbe-auth { min-height: 100dvh; display: grid; grid-template-columns: minmax(20rem, .84fr) minmax(28rem, 1.16fr); overflow: clip; background: var(--kolbe-color-background); color: var(--kolbe-color-text); font-family: var(--kolbe-typography-font-family); }
+.kolbe-auth__story { position: relative; isolation: isolate; min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; gap: var(--kolbe-layout-space-7); padding: clamp(1.5rem, 4vw, 4.5rem); overflow: hidden; background: var(--kolbe-color-primary); color: var(--kolbe-color-primary-text); }
+.kolbe-auth__story::after { position: absolute; z-index: -1; inset-inline-end: -10rem; inset-block-end: -13rem; width: 30rem; aspect-ratio: 1; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 50%; box-shadow: 0 0 0 4rem color-mix(in srgb, currentColor 3%, transparent), 0 0 0 8rem color-mix(in srgb, currentColor 2%, transparent); content: ""; }
+.kolbe-auth[data-tone="partner"] .kolbe-auth__story { background: color-mix(in srgb, var(--kolbe-color-primary) 88%, var(--kolbe-color-success)); }
+.kolbe-auth[data-tone="control"] .kolbe-auth__story { background: color-mix(in srgb, var(--kolbe-color-primary) 92%, #000); }
+.kolbe-auth__brand { position: relative; display: flex; align-items: center; gap: var(--kolbe-layout-space-3); }
+.kolbe-auth__brand > span:last-child { display: grid; gap: .2rem; }
+.kolbe-auth__brand strong { font-size: var(--kolbe-typography-size-body); letter-spacing: var(--kolbe-typography-letter-spacing-wide); }
+.kolbe-auth__brand small { color: color-mix(in srgb, currentColor 58%, transparent); font: 500 .65rem/1 var(--kolbe-typography-font-family); letter-spacing: .18em; }
+.kolbe-auth__monogram { width: 2.75rem; height: 2.75rem; display: grid; place-items: center; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); border-radius: var(--kolbe-shape-radius-control); font: 700 1rem/1 Georgia, serif; }
+.kolbe-auth__story-copy { position: relative; max-width: 32rem; margin-block: auto; }
+.kolbe-auth__story-copy h2 { max-width: 14ch; margin: var(--kolbe-layout-space-3) 0; color: inherit; font-size: clamp(1.8rem, 3.1vw, 3.6rem); line-height: 1.45; text-wrap: balance; }
+.kolbe-auth__story-copy > p:last-child { max-width: 42rem; margin: 0; color: color-mix(in srgb, currentColor 68%, transparent); line-height: var(--kolbe-typography-line-height-relaxed); }
+.kolbe-auth__eyebrow { margin: 0; color: var(--kolbe-color-accent); font-size: .7rem; font-weight: 700; letter-spacing: .16em; }
+.kolbe-auth__story .kolbe-auth__eyebrow { color: color-mix(in srgb, currentColor 58%, var(--kolbe-color-accent)); }
+.kolbe-auth__entry { min-width: 0; display: grid; place-items: center; padding: clamp(1rem, 5vw, 5rem); }
+.kolbe-auth__panel { width: min(100%, 29rem); display: grid; gap: var(--kolbe-layout-space-5); }
+.kolbe-auth__header { display: grid; gap: var(--kolbe-layout-space-2); }
+.kolbe-auth__header h1 { margin: 0; color: var(--kolbe-color-text); font-size: var(--kolbe-typography-size-h2); line-height: var(--kolbe-typography-line-height-heading); text-wrap: balance; }
+.kolbe-auth__header > p:last-child { margin: 0; color: var(--kolbe-color-muted); line-height: var(--kolbe-typography-line-height-body); }
+.kolbe-auth__form { display: grid; gap: var(--kolbe-layout-space-4); }
+.kolbe-auth__form .kolbe-button { width: 100%; min-height: var(--kolbe-control-control-height-large); }
+.kolbe-auth__back { width: fit-content; display: inline-flex; align-items: center; gap: var(--kolbe-layout-space-2); color: var(--kolbe-color-muted); font-size: var(--kolbe-typography-size-label); text-decoration: none; }
+.kolbe-auth__back svg, .kolbe-auth__footer svg { width: 1rem; height: 1rem; flex: none; }
+.kolbe-auth__back:hover { color: var(--kolbe-color-primary); }
+.kolbe-auth__footer { display: flex; align-items: flex-start; gap: var(--kolbe-layout-space-2); padding-block-start: var(--kolbe-layout-space-4); border-block-start: 1px solid var(--kolbe-color-border); color: var(--kolbe-color-muted); font-size: var(--kolbe-typography-size-caption); line-height: 1.7; }
+.kolbe-auth__switch { display: grid; grid-template-columns: 1fr 1fr; gap: var(--kolbe-layout-space-1); padding: var(--kolbe-layout-space-1); border-radius: var(--kolbe-shape-radius-control); background: var(--kolbe-color-surface-muted); }
+.kolbe-auth__switch button { min-height: 2.5rem; border: 0; border-radius: calc(var(--kolbe-shape-radius-control) - .2rem); background: transparent; color: var(--kolbe-color-muted); }
+.kolbe-auth__switch button[aria-pressed="true"] { background: var(--kolbe-color-surface); color: var(--kolbe-color-text); box-shadow: var(--kolbe-shape-shadow-card); }
+@media (max-width: 767px) { .kolbe-auth { display: block; } .kolbe-auth__story { min-height: auto; padding: 1.25rem; } .kolbe-auth__story-copy { margin-block-start: 2.5rem; } .kolbe-auth__story-copy h2 { max-width: 18ch; margin-block: .65rem; font-size: clamp(1.45rem, 8vw, 2rem); } .kolbe-auth__story-copy > p:last-child { display: none; } .kolbe-auth__entry { min-height: calc(100dvh - 13rem); place-items: start center; padding: 2rem 1rem 3rem; } }
+@media (max-width: 340px) { .kolbe-auth__entry { padding-inline: .75rem; } .kolbe-auth__story { padding-inline: 1rem; } }

@@ -22,17 +22,18 @@ let stopSystemSubscription: (() => void) | undefined;
 
 function browserEnvironment(): ThemeEnvironment | null {
   if (typeof window === "undefined" || typeof document === "undefined") return null;
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const media = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   return {
     read: (key) => window.localStorage.getItem(key),
     write: (key, value) => window.localStorage.setItem(key, value),
-    prefersDark: () => media.matches,
+    prefersDark: () => media?.matches ?? false,
     apply: (theme) => {
       document.documentElement.setAttribute(THEME_ATTRIBUTE, theme);
       document.documentElement.setAttribute("data-kolbe-mode", theme);
       document.documentElement.style.colorScheme = theme;
     },
     subscribeSystem: (listener) => {
+      if (!media) return () => undefined;
       media.addEventListener("change", listener);
       return () => media.removeEventListener("change", listener);
     },

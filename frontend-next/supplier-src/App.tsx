@@ -36,6 +36,8 @@ import { SupportPage } from './pages/support'
 import { TeamPage } from './pages/team'
 import { LoadingRows, Notice, StateBlock, TextButton } from './ui'
 import { useThemePreference } from '../storefront/theme'
+import { AuthError, AuthPanel, AuthShell as SharedAuthShell, AuthStatus, AuthStory, presentAuthError } from '@shared/auth'
+import { Button } from '@shared/components'
 
 export default function App() {
   return (
@@ -47,8 +49,15 @@ export default function App() {
 
 function PortalRoot() {
   const portal = useSupplierPortal()
+  const { resolved: authTheme } = useThemePreference()
   const [restoring, setRestoring] = useState(true)
-  const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [restoreError, setRestoreError] = useState<unknown | null>(null)
+
+  useEffect(() => {
+    // Compatibility style marker only; storefront/theme.ts remains authority.
+    document.documentElement.dataset.supplierTheme = authTheme
+    return () => { delete document.documentElement.dataset.supplierTheme }
+  }, [authTheme])
 
   useEffect(() => {
     let cancelled = false
@@ -60,7 +69,7 @@ function PortalRoot() {
           portal.setSessionState(result.data)
         } else if (result.error.kind !== 'UNAUTHORIZED' && result.error.kind !== 'FORBIDDEN') {
           // خطای واقعیِ بازیابیِ نشست به کاربر گفته می‌شود؛ وانمود به «خروج» نمی‌کنیم.
-          setRestoreError(result.error.message)
+          setRestoreError(result.error)
         }
       })
       .finally(() => {
@@ -73,22 +82,19 @@ function PortalRoot() {
   }, [])
 
   if (restoring) {
-    return (
-      <div className="portal-boot" role="status" aria-live="polite">
-        <LoadingRows count={3} label="در حال بازیابی نشست…" />
-      </div>
-    )
+    return <AuthStatus label="در حال بررسی نشست تأمین‌کننده" />
   }
 
   const authenticated = portal.sessionState.status === 'authenticated' || portal.demoMode
 
+  if (restoreError) {
+    const presented = presentAuthError(restoreError)
+    const safeError = { ...presented, title: 'بازیابی نشست ناموفق بود', message: presented.kind === 'SERVER_ERROR' ? 'خطای سرور' : presented.message }
+    return <SharedAuthShell tone="partner" story={<AuthStory eyebrow="SESSION ERROR" title="نشست تأمین‌کننده تأیید نشد" description="خطای ارتباط یا دسترسی با خروج از حساب یکسان در نظر گرفته نمی‌شود." />}><AuthPanel><AuthError error={safeError} /><Button onClick={() => window.location.reload()}>تلاش دوباره</Button></AuthPanel></SharedAuthShell>
+  }
+
   if (!authenticated) {
-    return (
-      <>
-        {restoreError ? <div className="portal-boot"><Notice tone="danger" title="بازیابی نشست ناموفق بود">{restoreError}</Notice></div> : null}
-        <AuthShell onAuthenticated={() => setRestoreError(null)} />
-      </>
-    )
+    return <AuthShell onAuthenticated={() => setRestoreError(null)} />
   }
 
   return <Portal />

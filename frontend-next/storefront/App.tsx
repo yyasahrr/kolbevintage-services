@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect } from "react";
 import { RouterProvider, useRouter } from "./router";
 import { StoreProvider } from "./store";
-import { SessionProvider } from "./session/SessionProvider";
+import { SessionProvider, useStorefrontSession } from "./session/SessionProvider";
 import { applySeo } from "./seo";
 import { initializeClientLogging } from "./lib/clientLogger";
 import { syncSiteSettingsFromServer, useSiteSettings } from "./siteSettings";
@@ -36,6 +36,7 @@ function Routes() {
   const { path, query } = useRouter();
   const { designSystem, builder } = useSiteSettings();
   const storefrontTheme = useStorefrontTheme();
+  const { session, resolving } = useStorefrontSession();
 
   useLayoutEffect(() => {
     applyDesignSystem(designSystem, storefrontTheme === "dark" ? "dark" : "light");
@@ -64,6 +65,9 @@ function Routes() {
   if (path === "/vip" || path.startsWith("/vip/")) return <VIPPortal />;
   if (path.startsWith("/product/") && query.get("wholesale") === "1") return <VIPPortal />;
   if (path === "/admin") return <AdminPortal />;
+  // The unauthenticated Retail entry is a dedicated auth surface. Once a
+  // customer/VIP session is server-confirmed, the account keeps storefront chrome.
+  if (path === "/account" && (resolving || session.status === "anonymous" || (session.user.role !== "customer" && session.user.role !== "vip"))) return <Account />;
 
   let page: React.ReactNode;
 

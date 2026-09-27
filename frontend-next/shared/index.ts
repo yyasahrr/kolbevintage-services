@@ -23,3 +23,4 @@ export * as money from "./money";
 export * as permissions from "./permissions";
 export * as design from "./design";
 export * as components from "./components";
+export * as auth from "./auth";
