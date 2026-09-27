@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, Inject, Query } from "@nestjs/common";
-import { VipService } from "./vip.service";
+import { VipService, type RequestSummary } from "./vip.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
 import { CatalogDomainError } from "../catalog/catalog.logic";
@@ -16,13 +16,16 @@ export class WholesaleRequestsController {
     @Query("offset") offset?: string,
   ) {
     const result = await this.vipService.listBuyerWholesaleRequests(claims.sub, Number(limit), Number(offset));
-    return { ...result, requests: result.requests.map(toBuyerRequestView) };
+    const summaries = await this.vipService.describeRequests(result.requests);
+    return { ...result, requests: result.requests.map((request: any) => toBuyerRequestView(request, summaries.get(request.id))) };
   }
 
   @Get(":id")
   @Roles("vip", "customer")
   async getBuyerRequest(@CurrentUser() claims: Claims, @Param("id") id: string) {
-    return { request: toBuyerRequestView(await this.vipService.getBuyerWholesaleRequest(id, claims.sub)) };
+    const request = await this.vipService.getBuyerWholesaleRequest(id, claims.sub);
+    const summaries = await this.vipService.describeRequests([request]);
+    return { request: toBuyerRequestView(request, summaries.get(request.id)) };
   }
 
   @Post(":id/revisions")
@@ -229,9 +232,16 @@ export class WholesaleRequestsController {
   }
 }
 
-function toBuyerRequestView(request: any) {
+/**
+ * `summary` is the server's own description of the request — product, colour,
+ * series and the piece total implied by the supplier's recipe. It travels with
+ * the request so the inbox can show what was asked for without the browser
+ * fetching a product per row or guessing what a package id means.
+ */
+function toBuyerRequestView(request: any, summary?: RequestSummary) {
   return {
     id: request.id,
+    summary: summary ?? null,
     productId: request.productId,
     offerId: request.offerId,
     variantId: request.variantId,

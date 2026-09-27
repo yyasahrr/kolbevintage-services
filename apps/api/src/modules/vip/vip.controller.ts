@@ -30,8 +30,16 @@ export class VipController {
   @RequireAdminPermission("wholesale:membership:manage")
   async legacyDecision(@Param("id") id: string, @CurrentUser() claims: Claims, @Body() body: any) { return this.vip.decideLegacyAccount(id, body, claims.sub); }
 
+  /**
+   * The role gate used to be `vip` only, but the canonical storefront session
+   * issues `customer` for VIP buyers and carries the real authority in the
+   * subscription entitlements. As a result a fully entitled buyer was refused
+   * with 403 before the domain ever saw the request. The endpoint now admits
+   * every authenticated storefront role and `createWholesaleRequest` asserts the
+   * active subscription, the approved account and the plan's `rfq` feature.
+   */
   @Post("requests")
-  @Roles("vip")
+  @Roles("vip", "customer")
   async createRequest(
     @CurrentUser() claims: Claims,
     @Body() body: { productId: string; offerId: string; variantId?: string; packageId?: string; quantity: number },

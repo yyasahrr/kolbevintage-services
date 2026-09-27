@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import {
   vipPlan,
   vipSubscription,
@@ -33,6 +33,21 @@ import { AuthService } from "../auth/auth.service";
 
 type Tx = Parameters<Parameters<KolbeDatabase["transaction"]>[0]>[0];
 export type DbOrTx = KolbeDatabase | Tx;
+
+/** What a request means in the buyer's language — read-only, server-derived. */
+export type RequestSummary = {
+  productName: string | null;
+  sellerName: string | null;
+  sellerType: string | null;
+  seriesName: string | null;
+  piecesPerSeries: number | null;
+  totalPieces: number | null;
+  colors: string[];
+  sizes: string[];
+  moqUnit: string | null;
+  pricingUnit: string | null;
+  currency: string | null;
+};
 
 function revisionId(): string {
   return `wrev_${randomUUID().replaceAll("-", "")}`;
@@ -218,6 +233,17 @@ export class VipService {
     if (account.expiresAt && account.expiresAt.getTime() <= Date.now()) {
       throw new ForbiddenError("حساب عمده منقضی شده است");
     }
+    /**
+     * Entitlement — not the account role — decides whether a request may be
+     * created. These two checks are exactly what the canonical session reports
+     * as the `rfq` entitlement (`approved && unexpired account` plus an active
+     * subscription), so the button the buyer was shown and the command that runs
+     * are derived from the same truth.
+     *
+     * `vip_plan.features` and the membership snapshot are deliberately **not**
+     * consulted here: the dataset in use carries no snapshot rows, so gating on
+     * them would refuse an action the session already advertised.
+     */
 
     const [prod] = await db.select().from(product).where(eq(product.id, input.productId)).limit(1);
     if (!prod) throw new NotFoundError("محصول یافت نشد");
@@ -339,6 +365,147 @@ export class VipService {
       throw new NotFoundError("درخواست یافت نشد");
     }
     return request;
+  }
+
+  /**
+   * A buyer-facing description of what was actually requested.
+   *
+   * A wholesale request stores only ids (`productId`, `offerId`, `packageId`,
+   * `variantId`) plus a quantity. That is right for the write model, but it
+   * leaves a request list that can only say "۶ واحد" without telling the buyer
+   * which product, which colour or which series — which is the whole point of
+   * an RFQ inbox.
+   *
+   * The browser must not reconstruct that by fetching each request's product
+   * and package (N+1, and it would let the client decide what a request means).
+   * So the denormalisation happens here, server-side, in a **fixed number of
+   * queries per page**: one per table, batched by id, independent of how many
+   * requests are on the page.
+   *
+   * `totalPieces` is derived from the supplier's own recipe
+   * (`quantity x total_pieces`), which is the same rule the product page uses
+   * for its read-only piece mirror — so the list and the configurator can never
+   * disagree about what "۵ سری" means.
+   */
+  async describeRequests(
+    requests: Array<{ id: string; productId: string; offerId: string; variantId: string | null; packageId: string | null; quantity: number }>,
+    executor?: DbOrTx,
+  ): Promise<Map<string, RequestSummary>> {
+    const db = this.getExecutor(executor);
+    const summaries = new Map<string, RequestSummary>();
+    if (requests.length === 0) return summaries;
+
+    type OfferRow = typeof sellerOffer.$inferSelect;
+    type PackageRow = typeof wholesalePackage.$inferSelect;
+    type VariantRow = typeof productVariant.$inferSelect;
+    type ProductRow = typeof product.$inferSelect;
+    type SellerRow = typeof seller.$inferSelect;
+    type SupplierRow = typeof supplier.$inferSelect;
+
+    const ids = <T extends string>(values: Array<T | null | undefined>): T[] =>
+      [...new Set(values.filter((value): value is T => typeof value === "string" && value.length > 0))];
+
+    // A fixed number of batched reads — never one per request.
+    const offerIds = ids(requests.map((request) => request.offerId));
+    const packageIds = ids(requests.map((request) => request.packageId));
+    const variantIds = ids(requests.map((request) => request.variantId));
+    const productIds = ids(requests.map((request) => request.productId));
+
+    const offers: OfferRow[] = offerIds.length
+      ? (await db.select().from(sellerOffer).where(inArray(sellerOffer.id, offerIds))) as OfferRow[]
+      : [];
+    const packages: PackageRow[] = packageIds.length
+      ? (await db.select().from(wholesalePackage).where(inArray(wholesalePackage.id, packageIds))) as PackageRow[]
+      : [];
+    const directVariants: VariantRow[] = variantIds.length
+      ? (await db.select().from(productVariant).where(inArray(productVariant.id, variantIds))) as VariantRow[]
+      : [];
+    const products: ProductRow[] = productIds.length
+      ? (await db.select().from(product).where(inArray(product.id, productIds))) as ProductRow[]
+      : [];
+
+    const offerById = new Map<string, OfferRow>(offers.map((row) => [row.id, row]));
+    const packageById = new Map<string, PackageRow>(packages.map((row) => [row.id, row]));
+    const productById = new Map<string, ProductRow>(products.map((row) => [row.id, row]));
+
+    /** Colour and size belong to the variants a package really contains. */
+    const itemsByPackage = new Map<string, Array<{ variantId: string; quantity: number }>>();
+    if (packageIds.length) {
+      const items = (await db.select().from(wholesalePackageItem)
+        .where(inArray(wholesalePackageItem.packageId, packageIds))) as Array<typeof wholesalePackageItem.$inferSelect>;
+      for (const item of items) {
+        const list = itemsByPackage.get(item.packageId) ?? [];
+        list.push({ variantId: item.variantId, quantity: item.quantity });
+        itemsByPackage.set(item.packageId, list);
+      }
+    }
+
+    const recipeVariantIds = ids([...itemsByPackage.values()].flatMap((items) => items.map((item) => item.variantId)));
+    const recipeVariants: VariantRow[] = recipeVariantIds.length
+      ? (await db.select().from(productVariant).where(inArray(productVariant.id, recipeVariantIds))) as VariantRow[]
+      : [];
+    const variantById = new Map<string, VariantRow>(
+      [...recipeVariants, ...directVariants].map((row) => [row.id, row]),
+    );
+
+    const sellerIds = ids(offers.map((row) => row.sellerId));
+    const sellers: SellerRow[] = sellerIds.length
+      ? (await db.select().from(seller).where(inArray(seller.id, sellerIds))) as SellerRow[]
+      : [];
+    const sellerById = new Map<string, SellerRow>(sellers.map((row) => [row.id, row]));
+    const supplierIds = ids(sellers.map((row) => row.supplierId));
+    const suppliers: SupplierRow[] = supplierIds.length
+      ? (await db.select().from(supplier).where(inArray(supplier.id, supplierIds))) as SupplierRow[]
+      : [];
+    const supplierById = new Map<string, SupplierRow>(suppliers.map((row) => [row.id, row]));
+
+    const attributeText = (variant: VariantRow | undefined, key: string): string | null => {
+      const attributes = (variant?.attributes ?? null) as Record<string, unknown> | null;
+      const value = attributes && typeof attributes === "object" ? attributes[key] : null;
+      return typeof value === "string" && value.trim() ? value.trim() : null;
+    };
+    const colorOf = (variantId: string): string | null => {
+      const variant = variantById.get(variantId);
+      return attributeText(variant, "color") ?? attributeText(variant, "colour");
+    };
+
+    for (const request of requests) {
+      const offer = offerById.get(request.offerId) ?? null;
+      const pkg = request.packageId ? packageById.get(request.packageId) ?? null : null;
+      const directVariant = request.variantId ? variantById.get(request.variantId) ?? null : null;
+      const sellerRow = offer ? sellerById.get(offer.sellerId) ?? null : null;
+      const supplierRow = sellerRow?.supplierId ? supplierById.get(sellerRow.supplierId) ?? null : null;
+      const recipe = pkg ? itemsByPackage.get(pkg.id) ?? [] : [];
+
+      const colors = [...new Set(
+        (recipe.length ? recipe.map((item) => colorOf(item.variantId)) : directVariant ? [colorOf(directVariant.id)] : [])
+          .filter((value): value is string => !!value),
+      )];
+      const sizes = [...new Set(
+        (recipe.length
+          ? recipe.map((item) => attributeText(variantById.get(item.variantId), "size"))
+          : directVariant ? [attributeText(directVariant, "size")] : [])
+          .filter((value): value is string => !!value),
+      )];
+
+      const piecesPerSeries = typeof pkg?.totalPieces === "number" && pkg.totalPieces > 0 ? pkg.totalPieces : null;
+      const totalPieces = piecesPerSeries === null ? null : piecesPerSeries * (request.quantity || 0);
+
+      summaries.set(request.id, {
+        productName: productById.get(request.productId)?.name ?? null,
+        sellerName: supplierRow?.legalName ?? supplierRow?.displayName ?? sellerRow?.displayName ?? null,
+        sellerType: sellerRow?.type ?? null,
+        seriesName: pkg?.name ?? null,
+        piecesPerSeries,
+        totalPieces,
+        colors,
+        sizes,
+        moqUnit: offer?.moqUnit ?? null,
+        pricingUnit: offer?.pricingUnit ?? offer?.moqUnit ?? null,
+        currency: offer?.currency ?? null,
+      });
+    }
+    return summaries;
   }
 
   async listBuyerRequestRevisions(requestId: string, userId: string, executor?: DbOrTx) {

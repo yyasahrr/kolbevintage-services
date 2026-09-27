@@ -8,7 +8,21 @@ export type BuyerAddress = { id: string; label: string; recipientName: string; r
 export type AddressInput = Omit<BuyerAddress, "id" | "version" | "createdAt" | "updatedAt">;
 export type BuyerSupportCase = { id: string; publicReference: string; subject: string; category: string; priority: string; status: string; createdAt: string; updatedAt: string };
 export type SupportMessage = { id: string; body: string; authorType: string; authorDisplayName?: string | null; createdAt: string };
-export type BuyerRequest = { id: string; productId: string; offerId: string; variantId?: string | null; packageId?: string | null; quantity: number; status: string; rejectionReason?: string | null; version: number; acceptedAt?: string | null; acceptanceExpiresAt?: string | null; createdAt: string; updatedAt: string };
+/** سرور توضیح می‌دهد درخواست در زبانِ خریدار یعنی چه؛ مرورگر چیزی استنتاج نمی‌کند. */
+export type BuyerRequestSummary = {
+  productName: string | null;
+  sellerName: string | null;
+  sellerType: string | null;
+  seriesName: string | null;
+  piecesPerSeries: number | null;
+  totalPieces: number | null;
+  colors: string[];
+  sizes: string[];
+  moqUnit: string | null;
+  pricingUnit: string | null;
+  currency: string | null;
+};
+export type BuyerRequest = { id: string; productId: string; offerId: string; variantId?: string | null; packageId?: string | null; quantity: number; status: string; rejectionReason?: string | null; version: number; acceptedAt?: string | null; acceptanceExpiresAt?: string | null; createdAt: string; updatedAt: string; summary?: BuyerRequestSummary | null };
 export type BuyerRequestRevision = { id: string; requestId: string; revisionNumber: number; proposedQuantity?: number | null; proposedVariantId?: string | null; proposedPackageId?: string | null; proposedUnitPrice?: string | null; pricingUnit?: string | null; currency?: string; reason?: string | null; buyerResponse?: string | null; buyerRespondedAt?: string | null; createdAt: string };
 export type VipPlan = { id: string; name: string; slug?: string; price: string; durationDays: number; features?: unknown; limits?: unknown; status: string };
 
