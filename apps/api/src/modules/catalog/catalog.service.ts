@@ -1215,7 +1215,14 @@ export class CatalogService {
     const allOffers = await this.db
       .select()
       .from(sellerOffer)
-      .where(and(eq(sellerOffer.productId, id), eq(sellerOffer.status, "published")));
+      .where(and(eq(sellerOffer.productId, id), eq(sellerOffer.status, "published")))
+      /**
+       * Deterministic order. Without an ORDER BY, PostgreSQL may return the
+       * offers of one product in any order, which made "the first offer" a
+       * coin flip for every caller — the buyer could be shown the single-piece
+       * offer of a product that is really sold as a series.
+       */
+      .orderBy(sellerOffer.id);
     /**
      * A product-level offer (`variantId === null`) is legitimate in this domain:
      * a supplier declares one offer SKU and one wholesale price for the whole
