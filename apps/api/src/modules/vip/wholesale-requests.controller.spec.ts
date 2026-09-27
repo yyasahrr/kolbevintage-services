@@ -6,6 +6,7 @@ describe("WholesaleRequestsController buyer ownership boundary", () => {
     const service = {
       listBuyerWholesaleRequests: vi.fn().mockResolvedValue({ requests: [], total: 0 }),
       getBuyerWholesaleRequest: vi.fn().mockResolvedValue({ id: "wr-1", status: "pending", version: 0 }),
+      describeRequests: vi.fn().mockResolvedValue(new Map()),
     };
     const controller = new WholesaleRequestsController(service as any);
     const claims = { sub: "buyer-a", role: "vip" } as any;
@@ -13,6 +14,8 @@ describe("WholesaleRequestsController buyer ownership boundary", () => {
     await controller.getBuyerRequest(claims, "wr-1");
     expect(service.listBuyerWholesaleRequests).toHaveBeenCalledWith("buyer-a", 10, 0);
     expect(service.getBuyerWholesaleRequest).toHaveBeenCalledWith("wr-1", "buyer-a");
+    expect(service.describeRequests).toHaveBeenCalledWith([]);
+    expect(service.describeRequests).toHaveBeenCalledWith([expect.objectContaining({ id: "wr-1" })]);
   });
 
   it("scopes revision reads for buyers while preserving the supplier path", async () => {
