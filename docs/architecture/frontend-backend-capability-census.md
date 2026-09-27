@@ -265,44 +265,44 @@ Each capability is classified into one of these categories:
 | vip-catalog-detail | Product detail | catalog | `storefront/pages/WholesaleCatalog.tsx` | CURRENT | ✅ L5 Complete | Variants, MOQ, packages, pricing tiers |
 | vip-seller-distinction | Kolbe vs Supplier | catalog | `storefront/pages/WholesaleCatalog.tsx` | CURRENT | ✅ Complete | Seller badges from ownerType |
 | vip-entitlements | Catalog, RFQ entitlements | vip | `shared/session/useVipCapabilities.ts` | CURRENT | ✅ Complete | Server-derived from session |
-| vip-rfq | RFQ/request flow | vip | Not implemented | MISSING | 🔴 Not implemented | `POST /api/v1/vip/requests` exists |
+| vip-rfq | RFQ/request flow | vip | `VipRequestsPage` + typed adapter | CURRENT | ✅ L4 canonical | Buyer list/detail read gap closed; browser/DB L5 proof blocked |
 
 #### 3.3 Orders & Fulfillment
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| vip-orders-list | Order list | orders | Partial (localStorage draft) | PARTIAL | ⚠️ Needs canonical | `GET /api/v1/wholesale/orders` exists |
-| vip-order-detail | Order detail | orders | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/wholesale/orders/:id` exists |
-| vip-order-timeline | Order timeline | orders | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/wholesale/orders/:id/timeline` exists |
-| vip-order-children | Child orders | orders | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/wholesale/orders/:id/children` exists |
-| vip-order-exceptions | Exceptions | orders | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/wholesale/orders/:id/exceptions` exists |
-| vip-order-cancel | Cancel order | orders | Not implemented | MISSING | 🔴 Not implemented | `POST /api/v1/wholesale/orders/:id/cancel` exists |
+| vip-orders-list | Order list | orders | `VipOrdersPage` | CURRENT | ✅ L4 canonical | Cursor pagination; no browser truth |
+| vip-order-detail | Order detail | orders | On-demand order dialog | CURRENT | ✅ L4 canonical | Snapshot lines, children, links and exceptions |
+| vip-order-timeline | Order timeline | orders | Server event timeline | CURRENT | ✅ L4 canonical | No manufactured milestones |
+| vip-order-children | Child orders | orders | Order detail | CURRENT | ✅ L4 canonical | Server child rows only |
+| vip-order-exceptions | Exceptions | orders | Order detail | CURRENT | ✅ L4 canonical | Never labeled returns |
+| vip-order-cancel | Cancel order | orders | Versioned confirmation dialog | CURRENT | ✅ L4 canonical | Stable command idempotency key |
 
 #### 3.4 Shipping & Tracking
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| vip-shipping-list | Shipment list | shipping | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/wholesale/orders/:id/shipments` exists |
-| vip-shipping-detail | Shipment detail | shipping | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/wholesale/orders/:id/shipments/:shipmentId` exists |
+| vip-shipping-list | Shipment list | shipping | Order detail | CURRENT | ✅ L4 canonical | Buyer-safe tracking fields only |
+| vip-shipping-detail | Shipment detail | shipping | Order detail summary | PARTIAL | ⚠️ L4 read | Dedicated nested detail interaction remains below L5 |
 
 #### 3.5 Invoicing
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| vip-invoices-list | Invoice list | invoicing | Fake page | PARTIAL | ⚠️ Needs canonical | `GET /api/v1/invoicing/wholesale/:orderId` exists |
-| vip-invoice-detail | Invoice detail | invoicing | Not implemented | MISSING | 🔴 Not implemented | `GET /api/v1/invoicing/invoices/:id` exists |
+| vip-invoices-list | Invoice list | invoicing | Lazy order-indexed browser | CURRENT | ✅ L4 canonical | No global endpoint or eager N+1 assumed |
+| vip-invoice-detail | Invoice detail | invoicing | On-demand invoice dialog | CURRENT | ✅ L4 canonical | Buyer read-only |
 
 #### 3.6 Support
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| vip-support | Support cases, messages | support | `wholesaleSupport.ts` (localStorage) | PARTIAL | ⚠️ Needs canonical | `POST /api/v1/vip/support/cases` exists |
+| vip-support | Support cases, messages | support | `VipSupportPage` | CURRENT | ✅ L4 canonical | Own-case list/detail/create/reply; no attachments |
 
 #### 3.7 Account Management
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| vip-addresses | Address book | customer-account | Hardcoded | PARTIAL | ⚠️ Needs canonical | `GET /api/v1/customer/addresses` exists |
+| vip-addresses | Address book | customer-account | `VipAddressesPage` | CURRENT | ✅ L4 canonical | CRUD, make-default and versioned update |
 | vip-team | Team members | N/A | Hardcoded page | PRESENTATION | ⚠️ Remove | No backend support, remove from navigation |
 | vip-issues-returns | Issues/returns | N/A | Presentation categories | PRESENTATION | ⚠️ Remove | No wholesale returns backend, remove |
 
