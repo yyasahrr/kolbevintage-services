@@ -16,8 +16,9 @@ type Dashboard = {
   generatedAt: string;
 };
 
+// The analytics contract reports IRR as an integer string; never round it through Number.
 const number = (value: string | number) => new Intl.NumberFormat("fa-IR").format(typeof value === "string" ? BigInt(value) : value);
-const money = (value: string) => `${number(value)} تومان`;
+const money = (value: string) => `${number(value)} ریال`;
 
 export default function AdminRetailDashboard() {
   const [data, setData] = useState<Dashboard | null>(null);

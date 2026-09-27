@@ -28,7 +28,7 @@ describe("admin retail dashboard canonical read", () => {
       query: { preset: "LAST_30_DAYS" },
     }));
     expect(screen.getByText("R-42", { exact: false })).toBeTruthy();
-    expect(screen.getByText("۱٬۲۵۰٬۰۰۰ تومان")).toBeTruthy();
+    expect(screen.getByText("۱٬۲۵۰٬۰۰۰ ریال")).toBeTruthy();
   });
 
   it("shows a recoverable failure without synthetic metrics", async () => {
