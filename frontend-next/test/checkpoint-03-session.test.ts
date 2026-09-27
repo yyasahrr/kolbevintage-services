@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { presentAuthError } from "../shared/auth/errors";
 import { createApiClient } from "../shared/http/client";
 import { ApiError } from "../shared/http/errors";
@@ -82,6 +84,22 @@ describe("Checkpoint 03 canonical session", () => {
 });
 
 describe("Checkpoint 03 portal gates and truthful errors", () => {
+  it("keeps Retail, Admin and Supplier adapters on the canonical server boundary", () => {
+    const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, "..", file), "utf8");
+    const retail = source("storefront/lib/siteAuthApi.ts");
+    const admin = source("storefront/pages/AdminPortal.tsx");
+    const wholesale = source("storefront/lib/wholesaleApi.ts");
+    const supplier = source("shared/supplier/session.ts");
+
+    expect(retail).toContain("await restoreSiteCustomer()");
+    expect(retail).not.toContain("/store/kolbe/me");
+    expect(admin).toContain('session.user.role === "admin"');
+    expect(admin).toContain('session.user.role !== "admin"');
+    expect(wholesale).not.toContain("signInAdmin");
+    expect(supplier).toContain('session.user.role !== "supplier"');
+    expect(supplier).toContain("session.supplier?.supplierId");
+  });
+
   it("covers anonymous, no-membership, pending, active and entitlement denial", async () => {
     const activeResult = await boundary([{ method: "GET", path: "/api/v1/auth/me", status: 200, body: ME }]).restoreResult();
     if (!activeResult.ok) throw activeResult.error;

@@ -23,8 +23,12 @@ describe("Checkpoint 03 shared auth UI", () => {
   it("uses the shared password visibility control", () => {
     render(<AuthHarness/>);
     const input = screen.getByLabelText("رمز عبور");
-    fireEvent.click(screen.getByRole("button", { name: "نمایش رمز عبور" }));
+    const toggle = screen.getByRole("button", { name: "نمایش رمز عبور" });
+    expect(toggle.getAttribute("type")).toBe("button");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
     expect(input.getAttribute("type")).toBe("text");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("keeps portal auth source on shared PasswordField", () => {
