@@ -15,7 +15,12 @@ const RouterContext = createContext<RouterValue>({
 
 function readLocation() {
   const hashRoute = window.location.hash.replace(/^#/, "");
-  const raw = hashRoute || `${window.location.pathname}${window.location.search}` || "/";
+  // VIP commerce uses real pathname navigation. Hash routing remains only as a
+  // compatibility seam for the older storefront/admin surfaces.
+  const pathnameRoute = `${window.location.pathname}${window.location.search}`;
+  const raw = window.location.pathname.startsWith("/vip") || window.location.pathname === "/wholesale-dashboard"
+    ? pathnameRoute
+    : hashRoute || pathnameRoute || "/";
   const [path, search = ""] = raw.split("?");
   const normalizedPath = path.length > 1 ? path.replace(/\/+$/, "") : path;
   return { path: normalizedPath || "/", query: new URLSearchParams(search) };
@@ -42,7 +47,12 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   const navigate = (to: string) => {
     const target = to.startsWith("#") ? to.slice(1) : to;
     if (target === state.path + (state.query.toString() ? "?" + state.query.toString() : "")) return;
-    window.location.hash = target;
+    if (target.startsWith("/vip") || target === "/wholesale-dashboard") {
+      window.history.pushState(null, "", target);
+      setState(readLocation());
+    } else {
+      window.location.hash = target;
+    }
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   };
 
@@ -66,9 +76,10 @@ export function Link({
   children: ReactNode;
 } & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href">) {
   const { navigate } = useRouter();
+  const pathnameTarget = to.startsWith("/vip") || to === "/wholesale-dashboard";
   return (
     <a
-      href={"#" + to}
+      href={pathnameTarget ? to : "#" + to}
       className={className}
       onClick={(e) => {
         // Interactive controls inside a linked card can cancel navigation.
