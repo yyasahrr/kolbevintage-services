@@ -34,7 +34,7 @@ export class VipController {
   @Roles("vip")
   async createRequest(
     @CurrentUser() claims: Claims,
-    @Body() body: { productId: string; offerId: string; packageId?: string; quantity: number },
+    @Body() body: { productId: string; offerId: string; variantId?: string; packageId?: string; quantity: number },
   ) {
     return this.vip.createWholesaleRequest({ ...body, userId: claims.sub });
   }

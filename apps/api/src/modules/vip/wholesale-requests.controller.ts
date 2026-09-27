@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Inject } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Inject, Query } from "@nestjs/common";
 import { VipService } from "./vip.service";
 import { CurrentUser, Roles } from "../../common/guards/session.guard";
 import type { Claims } from "../../common/session";
@@ -7,6 +7,23 @@ import { CatalogDomainError } from "../catalog/catalog.logic";
 @Controller("wholesale/requests")
 export class WholesaleRequestsController {
   constructor(@Inject(VipService) private readonly vipService: VipService) {}
+
+  @Get()
+  @Roles("vip", "customer")
+  async listBuyerRequests(
+    @CurrentUser() claims: Claims,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ) {
+    const result = await this.vipService.listBuyerWholesaleRequests(claims.sub, Number(limit), Number(offset));
+    return { ...result, requests: result.requests.map(toBuyerRequestView) };
+  }
+
+  @Get(":id")
+  @Roles("vip", "customer")
+  async getBuyerRequest(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    return { request: toBuyerRequestView(await this.vipService.getBuyerWholesaleRequest(id, claims.sub)) };
+  }
 
   @Post(":id/revisions")
   @Roles("supplier", "admin")
@@ -185,8 +202,12 @@ export class WholesaleRequestsController {
 
   @Get(":id/revisions")
   @Roles("vip", "customer", "supplier", "admin")
-  async listRevisions(@Param("id") id: string) {
-    const revisions = await this.vipService.listRevisions(id);
+  async listRevisions(@CurrentUser() claims: Claims, @Param("id") id: string) {
+    const revisions = claims.role === "vip" || claims.role === "customer"
+      ? await this.vipService.listBuyerRequestRevisions(id, claims.sub)
+      : claims.role === "supplier"
+        ? await this.vipService.listSupplierRequestRevisions(id, claims.sub)
+        : await this.vipService.listRevisions(id);
     return {
       revisions: revisions.map((r: any) => ({
         id: r.id,
@@ -206,4 +227,22 @@ export class WholesaleRequestsController {
       })),
     };
   }
+}
+
+function toBuyerRequestView(request: any) {
+  return {
+    id: request.id,
+    productId: request.productId,
+    offerId: request.offerId,
+    variantId: request.variantId,
+    packageId: request.packageId,
+    quantity: request.quantity,
+    status: request.status,
+    rejectionReason: request.rejectionReason,
+    version: request.version,
+    acceptedAt: request.acceptedAt,
+    acceptanceExpiresAt: request.acceptanceExpiresAt,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt,
+  };
 }

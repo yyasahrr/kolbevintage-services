@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import {
   vipPlan,
   vipSubscription,
@@ -312,6 +312,53 @@ export class VipService {
       .returning();
 
     return req;
+  }
+
+  async listBuyerWholesaleRequests(userId: string, limit = 20, offset = 0, executor?: DbOrTx) {
+    const db = this.getExecutor(executor);
+    const [account] = await db.select().from(wholesaleAccount).where(eq(wholesaleAccount.userId, userId)).limit(1);
+    if (!account) return { requests: [], total: 0 };
+    const safeLimit = Math.min(Math.max(Math.trunc(limit) || 20, 1), 50);
+    const safeOffset = Math.max(Math.trunc(offset) || 0, 0);
+    const requests = await db.select().from(wholesaleRequest)
+      .where(eq(wholesaleRequest.vipAccountId, account.id))
+      .orderBy(desc(wholesaleRequest.createdAt), desc(wholesaleRequest.id))
+      .limit(safeLimit).offset(safeOffset);
+    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(wholesaleRequest)
+      .where(eq(wholesaleRequest.vipAccountId, account.id));
+    return { requests, total: count };
+  }
+
+  async getBuyerWholesaleRequest(requestId: string, userId: string, executor?: DbOrTx) {
+    const db = this.getExecutor(executor);
+    const [request] = await db.select().from(wholesaleRequest).where(eq(wholesaleRequest.id, requestId)).limit(1);
+    if (!request) throw new NotFoundError("درخواست یافت نشد");
+    const [account] = await db.select().from(wholesaleAccount).where(eq(wholesaleAccount.id, request.vipAccountId)).limit(1);
+    if (!account || account.userId !== userId) {
+      // A uniform not-found response prevents request-id enumeration across buyers.
+      throw new NotFoundError("درخواست یافت نشد");
+    }
+    return request;
+  }
+
+  async listBuyerRequestRevisions(requestId: string, userId: string, executor?: DbOrTx) {
+    const db = this.getExecutor(executor);
+    await this.getBuyerWholesaleRequest(requestId, userId, db);
+    return this.listRevisions(requestId, db);
+  }
+
+  async listSupplierRequestRevisions(requestId: string, userId: string, executor?: DbOrTx) {
+    const db = this.getExecutor(executor);
+    const [request] = await db.select().from(wholesaleRequest).where(eq(wholesaleRequest.id, requestId)).limit(1);
+    if (!request) throw new NotFoundError("درخواست یافت نشد");
+    const [offer] = await db.select().from(sellerOffer).where(eq(sellerOffer.id, request.offerId)).limit(1);
+    const [sellerRow] = offer ? await db.select().from(seller).where(eq(seller.id, offer.sellerId)).limit(1) : [];
+    if (!sellerRow?.supplierId) throw new NotFoundError("درخواست یافت نشد");
+    const { supplierMember } = await import("@kolbe/database");
+    const [member] = await db.select().from(supplierMember)
+      .where(and(eq(supplierMember.supplierId, sellerRow.supplierId), eq(supplierMember.userId, userId))).limit(1);
+    if (!member) throw new NotFoundError("درخواست یافت نشد");
+    return this.listRevisions(requestId, db);
   }
 
   async transitionRequest(

@@ -95,18 +95,12 @@ export class VipSupportController {
 
     const list = await this.caseService.listCases({
       requesterType: "VIP_BUYER",
+      requesterUserId: claims.sub,
+      wholesaleAccountId: accountId,
       limit: limit ? Number.parseInt(limit, 10) : 20,
       offset: offset ? Number.parseInt(offset, 10) : 0,
     });
-
-    const myCases = list.cases.filter(
-      (c) => c.wholesaleAccountId === accountId || c.requesterUserId === claims.sub,
-    );
-
-    return toApiJson({
-      cases: myCases,
-      total: myCases.length,
-    });
+    return toApiJson(list);
   }
 
   @Get(":id")
