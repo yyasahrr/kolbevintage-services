@@ -8,8 +8,9 @@
  *   node scripts/pg.mjs status   → وضعیت پورت
  *
  * باینریهای postgres از پکیج npm  @embedded-postgres/linux-x64  میآیند و
- * دیتای دیتابیس داخل `.postgres-data` در workspace نگهداری می‌شود. این مسیر
- * هم در توسعه و هم در runner لینوکس writable است و وارد git نمی‌شود.
+ * دیتای توسعه داخل `.postgres-data` نگهداری می‌شود؛ در NODE_ENV=test یک
+ * cluster مجزای checkout در temp سیستم انتخاب می‌شود تا تست‌ها به دیتای
+ * محلی توسعه یا runner دست نزنند. KOLBE_PG_DIR هر دو پیش‌فرض را override می‌کند.
  * ساخت جداول و (در صورت مجاز بودن) کاشت
  * دادهٔ نمایشی در اولین درخواست API انجام می‌شود — کاشت فقط با
  * `KOLBE_SEED_DEMO_DATA=true` و در محیط غیرِ تولید (اصلاح D18).
@@ -20,6 +21,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const platformPackage = {
@@ -48,7 +50,9 @@ function readDatabaseUrl() {
 }
 
 const parsedDatabaseUrl = new URL(readDatabaseUrl() ?? "postgres://postgres:postgres@127.0.0.1:55432/kolbe");
-const DB_DIR = process.env.KOLBE_PG_DIR ?? path.join(ROOT, ".postgres-data");
+const testRuntimeId = createHash("sha256").update(ROOT).digest("hex").slice(0, 12);
+const TEST_DB_DIR = path.join(os.tmpdir(), "kolbe-vintage-postgres", testRuntimeId);
+const DB_DIR = process.env.KOLBE_PG_DIR ?? (process.env.NODE_ENV === "test" ? TEST_DB_DIR : path.join(ROOT, ".postgres-data"));
 const PORT = Number(process.env.KOLBE_PG_PORT ?? parsedDatabaseUrl.port ?? 5432);
 const HOST = parsedDatabaseUrl.hostname === "localhost" ? "127.0.0.1" : parsedDatabaseUrl.hostname;
 const USER = decodeURIComponent(parsedDatabaseUrl.username || "postgres");

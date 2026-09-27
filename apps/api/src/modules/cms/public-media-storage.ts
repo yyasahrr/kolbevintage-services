@@ -1,5 +1,5 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { DomainError, ErrorCodes } from "@kolbe/shared";
@@ -40,8 +40,7 @@ export class LocalPublicMediaStorage implements PublicMediaStorage {
   async put(input: PublicMediaPut): Promise<PublicMediaObject> {
     const safeKey = input.objectKey.replace(/^\/+/, "");
     if (safeKey.includes("..") || safeKey.includes("\\")) throw new DomainError(422, ErrorCodes.INVALID_INPUT, "Unsafe media object key");
-    const target = resolve(this.root, safeKey);
-    if (!target.startsWith(`${this.root}/`) && target !== this.root) throw new DomainError(422, ErrorCodes.INVALID_INPUT, "Unsafe media object key");
+    const target = this.resolveSafePath(safeKey);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, input.bytes, { flag: "wx" });
     const assetId = safeKey.replace(/^cms\//, "").replace(/\.[A-Za-z0-9]{1,8}$/u, "");
@@ -59,8 +58,15 @@ export class LocalPublicMediaStorage implements PublicMediaStorage {
   private safePath(objectKey: string): string {
     const safeKey = objectKey.replace(/^\/+/, "");
     if (safeKey.includes("..") || safeKey.includes("\\")) throw new DomainError(422, ErrorCodes.INVALID_INPUT, "Unsafe media object key");
+    return this.resolveSafePath(safeKey);
+  }
+
+  private resolveSafePath(safeKey: string): string {
     const target = resolve(this.root, safeKey);
-    if (!target.startsWith(`${this.root}/`)) throw new DomainError(422, ErrorCodes.INVALID_INPUT, "Unsafe media object key");
+    const fromRoot = relative(this.root, target);
+    if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+      throw new DomainError(422, ErrorCodes.INVALID_INPUT, "Unsafe media object key");
+    }
     return target;
   }
 }

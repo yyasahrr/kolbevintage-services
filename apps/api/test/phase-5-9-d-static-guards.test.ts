@@ -30,7 +30,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 const sources = walk(SRC);
 const read = (file: string) => readFileSync(file, "utf8");
-const rel = (file: string) => path.relative(ROOT, file);
+const rel = (file: string) => path.relative(ROOT, file).split(path.sep).join("/");
 
 function filesWriting(tableObject: string, sqlTable: string): string[] {
   const drizzleWrite = new RegExp(`\\b(insert|update|delete)\\s*\\(\\s*${tableObject}\\b`);

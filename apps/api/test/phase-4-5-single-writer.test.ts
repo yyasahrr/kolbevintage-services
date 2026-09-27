@@ -84,7 +84,8 @@ const ALLOWED_PATH_FRAGMENTS = [
 ];
 
 function isAllowedPath(filePath: string): boolean {
-  return ALLOWED_PATH_FRAGMENTS.some((frag) => filePath.includes(frag));
+  const portablePath = filePath.split(path.sep).join("/");
+  return ALLOWED_PATH_FRAGMENTS.some((frag) => portablePath.includes(frag));
 }
 
 function scanFiles(dir: string, exts: string[] = [".ts", ".js", ".tsx"]): string[] {

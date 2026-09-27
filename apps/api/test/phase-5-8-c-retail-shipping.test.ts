@@ -765,10 +765,9 @@ describe("Phase 5.8-C retail shipping + fulfillment lifecycle", () => {
     const created = await retailOrders.createRetailShipment(ids.N27, admin(), { idempotencyKey: makeId("ship"), providerName: "manual" });
     await retailOrders.markRetailShipmentHandoff(created.shipment.id, admin(), { idempotencyKey: makeId("hand") });
     await retailOrders.recordRetailManualTracking(created.shipment.id, admin(), { state: "delivered" });
-    // Drop one template: the relay fails the delivery, commerce stays delivered.
+    // Disable one template without destroying historical delivery references.
     const [doomed] = await db.select().from(schema.notificationTemplate).where(eq(schema.notificationTemplate.templateKey, "retail_shipment_created_inapp"));
-    await db.delete(schema.notificationTemplateVersion).where(eq(schema.notificationTemplateVersion.templateId, (doomed as any).id));
-    await db.delete(schema.notificationTemplate).where(eq(schema.notificationTemplate.templateKey, "retail_shipment_created_inapp"));
+    await db.update(schema.notificationTemplate).set({ status: "INACTIVE" }).where(eq(schema.notificationTemplate.id, (doomed as any).id));
     const [createdFact] = await factRows(ids.N27, "retail_order.shipment_created");
     const failed = await relay.relayEvent((createdFact as any).id);
     expect(failed.failures).toBe(1);

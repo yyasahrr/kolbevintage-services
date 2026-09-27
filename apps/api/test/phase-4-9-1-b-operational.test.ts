@@ -12,6 +12,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -61,7 +62,7 @@ describe("Phase 4.9.1 — Checkpoint B: Operational Proof & Closeout", () => {
   describe("B1: Real Backup -> Restore Smoke Verification", () => {
     const srcUrl = `postgres://postgres:postgres@127.0.0.1:55432/${SRC_SMOKE_DB}`;
     const dstUrl = `postgres://postgres:postgres@127.0.0.1:55432/${DST_SMOKE_DB}`;
-    const tempBackupPath = path.join("/tmp", `kolbe_smoke_backup_${Date.now()}.sql`);
+    const tempBackupPath = path.join(tmpdir(), `kolbe_smoke_backup_${Date.now()}.sql`);
 
     beforeAll(async () => {
       const admin = new Client({ connectionString: ADMIN_URL });

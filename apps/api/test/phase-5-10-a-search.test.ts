@@ -47,7 +47,8 @@ describe("Phase 5.10-A search", () => {
     try {
       await adminClient.query(`DROP DATABASE IF EXISTS "${TEST_DB}" WITH (FORCE)`);
       // Unicode CTYPE: pg_trgm cannot tokenize Persian under C (see 0040).
-      await adminClient.query(`CREATE DATABASE "${TEST_DB}" TEMPLATE template0 LC_COLLATE 'C.utf8' LC_CTYPE 'C.utf8'`);
+      const ctype = process.platform === "win32" ? "fa-IR" : "C.utf8";
+      await adminClient.query(`CREATE DATABASE "${TEST_DB}" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE '${ctype}'`);
     } finally {
       await adminClient.end();
     }
