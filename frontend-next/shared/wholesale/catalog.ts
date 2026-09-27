@@ -39,7 +39,17 @@ export type WholesaleCatalogItem = {
   moqUnit: string | null;
   packageLabel: string | null;
   sellerName: string | null;
+  /**
+   * رنگ‌ها از ویژگی‌های واریانت‌های واقعیِ محصول (سرور) — برای کارتِ کاتالوگ.
+   * هرگز از نامِ محصول یا حدسِ مرورگر ساخته نمی‌شود.
+   */
+  colors: WholesaleColor[];
+  /** تعدادِ سری/بسته‌هایی که تأمین‌کننده برای این محصول تعریف کرده است. */
+  seriesCount: number;
 };
+
+/** یک رنگِ واقعیِ کاتالوگ: برچسب + کدِ-hex اگر تأمین‌کننده ثبت کرده باشد. */
+export type WholesaleColor = { label: string; hex: string | null };
 
 export type WholesaleCatalogPage = Page<WholesaleCatalogItem>;
 
@@ -194,6 +204,12 @@ export function mapWholesaleCatalogItem(raw: unknown): WholesaleCatalogItem | nu
     moqUnit: nullableText(raw.moqUnit ?? raw.moq_unit),
     packageLabel: nullableText(raw.packageName ?? raw.packageLabel ?? raw.packageType),
     sellerName: nullableText(raw.sellerName ?? raw.seller_name),
+    colors: Array.isArray(raw.colors)
+      ? raw.colors
+          .map((entry) => (isRecord(entry) ? { label: text(entry.label), hex: nullableText(entry.hex) } : null))
+          .filter((entry): entry is WholesaleColor => entry !== null && entry.label.length > 0)
+      : [],
+    seriesCount: nonNegativeInt(raw.seriesCount),
   };
 }
 

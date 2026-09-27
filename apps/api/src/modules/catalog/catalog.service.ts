@@ -1033,7 +1033,8 @@ export class CatalogService {
         FROM "product_rating" WHERE "status" IN ('visible', 'flagged') GROUP BY "product_id"
       ),
       channel_offers AS (
-        SELECT o."product_id", o.${priceCol} AS "price", o."currency", o."variant_id", o."seller_id"
+        SELECT o."id" AS "offer_id", o."product_id", o.${priceCol} AS "price", o."currency", o."variant_id", o."seller_id",
+          o."moq", o."moq_unit", o."package_type"
         FROM "seller_offer" AS o
         LEFT JOIN "product_variant" AS v ON v."id" = o."variant_id"
         WHERE o."status" = 'published'
@@ -1059,6 +1060,25 @@ export class CatalogService {
            JOIN "product_variant_inventory" inv
              ON inv."variant_id" = co."variant_id" AND inv."seller_id" = co."seller_id"
            WHERE co."product_id" = p."id") AS "availability",
+          /**
+           * Catalogue summary for the wholesale card.
+           *
+           * A wholesale buyer decides from the grid: which colours exist, how the
+           * product is sold (per piece or per series), how many series the
+           * supplier declared and what the minimum is. None of that can be
+           * derived by the browser without one request per product, so it is
+           * resolved here — correlated subqueries inside the same statement, so
+           * the page still costs one round trip regardless of page size.
+           */
+          (SELECT COALESCE(jsonb_agg(DISTINCT jsonb_build_object('label', pv."attributes"->>'color', 'hex', pv."attributes"->>'color_hex')) FILTER (WHERE pv."attributes"->>'color' IS NOT NULL), '[]'::jsonb)
+           FROM "product_variant" pv WHERE pv."product_id" = p."id" AND pv."status" = 'active') AS "colors",
+          (SELECT pm."url" FROM "product_media" pm WHERE pm."product_id" = p."id" ORDER BY pm."position" ASC, pm."id" ASC LIMIT 1) AS "image_url",
+          (SELECT COUNT(wp."id")::int FROM channel_offers co JOIN "wholesale_package" wp ON wp."offer_id" = co."offer_id" WHERE co."product_id" = p."id") AS "series_count",
+          (SELECT co."moq" FROM channel_offers co WHERE co."product_id" = p."id" ORDER BY co."price" ASC, co."variant_id" ASC, co."seller_id" ASC LIMIT 1) AS "moq",
+          (SELECT co."moq_unit" FROM channel_offers co WHERE co."product_id" = p."id" ORDER BY co."price" ASC, co."variant_id" ASC, co."seller_id" ASC LIMIT 1) AS "sale_unit",
+          (SELECT co."package_type" FROM channel_offers co WHERE co."product_id" = p."id" ORDER BY co."price" ASC, co."variant_id" ASC, co."seller_id" ASC LIMIT 1) AS "package_type",
+          (SELECT s."type" FROM channel_offers co JOIN "seller" s ON s."id" = co."seller_id" WHERE co."product_id" = p."id" ORDER BY co."price" ASC, co."variant_id" ASC, co."seller_id" ASC LIMIT 1) AS "seller_type",
+          (SELECT COALESCE(sp."legal_name", sp."display_name", s."display_name") FROM channel_offers co JOIN "seller" s ON s."id" = co."seller_id" LEFT JOIN "supplier" sp ON sp."id" = s."supplier_id" WHERE co."product_id" = p."id" ORDER BY co."price" ASC, co."variant_id" ASC, co."seller_id" ASC LIMIT 1) AS "seller_name",
           rt."avg" AS "rating_avg", COALESCE(rt."cnt", 0) AS "rating_count"
         FROM "product" AS p
         LEFT JOIN rated rt ON rt."product_id" = p."id"
@@ -1142,6 +1162,14 @@ export class CatalogService {
         priceFrom: row.price_from,
         priceCurrency: row.price_currency,
         availability: Number(row.availability),
+        colors: Array.isArray(row.colors) ? row.colors : [],
+        imageUrl: (row.image_url as string | null) ?? null,
+        moq: row.moq === null || row.moq === undefined ? null : Number(row.moq),
+        moqUnit: (row.sale_unit as string | null) ?? null,
+        packageType: (row.package_type as string | null) ?? null,
+        seriesCount: Number(row.series_count ?? 0),
+        sellerType: (row.seller_type as string | null) ?? row.owner_type,
+        sellerName: (row.seller_name as string | null) ?? null,
         ratingAverage: row.rating_avg === null ? null : Math.round(Number(row.rating_avg) * 100) / 100,
         ratingCount: Number(row.rating_count),
         viewCount: row.view_count,

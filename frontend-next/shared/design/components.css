@@ -87,7 +87,14 @@
 .kolbe-wholesale-card__badge { position: absolute; inset-block-start: .75rem; inset-inline-start: .75rem; padding: .3rem .55rem; background: var(--kolbe-color-primary); color: var(--kolbe-color-primary-text); font-family: var(--kolbe-typography-font-family); font-size: var(--kolbe-typography-size-caption); }
 .kolbe-wholesale-card__body { display: grid; gap: .65rem; padding: 1rem .15rem 1.4rem; }
 .kolbe-wholesale-card__body > strong { font-size: 1rem; font-weight: 600; line-height: 1.6; text-wrap: pretty; }
-.kolbe-wholesale-card__price { font-size: 1rem; font-weight: 600; }
+.kolbe-wholesale-card__price { display: flex; align-items: baseline; gap: .3rem; font-size: 1rem; font-weight: 600; }
+.kolbe-wholesale-card__price small { color: var(--kolbe-color-muted); font-size: var(--kolbe-typography-size-caption); font-weight: 400; }
+/* Colour swatches: the card states how many colours exist and shows the real hex.
+   The count is text, so the information never depends on colour alone. */
+.kolbe-wholesale-card__swatches { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.kolbe-wholesale-card__swatch { width: 1rem; height: 1rem; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--kolbe-color-text) 14%, transparent); background: var(--kolbe-color-surface-sunken); }
+.kolbe-wholesale-card__swatch-more, .kolbe-wholesale-card__swatch-count { color: var(--kolbe-color-muted); font-size: var(--kolbe-typography-size-caption); font-variant-numeric: tabular-nums; }
+.kolbe-wholesale-card__swatch-count { margin-inline-start: .25rem; }
 .kolbe-wholesale-card__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem 1rem; padding-block: .75rem; border-block: 1px solid var(--kolbe-color-border); font-size: var(--kolbe-typography-size-label); }
 .kolbe-wholesale-card__facts > span { min-width: 0; display: grid; gap: .15rem; overflow-wrap: anywhere; }
 .kolbe-wholesale-card__facts small { color: var(--kolbe-color-muted); font-size: var(--kolbe-typography-size-caption); font-weight: 400; }

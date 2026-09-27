@@ -26,6 +26,7 @@ import {
   formatMoney,
   moqUnitLabel,
   packageTypeLabel,
+  pricingUnitLabel,
   quantityWithUnit,
   SELLER_TYPE_LABELS_FA,
   toPersianDigits,
@@ -197,10 +198,36 @@ export function WholesaleCatalogList({
                   </span>
                   <span className="kolbe-wholesale-card__body">
                     <strong>{item.name}</strong>
-                    <span className="kolbe-wholesale-card__price">از <Money value={item.priceFrom} currency={item.currency} /></span>
+                    <span className="kolbe-wholesale-card__price">از <Money value={item.priceFrom} currency={item.currency} />{item.moqUnit ? <small> / {pricingUnitLabel(item.moqUnit)}</small> : null}</span>
+                    {item.colors.length > 0 ? (
+                      /* رنگ‌ها فقط نمایشِ حقیقتِ سرورند؛ اگر واریانتی رنگ نداشته باشد چیزی ساخته نمی‌شود. */
+                      <span className="kolbe-wholesale-card__swatches">
+                        {item.colors.slice(0, 4).map((color) => (
+                          <span
+                            key={`${color.label}-${color.hex ?? ""}`}
+                            className="kolbe-wholesale-card__swatch"
+                            style={color.hex ? { background: color.hex } : undefined}
+                            title={color.label}
+                          >
+                            <span className="kolbe-visually-hidden">{color.label}</span>
+                          </span>
+                        ))}
+                        {item.colors.length > 4 ? (
+                          <span className="kolbe-wholesale-card__swatch-more">
+                            +{toPersianDigits(item.colors.length - 4)}
+                          </span>
+                        ) : null}
+                        <span className="kolbe-wholesale-card__swatch-count">
+                          {item.colors.length === 1 ? "۱ رنگ" : `${toPersianDigits(item.colors.length)} رنگ`}
+                        </span>
+                      </span>
+                    ) : null}
                     <span className="kolbe-wholesale-card__facts">
+                      {item.seriesCount > 0 ? (
+                        <span><small>شیوهٔ فروش</small>{item.seriesCount === 1 ? "۱ نوع سری" : `${toPersianDigits(item.seriesCount)} نوع سری`}</span>
+                      ) : null}
                       {item.moq !== null && item.moqUnit ? <span><small>حداقل سفارش</small>{quantityWithUnit(item.moq, item.moqUnit)}</span> : null}
-                      {item.packageLabel ? <span><small>بسته / سری</small>{packageTypeLabel(item.packageLabel)}</span> : null}
+                      {item.packageLabel ? <span><small>نوع بسته</small>{packageTypeLabel(item.packageLabel)}</span> : null}
                       <span><small>موجودی قابل فروش</small>{toPersianDigits(item.availability)}</span>
                     </span>
                     <span className="kolbe-wholesale-card__seller">فروشنده: {item.sellerType === "SUPPLIER" && item.sellerName ? item.sellerName : SELLER_TYPE_LABELS_FA[item.sellerType]}</span>
