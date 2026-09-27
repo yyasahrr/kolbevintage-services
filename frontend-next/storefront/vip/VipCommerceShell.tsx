@@ -14,6 +14,7 @@ export type VipMembershipIdentity = {
 
 const PRIMARY_NAV = [
   ["/vip/catalog", "فروشگاه عمده"],
+  ["/vip/requests", "درخواست‌ها"],
   ["/vip/orders", "سفارش‌ها"],
   ["/vip/invoices", "فاکتورها"],
   ["/vip/support", "پشتیبانی"],

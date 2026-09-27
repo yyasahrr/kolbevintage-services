@@ -6,7 +6,7 @@ import { canonicalClient } from "../../shared/http/clients";
 import { Link, useRouter } from "../router";
 import { useStorefrontSession, useVipCapabilities, useVipGate } from "../session/SessionProvider";
 import { VipCommerceShell, type VipMembershipIdentity } from "../vip/VipCommerceShell";
-import { VipAddressesPage, VipInvoicesPage, VipMembershipPage, VipOrdersPage, VipSupportPage, VipUnavailableRoute } from "../vip/VipRoutePages";
+import { VipAddressesPage, VipCapabilityDeniedPage, VipInvoicesPage, VipMembershipPage, VipOrdersPage, VipRequestsPage, VipSupportPage, VipUnavailableRoute } from "../vip/VipRoutePages";
 import { WholesaleCatalogList, WholesaleProductDetailPage } from "./WholesaleCatalog";
 
 export function canonicalVipPath(path: string): string {
@@ -15,9 +15,9 @@ export function canonicalVipPath(path: string): string {
   return path;
 }
 
-function VipCatalogRoute({ path, navigate }: { path: string; navigate: (to: string) => void }) {
-  if (path.startsWith("/vip/catalog/")) return <WholesaleProductDetailPage client={canonicalClient()} productId={decodeURIComponent(path.slice("/vip/catalog/".length))} onBack={() => navigate("/vip/catalog")} />;
-  if (path.startsWith("/product/")) return <WholesaleProductDetailPage client={canonicalClient()} productId={decodeURIComponent(path.split("/")[2] ?? "")} onBack={() => navigate("/vip/catalog")} />;
+function VipCatalogRoute({ path, navigate, canRequest }: { path: string; navigate: (to: string) => void; canRequest: boolean }) {
+  if (path.startsWith("/vip/catalog/")) return <WholesaleProductDetailPage client={canonicalClient()} productId={decodeURIComponent(path.slice("/vip/catalog/".length))} onBack={() => navigate("/vip/catalog")} canRequest={canRequest} onRequestCreated={() => navigate("/vip/requests")} />;
+  if (path.startsWith("/product/")) return <WholesaleProductDetailPage client={canonicalClient()} productId={decodeURIComponent(path.split("/")[2] ?? "")} onBack={() => navigate("/vip/catalog")} canRequest={canRequest} onRequestCreated={() => navigate("/vip/requests")} />;
   return <WholesaleCatalogList client={canonicalClient()} onOpen={(id) => navigate(`/vip/catalog/${id}`)} />;
 }
 
@@ -38,9 +38,10 @@ export default function VIPPortal() {
   const membership: VipMembershipIdentity = { memberName: gate.memberName ?? "", storeName: gate.storeName ?? "", planName: gate.planName ?? "", expiresAt: gate.expiresAt };
   const handleLogout = () => { void logout().then(() => navigate("/wholesale")); };
   let page: ReactNode;
-  if (path === "/vip" || path === "/vip/catalog" || path.startsWith("/vip/catalog/") || path.startsWith("/product/")) page = <VipCatalogRoute path={path} navigate={navigate} />;
-  else if (path === "/vip/orders") page = <VipOrdersPage />;
-  else if (path === "/vip/invoices") page = <VipInvoicesPage />;
+  if (path === "/vip" || path === "/vip/catalog" || path.startsWith("/vip/catalog/") || path.startsWith("/product/")) page = <VipCatalogRoute path={path} navigate={navigate} canRequest={capabilities.rfq} />;
+  else if (path === "/vip/orders") page = capabilities.orders ? <VipOrdersPage /> : <VipCapabilityDeniedPage capability="orders" />;
+  else if (path === "/vip/requests") page = capabilities.rfq ? <VipRequestsPage /> : <VipCapabilityDeniedPage capability="rfq" />;
+  else if (path === "/vip/invoices") page = capabilities.orders ? <VipInvoicesPage /> : <VipCapabilityDeniedPage capability="orders" />;
   else if (path === "/vip/membership") page = <VipMembershipPage membership={membership} />;
   else if (path === "/vip/addresses") page = <VipAddressesPage />;
   else if (path === "/vip/support") page = <VipSupportPage />;

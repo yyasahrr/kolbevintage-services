@@ -306,14 +306,22 @@ export function WholesaleProductDetailPage({
   client,
   productId,
   onBack,
+  canRequest = false,
+  onRequestCreated,
 }: {
   client: ApiClient;
   productId: string;
   onBack: () => void;
+  canRequest?: boolean;
+  onRequestCreated?: () => void;
 }) {
   const [detail, setDetail] = useState<WholesaleProductDetail | null>(null);
   const [state, setState] = useState<CatalogViewState>({ kind: "LOADING" });
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
+  const [requestQuantity, setRequestQuantity] = useState(1);
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [requestMessage, setRequestMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const requestId = useRef(0);
 
@@ -331,6 +339,9 @@ export function WholesaleProductDetailPage({
       }
       setDetail(result.data);
       setSelectedVariantId(result.data.variants[0]?.id ?? null);
+      const firstOffer = result.data.offers[0];
+      setSelectedPackageId(firstOffer?.packages[0]?.id ?? null);
+      setRequestQuantity(firstOffer?.moq ?? 1);
       setState(viewStateFromResult(result, true));
     })();
     return () => controller.abort();
@@ -342,6 +353,20 @@ export function WholesaleProductDetailPage({
     for (const variant of detail?.variants ?? []) map.set(variant.id, variant.sku);
     return map;
   }, [detail]);
+
+  const createRequest = async () => {
+    if (!offer) return;
+    const packageLike = ["PACKAGE", "SERIES", "BOX", "CARTON", "SET"].includes(offer.moqUnit);
+    const selector = packageLike ? { packageId: selectedPackageId } : { variantId: selectedVariantId };
+    if ((packageLike && !selectedPackageId) || (!packageLike && !selectedVariantId)) {
+      setRequestMessage({ kind: "error", text: "گزینهٔ لازم برای این نوع فروش انتخاب نشده است." }); return;
+    }
+    setRequestBusy(true); setRequestMessage(null);
+    const result = await client.requestResult<{ id: string }>("/vip/requests", { method: "POST", body: { productId, offerId: offer.id, quantity: requestQuantity, ...selector } });
+    setRequestBusy(false);
+    if (!result.ok) { setRequestMessage({ kind: "error", text: result.error.message }); return; }
+    setRequestMessage({ kind: "success", text: `درخواست ${result.data.id} ثبت شد.` }); onRequestCreated?.();
+  };
 
   return (
     <section aria-labelledby="wholesale-detail-heading" className="space-y-5">
@@ -462,6 +487,7 @@ export function WholesaleProductDetailPage({
               <h3 id="wholesale-package-heading" className="text-[13px] font-semibold">داخلِ بسته چه چیزی است؟</h3>
               {offer.packages.map((pack) => (
                 <div key={pack.id} className="border border-neutral-200 p-3">
+                  {["PACKAGE", "SERIES", "BOX", "CARTON", "SET"].includes(offer.moqUnit) ? <label className="mb-2 flex items-center gap-2 text-[11px]"><input type="radio" name="wholesale-package" checked={selectedPackageId === pack.id} onChange={() => setSelectedPackageId(pack.id)} /> انتخاب این بسته</label> : null}
                   <p className="text-[12px] font-medium">{pack.name}</p>
                   <p className="mt-0.5 text-[10.5px] text-neutral-500">
                     {packageTypeLabel(pack.packageType)} · مجموع: {toPersianDigits(pack.totalPieces)} قطعه
@@ -526,6 +552,8 @@ export function WholesaleProductDetailPage({
               واریانتِ انتخاب‌شده: <LtrCode value={variantNameById.get(selectedVariantId) ?? selectedVariantId} />
             </p>
           ) : null}
+
+          {offer ? <section className="space-y-3 border-t border-neutral-200 pt-4" aria-labelledby="wholesale-request-heading"><h3 id="wholesale-request-heading" className="text-[13px] font-semibold">ثبت درخواست عمده</h3>{canRequest ? <><label className="block max-w-xs text-[11px]">تعداد ({moqUnitLabel(offer.moqUnit)})<input className={`mt-1 w-full border border-neutral-300 px-3 py-2 ${RING}`} type="number" min={offer.moq} step="1" value={requestQuantity} onChange={(event) => setRequestQuantity(event.currentTarget.valueAsNumber)} /></label><button type="button" disabled={requestBusy || !Number.isInteger(requestQuantity) || requestQuantity < offer.moq} onClick={() => void createRequest()} className={`border border-[#011c3a] bg-[#011c3a] px-4 py-2 text-[11px] text-white disabled:opacity-50 ${RING}`}>{requestBusy ? "در حال ثبت…" : "ثبت درخواست قیمت"}</button>{requestMessage ? <p role={requestMessage.kind === "error" ? "alert" : "status"} className={requestMessage.kind === "error" ? "text-[11px] text-red-700" : "text-[11px] text-green-700"}>{requestMessage.text}</p> : null}</> : <p className="text-[11px] text-neutral-600">مجوز ثبت درخواست برای این نشست از سوی سرور صادر نشده است.</p>}</section> : null}
         </>
       ) : null}
     </section>
