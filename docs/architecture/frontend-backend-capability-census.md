@@ -191,6 +191,7 @@ Each capability is classified into one of these categories:
 | shared-money | Bigint-safe money utilities | N/A | `frontend-next/shared/money/`, `packages/shared/src/money.ts` | CURRENT | ✅ Complete | No float, decimal string from API |
 | shared-http | Typed HTTP client | N/A | `frontend-next/shared/http/` | CURRENT | ✅ Complete | Error handling, types, URL building |
 | shared-session | Session management | auth | `frontend-next/shared/session/` | CURRENT | ✅ Complete | Server-derived roles and entitlements |
+| shared-auth-experience | Retail, VIP, Supplier and Admin entry/gates | auth | `frontend-next/shared/auth/`, `storefront/session/SessionProvider.tsx` | CURRENT | ✅ Complete | Checkpoint 03; canonical cookie → `/auth/me`, shared accessible presentation, portal-specific server gates |
 | shared-permissions | Capability-based permissions | N/A | `frontend-next/shared/permissions/` | CURRENT | ✅ Complete | Capabilities, roles, checks |
 | shared-design | Design tokens and CSS | N/A | `frontend-next/shared/design/` | CURRENT | ✅ Complete | Tokens, CSS generation, foundation |
 | shared-supplier | Supplier client and contracts | N/A | `frontend-next/shared/supplier/` | CURRENT | ✅ Complete | Client, contracts, normalization |
@@ -240,7 +241,7 @@ Each capability is classified into one of these categories:
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| retail-account | Profile, identity | auth, customer-account | `storefront/customerIdentity.ts` | PARTIAL | ⚠️ Needs profile page | Session-based, needs profile management |
+| retail-account | Profile, identity | auth, customer-account | `storefront/pages/Static.tsx`, `storefront/session/SessionProvider.tsx` | CURRENT | ✅ Auth canonical | Identity is server-session based; expanded account management remains future scope |
 | retail-orders | Order history | orders | Partial | MISSING | 🔴 Not implemented | `GET /api/v1/customer/orders` exists |
 | retail-returns | Returns, refunds | returns | Not implemented | MISSING | 🔴 Not implemented | `POST /api/v1/customer/orders/:id/returns` exists |
 
@@ -313,7 +314,7 @@ Each capability is classified into one of these categories:
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| supplier-auth | Login, session | auth, suppliers | `supplier-src/api.ts`, `shared/supplier/session.ts` | CURRENT | ✅ Complete | Canonical auth, fixed 404 issues |
+| supplier-auth | Login, session | auth, suppliers | `supplier-src/auth.tsx`, `shared/supplier/session.ts` | CURRENT | ✅ Complete | Shared canonical client; supplier role and tenant required from `/auth/me` |
 | supplier-application | Application | suppliers | Partial | PARTIAL | ⚠️ Needs completion | Application flow exists |
 
 #### 4.2 Dashboard & Analytics
