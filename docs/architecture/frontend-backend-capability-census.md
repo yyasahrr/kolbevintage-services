@@ -461,7 +461,7 @@ Each capability is classified into one of these categories:
 
 | ID | Feature | Backend | Frontend | Classification | Status | Notes |
 |----|---------|---------|----------|---------------|--------|-------|
-| admin-analytics | Reports, dashboard | analytics | Hardcoded | PARTIAL | ⚠️ Needs canonical | `GET /api/v1/admin/analytics/reports` exists |
+| admin-analytics | Retail dashboard, reports | analytics | Retail dashboard canonical; reports boundary | PARTIAL | ⚠️ Reports deferred | `GET /api/v1/admin/retail/dashboard` powers the overview; report workflows need canonical integration |
 
 #### 5.13 Finance & Settlement
 

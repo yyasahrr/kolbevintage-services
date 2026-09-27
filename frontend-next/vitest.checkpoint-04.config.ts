@@ -13,6 +13,7 @@ export default defineConfig({
       "test/phase-6-3-wholesale-catalog-ui.test.tsx",
       "test/panels-honesty.test.ts",
       "test/admin-crm-canonical.test.tsx",
+      "test/admin-retail-dashboard.test.tsx",
     ],
     setupFiles: ["./test/checkpoint-02-setup.ts"],
     fileParallelism: false,

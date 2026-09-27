@@ -548,6 +548,20 @@
 .kolbe-ops-detail dt { color: var(--kolbe-color-muted); }
 .kolbe-ops-detail dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: start; }
 .kolbe-ops-error { color: var(--kolbe-color-error); }
+.kolbe-ops-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .75rem; }
+.kolbe-ops-metrics article, .kolbe-ops-exceptions article {
+  display: grid; gap: .45rem; min-width: 0; padding: 1rem 1.15rem;
+  border: 1px solid var(--kolbe-color-border); border-radius: var(--kolbe-shape-radius-surface);
+  background: var(--kolbe-color-surface);
+}
+.kolbe-ops-metrics article > span, .kolbe-ops-exceptions article > span { color: var(--kolbe-color-muted); font-size: .78rem; }
+.kolbe-ops-metrics strong { overflow-wrap: anywhere; color: var(--kolbe-color-text); font-size: clamp(1.2rem, 2vw, 1.7rem); font-weight: 700; }
+.kolbe-ops-metrics small, .kolbe-ops-exceptions small { color: var(--kolbe-color-muted); font-size: .72rem; }
+.kolbe-ops-section { margin-block-start: 1.5rem; }
+.kolbe-ops-section h2 { margin: 0 0 .75rem; font-size: 1rem; }
+.kolbe-ops-exceptions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .75rem; }
+.kolbe-ops-exceptions strong { color: var(--kolbe-color-text); font-size: .88rem; }
+.kolbe-ops-footnote { margin-block-start: 1rem; color: var(--kolbe-color-muted); font-size: .75rem; }
 @media (max-width: 700px) {
   .kolbe-ops-row { grid-template-columns: minmax(0, 1fr) auto; gap: .35rem .75rem; }
   .kolbe-ops-row > :nth-child(3), .kolbe-ops-row > :nth-child(4) { font-size: .74rem; }

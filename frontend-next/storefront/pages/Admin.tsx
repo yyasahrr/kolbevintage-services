@@ -9,6 +9,7 @@ import AdminProductEditor from "./AdminProductEditor";
 import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
 import { loadHomepageJournalPins, saveHomepageJournalPins, saveManagedArticles } from "../journalSettings";
 import AdminCRM from "./AdminCRM";
+import AdminRetailDashboard from "./AdminRetailDashboard";
 import { loadSiteSettings, saveSiteSettings, type HeroTemplate } from "../siteSettings";
 import RetailPolicyCenter from "./RetailPolicyCenter";
 import { readCommerceEvents, type CommerceEvent } from "../lib/analytics";
@@ -1022,7 +1023,7 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
 
         <main className="min-w-0 flex-1 p-4 lg:p-6">
           {page === "retail-settings" && <RetailPolicyCenter />}
-          {page === "dashboard" && <CanonicalBoundary title="نمای کلی مدیریت" owner="analytics" />}
+          {page === "dashboard" && <AdminRetailDashboard />}
           {page === "design-center" && (
             <Suspense fallback={<div className="h-64 animate-pulse rounded-[6px] bg-neutral-100" aria-label="در حال بارگذاری مرکز طراحی" />}>
               <SiteDesignCenter />
