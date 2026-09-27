@@ -420,6 +420,23 @@ export type PricingTier = {
   moqUnit: (typeof MOQ_UNITS)[number];
 };
 
+/**
+ * Sale units whose quantity counts **whole explicitly configured packages**,
+ * not pieces of one variant.
+ *
+ * `docs/architecture/quantity-and-package-model.md`: for these units a package
+ * reference and recipe are required, `required_pieces = n * pieces_per_package`,
+ * and there is no universal multiplier — BOX/CARTON are not 5/20 packages.
+ * Kept next to the domain logic so no caller re-spells the list and drifts.
+ */
+export const PACKAGE_LIKE_MOQ_UNITS: ReadonlySet<string> = new Set<string>([
+  "PACKAGE",
+  "SERIES",
+  "BOX",
+  "CARTON",
+  "SET",
+]);
+
 export function calculateWholesalePrice(
   quantity: number,
   tiers: PricingTier[],

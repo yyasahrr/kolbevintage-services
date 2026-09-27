@@ -19,6 +19,7 @@ import {
   normalizeStagedCommercial,
   normalizeStagedAttributes,
   stagedVariantMatchKey,
+  PACKAGE_LIKE_MOQ_UNITS,
   CatalogDomainError,
 } from "./catalog.logic";
 
@@ -1235,25 +1236,120 @@ export class CatalogService {
       BigInt(((retail ? offer.retailPrice : offer.wholesalePrice) as unknown as string | number).toString());
     const cheapest = [...offers].sort((a, b) => (priceOf(a) < priceOf(b) ? -1 : 1))[0];
 
+    /**
+     * Commercial truth of every offer, fetched in batches (no N+1).
+     *
+     * Previously the offer payload was only `{id, sellerId, variantId, price,
+     * currency}`; a wholesale buyer could not see MOQ, the MOQ **unit**, the
+     * package type, the package composition or the pricing tiers — a "series"
+     * offer was indistinguishable from a single-piece one. Those rows live in
+     * the database and the backend owns them; dropping them from the response
+     * removes capability, it does not simplify. Money leaves as decimal string.
+     */
+    const offerIds = offers.map((offer) => offer.id);
+    const offerPackages = offerIds.length
+      ? await this.db.select().from(wholesalePackage).where(inArray(wholesalePackage.offerId, offerIds))
+      : [];
+    const packageIds = offerPackages.map((row) => row.id);
+    const packageItems = packageIds.length
+      ? await this.db.select().from(wholesalePackageItem).where(inArray(wholesalePackageItem.packageId, packageIds))
+      : [];
+    const offerTiers = offerIds.length
+      ? await this.db.select().from(wholesalePricingTier).where(inArray(wholesalePricingTier.offerId, offerIds))
+      : [];
+
+    const offerById = new Map(offers.map((offer) => [offer.id, offer]));
+    const itemsByPackage = new Map<string, Array<(typeof packageItems)[number]>>();
+    for (const item of packageItems) {
+      const list = itemsByPackage.get(item.packageId) ?? [];
+      list.push(item);
+      itemsByPackage.set(item.packageId, list);
+    }
+
+    /**
+     * Advisory package availability (Phase 6.4 — series configurator).
+     *
+     * `docs/architecture/quantity-and-package-model.md` fixes the formula:
+     *
+     *   available_packages = min over recipe items of floor(available_pieces[v] / r[v])
+     *
+     * Inventory is scoped per `(variant, seller)`, so a package is measured
+     * against the stock of the seller that owns its offer. This is server
+     * arithmetic over authoritative rows because the browser must never invent
+     * a stock figure: a missing inventory row means "not purchasable", never
+     * "infinite", and the number is advisory until re-checked under locks.
+     */
+    const packageVariantIds = [...new Set(packageItems.map((item) => item.variantId))];
+    const packageStock = packageVariantIds.length
+      ? await this.db
+          .select()
+          .from(productVariantInventory)
+          .where(
+            and(
+              inArray(productVariantInventory.variantId, packageVariantIds),
+              eq(productVariantInventory.status, "active"),
+            ),
+          )
+      : [];
+    const availableByPair = new Map<string, number>();
+    for (const row of packageStock) {
+      if (row.status !== "active") continue;
+      availableByPair.set(`${row.variantId} ${row.sellerId}`, Math.max(0, row.onHand - row.reserved));
+    }
+
+    /** `null` = the server does not disclose a figure; `0` = genuinely sold out. */
+    const availablePackagesFor = (pkg: (typeof offerPackages)[number]): number | null => {
+      const offer = offerById.get(pkg.offerId);
+      if (!offer) return null;
+      const items = itemsByPackage.get(pkg.id) ?? [];
+      if (items.length === 0 || pkg.totalPieces <= 0) return null;
+      let result = Number.POSITIVE_INFINITY;
+      for (const item of items) {
+        const available = availableByPair.get(`${item.variantId} ${offer.sellerId}`);
+        if (available === undefined || item.quantity <= 0) return 0;
+        result = Math.min(result, Math.floor(available / item.quantity));
+      }
+      return Number.isFinite(result) ? Math.max(0, result) : null;
+    };
+
     let availability = 0;
     if (offers.length) {
-      const variantIds = [...new Set(offers.map((offer) => offer.variantId!))];
+      const variantIds = [...new Set(offers.map((offer) => offer.variantId).filter((id): id is string => id != null))];
       const sellerIds = [...new Set(offers.map((offer) => offer.sellerId))];
-      const stock = await this.db
-        .select()
-        .from(productVariantInventory)
-        .where(
-          and(
-            inArray(productVariantInventory.variantId, variantIds),
-            inArray(productVariantInventory.sellerId, sellerIds),
-          ),
-        );
-      const pairs = new Set(offers.map((offer) => `${offer.variantId} ${offer.sellerId}`));
+      const stock = variantIds.length
+        ? await this.db
+            .select()
+            .from(productVariantInventory)
+            .where(
+              and(
+                inArray(productVariantInventory.variantId, variantIds),
+                inArray(productVariantInventory.sellerId, sellerIds),
+                eq(productVariantInventory.status, "active"),
+              ),
+            )
+        : [];
+      const pairs = new Set(offers.filter((offer) => offer.variantId != null).map((offer) => `${offer.variantId} ${offer.sellerId}`));
       for (const row of stock) {
         if (pairs.has(`${row.variantId} ${row.sellerId}`)) {
           availability += Math.max(0, row.onHand - row.reserved);
         }
       }
+
+      /**
+       * A package-like offer has no binding variant, so its stock is expressed
+       * in whole packages. Packages of one offer compete for the same variants,
+       * so the advisory piece figure is the **best** single recipe per offer,
+       * summed across distinct offers (different sellers keep separate stock).
+       */
+      const bestRunPerOffer = new Map<string, number>();
+      for (const pkg of offerPackages) {
+        const offer = offerById.get(pkg.offerId);
+        if (!offer || offer.variantId != null || !PACKAGE_LIKE_MOQ_UNITS.has(offer.moqUnit)) continue;
+        const wholePackages = availablePackagesFor(pkg);
+        if (wholePackages === null) continue;
+        bestRunPerOffer.set(offer.id, Math.max(bestRunPerOffer.get(offer.id) ?? 0, wholePackages * pkg.totalPieces));
+      }
+      for (const pieces of bestRunPerOffer.values()) availability += pieces;
     }
 
     const summaryResult = await this.db.execute(sql`
@@ -1274,27 +1370,6 @@ export class CatalogService {
             .where(inArray(productVariantMedia.variantId, variants.map((row) => row.id)))
             .orderBy(productVariantMedia.position, productVariantMedia.id)
         : [];
-
-    /**
-     * حقیقتِ تجاریِ کاملِ هر پیشنهاد، با واکشیِ دسته‌ای (بدونِ N+1).
-     *
-     * پیش‌تر خروجیِ پیشنهاد فقط `{id, sellerId, variantId, price, currency}` بود؛
-     * یعنی خریدارِ عمده MOQ، **واحدِ MOQ**، نوعِ بسته، ترکیبِ بسته و پله‌های
-     * قیمت را نمی‌دید و عملاً نمی‌توانست یک پیشنهادِ «سری» را از «تک‌فروشی»
-     * تشخیص دهد. این داده‌ها در دیتابیس هستند و بک‌اند مالکِ آن‌هاست؛ حذف‌شان از
-     * پاسخ، حذفِ قابلیت است نه ساده‌سازی. پول به‌صورتِ رشتهٔ ده‌دهی بیرون می‌رود.
-     */
-    const offerIds = offers.map((offer) => offer.id);
-    const offerPackages = offerIds.length
-      ? await this.db.select().from(wholesalePackage).where(inArray(wholesalePackage.offerId, offerIds))
-      : [];
-    const packageIds = offerPackages.map((row) => row.id);
-    const packageItems = packageIds.length
-      ? await this.db.select().from(wholesalePackageItem).where(inArray(wholesalePackageItem.packageId, packageIds))
-      : [];
-    const offerTiers = offerIds.length
-      ? await this.db.select().from(wholesalePricingTier).where(inArray(wholesalePricingTier.offerId, offerIds))
-      : [];
 
     return {
       id: prod.id,
@@ -1334,6 +1409,12 @@ export class CatalogService {
             name: row.name,
             packageType: row.packageType,
             totalPieces: row.totalPieces,
+            /**
+             * Advisory whole-package stock for this recipe, server-computed from
+             * `(variant, seller)` inventory. `null` means the server does not
+             * disclose a figure — the UI must not substitute a guess.
+             */
+            availablePackages: availablePackagesFor(row),
             items: packageItems
               .filter((item) => item.packageId === row.id)
               .map((item) => ({ variantId: item.variantId, quantity: item.quantity })),

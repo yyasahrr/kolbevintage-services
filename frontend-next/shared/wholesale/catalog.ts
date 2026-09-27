@@ -76,6 +76,14 @@ export type WholesalePackage = {
   /** SIZE_RUN | FIXED_QUANTITY | COLOR_MIX | CUSTOM_BUNDLE — از سرور، نه حدسِ مرورگر. */
   packageType: string;
   totalPieces: number;
+  /**
+   * موجودیِ مشورتی بر حسبِ **تعدادِ کلِ بسته/سری** که سرور از روی موجودیِ
+   * واقعیِ `(variant, seller)` محاسبه کرده است.
+   *
+   * `null` یعنی سرور عددی اعلام نکرده — در این صورت UI باید «نامشخص» نشان
+   * بدهد، نه اینکه عددی در مرورگر بسازد. این تنها مرجعِ سقفِ استپر است.
+   */
+  availablePackages: number | null;
   items: WholesalePackageItem[];
 };
 
@@ -214,6 +222,14 @@ function mapOffer(raw: unknown): WholesaleOffer | null {
         name: text(entry.name),
         packageType: text(entry.packageType),
         totalPieces: nonNegativeInt(entry.totalPieces),
+        // «نامعلوم» با «صفر» یکی نیست: فقط وقتی سرور مقدار عددی فرستاده است
+        // عدد می‌خوانیم، وگرنه `null` می‌ماند تا UI دروغ نگوید.
+        availablePackages:
+          typeof entry.availablePackages === "number" && Number.isFinite(entry.availablePackages)
+            ? nonNegativeInt(entry.availablePackages)
+            : entry.availablePackages === null || entry.availablePackages === undefined
+              ? null
+              : nonNegativeInt(entry.availablePackages),
         items: Array.isArray(entry.items)
           ? entry.items.map((item) => (isRecord(item)
               ? { variantId: text(item.variantId), quantity: nonNegativeInt(item.quantity) }
