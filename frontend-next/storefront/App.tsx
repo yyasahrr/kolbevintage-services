@@ -13,7 +13,6 @@ import SiteFooter from "./components/SiteFooter";
 import CartDrawer from "./components/CartDrawer";
 import CompareBar from "./components/CompareBar";
 import Toasts from "./components/Toasts";
-import PromoPopup from "./components/PromoPopup";
 import MobileTryOnButton from "./components/MobileTryOnButton";
 import SeasonalAtmosphere from "./components/SeasonalAtmosphere";
 
@@ -103,7 +102,6 @@ function Routes() {
       <CartDrawer />
       <CompareBar />
       <Toasts />
-      <PromoPopup />
     </div>
   );
 }

@@ -87,16 +87,16 @@ export default function SiteHeader() {
             <Icon name="menu" className="h-6 w-6" />
           </button>
 
-          <Link to="/" className="absolute right-1/2 flex translate-x-1/2 flex-col items-center leading-none">
-            <span className="whitespace-nowrap text-[18px] font-semibold tracking-[0.14em] lg:text-[19px]">
+          <Link to="/" className="relative flex min-w-0 flex-1 flex-col items-center leading-none sm:absolute sm:right-1/2 sm:translate-x-1/2">
+            <span className="max-w-full truncate text-[13px] font-semibold tracking-[0.04em] sm:text-[18px] sm:tracking-[0.14em] lg:text-[19px]">
               {settings.header.brand}
             </span>
-            <span className="mt-[3px] text-[8px] tracking-[0.38em] text-neutral-400">
+            <span className="mt-[3px] max-w-full truncate text-[6px] tracking-[0.16em] text-neutral-400 sm:text-[8px] sm:tracking-[0.38em]">
               {settings.header.latinBrand}
             </span>
           </Link>
 
-          <div className="mr-auto flex shrink-0 items-center gap-4 lg:gap-4">
+          <div className="mr-auto flex shrink-0 items-center gap-2 sm:gap-4 lg:gap-4">
             {settings.header.showThemeToggle && <button type="button" onClick={toggleTheme} aria-label={resolvedTheme === "dark" ? "فعال‌کردن تم روشن" : "فعال‌کردن تم تاریک"} title={theme === "system" ? "تم سیستم" : resolvedTheme === "dark" ? "تم روشن" : "تم تاریک"} className="theme-toggle flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 transition hover:rotate-6 active:scale-95">
               <Icon name={resolvedTheme === "dark" ? "sun" : "moon"} className="h-[18px] w-[18px]" strokeWidth={1.7} />
             </button>}

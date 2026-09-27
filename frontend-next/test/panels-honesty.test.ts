@@ -31,6 +31,14 @@ import {
 const ROOT = path.resolve(import.meta.dirname, "..");
 const STOREFRONT = path.join(ROOT, "storefront");
 
+describe("retail promotion honesty", () => {
+  it("does not mount a browser-only coupon and email promise", () => {
+    const app = fs.readFileSync(path.join(STOREFRONT, "App.tsx"), "utf8");
+    expect(app).not.toContain("PromoPopup");
+    expect(fs.existsSync(path.join(STOREFRONT, "components", "PromoPopup.tsx"))).toBe(false);
+  });
+});
+
 /**
  * حذف توضیحات پیش از اسکن.
  *
