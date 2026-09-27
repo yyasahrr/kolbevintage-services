@@ -99,10 +99,10 @@ export const defaultCategorySection: CategorySectionConfig = {
 
 export const themeTemplates: SiteTheme[] = [
   {
-    id: "heritage", name: "میراث کلبه", occasion: "همیشگی", builtIn: true, atmosphere: "paper",
-    description: "سرمه‌ای عمیق، کاغذ گرم و آجری؛ هویت اصلی برند.",
-    light: { background: "#f7f5f0", surface: "#fffdfa", surfaceMuted: "#efede7", text: "#071c31", muted: "#66727d", primary: "#0b2a46", primaryText: "#ffffff", accent: "#c9654d", border: "#d8d3ca", focus: "#547a98" },
-    dark: { background: "#10161d", surface: "#18222c", surfaceMuted: "#202d38", text: "#f5f0e8", muted: "#acb8c2", primary: "#d9bd91", primaryText: "#17130e", accent: "#e07a61", border: "#354552", focus: "#e2c89e" },
+    id: "heritage", name: "کرِم و بلوط", occasion: "همیشگی", builtIn: true, atmosphere: "paper",
+    description: "بژ گرم لایه‌ای، چوب روشن و سالوی آرام؛ تم پیش‌فرض و قفل‌شدهٔ پروژه.",
+    light: { background: "#faf7f1", surface: "#f2ebdf", surfaceMuted: "#e9e0cf", text: "#1a1714", muted: "#6b625a", primary: "#1a1714", primaryText: "#faf7f1", accent: "#5f7355", border: "#d8cfbe", focus: "#5f7355" },
+    dark: { background: "#141210", surface: "#1e1b17", surfaceMuted: "#282420", text: "#f2ece1", muted: "#b3a999", primary: "#efe7da", primaryText: "#17150f", accent: "#9fb08f", border: "#3a342c", focus: "#9fb08f" },
   },
   {
     id: "black-friday", name: "بلک فرایدی", occasion: "فروش ویژه", builtIn: true, atmosphere: "noir",

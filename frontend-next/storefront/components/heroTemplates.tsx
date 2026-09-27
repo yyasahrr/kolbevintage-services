@@ -38,7 +38,7 @@ function Cta({ config }: TemplateProps) {
       to={config.ctaTo || "/shop"}
       className="hero-cta inline-flex min-h-11 items-center gap-2 rounded-full px-6 py-3 text-[12.5px] font-medium transition active:translate-y-px"
       style={{
-        background: config.countdown.accent || "#011c3a",
+        background: config.countdown.accent || "var(--kv-primary)",
         color: "#fff",
         ["--cta-hover-bg" as string]: config.buttonHoverBg,
         ["--cta-hover-text" as string]: config.buttonHoverText,

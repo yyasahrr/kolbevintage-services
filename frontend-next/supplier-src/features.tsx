@@ -57,7 +57,7 @@ export function ApprovalWorkflow({ type }: { type: 'manufacturer' | 'legal' | 'i
               <Status>{step.status === 'approved' ? 'تأیید شده' : step.status === 'rejected' ? 'رد شده' : 'در انتظار'}</Status>
             </div>
             <p style={{ fontSize: 9.5, color: '#888', marginTop: 4 }}>مسئول: {step.role}{step.date ? ` · ${step.date}` : ''}</p>
-            {step.note && <p style={{ fontSize: 9.5, color: '#666', marginTop: 2 }}>{step.note}</p>}
+            {step.note && <p style={{ fontSize: 9.5, color: 'var(--kv-text-muted)', marginTop: 2 }}>{step.note}</p>}
           </div>
         </div>
       ))}
@@ -102,11 +102,11 @@ export function RoleManager() {
       ))}
     </div>
     <div style={{ borderTop: '1px solid #ecebe6', paddingTop: 12 }}>
-      <input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="نام نقش جدید…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid #deddd6', background: '#fff', padding: '0 10px', fontSize: 10.5 }} />
+      <input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="نام نقش جدید…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid #deddd6', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} />
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', margin: '8px 0' }}>
         {allPerms.map(p => (
           <button key={p} onClick={() => { const next = new Set(selectedPerms); next.has(p) ? next.delete(p) : next.add(p); setSelectedPerms(next) }}
-            style={{ fontSize: 9, padding: '4px 8px', border: `1px solid ${selectedPerms.has(p) ? '#011c3a' : '#deddd6'}`, background: selectedPerms.has(p) ? '#011c3a' : '#fff', color: selectedPerms.has(p) ? '#fff' : '#666', cursor: 'pointer', borderRadius: 3 }}>
+            style={{ fontSize: 9, padding: '4px 8px', border: `1px solid ${selectedPerms.has(p) ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: selectedPerms.has(p) ? 'var(--kv-primary)' : 'var(--kv-surface)', color: selectedPerms.has(p) ? 'var(--kv-surface)' : 'var(--kv-text-muted)', cursor: 'pointer', borderRadius: 3 }}>
             {p}
           </button>
         ))}
@@ -214,7 +214,7 @@ export function DiscrepancyManager() {
               <span style={{ fontSize: 9.5, color: '#888', marginRight: 8 }} className="num-fa">انتظار: {d.expected} · واقعی: {d.actual} · اختلاف: {d.expected - d.actual}</span>
             </div>
             <span className={`inline-flex px-2 py-1 text-[9px] ${stageTone[d.stage]}`}>{stageLabel[d.stage]}</span>
-            {d.stage !== 'action' && <button onClick={() => escalate(d.id)} style={{ fontSize: 9, background: '#011c3a', color: '#fff', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
+            {d.stage !== 'action' && <button onClick={() => escalate(d.id)} style={{ fontSize: 9, background: 'var(--kv-primary)', color: 'var(--kv-surface)', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
             <button onClick={() => resolve(d.id)} style={{ fontSize: 9, color: '#3d5c3a', background: 'none', border: '1px solid #b9cfbc', padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>حل شد</button>
           </div>
         ))}
@@ -253,8 +253,8 @@ export function OrderSLA({ orderId, slaHours }: { orderId: string; slaHours: num
     </div>
     {accepted === 'partial' && (
       <div style={{ marginTop: 12, padding: 12, border: '1px solid #e5e5e0', borderRadius: 4 }}>
-        <label style={{ fontSize: 10, color: '#666' }}>تعداد قابل تأمین (از {fa(totalQty)} تکه):
-          <input type="range" min={1} max={totalQty} value={partialQty} onChange={e => setPartialQty(Number(e.target.value))} style={{ width: '100%', marginTop: 8, accentColor: '#011c3a' }} />
+        <label style={{ fontSize: 10, color: 'var(--kv-text-muted)' }}>تعداد قابل تأمین (از {fa(totalQty)} تکه):
+          <input type="range" min={1} max={totalQty} value={partialQty} onChange={e => setPartialQty(Number(e.target.value))} style={{ width: '100%', marginTop: 8, accentColor: 'var(--kv-primary)' }} />
         </label>
         <p style={{ fontSize: 10, marginTop: 8 }}><b className="num-fa">{fa(partialQty)}</b> تکه تأمین می‌شود · <span className="num-fa">{fa(totalQty - partialQty)}</span> تکه به ساپلایر جایگزین ارجاع می‌شود.</p>
         <button className="button primary" style={{ marginTop: 8, minHeight: 32, fontSize: 10 }}>ثبت پذیرش بخشی</button>
@@ -284,10 +284,10 @@ export function ShippingLabel({ orderId, items }: { orderId: string; items: Arra
       <div style={{ fontSize: 10 }}>تعداد کل<b style={{ display: 'block', fontSize: 14, marginTop: 4 }} className="num-fa">{fa(totalItems)} تکه</b></div>
     </div>
     {/* برچسب ارسال قابل چاپ */}
-    <div id={`label-${orderId}`} style={{ border: '2px solid #011c3a', padding: 16, borderRadius: 4, background: '#fff', maxWidth: 380 }}>
+    <div id={`label-${orderId}`} style={{ border: '2px solid #011c3a', padding: 16, borderRadius: 4, background: 'var(--kv-surface)', maxWidth: 380 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #011c3a', paddingBottom: 8, marginBottom: 12 }}>
         <b style={{ fontSize: 14, letterSpacing: 2 }}>KOLBE VINTAGE</b>
-        <span style={{ fontSize: 9, color: '#666' }}>برچسب ارسال</span>
+        <span style={{ fontSize: 9, color: 'var(--kv-text-muted)' }}>برچسب ارسال</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 10 }}>
         <div><b>سفارش:</b> {orderId}</div>
@@ -322,7 +322,7 @@ export function SettlementSettings() {
         <b style={{ fontSize: 10, display: 'block', marginBottom: 6 }}>دوره تسویه</b>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {Object.entries(periodLabel).map(([id, label]) => (
-            <button key={id} onClick={() => setConfig({ ...config, period: id as any })} style={{ fontSize: 9, padding: '6px 10px', border: `1px solid ${config.period === id ? '#011c3a' : '#deddd6'}`, background: config.period === id ? '#011c3a' : '#fff', color: config.period === id ? '#fff' : '#666', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
+            <button key={id} onClick={() => setConfig({ ...config, period: id as any })} style={{ fontSize: 9, padding: '6px 10px', border: `1px solid ${config.period === id ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: config.period === id ? 'var(--kv-primary)' : 'var(--kv-surface)', color: config.period === id ? 'var(--kv-surface)' : 'var(--kv-text-muted)', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
       </div>
@@ -359,8 +359,8 @@ export function DisputeCenter() {
   return <section className="surface" style={{ padding: 20 }}>
     <SectionHeading title="مرکز اعتراض مالی" eyebrow="DISPUTE CENTER (35-d, 36-d, 42-d)">گردش کامل اعتراض + جریمه با امکان بررسی و اعتراض.</SectionHeading>
     <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="موضوع اعتراض…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid #deddd6', background: '#fff', padding: '0 10px', fontSize: 10.5 }} />
-      <input value={newAmount} onChange={e => setNewAmount(e.target.value)} placeholder="مبلغ (تومان)" type="number" style={{ height: 36, width: 120, border: '1px solid #deddd6', background: '#fff', padding: '0 10px', fontSize: 10.5 }} dir="ltr" />
+      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="موضوع اعتراض…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid #deddd6', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} />
+      <input value={newAmount} onChange={e => setNewAmount(e.target.value)} placeholder="مبلغ (تومان)" type="number" style={{ height: 36, width: 120, border: '1px solid #deddd6', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} dir="ltr" />
       <button onClick={() => { if (!newSubject.trim() || !newAmount) return; setDisputes([...disputes, { id: `DP-${String(disputes.length + 1).padStart(3, '0')}`, subject: newSubject, amount: Number(newAmount), status: 'open', date: 'امروز', type: 'settlement' }]); setNewSubject(''); setNewAmount('') }} className="button primary" style={{ minHeight: 36, fontSize: 10 }}>ثبت اعتراض</button>
     </div>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -372,7 +372,7 @@ export function DisputeCenter() {
             <span style={{ fontSize: 9, color: '#999', marginRight: 8 }} className="num-fa">{fa(d.amount)} تومان · {typeLabel[d.type]} · {d.date}</span>
           </div>
           <span className={`inline-flex px-2 py-1 text-[9px] ${statusTone[d.status]}`}>{statusLabel[d.status]}</span>
-          {d.status !== 'resolved' && <button onClick={() => advance(d.id)} style={{ fontSize: 9, background: '#011c3a', color: '#fff', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
+          {d.status !== 'resolved' && <button onClick={() => advance(d.id)} style={{ fontSize: 9, background: 'var(--kv-primary)', color: 'var(--kv-surface)', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
         </div>
       ))}
     </div>
@@ -394,7 +394,7 @@ export function QualityDocuments() {
   return <section className="surface" style={{ padding: 20 }}>
     <SectionHeading title="اسناد کیفیت و سری ساخت" eyebrow="QUALITY DOCS + BATCH + RECALL (43-d, 44-d, 45-d)">پرونده کامل کیفیت + سری ساخت و تاریخ هر محموله + فراخوان محصول.</SectionHeading>
     <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-      <input value={newDoc} onChange={e => setNewDoc(e.target.value)} placeholder="نام سند…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid #deddd6', background: '#fff', padding: '0 10px', fontSize: 10.5 }} />
+      <input value={newDoc} onChange={e => setNewDoc(e.target.value)} placeholder="نام سند…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid #deddd6', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} />
       <select value={newType} onChange={e => setNewType(e.target.value as Doc['type'])} style={{ height: 36, border: '1px solid #deddd6', padding: '0 8px', fontSize: 10 }}>
         <option value="certificate">گواهی کیفیت</option>
         <option value="batch">سری ساخت</option>
@@ -411,7 +411,7 @@ export function QualityDocuments() {
             <span style={{ fontSize: 9, color: '#999', marginRight: 8 }}>{d.id} · {d.date}</span>
           </div>
           <span className={`inline-flex px-2 py-1 text-[9px] ${typeTone[d.type]}`}>{typeLabel[d.type]}</span>
-          {d.type === 'recall' && d.status !== 'recalled' && <button onClick={() => setDocs(docs.map(x => x.id === d.id ? { ...x, status: 'recalled' } : x))} style={{ fontSize: 9, background: '#a4463d', color: '#fff', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>اجرا</button>}
+          {d.type === 'recall' && d.status !== 'recalled' && <button onClick={() => setDocs(docs.map(x => x.id === d.id ? { ...x, status: 'recalled' } : x))} style={{ fontSize: 9, background: '#a4463d', color: 'var(--kv-surface)', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>اجرا</button>}
         </div>
       ))}
     </div>
@@ -438,7 +438,7 @@ export function CampaignBuilder() {
         <b style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>هزینه تخفیف بر عهده</b>
         <div style={{ display: 'flex', gap: 4 }}>
           {Object.entries(costLabel).map(([id, label]) => (
-            <button key={id} onClick={() => setCostShare(id as Campaign['costShare'])} style={{ fontSize: 9, padding: '6px 10px', border: `1px solid ${costShare === id ? '#011c3a' : '#deddd6'}`, background: costShare === id ? '#011c3a' : '#fff', color: costShare === id ? '#fff' : '#666', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
+            <button key={id} onClick={() => setCostShare(id as Campaign['costShare'])} style={{ fontSize: 9, padding: '6px 10px', border: `1px solid ${costShare === id ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: costShare === id ? 'var(--kv-primary)' : 'var(--kv-surface)', color: costShare === id ? 'var(--kv-surface)' : 'var(--kv-text-muted)', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
       </div>
@@ -497,7 +497,7 @@ export function NotificationPreferences() {
             <td style={{ padding: 8 }}>{ev.label}</td>
             {channels.map(ch => (
               <td key={ch.id} style={{ padding: 8, textAlign: 'center' }}>
-                <input type="checkbox" checked={(prefs as any)[ev.id]?.[ch.id] ?? false} onChange={e => setPrefs({ ...prefs, [ev.id]: { ...(prefs as any)[ev.id], [ch.id]: e.target.checked } })} style={{ accentColor: '#011c3a' }} />
+                <input type="checkbox" checked={(prefs as any)[ev.id]?.[ch.id] ?? false} onChange={e => setPrefs({ ...prefs, [ev.id]: { ...(prefs as any)[ev.id], [ch.id]: e.target.checked } })} style={{ accentColor: 'var(--kv-primary)' }} />
               </td>
             ))}
           </tr>

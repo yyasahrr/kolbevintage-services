@@ -30,8 +30,8 @@ function BootScreen() {
         alignItems: "center",
         justifyContent: "center",
         gap: 14,
-        background: "#f7f5f0",
-        color: "#011c3a",
+        background: "var(--kv-canvas)",
+        color: "var(--kv-primary)",
         fontFamily: "Vazirmatn, Tahoma, sans-serif",
       }}
     >
@@ -41,7 +41,7 @@ function BootScreen() {
           height: 44,
           borderRadius: "50%",
           border: "2px solid rgba(1,28,58,0.15)",
-          borderTopColor: "#011c3a",
+          borderTopColor: "var(--kv-primary)",
           animation: "kolbe-boot-spin 0.8s linear infinite",
         }}
       />

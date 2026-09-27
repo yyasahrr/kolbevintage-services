@@ -15,8 +15,8 @@ class PortalErrorBoundary extends React.Component<{ children: ReactNode }, { err
   render() {
     if (this.state.error) return <div style={{padding:40,textAlign:'center',fontSize:12}}>
       <p style={{fontSize:16,fontWeight:'bold',color:'#a4463d',marginBottom:8}}>خطا در بارگذاری پنل</p>
-      <p style={{fontSize:11,color:'#666',marginBottom:16}}>{this.state.error.message}</p>
-      <button onClick={() => { this.setState({ error: null }); window.location.reload() }} style={{padding:'10px 20px',background:'#011c3a',color:'#fff',border:0,borderRadius:4,fontSize:11,cursor:'pointer'}}>بارگذاری مجدد</button>
+      <p style={{fontSize:11,color:'var(--kv-text-muted)',marginBottom:16}}>{this.state.error.message}</p>
+      <button onClick={() => { this.setState({ error: null }); window.location.reload() }} style={{padding:'10px 20px',background:'var(--kv-primary)',color:'var(--kv-surface)',border:0,borderRadius:4,fontSize:11,cursor:'pointer'}}>بارگذاری مجدد</button>
     </div>
     return this.props.children
   }
@@ -334,7 +334,7 @@ function Analytics() {
       <div style={{flex:1,minWidth:280,display:'flex',flexDirection:'column',gap:8}}>
         {score.metrics.map(metric => (
           <div key={metric.label} style={{display:'flex',alignItems:'center',gap:10,fontSize:10}}>
-            <span style={{width:90,flexShrink:0,color:'#666'}}>{metric.label}</span>
+            <span style={{width:90,flexShrink:0,color:'var(--kv-text-muted)'}}>{metric.label}</span>
             <div style={{flex:1,height:7,background:'#f0f0ee',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:4,width:`${metric.value}%`,background:metric.value >= 95 ? '#3d5c3a' : metric.value >= 85 ? '#ca9130' : '#a65d41'}} /></div>
             <b style={{width:28}} className="num-fa">{fa(metric.value)}</b>
             <small style={{width:70,color:'#999'}}>{metric.target}</small>
@@ -345,7 +345,7 @@ function Analytics() {
     </div>
     <div style={{borderTop:'1px solid #e5e5e0',paddingTop:12,display:'flex',alignItems:'flex-start',gap:12}}>
       <Sparkles size={18} style={{flexShrink:0,marginTop:2}}/>
-      <div><b style={{fontSize:11}}>راهکار بهبود</b><p style={{marginTop:4,fontSize:10,lineHeight:1.8,color:'#666'}}>دقت موجودی شما ۹۷٪ است (هدف ۹۸٪). با به‌روزرسانی موجودی پس از هر بسته‌بندی به‌جای پایان روز، این شاخص به هدف می‌رسد و امتیاز کل به A ارتقا می‌یابد.</p></div>
+      <div><b style={{fontSize:11}}>راهکار بهبود</b><p style={{marginTop:4,fontSize:10,lineHeight:1.8,color:'var(--kv-text-muted)'}}>دقت موجودی شما ۹۷٪ است (هدف ۹۸٪). با به‌روزرسانی موجودی پس از هر بسته‌بندی به‌جای پایان روز، این شاخص به هدف می‌رسد و امتیاز کل به A ارتقا می‌یابد.</p></div>
     </div>
   </section>
 
@@ -370,13 +370,13 @@ function SettingsPage() {
   <section className="surface" style={{padding:20,marginBottom:16}}>
     <SectionHeading title="تعطیلات و روزهای عدم تأمین" eyebrow="FACTORY CLOSURES">روزهایی که کارخانه تولید یا ارسال ندارد؛ کلبه مهلت‌ها را به‌طور خودکار تنظیم می‌کند.</SectionHeading>
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
-      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{height:36,border:'1px solid #deddd6',background:'#fff',padding:'0 8px',fontSize:10.5}} dir="ltr" aria-label="تاریخ تعطیلی" />
-      <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="علت (مثلاً تعطیل رسمی)" style={{height:36,flex:1,minWidth:160,border:'1px solid #deddd6',background:'#fff',padding:'0 8px',fontSize:10.5}} />
+      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{height:36,border:'1px solid #deddd6',background:'var(--kv-surface)',padding:'0 8px',fontSize:10.5}} dir="ltr" aria-label="تاریخ تعطیلی" />
+      <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="علت (مثلاً تعطیل رسمی)" style={{height:36,flex:1,minWidth:160,border:'1px solid #deddd6',background:'var(--kv-surface)',padding:'0 8px',fontSize:10.5}} />
       <button onClick={add} disabled={!newDate || !newLabel.trim()} className="button primary disabled:opacity-40">+ ثبت تعطیلی</button>
     </div>
     {holidays.length > 0 ? <div style={{display:'flex',flexDirection:'column',gap:6}}>{holidays.map(h => (
       <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,border:'1px solid #e5e5e0',padding:10}}>
-        <div><b style={{fontSize:10.5}} className="num-fa">{h.date}</b><span style={{marginRight:8,fontSize:9.5,color:'#666'}}>{h.label}</span></div>
+        <div><b style={{fontSize:10.5}} className="num-fa">{h.date}</b><span style={{marginRight:8,fontSize:9.5,color:'var(--kv-text-muted)'}}>{h.label}</span></div>
         <button onClick={() => remove(h.id)} style={{fontSize:9,color:'#a4463d',textDecoration:'underline',background:'none',border:0,cursor:'pointer'}}>حذف</button>
       </div>
     ))}</div> : <p style={{fontSize:10,color:'#999'}}>تعطیلی ثبت نشده است.</p>}

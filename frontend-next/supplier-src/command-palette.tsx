@@ -15,7 +15,7 @@ export function CommandPalette({ onClose, onNavigate }: { onClose: () => void; o
   const filtered = commands.filter(c => c.label.includes(query.trim()))
   return (
     <div style={{position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,0.35)',display:'flex',justifyContent:'center',paddingTop:'8vh'}} onClick={onClose}>
-      <div style={{width:'min(480px,92vw)',background:'#fff',borderRadius:8,overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}} onClick={e => e.stopPropagation()}>
+      <div style={{width:'min(480px,92vw)',background:'var(--kv-surface)',borderRadius:8,overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}} onClick={e => e.stopPropagation()}>
         <input
           value={query}
           onChange={e => setQuery(e.target.value)}

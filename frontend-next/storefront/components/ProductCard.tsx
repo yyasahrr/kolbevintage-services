@@ -117,7 +117,7 @@ export default function ProductCard({
             <Icon
               name="heart"
               className="h-[15px] w-[15px]"
-              fill={wished ? "#011c3a" : "none"}
+              fill={wished ? "var(--kv-primary)" : "none"}
             />
           </button>
 

@@ -56,7 +56,7 @@ export default function HeroCountdown({ config, size = "md" }: { config: HeroStu
       ]
     : null;
 
-  const accent = config.accent || "#c9654d";
+  const accent = config.accent || "var(--kv-accent)";
   const numeric = size === "sm" ? "text-[18px]" : size === "lg" ? "text-[30px] lg:text-[38px]" : "text-[22px] lg:text-[26px]";
   const pad = size === "sm" ? "px-3 py-2" : size === "lg" ? "px-5 py-4" : "px-4 py-3";
 

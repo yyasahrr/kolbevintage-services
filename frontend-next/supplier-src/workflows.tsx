@@ -169,9 +169,9 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
           <div className="form-grid">
             <Field label="آپلود تصویر">
               <div style={{ border: '2px dashed #deddd6', borderRadius: 6, padding: 20, textAlign: 'center', cursor: 'pointer' }}
-                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#011c3a' }}
-                   onDragLeave={e => e.currentTarget.style.borderColor = '#deddd6'}
-                   onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#deddd6'; const f = e.dataTransfer.files[0]; if (f) handleImageUpload(f) }}>
+                   onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--kv-primary)' }}
+                   onDragLeave={e => e.currentTarget.style.borderColor = 'var(--kv-border)'}
+                   onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--kv-border)'; const f = e.dataTransfer.files[0]; if (f) handleImageUpload(f) }}>
                 <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f) }} style={{ display: 'none' }} id="img-upload" />
                 <label htmlFor="img-upload" style={{ cursor: 'pointer', display: 'block' }}>
                   {form.imageUrl ? (
@@ -214,7 +214,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
                   <b>{size}</b> × <span className="num-fa">{fa(qty)}</span>
                 </span>
               ))}
-              <span style={{ fontSize: 10, padding: '4px 10px', background: '#011c3a', color: '#fff', borderRadius: 4 }}>
+              <span style={{ fontSize: 10, padding: '4px 10px', background: 'var(--kv-primary)', color: 'var(--kv-surface)', borderRadius: 4 }}>
                 = <span className="num-fa">{fa(pieceCount)}</span> تیکه
               </span>
             </div>
@@ -239,7 +239,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', fontSize: 11 }}>
               <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{toman(unitPrice || 0)}</b></div>
               <div><span style={{ color: '#888' }}>تعداد تیکه در {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{fa(pieceCount)} تیکه</b></div>
-              <div><span style={{ color: '#888' }}>قیمت هر {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14, color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
+              <div><span style={{ color: '#888' }}>قیمت هر {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14, color: 'var(--kv-primary)' }}>{toman(seriesPrice)}</b></div>
             </div>
             <p style={{ fontSize: 9.5, color: '#8a5a20', marginTop: 8 }}>فرمول: {fa(unitPrice || 0)} × {fa(pieceCount)} = <b className="num-fa">{fa(seriesPrice)}</b> تومان</p>
           </div>
@@ -284,14 +284,14 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
         <div className="review-policy"><ShieldCheck size={18}/><div><b>انتشار بعد از تأیید کلبه</b><p>محصول با وضعیت «در بررسی» برای تیم کاتالوگ کلبه ارسال می‌شود.</p></div></div>
 
         {/* خلاصه نهایی */}
-        <div style={{ padding: 16, border: '1px solid #e5e5e0', borderRadius: 6, background: '#fff' }}>
+        <div style={{ padding: 16, border: '1px solid #e5e5e0', borderRadius: 6, background: 'var(--kv-surface)' }}>
           <b style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>خلاصه محصول</b>
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', fontSize: 11 }}>
             <div><span style={{ color: '#888' }}>نام:</span> {form.name || '—'}</div>
             <div><span style={{ color: '#888' }}>رنگ:</span> <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: form.colorHex, marginRight: 4, verticalAlign: 'middle' }} /> {form.color || '—'}</div>
             <div><span style={{ color: '#888' }}>نوع سری:</span> {seriesType.label} ({fa(pieceCount)} تیکه)</div>
             <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span> <b className="num-fa">{toman(unitPrice || 0)}</b></div>
-            <div><span style={{ color: '#888' }}>قیمت هر سری:</span> <b className="num-fa" style={{ color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
+            <div><span style={{ color: '#888' }}>قیمت هر سری:</span> <b className="num-fa" style={{ color: 'var(--kv-primary)' }}>{toman(seriesPrice)}</b></div>
             <div><span style={{ color: '#888' }}>تعداد سری:</span> <b className="num-fa">{fa(seriesCount || 0)}</b></div>
             <div><span style={{ color: '#888' }}>مجموع تیکه:</span> <b className="num-fa">{fa(totalPieces)}</b></div>
             <div><span style={{ color: '#888' }}>ارزش کل:</span> <b className="num-fa">{toman(totalValue)}</b></div>
@@ -436,7 +436,7 @@ export function QuoteBuilder() {
 export function SamplesWorkspace() {
   return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="نمونه‌ها"/><h1>فضای نمونه‌ها</h1><p>نمونه‌های فیزیکی و دیجیتال را بارگذاری و پیگیری کنید.</p></div><button className="button primary"><Upload size={17}/>بارگذاری نمونه</button></div>
   <section className="surface" style={{padding:16}}>
-    <p style={{fontSize:11,color:'#666'}}>PO-4827 — نمونه فیزیکی تا ۲۳ مرداد باید بارگذاری شود.</p>
+    <p style={{fontSize:11,color:'var(--kv-text-muted)'}}>PO-4827 — نمونه فیزیکی تا ۲۳ مرداد باید بارگذاری شود.</p>
     <div style={{marginTop:12,border:'2px dashed #deddd6',borderRadius:6,padding:24,textAlign:'center'}}>
       <Upload size={28} style={{color:'#999',margin:'0 auto 8px'}} />
       <b style={{fontSize:11}}>عکس‌های نمونه را اینجا رها کنید</b>

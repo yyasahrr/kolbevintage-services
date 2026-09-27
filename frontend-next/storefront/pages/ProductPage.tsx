@@ -1046,7 +1046,7 @@ export default function ProductPage({
                         aria-pressed={wished}
                         className="storefront-icon-action flex h-[52px] w-[52px] items-center justify-center rounded-full"
                       >
-                        <Icon name="heart" className="h-[18px] w-[18px]" fill={wished ? "#011c3a" : "none"} />
+                        <Icon name="heart" className="h-[18px] w-[18px]" fill={wished ? "var(--kv-primary)" : "none"} />
                       </button>
                     </div>
 

@@ -3096,3 +3096,224 @@ body,
   background: var(--footer-background, #f2f0eb) !important;
   color: var(--footer-text, #011c3a) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STYLE LOCK — «کرِم و بلوط»  ·  منبع قطعی: docs/design/style-lock.md
+   این لایه آخرین لایهٔ CSS است و بالاتر از قواعد قدیمی می‌نشیند.
+   قواعد: هیچ رنگ خارج از توکن‌ها، سرمهٔ قدیم حذف، هیچ متن لاتین در UI عمومی.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@font-face {
+  font-family: "Estedad";
+  src: url("/fonts/Estedad-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* رنگ — روشن (تأییدشده با check_contrast.py --matrix) */
+  --kv-canvas: #faf7f1;
+  --kv-surface: #f2ebdf;
+  --kv-surface-muted: #e9e0cf;
+  --kv-text: #1a1714;
+  --kv-text-muted: #6b625a;
+  --kv-primary: #1a1714;
+  --kv-on-primary: #faf7f1;
+  --kv-accent: #5f7355;
+  --kv-on-accent: #faf7f1;
+  --kv-border: #d8cfbe;
+  --kv-border-strong: rgba(26, 23, 20, 0.24);
+  --kv-success: #4f6b52;
+  --kv-warning: #8a6d3b;
+  --kv-danger: #8f4a45;
+  --kv-info: #5b6b7a;
+  --kv-focus: #5f7355;
+
+  /* نام‌های قدیمی به‌عنوان alias نگه داشته می‌شوند تا هیچ صفحه‌ای نشکند */
+  --kv-ink: var(--kv-text);
+  --kv-ink-soft: #3a332c;
+  --kv-muted: var(--kv-text-muted);
+
+  /* شکل و عمق */
+  --kv-radius-control: 14px;
+  --kv-radius-surface: 20px;
+  --kv-radius-sheet: 24px;
+  --kv-shadow-card: 0 2px 6px rgba(26, 23, 20, 0.05), 0 12px 28px rgba(26, 23, 20, 0.07);
+  --kv-shadow-overlay: 0 18px 50px rgba(26, 23, 20, 0.18);
+
+  /* حرکت */
+  --kv-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --kv-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --kv-dur-fast: 140ms;
+  --kv-dur-base: 220ms;
+  --kv-dur-slow: 480ms;
+
+  /* تایپوگرافی */
+  --kv-font-body: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+  --kv-font-display: "Estedad", "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--kv-font-body);
+}
+
+html[data-theme="dark"] {
+  --kv-canvas: #141210;
+  --kv-surface: #1e1b17;
+  --kv-surface-muted: #282420;
+  --kv-text: #f2ece1;
+  --kv-text-muted: #b3a999;
+  --kv-primary: #efe7da;
+  --kv-on-primary: #17150f;
+  --kv-accent: #9fb08f;
+  --kv-on-accent: #141210;
+  --kv-border: #3a342c;
+  --kv-border-strong: rgba(242, 236, 225, 0.28);
+  --kv-success: #93b394;
+  --kv-warning: #d8b36a;
+  --kv-danger: #e39a92;
+  --kv-info: #9db2c4;
+  --kv-focus: #9fb08f;
+  --kv-ink-soft: #d9d0c2;
+  --kv-shadow-card: 0 2px 6px rgba(0, 0, 0, 0.32), 0 12px 28px rgba(0, 0, 0, 0.28);
+  --kv-shadow-overlay: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ── تم فروشگاه: روشن (liquid) = کرِم و بلوط ─────────────────────────────── */
+html[data-theme="liquid"] .storefront-shell {
+  --liquid-ivory: var(--kv-canvas);
+  --liquid-porcelain: var(--kv-surface);
+  --liquid-ink: var(--kv-text);
+  --liquid-walnut: #8a7360;
+  --liquid-coral: var(--kv-accent);
+  --liquid-mist: var(--kv-surface-muted);
+  background-color: var(--kv-canvas);
+  background-image:
+    radial-gradient(circle at 12% 6%, rgba(95, 115, 85, 0.1), transparent 26rem),
+    radial-gradient(circle at 88% 24%, rgba(138, 115, 96, 0.1), transparent 30rem),
+    radial-gradient(circle at 50% 72%, rgba(233, 224, 207, 0.5), transparent 38rem);
+  color: var(--kv-text);
+}
+
+html[data-theme="liquid"] .storefront-shell::before {
+  opacity: 0.07;
+}
+
+/* ── تایپوگرافی ──────────────────────────────────────────────────────────── */
+body {
+  font-family: var(--kv-font-body);
+  color: var(--kv-text);
+}
+
+:where(.storefront-shell, .admin-system, .vip-portal-shell, .wholesale-system, .app-shell, .auth-shell) :where(h1, h2, h3) {
+  font-family: var(--kv-font-display);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.kv-display-xl {
+  font-family: var(--kv-font-display);
+  font-size: clamp(2.25rem, 6vw, 4.25rem);
+  line-height: 1.08;
+  font-weight: 700;
+}
+
+.kv-display-lg {
+  font-family: var(--kv-font-display);
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  line-height: 1.15;
+  font-weight: 700;
+}
+
+.kv-title {
+  font-family: var(--kv-font-display);
+  font-size: clamp(1.25rem, 2.4vw, 1.75rem);
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.kv-body {
+  font-size: clamp(0.9375rem, 1.05vw, 1.0625rem);
+  line-height: 1.8;
+}
+
+.kv-body-sm { font-size: 0.875rem; line-height: 1.75; }
+
+.kv-label {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.kv-measure { max-width: 68ch; }
+
+/* ── پل سازگاری: hexهای قدیمی → توکن‌های قفل‌شده ───────────────────────── */
+[class*="bg-[#011c3a]"] { background-color: var(--kv-primary); }
+[class*="bg-[#0a2c55]"] { background-color: var(--kv-accent); }
+[class*="hover:bg-[#0a2c55]"]:hover { background-color: var(--kv-accent); }
+[class*="hover:bg-[#011c3a]"]:hover { background-color: var(--kv-primary); }
+[class*="text-[#011c3a]"] { color: var(--kv-text); }
+[class*="border-[#011c3a]"] { border-color: var(--kv-border-strong); }
+[class*="ring-[#011c3a]"] { --tw-ring-color: var(--kv-focus); }
+[class*="divide-[#011c3a]"] { border-color: var(--kv-border); }
+[class*="bg-[#011c3a]"][class*="text-white"] { color: var(--kv-on-primary); }
+[class*="bg-[#0a2c55]"][class*="text-white"] { color: var(--kv-on-accent); }
+[class*="hover:bg-[#0a2c55]"][class*="text-white"]:hover { color: var(--kv-on-accent); }
+
+[class*="bg-[#c9654d]"] { background-color: var(--kv-accent); }
+[class*="bg-[#745d4d]"] { background-color: #8a7360; }
+[class*="text-[#c9654d]"] { color: var(--kv-accent); }
+[class*="border-[#c9654d]"] { border-color: var(--kv-accent); }
+
+[class*="bg-[#f7f5f0]"],
+[class*="bg-[#f7f6f3]"],
+[class*="bg-[#f6f6f4]"],
+[class*="bg-[#fbf7ef]"],
+[class*="bg-[#faf7f1]"] { background-color: var(--kv-canvas); }
+[class*="bg-[#f3f5f7]"],
+[class*="bg-[#efede7]"],
+[class*="bg-[#fcfbf8]"] { background-color: var(--kv-surface); }
+
+[class*="bg-white"] { background-color: var(--kv-surface); }
+[class*="bg-white/"] { background-color: color-mix(in srgb, var(--kv-surface) 78%, transparent); }
+
+[class*="border-neutral-100"],
+[class*="border-neutral-200"],
+[class*="border-neutral-300"],
+[class*="border-neutral-400"] { border-color: var(--kv-border); }
+[class*="bg-neutral-50"],
+[class*="bg-neutral-100"],
+[class*="bg-neutral-200"] { background-color: var(--kv-surface-muted); }
+[class*="text-neutral-300"],
+[class*="text-neutral-400"],
+[class*="text-neutral-500"],
+[class*="text-neutral-600"] { color: var(--kv-text-muted); }
+[class*="text-neutral-700"],
+[class*="text-neutral-800"],
+[class*="text-neutral-900"] { color: var(--kv-text); }
+
+/* شکل‌ها: از تیز به گرد (پاسخ ۱۳) */
+[class*="rounded-[2px]"] { border-radius: 8px; }
+[class*="rounded-[3px]"],
+[class*="rounded-[4px]"],
+[class*="rounded-[6px]"] { border-radius: var(--kv-radius-control); }
+[class*="rounded-[10px]"],
+[class*="rounded-[12px]"] { border-radius: var(--kv-radius-control); }
+
+/* کارت‌ها و پنل‌ها: عمق نرم و یکدست */
+:where(.admin-system, .vip-portal-shell, .wholesale-system, .storefront-shell) :where(article, section, aside)[class*="border"][class*="bg-white"] {
+  border-radius: var(--kv-radius-surface);
+  border-color: var(--kv-border);
+  box-shadow: var(--kv-shadow-card);
+}
+
+/* ── ورود بخش‌ها: یک‌بار، ملایم، با احترام کامل به کاهش حرکت ────────────── */
+.kv-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity var(--kv-dur-slow) var(--kv-ease-out), transform var(--kv-dur-slow) var(--kv-ease-out);
+}
+.kv-reveal.is-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kv-reveal { opacity: 1; transform: none; transition: none; }
+}

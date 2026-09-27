@@ -98,7 +98,7 @@ export function VisualHotspotCanvas({
             ))}
           </div>
           <button
-            onClick={() => onChange([...hotspots, { id: `h-${Date.now()}`, x: 50, y: 50, label: "قطعه جدید", color: "#c9654d", visible: true }])}
+            onClick={() => onChange([...hotspots, { id: `h-${Date.now()}`, x: 50, y: 50, label: "قطعه جدید", color: "var(--kv-accent)", visible: true }])}
             className="mt-2 h-8 w-full rounded-[3px] bg-[#011c3a] text-[10.5px] font-medium text-white transition hover:bg-[#0a2c55]"
           >
             + هات‌اسپات جدید

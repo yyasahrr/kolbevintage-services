@@ -184,7 +184,7 @@ export default function HeroStudio() {
                 </div>
               </div>
               <label className="block"><span className={label}>رنگ تأکید / دکمه</span><input type="color" value={config.countdown.accent} onChange={(e) => patchCountdown({ accent: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
-              <label className="block"><span className={label}>رنگ پس‌زمینه شمارنده (اختیاری)</span><input type="color" value={config.countdown.bgColor || "#011c3a"} onChange={(e) => patchCountdown({ bgColor: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
+              <label className="block"><span className={label}>رنگ پس‌زمینه شمارنده (اختیاری)</span><input type="color" value={config.countdown.bgColor || "#1a1714"} onChange={(e) => patchCountdown({ bgColor: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>
               <label className="block sm:col-span-2"><span className={label}>تصویر پس‌زمینه شمارنده (اختیاری)</span><input className={input} dir="ltr" value={config.countdown.bgImage.startsWith("data:") ? "(تصویر آپلودشده)" : config.countdown.bgImage} onChange={(e) => patchCountdown({ bgImage: e.target.value })} placeholder="خالی = بدون تصویر" /></label>
               <div className="sm:col-span-2">
                 <input ref={timerFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0], (url) => patchCountdown({ bgImage: url }))} />

@@ -21,8 +21,8 @@ const SupplierApp = dynamic(() => import("../../supplier-src/App"), {
         alignItems: "center",
         justifyContent: "center",
         gap: 14,
-        background: "#f7f5f0",
-        color: "#071c31",
+        background: "var(--kv-canvas)",
+        color: "var(--kv-text)",
         fontFamily: "Vazirmatn, Tahoma, sans-serif",
       }}
     >
@@ -32,7 +32,7 @@ const SupplierApp = dynamic(() => import("../../supplier-src/App"), {
           height: 44,
           borderRadius: "50%",
           border: "2px solid rgba(7,28,49,0.15)",
-          borderTopColor: "#071c31",
+          borderTopColor: "var(--kv-text)",
           animation: "kolbe-boot-spin 0.8s linear infinite",
         }}
       />
