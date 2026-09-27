@@ -28,6 +28,35 @@
 
 import type { WholesaleOffer, WholesalePackage, WholesaleProductDetail, WholesaleVariant } from "./catalog";
 
+/**
+ * واحدهایی که quantity در آن‌ها «تعدادِ کلِ بسته/سری» است، نه تعدادِ لباس
+ * (`docs/architecture/quantity-and-package-model.md`). یکجا تعریف شده تا هیچ
+ * مصرف‌کننده‌ای این فهرست را بازنویسی نکند و از مدلِ دامنه جا نماند.
+ */
+export const PACKAGE_LIKE_MOQ_UNITS: readonly string[] = ["PACKAGE", "SERIES", "BOX", "CARTON", "SET"];
+
+export const isPackageLikeUnit = (unit: string): boolean => PACKAGE_LIKE_MOQ_UNITS.includes(unit);
+
+/**
+ * کدام پیشنهاد روی صفحهٔ محصول پیکربندی می‌شود؟
+ *
+ * یک محصول می‌تواند چند پیشنهادِ منتشرشده داشته باشد (مثلاً یک پیشنهادِ `PIECE`
+ * برای تک‌فروشی و یک پیشنهادِ `SERIES` برای فروشِ سری). پیشنهادِ بسته‌ای تنها
+ * پیشنهادی است که «دستورِ پخت» دارد و خریدار می‌تواند روی آن سری/تعداد انتخاب
+ * کند؛ پس اگر وجود داشته باشد همان نمایش داده می‌شود و در غیر این صورت به
+ * نخستین پیشنهاد در ترتیبِ قطعیِ سرور برمی‌گردیم.
+ *
+ * این یک قانونِ **نمایش** است با ورودیِ کاملاً قطعی: ترتیبِ پیشنهادها را سرور
+ * تعیین می‌کند و اینجا فقط «قابلِ پیکربندی‌ترین» پیشنهاد انتخاب می‌شود. هیچ
+ * پیشنهادی ساخته یا ترجیحِ قیمتی اعمال نمی‌شود.
+ */
+export function primaryOfferFor(detail: WholesaleProductDetail): WholesaleOffer | null {
+  if (detail.offers.length === 0) return null;
+  return (
+    detail.offers.find((offer) => isPackageLikeUnit(offer.moqUnit) && offer.packages.length > 0) ?? detail.offers[0]!
+  );
+}
+
 export type SeriesCompositionRow = {
   variantId: string;
   sku: string;

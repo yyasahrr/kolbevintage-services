@@ -20,116 +20,42 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ApiErrorKind } from "../../shared/http/errors";
 import type { ApiClient } from "../../shared/http/types";
 import type { ApiResult } from "../../shared/http/types";
+import { fetchWholesaleCatalog, type WholesaleCatalogItem } from "../../shared/wholesale/catalog";
 import {
-  fetchWholesaleCatalog,
-  fetchWholesaleProductDetail,
-  type WholesaleCatalogItem,
-  type WholesaleOffer,
-  type WholesaleProductDetail,
-  type WholesaleSellerType,
-} from "../../shared/wholesale/catalog";
+  errorCopy,
+  formatMoney,
+  moqUnitLabel,
+  packageTypeLabel,
+  quantityWithUnit,
+  SELLER_TYPE_LABELS_FA,
+  toPersianDigits,
+  viewStateFromResult,
+  type CatalogViewState,
+} from "../../shared/wholesale/presentation";
 
 /* ── ارائهٔ فارسیِ enumهای دامنه (بدونِ ازبین‌بردنِ معنا) ─────────────────── */
 
-export const MOQ_UNIT_LABELS_FA: Record<string, string> = {
-  PIECE: "عدد",
-  PACKAGE: "بسته",
-  SERIES: "سری",
-  BOX: "جعبه",
-  CARTON: "کارتن",
-  SET: "ست",
-};
-
-export const PACKAGE_TYPE_LABELS_FA: Record<string, string> = {
-  SIZE_RUN: "سری سایزبندی",
-  FIXED_QUANTITY: "تعداد ثابت",
-  COLOR_MIX: "ترکیب رنگ",
-  CUSTOM_BUNDLE: "بستهٔ دلخواه",
-};
-
-export const PRICING_UNIT_LABELS_FA: Record<string, string> = {
-  ...MOQ_UNIT_LABELS_FA,
-  PER_PIECE: "به ازای هر عدد",
-};
-
-export const SELLER_TYPE_LABELS_FA: Record<WholesaleSellerType, string> = {
-  KOLBE: "کلبه",
-  SUPPLIER: "تأمین‌کننده",
-  UNKNOWN: "نامشخص",
-};
-
 /**
- * نمایشِ واحدِ MOQ. اگر سرور واحدی بدهد که ما نمی‌شناسیم، همان مقدارِ خام را
- * نشان می‌دهیم تا **هرگز** به «عدد» دروغ نگوییم.
+ * واژگانِ نمایش و قالب‌بندی به `shared/wholesale/presentation` منتقل شده است تا
+ * فهرستِ کاتالوگ و «پیکربندِ سری» (فاز ۶.۴) **یک** زبان داشته باشند. این
+ * re-exportها قراردادِ عمومیِ این فایل را نگه می‌دارند تا هیچ مصرف‌کننده یا
+ * آزمونِ موجودی نشکند.
  */
-export function moqUnitLabel(unit: string): string {
-  return MOQ_UNIT_LABELS_FA[unit] ?? unit;
-}
-
-export function packageTypeLabel(type: string): string {
-  return PACKAGE_TYPE_LABELS_FA[type] ?? type;
-}
-
-export function pricingUnitLabel(unit: string): string {
-  return PRICING_UNIT_LABELS_FA[unit] ?? unit;
-}
-
-/** «۲ سری» — کمیت و واحد با هم، تا واحد هرگز حذف نشود. */
-export function quantityWithUnit(quantity: number, unit: string): string {
-  return `${toPersianDigits(quantity)} ${moqUnitLabel(unit)}`;
-}
-
-const PERSIAN_DIGITS = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
-
-export function toPersianDigits(value: string | number): string {
-  return String(value).replace(/[0-9]/g, (digit) => PERSIAN_DIGITS[Number(digit)]);
-}
-
-/**
- * قالب‌بندیِ مبلغ از روی **رشتهٔ اعشاری**، بدونِ هیچ تبدیل به number.
- * جداکنندهٔ هزارگانِ فارسی (U+066C) استفاده می‌شود.
- */
-export function formatMoney(decimalString: string): string {
-  const cleaned = decimalString.trim();
-  if (!/^\d+$/.test(cleaned)) return cleaned; // اگر قالبِ دیگری بود، دست‌نخورده نشان بده
-  const grouped = cleaned.replace(/\B(?=(\d{3})+(?!\d))/g, "\u066C");
-  return toPersianDigits(grouped);
-}
-
-/* ── وضعیت‌های صریح UI ──────────────────────────────────────────────────── */
-
-export type CatalogViewState =
-  | { kind: "LOADING" }
-  | { kind: "READY_WITH_DATA" }
-  | { kind: "READY_EMPTY" }
-  | { kind: "ERROR"; errorKind: ApiErrorKind; message: string };
-
-/**
- * نگاشتِ صریحِ خطای سرور به وضعیتِ UI.
- *
- * ⚠️ خطا هرگز به «خالی» تبدیل نمی‌شود: `READY_EMPTY` فقط وقتی است که سرور
- * موفق پاسخ داده و فهرست واقعاً خالی بوده. `catch { return [] }` در این فایل
- * وجود ندارد.
- */
-export function viewStateFromResult(result: ApiResult<unknown>, hasData: boolean): CatalogViewState {
-  if (result.ok) return hasData ? { kind: "READY_WITH_DATA" } : { kind: "READY_EMPTY" };
-  return { kind: "ERROR", errorKind: result.error.kind, message: result.error.message };
-}
-
-const ERROR_COPY_FA: Partial<Record<ApiErrorKind, string>> = {
-  UNAUTHORIZED: "برای دیدنِ کاتالوگِ عمده باید وارد شوید.",
-  FORBIDDEN: "حساب شما اجازهٔ دسترسی به این بخش را ندارد. این یک محدودیتِ دسترسی است، نه خطای فنی.",
-  NOT_FOUND: "موردِ درخواستی پیدا نشد.",
-  RATE_LIMITED: "تعدادِ درخواست‌ها زیاد بود؛ کمی بعد دوباره تلاش کنید.",
-  SERVER_ERROR: "سرور در پردازشِ درخواست ناموفق بود.",
-  NETWORK_ERROR: "اتصال به سرور برقرار نشد. داده‌ای نمایش داده نمی‌شود چون داده‌ای دریافت نشد.",
-  PROVIDER_UNAVAILABLE: "سرویسِ وابسته در دسترس نیست.",
-  MALFORMED_RESPONSE: "پاسخِ سرور قابل تفسیر نبود.",
-};
-
-export function errorCopy(kind: ApiErrorKind, fallback: string): string {
-  return ERROR_COPY_FA[kind] ?? fallback;
-}
+export {
+  MOQ_UNIT_LABELS_FA,
+  PACKAGE_TYPE_LABELS_FA,
+  PRICING_UNIT_LABELS_FA,
+  SELLER_TYPE_LABELS_FA,
+  moqUnitLabel,
+  packageTypeLabel,
+  pricingUnitLabel,
+  quantityWithUnit,
+  toPersianDigits,
+  formatMoney,
+  errorCopy,
+  viewStateFromResult,
+  type CatalogViewState,
+} from "../../shared/wholesale/presentation";
 
 /* ── قطعاتِ مشترکِ ظاهری ─────────────────────────────────────────────────── */
 
@@ -176,6 +102,7 @@ function LoadingPanel({ label }: { label: string }) {
     </div>
   );
 }
+
 
 /* ── فهرستِ کاتالوگ (صفحه‌بندیِ CURSOR قانونی) ───────────────────────────── */
 
@@ -302,260 +229,11 @@ export function WholesaleCatalogList({
 
 /* ── جزئیاتِ محصولِ عمده (تصمیمِ خریدار) ─────────────────────────────────── */
 
-export function WholesaleProductDetailPage({
-  client,
-  productId,
-  onBack,
-  canRequest = false,
-  onRequestCreated,
-}: {
-  client: ApiClient;
-  productId: string;
-  onBack: () => void;
-  canRequest?: boolean;
-  onRequestCreated?: () => void;
-}) {
-  const [detail, setDetail] = useState<WholesaleProductDetail | null>(null);
-  const [state, setState] = useState<CatalogViewState>({ kind: "LOADING" });
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
-  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
-  const [requestQuantity, setRequestQuantity] = useState(1);
-  const [requestBusy, setRequestBusy] = useState(false);
-  const [requestMessage, setRequestMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const requestId = useRef(0);
-
-  useEffect(() => {
-    const id = ++requestId.current;
-    const controller = new AbortController();
-    setState({ kind: "LOADING" });
-    setDetail(null);
-    void (async () => {
-      const result = await fetchWholesaleProductDetail(client, productId, { signal: controller.signal });
-      if (id !== requestId.current) return;
-      if (!result.ok) {
-        setState({ kind: "ERROR", errorKind: result.error.kind, message: result.error.message });
-        return;
-      }
-      setDetail(result.data);
-      setSelectedVariantId(result.data.variants[0]?.id ?? null);
-      const firstOffer = result.data.offers[0];
-      setSelectedPackageId(firstOffer?.packages[0]?.id ?? null);
-      setRequestQuantity(firstOffer?.moq ?? 1);
-      setState(viewStateFromResult(result, true));
-    })();
-    return () => controller.abort();
-  }, [client, productId, reloadKey]);
-
-  const offer: WholesaleOffer | null = detail?.offers[0] ?? null;
-  const variantNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const variant of detail?.variants ?? []) map.set(variant.id, variant.sku);
-    return map;
-  }, [detail]);
-
-  const createRequest = async () => {
-    if (!offer) return;
-    const packageLike = ["PACKAGE", "SERIES", "BOX", "CARTON", "SET"].includes(offer.moqUnit);
-    const selector = packageLike ? { packageId: selectedPackageId } : { variantId: selectedVariantId };
-    if ((packageLike && !selectedPackageId) || (!packageLike && !selectedVariantId)) {
-      setRequestMessage({ kind: "error", text: "گزینهٔ لازم برای این نوع فروش انتخاب نشده است." }); return;
-    }
-    setRequestBusy(true); setRequestMessage(null);
-    const result = await client.requestResult<{ id: string }>("/vip/requests", { method: "POST", body: { productId, offerId: offer.id, quantity: requestQuantity, ...selector } });
-    setRequestBusy(false);
-    if (!result.ok) { setRequestMessage({ kind: "error", text: result.error.message }); return; }
-    setRequestMessage({ kind: "success", text: `درخواست ${result.data.id} ثبت شد.` }); onRequestCreated?.();
-  };
-
-  return (
-    <section aria-labelledby="wholesale-detail-heading" className="space-y-5">
-      <button type="button" onClick={onBack} className={`text-[10.5px] text-[#0b2a46] underline underline-offset-4 ${RING}`}>
-        بازگشت به کاتالوگ
-      </button>
-
-      {state.kind === "LOADING" ? <LoadingPanel label="در حالِ خواندنِ جزئیات…" /> : null}
-      {state.kind === "ERROR" ? (
-        <ErrorPanel kind={state.errorKind} message={state.message} onRetry={() => setReloadKey((key) => key + 1)} />
-      ) : null}
-
-      {detail ? (
-        <>
-          <header className="space-y-1">
-            <h1 id="wholesale-detail-heading" className="text-[18px] font-semibold">{detail.name}</h1>
-            <p className="text-[10.5px] text-neutral-500">
-              فروشنده: {SELLER_TYPE_LABELS_FA[detail.sellerType]} · وضعیت: {detail.status || "—"}
-            </p>
-            {detail.description ? <p className="max-w-2xl text-[11.5px] leading-6 text-neutral-600">{detail.description}</p> : null}
-          </header>
-
-          {detail.media.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {detail.media.map((url: string, index: number) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={`${url}-${index}`} src={url} alt={`${detail.name} — تصویر ${toPersianDigits(index + 1)}`} className="h-24 w-24 border border-neutral-200 object-cover" />
-              ))}
-            </div>
-          ) : null}
-
-          {/* ── واریانت‌ها ─────────────────────────────────────────────────── */}
-          <section aria-labelledby="wholesale-variants-heading" className="space-y-2">
-            <h3 id="wholesale-variants-heading" className="text-[13px] font-semibold">واریانت‌ها</h3>
-            {detail.variants.length === 0 ? (
-              <EmptyPanel title="واریانتی ثبت نشده" body="سرور واریانتِ فعالی برای این محصول برنگرداند." />
-            ) : (
-              <div className="overflow-x-auto border border-neutral-200">
-                <table className="w-full min-w-[520px] border-collapse text-[11px]">
-                  <caption className="sr-only">فهرستِ واریانت‌های قابلِ انتخاب</caption>
-                  <thead className="bg-[#efede7] text-right">
-                    <tr>
-                      <th scope="col" className="p-2 font-medium">انتخاب</th>
-                      <th scope="col" className="p-2 font-medium">شناسه (SKU)</th>
-                      <th scope="col" className="p-2 font-medium">ویژگی‌ها</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.variants.map((variant) => (
-                      <tr key={variant.id} className="border-t border-neutral-200">
-                        <td className="p-2">
-                          <input
-                            type="radio"
-                            name="wholesale-variant"
-                            checked={selectedVariantId === variant.id}
-                            onChange={() => setSelectedVariantId(variant.id)}
-                            aria-label={`انتخابِ واریانتِ ${variant.sku}`}
-                            className={RING}
-                          />
-                        </td>
-                        <td className="p-2"><LtrCode value={variant.sku} /></td>
-                        <td className="p-2 text-neutral-600">
-                          {Object.entries(variant.attributes ?? {}).map(([key, value]) => `${key}: ${String(value)}`).join(" · ") || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* ── پیشنهادِ تجاری ─────────────────────────────────────────────── */}
-          <section aria-labelledby="wholesale-offer-heading" className="space-y-3">
-            <h3 id="wholesale-offer-heading" className="text-[13px] font-semibold">شرایطِ عمده</h3>
-            {!offer ? (
-              <EmptyPanel title="پیشنهادِ عمده‌ای وجود ندارد" body="سرور پیشنهادِ منتشرشده‌ای برای این محصول برنگرداند." />
-            ) : (
-              <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-                <div>
-                  <dt className="text-[10px] text-neutral-500">قیمتِ عمده</dt>
-                  <dd className="text-[13px]"><Money value={offer.price} currency={offer.currency} /></dd>
-                </div>
-                {/* ⚠️ واحدِ MOQ بخشی ازِ خودِ عدد است: «۲ سری» ≠ «۲ عدد». */}
-                <div>
-                  <dt className="text-[10px] text-neutral-500">حداقلِ سفارش</dt>
-                  <dd className="text-[13px] font-medium">{quantityWithUnit(offer.moq, offer.moqUnit)}</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-neutral-500">واحدِ قیمت‌گذاری</dt>
-                  <dd className="text-[13px]">{pricingUnitLabel(offer.pricingUnit || offer.moqUnit)}</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-neutral-500">نوعِ بسته</dt>
-                  <dd className="text-[13px]">
-                    {offer.packageType
-                      ? packageTypeLabel(offer.packageType)
-                      : offer.packages[0]?.packageType
-                        ? packageTypeLabel(offer.packages[0].packageType)
-                        : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-neutral-500">موجودیِ قابلِ فروش</dt>
-                  <dd className="text-[13px]">{toPersianDigits(detail.availability)}</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-neutral-500">شناسهٔ پیشنهاد</dt>
-                  <dd><LtrCode value={offer.sku || offer.id} /></dd>
-                </div>
-              </dl>
-            )}
-          </section>
-
-          {/* ── ترکیبِ بسته / سری ──────────────────────────────────────────── */}
-          {offer && offer.packages.length > 0 ? (
-            <section aria-labelledby="wholesale-package-heading" className="space-y-2">
-              <h3 id="wholesale-package-heading" className="text-[13px] font-semibold">داخلِ بسته چه چیزی است؟</h3>
-              {offer.packages.map((pack) => (
-                <div key={pack.id} className="border border-neutral-200 p-3">
-                  {["PACKAGE", "SERIES", "BOX", "CARTON", "SET"].includes(offer.moqUnit) ? <label className="mb-2 flex items-center gap-2 text-[11px]"><input type="radio" name="wholesale-package" checked={selectedPackageId === pack.id} onChange={() => setSelectedPackageId(pack.id)} /> انتخاب این بسته</label> : null}
-                  <p className="text-[12px] font-medium">{pack.name}</p>
-                  <p className="mt-0.5 text-[10.5px] text-neutral-500">
-                    {packageTypeLabel(pack.packageType)} · مجموع: {toPersianDigits(pack.totalPieces)} قطعه
-                  </p>
-                  {pack.items.length > 0 ? (
-                    <table className="mt-2 w-full border-collapse text-[11px]">
-                      <caption className="sr-only">ترکیبِ واریانت‌های بسته</caption>
-                      <thead className="bg-[#efede7] text-right">
-                        <tr>
-                          <th scope="col" className="p-2 font-medium">واریانت</th>
-                          <th scope="col" className="p-2 font-medium">تعداد</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pack.items.map((item) => (
-                          <tr key={item.variantId} className="border-t border-neutral-200">
-                            <td className="p-2"><LtrCode value={variantNameById.get(item.variantId) ?? item.variantId} /></td>
-                            <td className="p-2 tabular-nums">{toPersianDigits(item.quantity)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : null}
-                </div>
-              ))}
-            </section>
-          ) : null}
-
-          {/* ── پله‌های قیمت ───────────────────────────────────────────────── */}
-          {offer && offer.pricingTiers.length > 0 ? (
-            <section aria-labelledby="wholesale-tiers-heading" className="space-y-2">
-              <h3 id="wholesale-tiers-heading" className="text-[13px] font-semibold">قیمت بر پایهٔ تعداد</h3>
-              <div className="overflow-x-auto border border-neutral-200">
-                <table className="w-full min-w-[460px] border-collapse text-[11px]">
-                  <caption className="sr-only">پله‌های قیمتِ عمده</caption>
-                  <thead className="bg-[#efede7] text-right">
-                    <tr>
-                      <th scope="col" className="p-2 font-medium">از</th>
-                      <th scope="col" className="p-2 font-medium">تا</th>
-                      <th scope="col" className="p-2 font-medium">قیمتِ واحد</th>
-                      <th scope="col" className="p-2 font-medium">واحد</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {offer.pricingTiers.map((tier, index) => (
-                      <tr key={`${tier.minQuantity}-${index}`} className="border-t border-neutral-200">
-                        <td className="p-2 tabular-nums">{toPersianDigits(tier.minQuantity)}</td>
-                        {/* `null` یعنی پلهٔ باز — باید صادقانه «به بالا» خوانده شود. */}
-                        <td className="p-2 tabular-nums">{tier.maxQuantity === null ? "به بالا" : toPersianDigits(tier.maxQuantity)}</td>
-                        <td className="p-2"><Money value={tier.unitPrice} currency={tier.currency} /></td>
-                        <td className="p-2">{moqUnitLabel(tier.moqUnit)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ) : null}
-
-          {selectedVariantId ? (
-            <p className="text-[10.5px] text-neutral-500">
-              واریانتِ انتخاب‌شده: <LtrCode value={variantNameById.get(selectedVariantId) ?? selectedVariantId} />
-            </p>
-          ) : null}
-
-          {offer ? <section className="space-y-3 border-t border-neutral-200 pt-4" aria-labelledby="wholesale-request-heading"><h3 id="wholesale-request-heading" className="text-[13px] font-semibold">ثبت درخواست عمده</h3>{canRequest ? <><label className="block max-w-xs text-[11px]">تعداد ({moqUnitLabel(offer.moqUnit)})<input className={`mt-1 w-full border border-neutral-300 px-3 py-2 ${RING}`} type="number" min={offer.moq} step="1" value={requestQuantity} onChange={(event) => setRequestQuantity(event.currentTarget.valueAsNumber)} /></label><button type="button" disabled={requestBusy || !Number.isInteger(requestQuantity) || requestQuantity < offer.moq} onClick={() => void createRequest()} className={`border border-[#011c3a] bg-[#011c3a] px-4 py-2 text-[11px] text-white disabled:opacity-50 ${RING}`}>{requestBusy ? "در حال ثبت…" : "ثبت درخواست قیمت"}</button>{requestMessage ? <p role={requestMessage.kind === "error" ? "alert" : "status"} className={requestMessage.kind === "error" ? "text-[11px] text-red-700" : "text-[11px] text-green-700"}>{requestMessage.text}</p> : null}</> : <p className="text-[11px] text-neutral-600">مجوز ثبت درخواست برای این نشست از سوی سرور صادر نشده است.</p>}</section> : null}
-        </>
-      ) : null}
-    </section>
-  );
-}
+/**
+ * صفحهٔ جزئیات در فاز ۶.۴ بازطراحی شده است: به‌جای جدولِ خامِ واریانت‌ها،
+ * خریدار «رنگ → سری → تعدادِ سری» را انتخاب می‌کند (مدلِ فروشگاه، نه مدلِ
+ * پایگاه‌داده). پیاده‌سازی در `storefront/vip/WholesaleProductDetail.tsx` است؛
+ * این re-export نام و قراردادِ عمومی را برای `VIPPortal` و آزمون‌ها حفظ
+ * می‌کند.
+ */
+export { WholesaleProductDetailPage } from "../vip/WholesaleProductDetail";
