@@ -39,6 +39,7 @@ export {
   rfq,
   seller,
   sellerOffer,
+  siteDesignRevision,
   siteSetting,
   supplier,
   supplierApplication,

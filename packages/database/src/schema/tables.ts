@@ -1326,6 +1326,32 @@ export const systemLog = pgTable(
   ],
 );
 
+/**
+ * نسخه‌های «طراحی سایت» — پیش‌نویس/منتشرشده (استودیوی تم، پاسخ ۵۰ کاربر).
+ *
+ * چرا جدول جدا و نه ستون در `site_setting`؟ چون مدیریتِ محتوا نیاز به تاریخچه،
+ * بازگردانی و تفکیک «پیش‌نویس» از «منتشرشده» دارد؛ سه چیزی که در یک ردیف
+ * کلید-مقدار جا نمی‌شوند. هر ذخیره/انتشار یک ردیف تازه می‌سازد (append-only)
+ * و «آخرین ردیف منتشرشده» منبع حقیقتِ ظاهر سایت است.
+ */
+export const siteDesignRevision = pgTable(
+  "site_design_revision",
+  {
+    id: text("id").primaryKey(),
+    settingKey: text("setting_key").notNull().default("storefront"),
+    status: text("status").notNull().default("draft"),
+    payload: jsonb("payload").notNull().default({}),
+    note: text("note"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("site_design_revision_lookup").on(table.settingKey, table.status, table.createdAt.desc()),
+    index("site_design_revision_created").on(table.createdAt.desc()),
+  ],
+);
+
 export const siteSetting = pgTable("site_setting", {
   settingKey: text("setting_key").primaryKey(),
   value: jsonb("value").notNull().default({}),

@@ -14,7 +14,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, within } from "@testing-library/react";
 import { createElement } from "react";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { call } from "./helpers";
 
@@ -133,6 +133,25 @@ describe("گزارش خطا و شبکه", () => {
         await new Promise((r) => setTimeout(r, 240));
       });
       checked.push({ route: `#/admin › ${label}`, title: label, nodes: panel.querySelectorAll("*").length });
+
+      // استودیوی طراحی سایت: همهٔ تب‌ها (از جمله انتشار و تاریخچه) باید رندر شوند.
+      if (label === "مرکز طراحی سایت") {
+        // بخش طراحی تنبل (lazy) است؛ تا آمدن تب‌ها صبر می‌کنیم.
+        for (let attempt = 0; attempt < 40 && !panel.querySelector('nav[aria-label="بخش‌های مرکز طراحی"] button'); attempt += 1) {
+          await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
+        }
+        const designTabs = Array.from(panel.querySelectorAll('nav[aria-label="بخش‌های مرکز طراحی"] button')) as HTMLButtonElement[];
+        expect(designTabs.length, "تب‌های مرکز طراحی رندر نشد").toBeGreaterThan(3);
+        for (const tabButton of designTabs) {
+          const tabLabel = (tabButton.textContent ?? "").trim() || "تب";
+          await act(async () => {
+            tabButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            await new Promise((r) => setTimeout(r, 300));
+          });
+          checked.push({ route: `#/admin › مرکز طراحی سایت › ${tabLabel}`, title: tabLabel, nodes: panel.querySelectorAll("*").length });
+          expect((panel.textContent ?? "").length, `تب خالی در مرکز طراحی: ${tabLabel}`).toBeGreaterThan(400);
+        }
+      }
     }
 
     const report = [
@@ -162,7 +181,18 @@ describe("گزارش خطا و شبکه", () => {
       "> این گزارش خودکار ساخته می‌شود: `npx vitest run test/console-network-audit.test.tsx`.",
       "",
     ].join("\n");
-    writeFileSync(join(process.cwd(), "..", "docs", "design", "no-errors-report.md"), report, "utf8");
+    // بخش دستی «بررسی زندهٔ سرور (curl)» پس از بازتولید خودکار حفظ می‌شود.
+    const reportPath = join(process.cwd(), "..", "docs", "design", "no-errors-report.md");
+    let manual = "";
+    try {
+      const existing = readFileSync(reportPath, "utf8");
+      const marker = "## بررسی زندهٔ سرور";
+      const at = existing.indexOf(marker);
+      if (at >= 0) manual = `\n${existing.slice(at).trimEnd()}\n`;
+    } catch {
+      // نخستین اجرا: بخش دستی وجود ندارد.
+    }
+    writeFileSync(reportPath, report + manual, "utf8");
 
     expect(runtimeErrors, runtimeErrors.join("\n")).toEqual([]);
     expect(consoleErrors.filter((line) => !line.includes("not wrapped in act")), consoleErrors.join("\n")).toEqual([]);

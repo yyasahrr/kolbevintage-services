@@ -18,6 +18,14 @@ import {
   translateRetailOrderToNest,
 } from "./retail-pricing";
 import { handlePerfectCorpRequest, isPerfectCorpError } from "./perfect-corp";
+import {
+  loadPublishedSiteDesign,
+  loadSiteDesignState,
+  publishSiteDesign,
+  restoreSiteDesignRevision,
+  saveSiteDesignDraft,
+  validateSiteDesignSettings,
+} from "./site-design";
 
 /**
  * CORS — فاز ۲: محاسبه per-request (D36).
@@ -309,6 +317,11 @@ async function assertTokenVersion(claims: Claims): Promise<Claims> {
     if (error instanceof HttpError) throw error;
     throw new HttpError(401, "UNAUTHORIZED");
   }
+}
+
+/** شناسهٔ همبستگی درخواست برای ثبت در لاگ حسابرسی. */
+function requestIdOf(req: NextRequest): string | null {
+  return req.headers.get("x-request-id") || req.headers.get("x-correlation-id") || null;
 }
 
 async function requireRole(req: NextRequest, role: string) {
@@ -963,6 +976,28 @@ async function handleAdmin(req: NextRequest, path: string) {
   const claims = await requireRole(req, "admin");
   const method = req.method;
 
+  // ── استودیوی طراحی سایت (پاسخ ۵۰): پیش‌نویس، انتشار، تاریخچه، بازگردانی ──
+  if (path === "admin/site-design" && method === "GET") return response(req, await loadSiteDesignState());
+  if (path === "admin/site-design/draft" && (method === "PUT" || method === "POST")) {
+    const body = await jsonBody(req);
+    const settings = validateSiteDesignSettings(body.settings ?? body);
+    const note = typeof body.note === "string" ? body.note.slice(0, 200) : null;
+    const state = await saveSiteDesignDraft(settings, { id: claims.sub, requestId: requestIdOf(req) }, note);
+    return response(req, state);
+  }
+  if (path === "admin/site-design/publish" && method === "POST") {
+    const body = await jsonBody(req);
+    const revisionId = typeof body.revisionId === "string" && body.revisionId ? body.revisionId : null;
+    const state = await publishSiteDesign({ id: claims.sub, requestId: requestIdOf(req) }, revisionId);
+    return response(req, state);
+  }
+  if (path === "admin/site-design/restore" && method === "POST") {
+    const body = await jsonBody(req);
+    if (typeof body.revisionId !== "string" || !body.revisionId) throw new HttpError(422, "INVALID_INPUT");
+    const state = await restoreSiteDesignRevision(body.revisionId, { id: claims.sub, requestId: requestIdOf(req) });
+    return response(req, state);
+  }
+
   if (path === "admin/accounts" && method === "GET") return response(req, { accounts: await rows("SELECT * FROM wholesale_account ORDER BY created_at DESC") });
   const accountStatus = path.match(/^admin\/accounts\/([^/]+)\/status$/);
 
@@ -1269,6 +1304,13 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
   if (path === "site/settings" && req.method === "GET") {
     const setting = (await rows<any>("SELECT value,updated_at FROM site_setting WHERE setting_key='storefront' LIMIT 1"))[0];
     return response(req, { settings: withoutEmbeddedVideos(setting?.value ?? null), updatedAt: setting?.updated_at ?? null });
+  }
+  // استودیوی طراحی: نسخهٔ منتشرشده برای فروشگاه (منبع حقیقت، نه کپی مرورگر).
+  if (path === "site/design" && req.method === "GET") {
+    const published = await loadPublishedSiteDesign();
+    if (published.settings) return response(req, { settings: withoutEmbeddedVideos(published.settings), publishedAt: published.publishedAt });
+    const setting = (await rows<any>("SELECT value,updated_at FROM site_setting WHERE setting_key='storefront' LIMIT 1"))[0];
+    return response(req, { settings: withoutEmbeddedVideos(setting?.value ?? null), publishedAt: setting?.updated_at ?? null });
   }
   if (path === "me" && req.method === "GET") {
     const claims = await requireRole(req, "customer");

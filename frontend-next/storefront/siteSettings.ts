@@ -7,6 +7,8 @@ import {
   type DesignSystemConfig,
 } from "./designSystem";
 import { api } from "./lib/api";
+import { siteDesignErrorMessage } from "./lib/siteDesignApi";
+import { enforceStyleLock } from "./lib/styleLock";
 
 export type HeroTemplate = "cover" | "split" | "mosaic" | "duo" | "minimal";
 
@@ -593,7 +595,8 @@ export function loadSiteSettings(): SiteSettings {
     if (!raw) return defaultSiteSettings;
     if (raw === cacheRaw) return cacheValue;
     const saved = JSON.parse(raw) as Partial<SiteSettings>;
-    cacheValue = settingsForBrowserStorage(mergeSiteSettings(saved));
+    // قفل سبک هنگام خواندن: مقدارهای قدیمی (سرمه‌ای و خانواده‌اش) خودترمیم می‌شوند.
+    cacheValue = settingsForBrowserStorage(mergeSiteSettings(enforceStyleLock(saved)));
     cacheRaw = JSON.stringify(cacheValue);
     if (cacheRaw !== raw) localStorage.setItem(STORAGE_KEY, cacheRaw);
     return cacheValue;
@@ -602,7 +605,15 @@ export function loadSiteSettings(): SiteSettings {
   }
 }
 
-export function saveSiteSettings(settings: SiteSettings) {
+/**
+ * ذخیرهٔ تنظیمات ظاهر.
+ *
+ * مسیر ذخیره از «پروکسی CMS بیرونی» به **بک‌اند اختصاصی استودیو** منتقل شد
+ * (پاسخ ۵۰): `PUT admin/site-design/draft`. فرق مهم این است که شکست ذخیره دیگر
+ * بی‌صدا نیست — وضعیت در `siteDesignSaveState` می‌نشیند و پنل آن را نشان می‌دهد.
+ * کپی مرورگر (localStorage) فقط برای پیش‌نمایش بی‌درنگ است، نه منبع حقیقت.
+ */
+export function saveSiteSettings(settings: SiteSettings, note?: string | null) {
   const browserSettings = settingsForBrowserStorage(settings);
   const raw = JSON.stringify(browserSettings);
   try {
@@ -613,18 +624,71 @@ export function saveSiteSettings(settings: SiteSettings) {
   cacheRaw = raw;
   cacheValue = browserSettings;
   window.dispatchEvent(new Event(EVENT_NAME));
+  setSiteDesignSaveState({ state: "saving", error: null, savedAt: null });
   if (remoteSaveTimer) clearTimeout(remoteSaveTimer);
   remoteSaveTimer = setTimeout(() => {
-    void api("/store/kolbe/admin/site-settings", { method: "PUT", body: { settings } }).catch(() => undefined);
+    void api("/store/kolbe/admin/site-design/draft", { method: "PUT", body: { settings, note: note ?? null } })
+      .then(() => setSiteDesignSaveState({ state: "saved", error: null, savedAt: Date.now() }))
+      .catch((error: unknown) => setSiteDesignSaveState({ state: "error", error: siteDesignErrorMessage(error), savedAt: null }));
   }, 450);
 }
 
+export type SiteDesignSaveState = {
+  state: "idle" | "saving" | "saved" | "error";
+  error: string | null;
+  savedAt: number | null;
+};
+
+let designSaveState: SiteDesignSaveState = { state: "idle", error: null, savedAt: null };
+const DESIGN_STATE_EVENT = "kolbe-site-design-save-state";
+
+function setSiteDesignSaveState(next: SiteDesignSaveState) {
+  designSaveState = next;
+  window.dispatchEvent(new Event(DESIGN_STATE_EVENT));
+}
+
+/**
+ * وضعیت آخرین ذخیرهٔ سروری برای نوار وضعیت استودیو.
+ *
+ * هویت شیء فقط وقتی عوض می‌شود که وضعیت واقعاً تغییر کند؛ همین برای
+ * `useSyncExternalStore` لازم است (اسنپ‌شات پایدار).
+ */
+export function readSiteDesignSaveState(): SiteDesignSaveState {
+  return designSaveState;
+}
+
+export function useSiteDesignSaveState(): SiteDesignSaveState {
+  return useSyncExternalStore(
+    (callback) => {
+      window.addEventListener(DESIGN_STATE_EVENT, callback);
+      return () => window.removeEventListener(DESIGN_STATE_EVENT, callback);
+    },
+    readSiteDesignSaveState,
+    () => ({ state: "idle", error: null, savedAt: null }) as SiteDesignSaveState,
+  );
+}
+
 /** دریافت نسخه مرکزی تنظیمات؛ روی هر بار ورود بازدیدکننده اجرا می‌شود. */
+/**
+ * دریافت نسخهٔ منتشرشدهٔ ظاهر از سرور.
+ *
+ * اول از مسیر استودیو (`site/design` = آخرین نسخهٔ منتشرشده) می‌خوانیم و اگر
+ * نبود، به مسیر قدیمی `site/settings` برمی‌گردیم؛ این‌گونه نصب‌های قدیمی هم
+ * بدون مهاجرت داده کار می‌کنند.
+ */
 export async function syncSiteSettingsFromServer() {
   try {
-    const result = await api<{ settings: Partial<SiteSettings> | null }>("/store/kolbe/site/settings");
+    let result: { settings: Partial<SiteSettings> | null } = { settings: null };
+    try {
+      result = await api<{ settings: Partial<SiteSettings> | null }>("/store/kolbe/site/design");
+    } catch {
+      result = { settings: null };
+    }
+    if (!result.settings) {
+      result = await api<{ settings: Partial<SiteSettings> | null }>("/store/kolbe/site/settings");
+    }
     if (!result.settings) return;
-    const settings = settingsForBrowserStorage(mergeSiteSettings(result.settings));
+    const settings = settingsForBrowserStorage(mergeSiteSettings(enforceStyleLock(result.settings)));
     const raw = JSON.stringify(settings);
     try {
       localStorage.setItem(STORAGE_KEY, raw);

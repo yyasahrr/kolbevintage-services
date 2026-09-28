@@ -5,12 +5,13 @@ import HeroStudio from "./HeroStudio";
 import SiteBuilder from "./SiteBuilder";
 import { defaultSiteSettings, saveSiteSettings, useSiteSettings, type HomepageMode, type SiteSettings } from "../siteSettings";
 import { SortableList } from "../components/visualBuilder";
+import DesignPublishPanel from "../components/DesignPublishPanel";
 
 const DesignSystemStudio = lazy(() => import("./DesignSystemStudio"));
 const input = "h-10 w-full rounded-[4px] border border-neutral-300 bg-white px-3 text-[12px] outline-none transition focus:border-[var(--kv-primary)] focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]/15";
 const card = "rounded-[6px] border border-neutral-200 bg-white p-4";
 
-type DesignTab = "overview" | "homepage" | "header" | "hero" | "sections" | "footer" | "typography" | "theme";
+type DesignTab = "overview" | "homepage" | "header" | "hero" | "sections" | "footer" | "typography" | "theme" | "publish";
 
 const tabs: Array<{ id: DesignTab; label: string; description: string; icon: string }> = [
   { id: "overview", label: "نمای کلی", description: "وضعیت و میان‌برهای طراحی", icon: "activity" },
@@ -21,6 +22,7 @@ const tabs: Array<{ id: DesignTab; label: string; description: string; icon: str
   { id: "footer", label: "فوتر", description: "ستون‌ها، تماس و نمایش موبایل", icon: "minus" },
   { id: "typography", label: "فونت و تایپوگرافی", description: "فونت سایت، تیتر و بنرهای پروموشن", icon: "mail" },
   { id: "theme", label: "تم و دسته‌بندی", description: "توکن‌های بصری و فضای سایت", icon: "star" },
+  { id: "publish", label: "انتشار و تاریخچه", description: "پیش‌نویس، انتشار زنده و بازگردانی نسخه‌ها", icon: "shield" },
 ];
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint?: string }) {
@@ -157,7 +159,7 @@ export default function SiteDesignCenter() {
   const [saved, setSaved] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  const persist = (next: SiteSettings) => { saveSiteSettings(next); setSaved(true); window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setSaved(false), 1400); };
+  const persist = (next: SiteSettings) => { saveSiteSettings(next, "ذخیره از مرکز طراحی سایت"); setSaved(true); window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setSaved(false), 1400); };
 
   return <div className="space-y-5">
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[9px] tracking-[0.22em] text-neutral-400">سازندهٔ بصری سایت</p><h1 className="mt-2 text-[20px] font-semibold tracking-tight">مرکز طراحی سایت</h1><p className="mt-1 max-w-2xl text-[11px] leading-6 text-neutral-500">تمام ابزارهای ظاهری فروشگاه، از هدر و بخش نخست تا سکشن‌ها، فوتر و تم، در یک فضای کاری.</p></div><div className="flex items-center gap-2">{saved ? <span role="status" className="text-[10.5px] text-emerald-700">ذخیره شد</span> : null}<Link to="/" className="rounded-[4px] border border-neutral-300 bg-white px-4 py-2.5 text-[11px] hover:border-[var(--kv-primary)]">مشاهده سایت</Link></div></header>
@@ -171,6 +173,7 @@ export default function SiteDesignCenter() {
     {tab === "sections" ? <SiteBuilder mode="sections" /> : null}
     {tab === "footer" ? <FooterEditor settings={settings} persist={persist} /> : null}
     {tab === "typography" ? <TypographyEditor settings={settings} persist={persist} /> : null}
+    {tab === "publish" ? <DesignPublishPanel settings={settings} /> : null}
     {tab === "theme" ? <Suspense fallback={<div className="h-64 animate-pulse rounded-[6px] bg-neutral-100" aria-label="در حال بارگذاری تنظیمات تم" />}><DesignSystemStudio /></Suspense> : null}
   </div>;
 }
