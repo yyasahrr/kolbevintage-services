@@ -65,6 +65,18 @@ describe("کپی پورتال تأمین‌کننده — فارسی محض", ()
     expect(offenders, offenders.join("\n")).toEqual([]);
   });
 
+  it("متن‌های راهنما (placeholder/eyebrow/label) هیچ حرف لاتینی ندارند", () => {
+    const offenders: string[] = [];
+    for (const file of [...new Set(FILES)]) {
+      const source = readFileSync(join(ROOT, file), "utf8");
+      for (const match of source.matchAll(/(?:eyebrow|placeholder|aria-label|title|label|text|note|subtitle)\s*=\s*"([^"]{2,160})"/g)) {
+        const text = match[1].trim();
+        if (LATIN.test(text)) offenders.push(`${file}: ${text}`);
+      }
+    }
+    expect(offenders, offenders.join("\n")).toEqual([]);
+  });
+
   it("کدهای ماشینی در متن فارسی جا نمانده‌اند (PO-/RFQ-/QC-/SKU-)", () => {
     const offenders: string[] = [];
     const pattern = /\b(?:PO|RFQ|QC|ST|KV)-\d+/;

@@ -18,7 +18,16 @@
 | #/about | دربارهٔ کلبه | 214 |
 | #/admin › جمع کردن منو به آیکون‌ها | جمع کردن منو به آیکون‌ها | 252 |
 | #/admin › تنظیمات خرده | تنظیمات خرده | 507 |
-| #/admin › مرکز طراحی سایت | مرکز طراحی سایت | 102 |
+| #/admin › مرکز طراحی سایت | مرکز طراحی سایت | 202 |
+| #/admin › مرکز طراحی سایت › نمای کلی | نمای کلی | 202 |
+| #/admin › مرکز طراحی سایت › حالت صفحه اصلی | حالت صفحه اصلی | 236 |
+| #/admin › مرکز طراحی سایت › هدر و منو | هدر و منو | 250 |
+| #/admin › مرکز طراحی سایت › استودیوی بخش نخست | استودیوی بخش نخست | 288 |
+| #/admin › مرکز طراحی سایت › سکشن‌ها | سکشن‌ها | 229 |
+| #/admin › مرکز طراحی سایت › فوتر | فوتر | 352 |
+| #/admin › مرکز طراحی سایت › فونت و تایپوگرافی | فونت و تایپوگرافی | 170 |
+| #/admin › مرکز طراحی سایت › تم و دسته‌بندی | تم و دسته‌بندی | 374 |
+| #/admin › مرکز طراحی سایت › انتشار و تاریخچه | انتشار و تاریخچه | 162 |
 | #/admin › داشبورد | داشبورد | 252 |
 | #/admin › محصولات | محصولات | 405 |
 | #/admin › سفارش‌ها | سفارش‌ها | 147 |
@@ -45,11 +54,13 @@
 
 ## درخواست‌های شبکهٔ دیده‌شده
 
-- GET site/settings
 - GET catalog/products
+- GET site/design
+- GET site/settings
 - GET me
 - GET wholesale/account
 - GET admin/tickets
+- GET admin/site-design
 - GET admin/logs?level=all&source=all&status=open&range=24h&q=&page=1&limit=50
 
 > این گزارش خودکار ساخته می‌شود: `npx vitest run test/console-network-audit.test.tsx`.
@@ -69,9 +80,26 @@
 | `/store/kolbe/health` | 200 |
 | `/store/kolbe/catalog/products` | 200 |
 
-### کاتالوگ عمومی (نمونهٔ پاسخ)
+### استودیوی طراحی سایت — بک‌اند اختصاصی (پاسخ ۵۰)
+
+نشست مدیر برای این بررسی با همان مکانیزم کوکی امضاشدهٔ برنامه ساخته شد (`kolbe_session`)؛
+مسیر ورود به سرویس اصلی (Nest) در این محیط اجرا نمی‌شود، پس از مسیر ورود HTTP صرف‌نظر شد.
+
+| درخواست | کد پاسخ | نتیجه |
+| --- | --- | --- |
+| `GET /store/kolbe/admin/site-design` (با نشست مدیر) | 200 | `{draft,published,revisions}` برگشت |
+| `PUT /store/kolbe/admin/site-design/draft` | 200 | پیش‌نویس ساخته شد؛ نسخهٔ زنده تغییر نکرد |
+| `POST /store/kolbe/admin/site-design/publish` | 200 | پیش‌نویس در همان ردیف منتشر شد (`draft=null`) |
+| `GET /store/kolbe/site/design` (عمومی) | 200 | بار منتشرشده با `publishedAt` برگشت |
+| `POST /store/kolbe/admin/site-design/restore` | 200 | یادداشت «بازگردانی نسخهٔ …» به‌صورت پیش‌نویس تازه |
+| `PUT` با بخش ناشناس (`nope`) | 422 | `INVALID_SITE_DESIGN_KEYS` |
+| `GET /store/kolbe/admin/site-design` بدون نشست | 401 | `UNAUTHORIZED` |
+| `PUT` با ویدیوی Base64 | 200 | `heroStudio.heroVideo` → `/store/kolbe/site/hero-video` (بدون ذخیرهٔ Base64) |
+
+نمونهٔ پاسخ عمومی پس از انتشار:
 ```json
-{"products":[{"id":"prod_classic","slug":"classic-short-sleeve","name":"پیراهن کلاسیک نیم‌آستین","description":"تولید کارخانه، کیفیت صادراتی","category":null,"updated_at":"2026-09-27T23:45:26.769Z","variants":[{"id":"var_classic","sku":"NL-CLASSIC-M","color":"شیری","size":"M","available":60}],"available_total":60,"retail_price":null,"price_source":"PENDING_RETAIL_PRICING"},{"id":"prod_blouse","slug":"vintage-princess-blouse","name":"بلوز وینتیج پرنس","description":"تولید کارخانه، کیفیت صادراتی","category"
+{"settings":{"footer":{"columns":[]},"header":{"nav":[],"brand":"کلبه وینتیج"}},"publishedAt":"2026-09-28T01:22:02.630Z"}
 ```
 
-> این بخش با curl روی همان سرور توسعهٔ در حال اجرا ساخته شده است.
+> ردیف‌های ساخته‌شده در این بررسی زنده (نسخه‌های استودیو و آینهٔ `site_setting`) پس از
+> سنجش از دیتابیس توسعه پاک شدند تا حالت سایت دست‌نخورده بماند.

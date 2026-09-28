@@ -39,7 +39,7 @@ export function ApprovalWorkflow({ type }: { type: 'manufacturer' | 'legal' | 'i
   }
   const flow = steps[type] ?? steps.individual
   return <section className="surface" style={{ padding: 20 }}>
-    <SectionHeading title="گردش تأیید حساب" eyebrow={`APPROVAL WORKFLOW — ${type === 'manufacturer' ? 'تولیدکننده' : type === 'legal' ? 'حقوقی' : 'حقیقی'}`}>
+    <SectionHeading title="گردش تأیید حساب" eyebrow={`گردش تأیید — ${type === 'manufacturer' ? 'تولیدکننده' : type === 'legal' ? 'حقوقی' : 'حقیقی'}`}>
       متناسب با نوع تأمین‌کننده، مراحل تأیید متفاوت است.
     </SectionHeading>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -94,7 +94,7 @@ export function RoleManager() {
             <b style={{ fontSize: 11 }}>{role.name}</b>
             <span style={{ fontSize: 9.5, color: '#888', marginRight: 8 }} className="num-fa">{role.members} عضو</span>
             <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
-              {role.permissions.map(p => <span key={p} style={{ fontSize: 8, background: '#f6f6f2', padding: '2px 6 px', borderRadius: 3 }}>{p}</span>)}
+              {role.permissions.map(p => <span key={p} style={{ fontSize: 8, background: '#f6f6f2', padding: '2px 6px', borderRadius: 3 }}>{p}</span>)}
             </div>
           </div>
           <button onClick={() => setRoles(roles.filter(r => r.id !== role.id))} style={{ fontSize: 9, color: '#a4463d', background: 'none', border: 0, cursor: 'pointer', textDecoration: 'underline' }}>حذف</button>
@@ -102,11 +102,11 @@ export function RoleManager() {
       ))}
     </div>
     <div style={{ borderTop: '1px solid var(--kv-border)', paddingTop: 12 }}>
-      <input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="نام نقش جدید…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10 px', fontSize: 10.5 }} />
+      <input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="نام نقش جدید…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} />
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', margin: '8px 0' }}>
         {allPerms.map(p => (
           <button key={p} onClick={() => { const next = new Set(selectedPerms); next.has(p) ? next.delete(p) : next.add(p); setSelectedPerms(next) }}
-            style={{ fontSize: 9, padding: '4px 8 px', border: `1px solid ${selectedPerms.has(p) ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: selectedPerms.has(p) ? 'var(--kv-primary)' : 'var(--kv-surface)', color: selectedPerms.has(p) ? 'var(--kv-surface)' : 'var(--kv-text-muted)', cursor: 'pointer', borderRadius: 3 }}>
+            style={{ fontSize: 9, padding: '4px 8px', border: `1px solid ${selectedPerms.has(p) ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: selectedPerms.has(p) ? 'var(--kv-primary)' : 'var(--kv-surface)', color: selectedPerms.has(p) ? 'var(--kv-surface)' : 'var(--kv-text-muted)', cursor: 'pointer', borderRadius: 3 }}>
             {p}
           </button>
         ))}
@@ -136,7 +136,7 @@ export function ImageQualityChecker({ onResult }: { onResult: (pass: boolean, is
   return <div style={{ border: '2px dashed var(--kv-border)', borderRadius: 6, padding: 16, textAlign: 'center' }}>
     <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) check(f) }} style={{ display: 'none' }} id="img-check" />
     <label htmlFor="img-check" style={{ cursor: 'pointer', display: 'block' }}>
-      <Upload size={24} style={{ color: 'var(--kv-text-muted)', margin: '0 auto 8 px' }} />
+      <Upload size={24} style={{ color: 'var(--kv-text-muted)', margin: '0 auto 8px' }} />
       <b style={{ fontSize: 11 }}>تصویر را برای بررسی کیفیت رها کنید</b>
       <p style={{ fontSize: 9, color: 'var(--kv-text-muted)', marginTop: 4 }}>کنترل خودکار: ابعاد، حجم و نسبت تصویر</p>
     </label>
@@ -213,9 +213,9 @@ export function DiscrepancyManager() {
               <b style={{ fontSize: 10.5, fontFamily: 'monospace' }}>{d.sku}</b>
               <span style={{ fontSize: 9.5, color: '#888', marginRight: 8 }} className="num-fa">انتظار: {d.expected} · واقعی: {d.actual} · اختلاف: {d.expected - d.actual}</span>
             </div>
-            <span className={`inline-flex px-2 py-1 text-[9 px] ${stageTone[d.stage]}`}>{stageLabel[d.stage]}</span>
-            {d.stage !== 'action' && <button onClick={() => escalate(d.id)} style={{ fontSize: 9, background: 'var(--kv-primary)', color: 'var(--kv-surface)', border: 0, padding: '4px 10 px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
-            <button onClick={() => resolve(d.id)} style={{ fontSize: 9, color: 'var(--kv-accent)', background: 'none', border: '1px solid var(--kv-border-strong)', padding: '4px 10 px', borderRadius: 3, cursor: 'pointer' }}>حل شد</button>
+            <span className={`inline-flex px-2 py-1 text-[9px] ${stageTone[d.stage]}`}>{stageLabel[d.stage]}</span>
+            {d.stage !== 'action' && <button onClick={() => escalate(d.id)} style={{ fontSize: 9, background: 'var(--kv-primary)', color: 'var(--kv-surface)', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
+            <button onClick={() => resolve(d.id)} style={{ fontSize: 9, color: 'var(--kv-accent)', background: 'none', border: '1px solid var(--kv-border-strong)', padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>حل شد</button>
           </div>
         ))}
       </div>
@@ -275,10 +275,10 @@ export function ShippingLabel({ orderId, items }: { orderId: string; items: Arra
   return <section className="surface" style={{ padding: 16 }}>
     <SectionHeading title="اطلاعات ارسال و برچسب" eyebrow="اطلاعات ارسال و برچسب">اطلاعات کامل بسته + تولید برچسب ارسال.</SectionHeading>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
-      <label style={{ fontSize: 10 }}>وزن (کیلوگرم)<input type="number" step="0.1" value={weight} onChange={e => setWeight(Number(e.target.value))} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8 px', fontSize: 11, marginTop: 4 }} dir="ltr" /></label>
+      <label style={{ fontSize: 10 }}>وزن (کیلوگرم)<input type="number" step="0.1" value={weight} onChange={e => setWeight(Number(e.target.value))} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8px', fontSize: 11, marginTop: 4 }} dir="ltr" /></label>
       {(['w', 'h', 'd'] as const).map(dim => (
         <label key={dim} style={{ fontSize: 10 }}>{dim === 'w' ? 'عرض' : dim === 'h' ? 'ارتفاع' : 'عمق'} (سم)
-          <input type="number" value={dimensions[dim]} onChange={e => setDimensions({ ...dimensions, [dim]: Number(e.target.value) })} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8 px', fontSize: 11, marginTop: 4 }} dir="ltr" />
+          <input type="number" value={dimensions[dim]} onChange={e => setDimensions({ ...dimensions, [dim]: Number(e.target.value) })} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8px', fontSize: 11, marginTop: 4 }} dir="ltr" />
         </label>
       ))}
       <div style={{ fontSize: 10 }}>تعداد کل<b style={{ display: 'block', fontSize: 14, marginTop: 4 }} className="num-fa">{fa(totalItems)} تکه</b></div>
@@ -322,19 +322,19 @@ export function SettlementSettings() {
         <b style={{ fontSize: 10, display: 'block', marginBottom: 6 }}>دوره تسویه</b>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           {Object.entries(periodLabel).map(([id, label]) => (
-            <button key={id} onClick={() => setConfig({ ...config, period: id as any })} style={{ fontSize: 9, padding: '6px 10 px', border: `1px solid ${config.period === id ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: config.period === id ? 'var(--kv-primary)' : 'var(--kv-surface)', color: config.period === id ? 'var(--kv-surface)' : 'var(--kv-text-muted)', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
+            <button key={id} onClick={() => setConfig({ ...config, period: id as any })} style={{ fontSize: 9, padding: '6px 10px', border: `1px solid ${config.period === id ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: config.period === id ? 'var(--kv-primary)' : 'var(--kv-surface)', color: config.period === id ? 'var(--kv-surface)' : 'var(--kv-text-muted)', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
       </div>
       <div>
         <b style={{ fontSize: 10, display: 'block', marginBottom: 6 }}>مبنای تسویه</b>
-        <select value={config.basis} onChange={e => setConfig({ ...config, basis: e.target.value as any })} style={{ height: 32, border: '1px solid var(--kv-border)', padding: '0 8 px', fontSize: 10, width: '100%' }}>
+        <select value={config.basis} onChange={e => setConfig({ ...config, basis: e.target.value as any })} style={{ height: 32, border: '1px solid var(--kv-border)', padding: '0 8px', fontSize: 10, width: '100%' }}>
           <option value="delivery">پس از تحویل</option>
           <option value="return_period">پس از پایان مهلت مرجوعی</option>
         </select>
       </div>
-      <label style={{ fontSize: 10 }}>مهلت مرجوعی (روز)<input type="number" value={config.returnPeriodDays} onChange={e => setConfig({ ...config, returnPeriodDays: Number(e.target.value) })} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8 px', fontSize: 11, marginTop: 4 }} dir="ltr" /></label>
-      <label style={{ fontSize: 10 }}>مهلت اعتراض مالی (روز) — قابل تنظیم<input type="number" value={config.disputeDays} onChange={e => setConfig({ ...config, disputeDays: Number(e.target.value) })} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8 px', fontSize: 11, marginTop: 4 }} dir="ltr" /></label>
+      <label style={{ fontSize: 10 }}>مهلت مرجوعی (روز)<input type="number" value={config.returnPeriodDays} onChange={e => setConfig({ ...config, returnPeriodDays: Number(e.target.value) })} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8px', fontSize: 11, marginTop: 4 }} dir="ltr" /></label>
+      <label style={{ fontSize: 10 }}>مهلت اعتراض مالی (روز) — قابل تنظیم<input type="number" value={config.disputeDays} onChange={e => setConfig({ ...config, disputeDays: Number(e.target.value) })} style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', padding: '0 8px', fontSize: 11, marginTop: 4 }} dir="ltr" /></label>
     </div>
   </section>
 }
@@ -359,8 +359,8 @@ export function DisputeCenter() {
   return <section className="surface" style={{ padding: 20 }}>
     <SectionHeading title="مرکز اعتراض مالی" eyebrow="مرکز اختلاف">گردش کامل اعتراض + جریمه با امکان بررسی و اعتراض.</SectionHeading>
     <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="موضوع اعتراض…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10 px', fontSize: 10.5 }} />
-      <input value={newAmount} onChange={e => setNewAmount(e.target.value)} placeholder="مبلغ (تومان)" type="number" style={{ height: 36, width: 120, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10 px', fontSize: 10.5 }} dir="ltr" />
+      <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="موضوع اعتراض…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} />
+      <input value={newAmount} onChange={e => setNewAmount(e.target.value)} placeholder="مبلغ (تومان)" type="number" style={{ height: 36, width: 120, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} dir="ltr" />
       <button onClick={() => { if (!newSubject.trim() || !newAmount) return; setDisputes([...disputes, { id: `DP-${String(disputes.length + 1).padStart(3, '0')}`, subject: newSubject, amount: Number(newAmount), status: 'open', date: 'امروز', type: 'settlement' }]); setNewSubject(''); setNewAmount('') }} className="button primary" style={{ minHeight: 36, fontSize: 10 }}>ثبت اعتراض</button>
     </div>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -371,8 +371,8 @@ export function DisputeCenter() {
             <b style={{ fontSize: 10.5 }}>{d.subject}</b>
             <span style={{ fontSize: 9, color: 'var(--kv-text-muted)', marginRight: 8 }} className="num-fa">{fa(d.amount)} تومان · {typeLabel[d.type]} · {d.date}</span>
           </div>
-          <span className={`inline-flex px-2 py-1 text-[9 px] ${statusTone[d.status]}`}>{statusLabel[d.status]}</span>
-          {d.status !== 'resolved' && <button onClick={() => advance(d.id)} style={{ fontSize: 9, background: 'var(--kv-primary)', color: 'var(--kv-surface)', border: 0, padding: '4px 10 px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
+          <span className={`inline-flex px-2 py-1 text-[9px] ${statusTone[d.status]}`}>{statusLabel[d.status]}</span>
+          {d.status !== 'resolved' && <button onClick={() => advance(d.id)} style={{ fontSize: 9, background: 'var(--kv-primary)', color: 'var(--kv-surface)', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>مرحله بعد</button>}
         </div>
       ))}
     </div>
@@ -394,8 +394,8 @@ export function QualityDocuments() {
   return <section className="surface" style={{ padding: 20 }}>
     <SectionHeading title="اسناد کیفیت و سری ساخت" eyebrow="مدارک کیفیت، سری ساخت و فراخوان">پرونده کامل کیفیت + سری ساخت و تاریخ هر محموله + فراخوان محصول.</SectionHeading>
     <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-      <input value={newDoc} onChange={e => setNewDoc(e.target.value)} placeholder="نام سند…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10 px', fontSize: 10.5 }} />
-      <select value={newType} onChange={e => setNewType(e.target.value as Doc['type'])} style={{ height: 36, border: '1px solid var(--kv-border)', padding: '0 8 px', fontSize: 10 }}>
+      <input value={newDoc} onChange={e => setNewDoc(e.target.value)} placeholder="نام سند…" style={{ height: 36, flex: 1, minWidth: 160, border: '1px solid var(--kv-border)', background: 'var(--kv-surface)', padding: '0 10px', fontSize: 10.5 }} />
+      <select value={newType} onChange={e => setNewType(e.target.value as Doc['type'])} style={{ height: 36, border: '1px solid var(--kv-border)', padding: '0 8px', fontSize: 10 }}>
         <option value="certificate">گواهی کیفیت</option>
         <option value="batch">سری ساخت</option>
         <option value="recall">فراخوان</option>
@@ -410,8 +410,8 @@ export function QualityDocuments() {
             <b style={{ fontSize: 10.5 }}>{d.name}</b>
             <span style={{ fontSize: 9, color: 'var(--kv-text-muted)', marginRight: 8 }}>{d.id} · {d.date}</span>
           </div>
-          <span className={`inline-flex px-2 py-1 text-[9 px] ${typeTone[d.type]}`}>{typeLabel[d.type]}</span>
-          {d.type === 'recall' && d.status !== 'recalled' && <button onClick={() => setDocs(docs.map(x => x.id === d.id ? { ...x, status: 'recalled' } : x))} style={{ fontSize: 9, background: '#a4463d', color: 'var(--kv-surface)', border: 0, padding: '4px 10 px', borderRadius: 3, cursor: 'pointer' }}>اجرا</button>}
+          <span className={`inline-flex px-2 py-1 text-[9px] ${typeTone[d.type]}`}>{typeLabel[d.type]}</span>
+          {d.type === 'recall' && d.status !== 'recalled' && <button onClick={() => setDocs(docs.map(x => x.id === d.id ? { ...x, status: 'recalled' } : x))} style={{ fontSize: 9, background: '#a4463d', color: 'var(--kv-surface)', border: 0, padding: '4px 10px', borderRadius: 3, cursor: 'pointer' }}>اجرا</button>}
         </div>
       ))}
     </div>
@@ -432,13 +432,13 @@ export function CampaignBuilder() {
   return <section className="surface" style={{ padding: 20 }}>
     <SectionHeading title="کمپین‌های پیشنهادی" eyebrow="کمپین‌های تأمین‌کننده">کمپین تخفیف با تأیید کلبه + تعیین سهم هزینه.</SectionHeading>
     <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: 16 }}>
-      <label style={{ fontSize: 10 }}>عنوان کمپین<input value={title} onChange={e => setTitle(e.target.value)} placeholder="مثلاً: تخفیف پاییزه" style={{ width: '100%', height: 36, border: '1px solid var(--kv-border)', padding: '0 10 px', fontSize: 10.5, marginTop: 4 }} /></label>
-      <label style={{ fontSize: 10 }}>درصد تخفیف<input type="number" min={1} max={50} value={discount} onChange={e => setDiscount(Number(e.target.value))} style={{ width: '100%', height: 36, border: '1px solid var(--kv-border)', padding: '0 10 px', fontSize: 10.5, marginTop: 4 }} dir="ltr" /></label>
+      <label style={{ fontSize: 10 }}>عنوان کمپین<input value={title} onChange={e => setTitle(e.target.value)} placeholder="مثلاً: تخفیف پاییزه" style={{ width: '100%', height: 36, border: '1px solid var(--kv-border)', padding: '0 10px', fontSize: 10.5, marginTop: 4 }} /></label>
+      <label style={{ fontSize: 10 }}>درصد تخفیف<input type="number" min={1} max={50} value={discount} onChange={e => setDiscount(Number(e.target.value))} style={{ width: '100%', height: 36, border: '1px solid var(--kv-border)', padding: '0 10px', fontSize: 10.5, marginTop: 4 }} dir="ltr" /></label>
       <div>
         <b style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>هزینه تخفیف بر عهده</b>
         <div style={{ display: 'flex', gap: 4 }}>
           {Object.entries(costLabel).map(([id, label]) => (
-            <button key={id} onClick={() => setCostShare(id as Campaign['costShare'])} style={{ fontSize: 9, padding: '6px 10 px', border: `1px solid ${costShare === id ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: costShare === id ? 'var(--kv-primary)' : 'var(--kv-surface)', color: costShare === id ? 'var(--kv-surface)' : 'var(--kv-text-muted)', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
+            <button key={id} onClick={() => setCostShare(id as Campaign['costShare'])} style={{ fontSize: 9, padding: '6px 10px', border: `1px solid ${costShare === id ? 'var(--kv-primary)' : 'var(--kv-border)'}`, background: costShare === id ? 'var(--kv-primary)' : 'var(--kv-surface)', color: costShare === id ? 'var(--kv-surface)' : 'var(--kv-text-muted)', borderRadius: 3, cursor: 'pointer' }}>{label}</button>
           ))}
         </div>
       </div>
@@ -455,7 +455,7 @@ export function CampaignBuilder() {
             <b style={{ fontSize: 10.5 }}>{c.title}</b>
             <span style={{ fontSize: 9, color: 'var(--kv-text-muted)', marginRight: 8 }} className="num-fa">{c.discount}٪ تخفیف · هزینه: {costLabel[c.costShare]}</span>
           </div>
-          <span className={`inline-flex px-2 py-1 text-[9 px] ${statusTone[c.status]}`}>{statusLabel[c.status]}</span>
+          <span className={`inline-flex px-2 py-1 text-[9px] ${statusTone[c.status]}`}>{statusLabel[c.status]}</span>
           <button onClick={() => setCampaigns(campaigns.filter(x => x.id !== c.id))} style={{ fontSize: 9, color: '#a4463d', background: 'none', border: 0, cursor: 'pointer', textDecoration: 'underline' }}>حذف</button>
         </div>
       ))}
@@ -521,7 +521,7 @@ export function TaxIntegration() {
     </div>
     {!status.connected && (
       <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-        <input value={status.taxId} onChange={e => setStatus({ ...status, taxId: e.target.value })} placeholder="شناسه ملی / کد اقتصادی" style={{ height: 36, flex: 1, border: '1px solid var(--kv-border)', padding: '0 10 px', fontSize: 10.5 }} dir="ltr" />
+        <input value={status.taxId} onChange={e => setStatus({ ...status, taxId: e.target.value })} placeholder="شناسه ملی / کد اقتصادی" style={{ height: 36, flex: 1, border: '1px solid var(--kv-border)', padding: '0 10px', fontSize: 10.5 }} dir="ltr" />
         <button onClick={() => setStatus({ connected: true, taxId: status.taxId, lastSync: new Date().toLocaleString('fa-IR') })} disabled={!status.taxId.trim()} className="button primary disabled:opacity-40" style={{ minHeight: 36, fontSize: 10 }}>اتصال</button>
       </div>
     )}

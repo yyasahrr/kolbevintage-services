@@ -176,12 +176,12 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
                 <label htmlFor="img-upload" style={{ cursor: 'pointer', display: 'block' }}>
                   {form.imageUrl ? (
                     <div>
-                      <img src={form.imageUrl} alt="" style={{ maxHeight: 180, margin: '0 auto 8 px', borderRadius: 4, objectFit: 'contain' }} />
+                      <img src={form.imageUrl} alt="" style={{ maxHeight: 180, margin: '0 auto 8px', borderRadius: 4, objectFit: 'contain' }} />
                       <small style={{ color: 'var(--kv-accent)' }}>✓ تصویر بارگذاری شد — برای تغییر کلیک کنید</small>
                     </div>
                   ) : (
                     <div>
-                      <ImagePlus size={28} style={{ color: 'var(--kv-text-muted)', margin: '0 auto 8 px' }} />
+                      <ImagePlus size={28} style={{ color: 'var(--kv-text-muted)', margin: '0 auto 8px' }} />
                       <b style={{ fontSize: 11 }}>تصویر را بکشید و اینجا رها کنید</b>
                       <p style={{ fontSize: 9, color: 'var(--kv-text-muted)', marginTop: 4 }}>یا کلیک کنید — تصویر، حداکثر ۲.۵ مگابایت</p>
                     </div>
@@ -210,11 +210,11 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
             <b style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>ترکیب {seriesType.label}:</b>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {Object.entries(composition).map(([size, qty]) => (
-                <span key={size} style={{ fontSize: 10, background: '#f6f6f2', padding: '4px 10 px', borderRadius: 4, border: '1px solid var(--kv-border)' }}>
+                <span key={size} style={{ fontSize: 10, background: '#f6f6f2', padding: '4px 10px', borderRadius: 4, border: '1px solid var(--kv-border)' }}>
                   <b>{size}</b> × <span className="num-fa">{fa(qty)}</span>
                 </span>
               ))}
-              <span style={{ fontSize: 10, padding: '4px 10 px', background: 'var(--kv-primary)', color: 'var(--kv-surface)', borderRadius: 4 }}>
+              <span style={{ fontSize: 10, padding: '4px 10px', background: 'var(--kv-primary)', color: 'var(--kv-surface)', borderRadius: 4 }}>
                 = <span className="num-fa">{fa(pieceCount)}</span> تکه
               </span>
             </div>
@@ -353,7 +353,7 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
   if (error) return <div className="page-head"><h1>سفارشات آماده</h1><p style={{fontSize:11,color:'#a4463d'}}>{error}</p></div>
 
   return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌های خرید را تأیید، آماده و ارسال کنید.</p></div></div>
-  {actionResult && <div role="status" style={{marginBottom:12,border:'1px solid var(--kv-border-strong)',background:'#edf3ee',padding:'8px 12 px',fontSize:10,color:'#36563a'}}>{actionResult}</div>}
+  {actionResult && <div role="status" style={{marginBottom:12,border:'1px solid var(--kv-border-strong)',background:'#edf3ee',padding:'8px 12px',fontSize:10,color:'#36563a'}}>{actionResult}</div>}
   <section className="surface orders-surface" style={{padding:16}}>
     <div className="ledger-table">
       <div className="ledger-row header"><span>کد سفارش</span><span>محصول</span><span>تعداد</span><span>مبلغ</span><span>وضعیت</span><span>اقدام</span></div>
@@ -366,10 +366,10 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
           <b className="num-fa">{fa(order.total_amount)} ت</b>
           <Status>{statusLabel[order.status] ?? order.status}</Status>
           <div style={{display:'flex',gap:4}}>
-            {order.status === 'pending' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>تأیید</button>}
-            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>شروع</button>}
-            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>ارسال</button>}
-            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>تحویل</button>}
+            {order.status === 'pending' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تأیید</button>}
+            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>شروع</button>}
+            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ارسال</button>}
+            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تحویل</button>}
           </div>
         </div>
       ))}
@@ -425,9 +425,9 @@ export function QuoteBuilder() {
   <section className="surface" style={{padding:20}}>
     <SectionHeading title="پیشنهاد قیمت برای درخواست ۲۰۴۸" eyebrow="سازندهٔ پیش‌فاکتور">پیراهن آکسفورد اختصاصی — گروه هتل‌های هلیا</SectionHeading>
     <div style={{display:'grid',gap:12,gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))'}}>
-      <label style={{fontSize:10}}>قیمت هر تکه<input type="text" placeholder="۱٬۴۵۰٬۰۰۰" style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10 px',fontSize:11,marginTop:4}}/></label>
-      <label style={{fontSize:10}}>زمان تولید (روز)<input type="number" defaultValue={28} style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10 px',fontSize:11,marginTop:4}} dir="ltr"/></label>
-      <label style={{fontSize:10}}>تعداد قابل تأمین<input type="number" defaultValue={600} style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10 px',fontSize:11,marginTop:4}} dir="ltr"/></label>
+      <label style={{fontSize:10}}>قیمت هر تکه<input type="text" placeholder="۱٬۴۵۰٬۰۰۰" style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10px',fontSize:11,marginTop:4}}/></label>
+      <label style={{fontSize:10}}>زمان تولید (روز)<input type="number" defaultValue={28} style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10px',fontSize:11,marginTop:4}} dir="ltr"/></label>
+      <label style={{fontSize:10}}>تعداد قابل تأمین<input type="number" defaultValue={600} style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10px',fontSize:11,marginTop:4}} dir="ltr"/></label>
     </div>
     <button className="button primary" style={{marginTop:16,minHeight:38}}>ارسال پیشنهاد</button>
   </section></>
@@ -438,7 +438,7 @@ export function SamplesWorkspace() {
   <section className="surface" style={{padding:16}}>
     <p style={{fontSize:11,color:'var(--kv-text-muted)'}}>سفارش ۴۸۲۷ — نمونه فیزیکی تا ۲۳ مرداد باید بارگذاری شود.</p>
     <div style={{marginTop:12,border:'2px dashed var(--kv-border)',borderRadius:6,padding:24,textAlign:'center'}}>
-      <Upload size={28} style={{color:'var(--kv-text-muted)',margin:'0 auto 8 px'}} />
+      <Upload size={28} style={{color:'var(--kv-text-muted)',margin:'0 auto 8px'}} />
       <b style={{fontSize:11}}>عکس‌های نمونه را اینجا رها کنید</b>
       <p style={{fontSize:9,color:'var(--kv-text-muted)',marginTop:4}}>جلو، پشت و جزئیات پارچه</p>
     </div>
