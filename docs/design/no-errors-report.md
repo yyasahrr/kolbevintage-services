@@ -53,3 +53,25 @@
 - GET admin/logs?level=all&source=all&status=open&range=24h&q=&page=1&limit=50
 
 > این گزارش خودکار ساخته می‌شود: `npx vitest run test/console-network-audit.test.tsx`.
+
+## بررسی زندهٔ سرور توسعه (curl)
+
+| مسیر | کد پاسخ |
+| --- | --- |
+| `/` | 200 |
+| `/#/shop` | 200 |
+| `/#/product/classic-short-sleeve` | 200 |
+| `/#/wholesale` | 200 |
+| `/#/vip` | 200 |
+| `/#/admin` | 200 |
+| `/supplier` | 200 |
+| `/api/health` | 200 |
+| `/store/kolbe/health` | 200 |
+| `/store/kolbe/catalog/products` | 200 |
+
+### کاتالوگ عمومی (نمونهٔ پاسخ)
+```json
+{"products":[{"id":"prod_classic","slug":"classic-short-sleeve","name":"پیراهن کلاسیک نیم‌آستین","description":"تولید کارخانه، کیفیت صادراتی","category":null,"updated_at":"2026-09-27T23:45:26.769Z","variants":[{"id":"var_classic","sku":"NL-CLASSIC-M","color":"شیری","size":"M","available":60}],"available_total":60,"retail_price":null,"price_source":"PENDING_RETAIL_PRICING"},{"id":"prod_blouse","slug":"vintage-princess-blouse","name":"بلوز وینتیج پرنس","description":"تولید کارخانه، کیفیت صادراتی","category"
+```
+
+> این بخش با curl روی همان سرور توسعهٔ در حال اجرا ساخته شده است.
