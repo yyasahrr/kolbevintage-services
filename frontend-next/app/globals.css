@@ -3317,3 +3317,165 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .kv-reveal { opacity: 1; transform: none; transition: none; }
 }
+
+/* ── لایهٔ صفحهٔ اصلی: قاب، هیرو سینمایی، کارت محصول، هدر ───────────────── */
+
+/* قاب نمایش: شِل قاب‌دار حول محتوای شاخص (پاسخ ۳۲) */
+.kv-frame {
+  position: relative;
+}
+.kv-frame > section,
+.kv-frame > div > section {
+  position: relative;
+}
+@media (min-width: 1024px) {
+  .kv-frame {
+    margin: 0 auto;
+    max-width: 1500px;
+    border-inline: 1px solid var(--kv-border);
+    background: var(--kv-canvas);
+  }
+}
+
+/* ریزعنوان‌های فارسی: بدون فاصلهٔ حروف باز (اتصال حروف فارسی حفظ می‌شود) */
+.kv-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.6;
+}
+
+/* هیرو: نور گرم، عمق سینمایی، لبهٔ قاب */
+.storefront-hero {
+  overflow: hidden;
+}
+.storefront-hero h1,
+.hero-light-copy h1 {
+  font-family: var(--kv-font-display);
+  font-weight: 600;
+  line-height: 1.28;
+  text-wrap: balance;
+}
+.storefront-hero .hero-eyebrow {
+  letter-spacing: 0;
+  font-weight: 500;
+  color: color-mix(in srgb, currentColor 78%, transparent);
+}
+.storefront-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(20, 16, 12, 0.28) 0%, rgba(20, 16, 12, 0) 32%),
+    linear-gradient(0deg, rgba(20, 16, 12, 0.42) 0%, rgba(20, 16, 12, 0) 46%);
+}
+.storefront-hero > * {
+  position: relative;
+  z-index: 1;
+}
+.hero-cta-primary {
+  background: var(--kv-primary);
+  color: var(--kv-on-primary);
+  border: 1px solid color-mix(in srgb, var(--kv-primary) 80%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: transform var(--kv-dur-base) var(--kv-ease-out), background-color var(--kv-dur-base) ease;
+}
+.hero-cta-primary:hover {
+  background: var(--kv-accent);
+  color: var(--kv-on-accent);
+  transform: translateY(-2px);
+}
+.hero-cta-secondary {
+  background: color-mix(in srgb, var(--kv-surface) 82%, transparent);
+  color: var(--kv-text);
+  border: 1px solid var(--kv-border);
+  backdrop-filter: blur(10px);
+  transition: background-color var(--kv-dur-base) ease, transform var(--kv-dur-base) var(--kv-ease-out);
+}
+.hero-cta-secondary:hover {
+  background: var(--kv-surface);
+  transform: translateY(-2px);
+}
+
+/* تصویر هیرو: نفس‌کشیدن بسیار ملایم و بی‌پایان‌نما (فقط روی دسکتاپ) */
+@media (hover: hover) and (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  .storefront-hero > img,
+  .storefront-hero img.hero-media {
+    animation: kv-hero-breathe 24s var(--kv-ease-out) infinite alternate;
+  }
+}
+@keyframes kv-hero-breathe {
+  from { transform: scale(1); }
+  to { transform: scale(1.045); }
+}
+
+/* کارت محصول: سطح کرم، خط مویی، سایهٔ نرم، زوم ملایم روی تصویر */
+.product-card {
+  border-radius: var(--kv-radius-surface);
+  background: var(--kv-surface);
+  border: 1px solid var(--kv-border);
+  padding: 10px;
+  transition: transform var(--kv-dur-base) var(--kv-ease-out), box-shadow var(--kv-dur-base) var(--kv-ease-out);
+}
+@media (hover: hover) {
+  .product-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--kv-shadow-card);
+  }
+}
+.product-card-media {
+  border-radius: calc(var(--kv-radius-surface) - 6px);
+  background: var(--kv-surface-muted);
+}
+.product-card-content {
+  padding: 4px 2px 6px;
+}
+.product-card-content a {
+  font-family: var(--kv-font-display);
+  font-weight: 500;
+}
+.product-card-content :where(p, span) {
+  color: var(--kv-text-muted);
+}
+.product-card-content :where(.price, [class*="font-semibold"]) {
+  color: var(--kv-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* دسته‌بندی‌ها: لبهٔ قاب و نور گرم روی تصویر */
+.category-card,
+.style-tile {
+  border-radius: var(--kv-radius-surface);
+  border: 1px solid color-mix(in srgb, var(--kv-border) 70%, transparent);
+}
+.category-card img,
+.style-tile img {
+  transition: transform 560ms var(--kv-ease-out);
+}
+@media (hover: hover) {
+  .category-card:hover img,
+  .style-tile:hover img { transform: scale(1.035); }
+}
+
+/* هدر: شفاف روی هیرو، شیشه‌ای بعد از اسکرول */
+.site-header {
+  transition: background-color var(--kv-dur-base) ease, backdrop-filter var(--kv-dur-base) ease,
+    border-color var(--kv-dur-base) ease, box-shadow var(--kv-dur-base) ease;
+}
+.site-header.is-scrolled {
+  background: color-mix(in srgb, var(--kv-canvas) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+  border-bottom: 1px solid var(--kv-border);
+  box-shadow: 0 6px 24px rgba(26, 23, 20, 0.06);
+}
+html[data-theme="dark"] .site-header.is-scrolled {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* پنل تنظیم زندهٔ ظاهر */
+@keyframes kv-tweaks-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}

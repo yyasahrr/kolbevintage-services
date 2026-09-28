@@ -136,7 +136,7 @@ export default function RetailPolicyCenter() {
   return <div className="space-y-6">
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="text-[9px] tracking-[0.22em] text-neutral-400">RETAIL POLICY CENTER</p>
+        <p className="text-[9px] tracking-[0.22em] text-neutral-400">مرکز سیاست خرده‌فروشی</p>
         <h1 className="mt-2 text-[22px] font-medium">تنظیمات اجرایی خرده کلبه</h1>
         <p className="mt-2 max-w-3xl text-[11px] leading-7 text-neutral-500">۵۰ تصمیم تأییدشده کارفرما به‌عنوان خط‌مشی فعال پنل مدیر کل ثبت شده‌اند. تنظیمات حساس این صفحه در مرورگر ذخیره و در بازگشت بعدی بازیابی می‌شوند.</p>
       </div>

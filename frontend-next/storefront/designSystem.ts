@@ -69,25 +69,25 @@ export const categoryLayoutOptions: Array<{ id: CategoryLayout; label: string; d
 ];
 
 export const defaultCategories: SiteCategory[] = [
-  { id: "cat-blazer", label: "کت و بلیزر", latin: "BLAZERS", image: "/images/model-teal.jpg", to: "/shop?cat=blazer", kind: "product", badge: "محبوب", enabled: true, featured: true },
-  { id: "cat-shirt", label: "پیراهن", latin: "SHIRTS", image: "/images/detail-collar.jpg", to: "/shop?cat=shirt", kind: "product", badge: "منتخب", enabled: true, featured: true },
-  { id: "cat-knit", label: "بافت و پلیور", latin: "KNITWEAR", image: "/images/flat.jpg", to: "/shop?cat=knit", kind: "product", badge: "", enabled: true, featured: false },
-  { id: "cat-trouser", label: "شلوار", latin: "TROUSERS", image: "/images/detail-hem.jpg", to: "/shop?cat=trouser", kind: "product", badge: "", enabled: true, featured: false },
-  { id: "cat-shoes", label: "کفش", latin: "FOOTWEAR", image: "/images/model-full.jpg", to: "/shop?cat=shoes", kind: "product", badge: "جدید", enabled: true, featured: false },
-  { id: "cat-accessory", label: "اکسسوری", latin: "ACCESSORIES", image: "/images/banner.jpg", to: "/shop?cat=accessory", kind: "product", badge: "", enabled: true, featured: false },
+  { id: "cat-blazer", label: "کت و بلیزر", latin: "کت و بلیزر", image: "/images/model-teal.jpg", to: "/shop?cat=blazer", kind: "product", badge: "محبوب", enabled: true, featured: true },
+  { id: "cat-shirt", label: "پیراهن", latin: "پیراهن", image: "/images/detail-collar.jpg", to: "/shop?cat=shirt", kind: "product", badge: "منتخب", enabled: true, featured: true },
+  { id: "cat-knit", label: "بافت و پلیور", latin: "بافت و پلیور", image: "/images/flat.jpg", to: "/shop?cat=knit", kind: "product", badge: "", enabled: true, featured: false },
+  { id: "cat-trouser", label: "شلوار", latin: "شلوار", image: "/images/detail-hem.jpg", to: "/shop?cat=trouser", kind: "product", badge: "", enabled: true, featured: false },
+  { id: "cat-shoes", label: "کفش", latin: "کفش", image: "/images/model-full.jpg", to: "/shop?cat=shoes", kind: "product", badge: "جدید", enabled: true, featured: false },
+  { id: "cat-accessory", label: "اکسسوری", latin: "اکسسوری", image: "/images/banner.jpg", to: "/shop?cat=accessory", kind: "product", badge: "", enabled: true, featured: false },
 ];
 
 export const aestheticCategories: SiteCategory[] = [
-  { id: "style-dark-academia", label: "دارک آکادمیا", latin: "DARK ACADEMIA", image: "/images/model-teal.jpg", to: "/shop?style=dark-academia", kind: "style", badge: "پرطرفدار", enabled: true, featured: true },
-  { id: "style-vintage", label: "وینتیج کلاسیک", latin: "CLASSIC VINTAGE", image: "/images/model-front.jpg", to: "/shop?style=vintage", kind: "style", badge: "امضای کلبه", enabled: true, featured: true },
-  { id: "style-old-money", label: "اولد مانی", latin: "OLD MONEY", image: "/images/model-full.jpg", to: "/shop?style=old-money", kind: "style", badge: "", enabled: true, featured: false },
+  { id: "style-dark-academia", label: "دارک آکادمیا", latin: "دارک آکادمیا", image: "/images/model-teal.jpg", to: "/shop?style=dark-academia", kind: "style", badge: "پرطرفدار", enabled: true, featured: true },
+  { id: "style-vintage", label: "وینتیج کلاسیک", latin: "وینتیج کلاسیک", image: "/images/model-front.jpg", to: "/shop?style=vintage", kind: "style", badge: "امضای کلبه", enabled: true, featured: true },
+  { id: "style-old-money", label: "اولد مانی", latin: "اولد مانی", image: "/images/model-full.jpg", to: "/shop?style=old-money", kind: "style", badge: "", enabled: true, featured: false },
   { id: "style-romantic", label: "رمانتیک", latin: "ROMANTIC", image: "/images/detail-collar.jpg", to: "/shop?style=romantic", kind: "style", badge: "فصل جدید", enabled: true, featured: false },
   { id: "style-retro", label: "رترو دهه هفتاد", latin: "SEVENTIES", image: "/images/banner.jpg", to: "/shop?style=retro", kind: "style", badge: "", enabled: true, featured: false },
-  { id: "style-cottage", label: "کاتج‌کور", latin: "COTTAGECORE", image: "/images/flat.jpg", to: "/shop?style=cottagecore", kind: "style", badge: "", enabled: true, featured: false },
+  { id: "style-cottage", label: "کاتج‌کور", latin: "کاتج‌کور", image: "/images/flat.jpg", to: "/shop?style=cottagecore", kind: "style", badge: "", enabled: true, featured: false },
 ];
 
 export const defaultCategorySection: CategorySectionConfig = {
-  eyebrow: "CATEGORIES",
+  eyebrow: "دسته‌بندی‌ها",
   title: "دسته‌بندی محصولات",
   description: "مسیرهای منتخب برای پیدا کردن استایل شخصی شما",
   layout: "bento",

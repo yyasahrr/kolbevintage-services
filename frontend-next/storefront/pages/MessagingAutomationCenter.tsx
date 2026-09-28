@@ -34,7 +34,7 @@ export default function MessagingAutomationCenter() {
 
   return <div>
     <header className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="text-[9px] tracking-[.22em] text-neutral-400">MESSAGING AUTOMATION</p><h1 className="mt-2 text-[21px] font-medium">پیامک و اتوماسیون ارتباطی</h1><p className="mt-2 text-[10.5px] leading-6 text-neutral-500">متن پیام، محرک، صف ارسال و درگاه پیامک در یک مرکز قابل کنترل است.</p></div>
+      <div><p className="text-[9px] tracking-[.22em] text-neutral-400">اتوماسیون پیام‌ها</p><h1 className="mt-2 text-[21px] font-medium">پیامک و اتوماسیون ارتباطی</h1><p className="mt-2 text-[10.5px] leading-6 text-neutral-500">متن پیام، محرک، صف ارسال و درگاه پیامک در یک مرکز قابل کنترل است.</p></div>
       <span className="border border-neutral-200 bg-white px-3 py-2 text-[9.5px]"><i className={(provider.apiKey && provider.sender ? "bg-emerald-600" : "bg-amber-500") + " ml-2 inline-block h-2 w-2 rounded-full"} />{provider.apiKey && provider.sender ? "درگاه آماده ارسال" : "درگاه کامل نشده"}</span>
     </header>
     {notice && <p role="status" className="mt-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}

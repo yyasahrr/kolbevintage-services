@@ -11,32 +11,36 @@ import { loadHomepageArticles, subscribeToJournalSettings } from "../journalSett
 import HomepageHero from "../components/HomepageHero";
 import FestivalCountdownOverlay from "../components/FestivalCountdown";
 import { useSiteSettings } from "../siteSettings";
+import Reveal from "../lib/reveal";
+import { useHomeVariant } from "../homeVariant";
+import HomeTweaks from "../components/HomeTweaks";
 
 /* ---------------------------------- ۱. هیرو ---------------------------------- */
 
 /* ------------------------------ ۲. جدیدترین کالکشن ---------------------------- */
 
 function NewArrivals() {
+  const variant = useHomeVariant();
   const items = [...products].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
 
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20">
-      <div className="mb-8 flex items-end justify-between gap-4">
+    <Reveal id="home-new" as="section" className={`mx-auto w-full ${variant.width} px-4 ${variant.rhythm} lg:px-8`}>
+      <div className="mb-9 flex items-end justify-between gap-4 border-b border-[var(--kv-border)] pb-5">
         <div>
-          <p className="text-[11px] tracking-[0.3em] text-neutral-400">NEW ARRIVALS</p>
-          <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">جدیدترین کالکشن</h2>
+          <p className="kv-label text-[var(--kv-text-muted)]">تازه رسیده‌ها</p>
+          <h2 className="kv-title mt-2">جدیدترین کالکشن</h2>
         </div>
-        <Link to="/shop?sort=new" className="shrink-0 text-[12.5px] underline underline-offset-4 hover:no-underline">
+        <Link to="/shop?sort=new" className="shrink-0 text-[12.5px] text-[var(--kv-text)] underline underline-offset-4 hover:no-underline">
           مشاهده همه
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-5 lg:gap-x-5">
+      <div className={variant.productGrid}>
         {items.map((p) => (
           <ProductCard key={p.id} product={p} />
         ))}
       </div>
-    </section>
+    </Reveal>
   );
 }
 
@@ -116,18 +120,19 @@ function CollectionBanner() {
 /* ---------------------------- ۴. خرید بر اساس استایل --------------------------- */
 
 function ShopByStyle() {
+  const variant = useHomeVariant();
   const { builder } = useSiteSettings();
   const cards = builder.stylesSection.cards.length > 0
     ? builder.stylesSection.cards.map((c) => ({ slug: `custom-${c.id}`, name: c.name, latin: c.latin, img: c.img, count: Number(c.count ?? 0), tagline: c.tagline }))
     : styles;
   const sectionCls = builder.stylesSection.fullBleed
-    ? "w-full px-4 py-12 lg:px-10 lg:py-20"
-    : "mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20";
+    ? `w-full px-4 ${variant.rhythm} lg:px-10`
+    : `mx-auto w-full ${variant.width} px-4 ${variant.rhythm} lg:px-8`;
   return (
-    <section className={sectionCls}>
-      <div className="mb-8 text-center">
-        <p className="text-[11px] tracking-[0.3em] text-neutral-400">SHOP BY STYLE</p>
-        <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">خرید بر اساس استایل</h2>
+    <Reveal id="home-styles" as="section" className={sectionCls}>
+      <div className="mb-9 text-center">
+        <p className="kv-label text-[var(--kv-text-muted)]">خرید بر اساس سبک</p>
+        <h2 className="kv-title mt-2">خرید بر اساس استایل</h2>
         <p className="mx-auto mt-3 max-w-md text-[12.5px] leading-relaxed text-neutral-500">
           پنج زبان پوشش که کمد کلبه وینتیج بر پایه آن‌ها ساخته شده است.
         </p>
@@ -148,46 +153,47 @@ function ShopByStyle() {
               decoding="async"
               className="aspect-[4/3] w-full object-cover transition-transform duration-500 group-hover:scale-[1.025]"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/10 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[rgba(20,16,12,0.72)] via-[rgba(20,16,12,0.12)] to-transparent" />
             <div className="absolute inset-x-0 bottom-0 p-3 text-white sm:p-4">
               <h3 className="text-[14px] font-medium sm:text-[16px]">{s.name}</h3>
               <div className="mt-1 flex items-center justify-between gap-2 text-[9.5px] text-white/75 sm:text-[10px]">
-                <span className="truncate tracking-[0.18em]">{s.latin.toUpperCase()}</span>
+                <span className="truncate">{s.tagline ?? "کالکشن کلبه"}</span>
                 <span className="shrink-0">{fa(s.count)} محصول</span>
               </div>
             </div>
           </Link>
         ))}
       </div>
-    </section>
+    </Reveal>
   );
 }
 
 /* ----------------------------- ۵. پرفروش‌ترین‌ها ------------------------------ */
 
 function BestSellers() {
+  const variant = useHomeVariant();
   const items = [...products].sort((a, b) => b.sold - a.sold).slice(0, 5);
 
   return (
-    <section className="best-sellers-section mx-auto w-full max-w-[1240px] px-4 py-12 lg:px-8 lg:py-20">
-        <div className="mb-8 flex items-end justify-between gap-4">
+    <Reveal id="home-best" as="section" className={`best-sellers-section mx-auto w-full ${variant.width} px-4 ${variant.rhythm} lg:px-8`}>
+        <div className="mb-9 flex items-end justify-between gap-4 border-b border-[var(--kv-border)] pb-5">
           <div>
-            <p className="text-[11px] tracking-[0.3em] text-neutral-400">BESTSELLERS</p>
-            <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">پرفروش‌ترین محصولات</h2>
+            <p className="kv-label text-[var(--kv-text-muted)]">پرفروش‌ها</p>
+            <h2 className="kv-title mt-2">پرفروش‌ترین محصولات</h2>
           </div>
-          <Link to="/shop?sort=best" className="shrink-0 text-[12.5px] underline underline-offset-4 hover:no-underline">
+          <Link to="/shop?sort=best" className="shrink-0 text-[12.5px] text-[var(--kv-text)] underline underline-offset-4 hover:no-underline">
             مشاهده همه
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-3 gap-y-8 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-5 lg:gap-x-5">
+        <div className={variant.productGrid}>
           {items.map((p) => (
             <div key={p.id}>
               <ProductCard product={p} />
             </div>
           ))}
         </div>
-    </section>
+    </Reveal>
   );
 }
 
@@ -235,7 +241,7 @@ function BrandVideo() {
               <Icon name="play" className="mr-1 h-6 w-6" fill="currentColor" strokeWidth={0} />
             </button>
             <div>
-              <p className="text-[11px] tracking-[0.4em] text-white/75">THE FILM</p>
+              <p className="text-[11px] tracking-[0.4em] text-white/75">فیلم کلبه</p>
               <h2 className="mt-3 text-[22px] font-medium lg:text-[28px]">کالکشن پاییز، پشت دوربین</h2>
               <p className="mx-auto mt-3 max-w-md text-[12.5px] leading-relaxed text-white/80">
                 یک دقیقه و نیم از کارگاه دوخت تا خیابان — ببینید هر قطعه چطور ساخته می‌شود.
@@ -275,7 +281,7 @@ function ShopTheLook() {
   return (
     <section className={`shop-look-section liquid-panel mx-auto w-[calc(100%_-_1rem)] max-w-[1200px] px-4 sm:w-[calc(100%_-_2rem)] lg:px-8 ${compact ? "my-7 py-6 lg:my-10 lg:py-8" : "my-12 py-10 lg:my-20 lg:py-12"}`}>
       <div className={compact ? "mb-5 text-center" : "mb-8 text-center"}>
-        <p className="text-[11px] tracking-[0.3em] text-neutral-400">SHOP THE LOOK</p>
+        <p className="text-[11px] tracking-[0.3em] text-neutral-400">استایل کامل را ببینید</p>
         <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">استایل‌های پیشنهادی</h2>
         <p className="mx-auto mt-3 max-w-md text-[12.5px] leading-relaxed text-neutral-500">
           ست‌های آماده‌ای که استایلیست‌های ما چیده‌اند. روی نقطه‌ها بزنید و قطعات را ببینید.
@@ -417,7 +423,7 @@ function Journal() {
       <div className="mx-auto w-full max-w-[1200px] px-4 lg:px-8">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
-            <p className="text-[11px] tracking-[0.3em] text-neutral-400">JOURNAL</p>
+            <p className="text-[11px] tracking-[0.3em] text-neutral-400">ژورنال کلبه</p>
             <h2 className="mt-2 text-[22px] font-medium lg:text-[26px]">مجله استایل</h2>
           </div>
           <Link to="/blog" className="shrink-0 text-[12.5px] underline underline-offset-4 hover:no-underline">
@@ -572,6 +578,7 @@ function TrustRow() {
 /* ---------------------------------- صفحه ----------------------------------- */
 
 export default function Home() {
+  const variant = useHomeVariant();
   const { heroStudio, builder } = useSiteSettings();
   const homepage = builder.homepage;
   const modeSections = homepage.mode === "festival"
@@ -593,7 +600,8 @@ export default function Home() {
   };
   return (
     <>
-      {modeSections.map(renderSection)}
+      <div className={`relative ${variant.frame}`}>{modeSections.map(renderSection)}</div>
+      <HomeTweaks />
     </>
   );
 }
@@ -609,7 +617,7 @@ function FeatureStrip() {
     { icon: "needle", title: "دوخت دست", text: "کیفیت کارگاهی" },
   ];
   return (
-    <section className="border-y border-neutral-200/60 bg-white py-8">
+    <Reveal id="home-trust" as="section" className="border-y border-[var(--kv-border)] bg-[var(--kv-surface)] py-10 lg:py-12">
       <div className="mx-auto grid max-w-[1200px] grid-cols-2 gap-4 px-4 py-6 sm:grid-cols-4 sm:gap-6 lg:px-8 lg:py-8">
         {features.map(f => (
           <div key={f.title} className="flex flex-col items-center text-center">
@@ -617,11 +625,11 @@ function FeatureStrip() {
               <Icon name={f.icon} className="h-5 w-5 text-[#011c3a]" strokeWidth={1.3} />
             </div>
             <p className="mt-3 text-[12.5px] font-medium">{f.title}</p>
-            <p className="mt-1 text-[10.5px] text-neutral-500">{f.text}</p>
+            <p className="mt-1 text-[10.5px] text-[var(--kv-text-muted)]">{f.text}</p>
           </div>
         ))}
       </div>
-    </section>
+    </Reveal>
   );
 }
 
@@ -629,6 +637,7 @@ function FeatureStrip() {
 /* --------------------- دسته‌بندی‌های قابل طراحی (بعد از هیرو) --------------------- */
 
 function CategoryBento() {
+  const variant = useHomeVariant();
   const { categories } = useSiteSettings();
   const items = categories.items.filter((item) => item.enabled);
   if (items.length === 0) return null;
@@ -657,11 +666,11 @@ function CategoryBento() {
   };
 
   return (
-    <section className="category-section mx-auto w-full max-w-[1240px] px-3 py-6 sm:px-4 sm:py-8 lg:px-8 lg:py-9">
-      <div className="mb-5 flex items-end justify-between gap-4 sm:mb-6">
+    <Reveal id="home-categories" as="section" className={`category-section mx-auto w-full ${variant.width} px-3 py-12 sm:px-4 sm:py-16 lg:px-8 lg:py-20`}>
+      <div className="mb-6 flex items-end justify-between gap-4 border-b border-[var(--kv-border)] pb-5 sm:mb-8">
         <div>
-          <p className="text-[9px] tracking-[0.25em] text-neutral-400 sm:text-[10px]">{categories.eyebrow}</p>
-          <h2 className="mt-1.5 text-[19px] font-medium sm:mt-2 sm:text-[22px] lg:text-[26px]">{categories.title}</h2>
+          <p className="kv-label text-[var(--kv-text-muted)]">دسته‌بندی‌ها</p>
+          <h2 className="kv-title mt-2">{categories.title}</h2>
           {categories.description ? <p className="mt-1 max-w-xl text-[11px] text-neutral-500 sm:text-[12px]">{categories.description}</p> : null}
         </div>
         <Link to="/shop" className="shrink-0 text-[11px] text-neutral-500 underline underline-offset-4 transition hover:text-[var(--site-primary)] sm:text-[12px]">
@@ -680,8 +689,7 @@ function CategoryBento() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/5" />
             <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 text-white sm:p-4">
               <div className="min-w-0">
-                <p className="truncate text-[8px] tracking-[0.18em] text-white/65 sm:text-[9px]">{item.latin}</p>
-                <h3 className={`mt-1 font-medium leading-snug ${item.featured ? "text-[15px] sm:text-[18px]" : "text-[12px] sm:text-[14px]"}`}>{item.label}</h3>
+                <h3 className={`font-medium leading-snug ${item.featured ? "text-[16px] sm:text-[19px]" : "text-[13px] sm:text-[15px]"}`}>{item.label}</h3>
               </div>
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/30 bg-black/10 transition group-hover:border-white group-hover:bg-white group-hover:text-[var(--site-primary)] sm:h-8 sm:w-8">
                 <Icon name="arrowLeft" className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
@@ -693,7 +701,7 @@ function CategoryBento() {
           </Link>
         ))}
       </div>
-    </section>
+    </Reveal>
   );
 }
 
@@ -702,12 +710,12 @@ function CategoryBento() {
 function MidBanner() {
   const { builder } = useSiteSettings();
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
-      <Link to="/collection" className="group relative block overflow-hidden rounded-[1.2rem]">
+    <section className="mx-auto w-full max-w-[1320px] px-4 py-10 lg:px-8 lg:py-14">
+      <Link to="/collection" className="group relative block overflow-hidden rounded-[var(--kv-radius-surface)]">
         <img src="/images/banner.jpg" alt="کالکشن پاییز" loading="lazy" className="h-[200px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.02] sm:h-[340px]" />
         <div className="absolute inset-0 bg-gradient-to-l from-black/65 via-black/25 to-transparent" />
         <div className="absolute inset-0 flex flex-col items-start justify-center px-5 text-white sm:px-8 lg:px-14">
-          <p className="text-[8.5px] tracking-[0.3em] text-white/70 sm:text-[10px] sm:tracking-[0.35em]">AUTUMN COLLECTION</p>
+          <p className="kv-label text-white/75">کالکشن پاییز</p>
           <h2 className="mt-2 text-[18px] font-medium leading-snug sm:text-[32px]">پاییز، فصل پارچه‌های سنگین</h2>
           <p className="mt-1.5 max-w-md text-[10.5px] leading-relaxed text-white/80 sm:text-[12px]">پشم شورون، بافت کابلی و کشمیر برای سردترین روزهای سال.</p>
           <span className="mt-4 rounded-full bg-white px-5 py-2 text-[11px] font-medium text-[#011c3a] transition group-hover:bg-neutral-100 sm:mt-5 sm:px-6 sm:py-2.5 sm:text-[12px]">مشاهده کالکشن</span>
@@ -723,8 +731,8 @@ function MidBanner() {
 function BottomBanner() {
   const { builder } = useSiteSettings();
   return (
-    <section className="mx-auto w-full max-w-[1240px] px-4 py-8 lg:px-8">
-      <div className="grid gap-3 sm:grid-cols-2">
+    <section className="mx-auto w-full max-w-[1320px] px-4 py-10 lg:px-8 lg:py-14">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Link to="/wholesale" className="group relative overflow-hidden rounded-[1rem]">
           <img src="/images/model-front.jpg" alt="خرید عمده" loading="lazy" className="h-[150px] w-full object-cover transition-transform duration-700 group-hover:scale-[1.03] sm:h-[200px]" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />

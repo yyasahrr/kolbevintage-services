@@ -37,7 +37,7 @@ export function BlogList() {
   return (
     <main className="storefront-page mx-auto w-full px-4 py-10 lg:px-8 lg:py-16">
       <div className="mb-8 text-center">
-        <p className="text-[11px] tracking-[0.3em] text-neutral-400">JOURNAL</p>
+        <p className="text-[11px] tracking-[0.3em] text-neutral-400">ژورنال کلبه</p>
         <h1 className="mt-2 text-[26px] font-medium lg:text-[32px]">مجله استایل</h1>
         <p className="mx-auto mt-3 max-w-lg text-[12.5px] leading-relaxed text-neutral-500">
           راهنمای استایل، نگهداری از لباس و پشت صحنه کارگاه کلبه.

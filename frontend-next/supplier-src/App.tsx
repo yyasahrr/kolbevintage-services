@@ -128,8 +128,8 @@ function App() {
 function AuthShell({ view, notice, backendOnline, onChange, onAuthenticated }: { view: Exclude<AccessView, 'portal'>; notice?: string; backendOnline: boolean; onChange: (view: AccessView) => void; onAuthenticated: (context: SupplierContext) => void }) {
   return <main className="auth-shell">
     <section className="auth-intro">
-      <div className="auth-brand"><div className="brand-seal">K</div><div><strong>KOLBE</strong><span>Vintage · Supplier</span></div></div>
-      <div className="auth-intro-copy"><p className="eyebrow">SUPPLIER OPERATIONS</p><h1>عملیات عمده‌فروشی<br/>شما، <em>دقیق و یکپارچه.</em></h1><p>کولبه وینتیج، مسیر فروش، تولید و تسویهٔ تأمین‌کنندگان منتخب را در یک فضای عملیاتی شفاف مدیریت می‌کند.</p></div>
+      <div className="auth-brand"><div className="brand-seal">K</div><div><strong>کلبه</strong><span>Vintage · Supplier</span></div></div>
+      <div className="auth-intro-copy"><p className="eyebrow">عملیات تأمین</p><h1>عملیات عمده‌فروشی<br/>شما، <em>دقیق و یکپارچه.</em></h1><p>کولبه وینتیج، مسیر فروش، تولید و تسویهٔ تأمین‌کنندگان منتخب را در یک فضای عملیاتی شفاف مدیریت می‌کند.</p></div>
       <div className="auth-assurance"><div><span className="assurance-icon"><ShieldCheck size={18}/></span><p><b>حساب‌های تأییدشده</b><small>دسترسی فقط برای تیم‌های تأمین‌کنندهٔ فعال کولبه</small></p></div><div><span className="assurance-icon"><Factory size={18}/></span><p><b>شبکهٔ تولید منتخب</b><small>بیش از ۴۸ کارخانه در دسته‌های پوشاک و اکسسوری</small></p></div></div>
       <p className="auth-copyright">© ۱۴۰۴ Kolbe Vintage. همهٔ حقوق محفوظ است.</p>
     </section>
@@ -164,7 +164,7 @@ function RegistrationForm({ backendOnline, onBack }: { backendOnline: boolean; o
 
 function Sidebar({ page, onNavigate, open, onClose, supplierName }: { page: Page; onNavigate: (page: Page) => void; open: boolean; onClose: () => void; supplierName?: string }) {
   return <aside className={`sidebar ${open ? 'open' : ''}`}>
-    <div className="brand"><div className="brand-seal">K</div><div><strong>KOLBE</strong><span>Vintage · Supplier</span></div><button className="close-sidebar" aria-label="بستن منو" onClick={onClose}><X size={18}/></button></div>
+    <div className="brand"><div className="brand-seal">K</div><div><strong>کلبه</strong><span>Vintage · Supplier</span></div><button className="close-sidebar" aria-label="بستن منو" onClick={onClose}><X size={18}/></button></div>
     <div className="supplier-switch"><div className="mini-avatar">{supplierName?.slice(0, 1) || 'ن'}</div><div><b>{supplierName || 'تأمین‌کننده'}</b><span>تأمین‌کننده تأییدشده</span></div><ChevronDown size={16}/></div>
     <nav>{navGroups.map((group, index) => <div className="nav-group" key={index}>{group.label ? <p>{group.label}</p> : null}{group.links.map(({ page: target, label, icon: Icon, count }) => <button key={label} className={page === target ? 'nav-link active' : 'nav-link'} onClick={() => onNavigate(target)}><Icon size={17}/><span>{label}</span>{count ? <em>{count}</em> : null}</button>)}</div>)}</nav>
     <div className="sidebar-footer"><button className="nav-link" onClick={() => onNavigate('settings')}><Settings size={17}/><span>تنظیمات</span></button><div className="profile-mini"><div className="avatar">ن</div><div><b>نرگس آذر</b><span>مدیر فروش</span></div><ChevronDown size={15}/></div></div>
@@ -240,7 +240,7 @@ function Finance() {
   <section className="balance-grid"><article className="balance-main"><p>موجودی قابل تسویه</p><strong>۳۲٬۴۰۰٬۰۰۰ <span>تومان</span></strong><div><span>پرداخت برنامه‌ریزی‌شده</span><b>۲۴ مرداد ۱۴۰۴</b></div></article><article><p>در انتظار تسویه</p><strong>۴۸٬۶۰۰٬۰۰۰</strong><span>شامل ۱۴ سفارش تحویل‌شده</span></article><article><p>درآمد این ماه</p><strong>۱۵۸٬۹۰۰٬۰۰۰</strong><span className="green-text">↑ ۱۲٪ نسبت به ماه گذشته</span></article></section>
 
   <section className="surface" style={{padding:20,marginBottom:16}}>
-    <SectionHeading title="ریز کسورات این ماه" eyebrow="DETAILED DEDUCTIONS">تفکیک کامل هزینه‌ها و کسورات از درآمد ناخالص</SectionHeading>
+    <SectionHeading title="ریز کسورات این ماه" eyebrow="کسرهای ریز">تفکیک کامل هزینه‌ها و کسورات از درآمد ناخالص</SectionHeading>
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
       {[['درآمد ناخالص','۱۶۷٬۲۰۰٬۰۰۰','green-text'],['کمیسیون کلبه (۵٪)','− ۸٬۳۶۰٬۰۰۰','low-number'],['مالیات (۹٪)','− ۱۵٬۰۴۸٬۰۰۰','low-number'],['هزینه ارسال (۲٪)','− ۳٬۳۴۴٬۰۰۰','low-number'],['سود خالص','۱۴۰٬۴۴۸٬۰۰۰','green-text']].map(([label, value, tone]) => (
         <div key={label} style={{border:'1px solid #e5e5e0',padding:12}}>
@@ -368,7 +368,7 @@ function SettingsPage() {
   return <><div className="page-head"><div><PageCrumbs parent="حساب کاربری" current="تنظیمات"/><h1>تنظیمات</h1><p>تعطیلات کارخانه، کاربران تیم و یکپارچه‌سازی‌ها را مدیریت کنید.</p></div></div>
 
   <section className="surface" style={{padding:20,marginBottom:16}}>
-    <SectionHeading title="تعطیلات و روزهای عدم تأمین" eyebrow="FACTORY CLOSURES">روزهایی که کارخانه تولید یا ارسال ندارد؛ کلبه مهلت‌ها را به‌طور خودکار تنظیم می‌کند.</SectionHeading>
+    <SectionHeading title="تعطیلات و روزهای عدم تأمین" eyebrow="تعطیلی کارخانه">روزهایی که کارخانه تولید یا ارسال ندارد؛ کلبه مهلت‌ها را به‌طور خودکار تنظیم می‌کند.</SectionHeading>
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
       <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{height:36,border:'1px solid #deddd6',background:'var(--kv-surface)',padding:'0 8px',fontSize:10.5}} dir="ltr" aria-label="تاریخ تعطیلی" />
       <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="علت (مثلاً تعطیل رسمی)" style={{height:36,flex:1,minWidth:160,border:'1px solid #deddd6',background:'var(--kv-surface)',padding:'0 8px',fontSize:10.5}} />

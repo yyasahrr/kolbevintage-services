@@ -40,7 +40,7 @@ export const styles: Style[] = [
   {
     slug: "old-money",
     name: "اولد مانی",
-    latin: "Old Money",
+    latin: "اولد مانی",
     tagline: "ثروت قدیمی، سکوتِ شیک",
     description:
       "زبان پوشش خانواده‌های قدیمی؛ پارچه‌های نجیب، رنگ‌های خنثی و برش‌هایی که هیچ‌وقت فریاد نمی‌زنند. بلیزر کروات‌دوز، پلیور روی شانه و کفش چرم دست‌دوز.",
@@ -51,7 +51,7 @@ export const styles: Style[] = [
   {
     slug: "vintage",
     name: "وینتیج",
-    latin: "Vintage",
+    latin: "وینتیج",
     tagline: "روح دهه‌های طلایی",
     description:
       "قطعاتی با حال‌وهوای دهه ۶۰ و ۷۰؛ رنگ‌های خاک‌خورده، بافت‌های زبر و جزئیاتی که با گذر زمان قشنگ‌تر می‌شوند.",
@@ -62,7 +62,7 @@ export const styles: Style[] = [
   {
     slug: "dark-academia",
     name: "دارک آکادمیا",
-    latin: "Dark Academia",
+    latin: "دارک آکادمیا",
     tagline: "کتابخانه‌های قدیمی و پاییزهای بلند",
     description:
       "چهارخانه‌های تیره، پشم ضخیم، قهوه‌ای سوخته و سبز جنگلی. لباسی برای کسی که کتاب می‌خواند و باران را دوست دارد.",
@@ -73,7 +73,7 @@ export const styles: Style[] = [
   {
     slug: "minimal",
     name: "مینیمال",
-    latin: "Minimal",
+    latin: "مینیمال",
     tagline: "هرچه کمتر، دقیق‌تر",
     description:
       "خط‌های تمیز، پالت محدود و صفر جزئیات اضافه. قطعاتی که به‌سادگی با هر چیزی در کمد شما ست می‌شوند.",
@@ -84,7 +84,7 @@ export const styles: Style[] = [
   {
     slug: "neo-classic",
     name: "نئو کلاسیک",
-    latin: "Neo Classic",
+    latin: "نئو کلاسیک",
     tagline: "کلاسیک، اما امروزی",
     description:
       "برش‌های کلاسیک با فرم‌های به‌روز؛ جایی که سنت خیاطی با راحتی امروز آشتی می‌کند.",

@@ -34,7 +34,7 @@ export function About() {
         <img src="/images/store.jpg" alt="کارگاه کلبه وینتیج" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-black/15" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
-          <p className="text-[11px] tracking-[0.4em] text-white/75">OUR STORY</p>
+          <p className="text-[11px] tracking-[0.4em] text-white/75">داستان ما</p>
           <h1 className="mt-4 text-[28px] font-medium lg:text-[38px]">درباره کلبه وینتیج</h1>
         </div>
       </section>
@@ -342,7 +342,7 @@ export function Account() {
       <main className="account-entry mx-auto w-full max-w-[620px] px-4 py-8 sm:py-12 lg:px-8">
         <div>
           <section className="liquid-panel account-auth-panel flex flex-col justify-center p-5 sm:p-7 lg:p-8">
-            <p className="text-[9px] tracking-[0.25em] text-neutral-400">ONE ACCOUNT</p>
+            <p className="text-[9px] tracking-[0.25em] text-neutral-400">یک حساب واحد</p>
             <h1 className="mt-2 text-[25px] font-medium">ورود یا ساخت حساب</h1>
             <p className="mt-2 max-w-md text-[11.5px] leading-[1.9] text-neutral-500">سفارش‌ها، سایزهای ذخیره‌شده، آدرس‌ها و تصویرهای Try On Me را در یک حساب نگه دارید.</p>
             <div className="mt-5 grid grid-cols-2 border border-neutral-200 p-1"><button type="button" onClick={()=>setAuthMode("login")} className={(authMode==="login"?"bg-[#011c3a] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ورود</button><button type="button" onClick={()=>setAuthMode("register")} className={(authMode==="register"?"bg-[#011c3a] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ساخت حساب</button></div>
@@ -464,11 +464,11 @@ export function NotFound() {
   return (
     <main className="bg-[#f2f0ea] px-4 pb-16 pt-10 lg:px-8 lg:pt-16">
       <section className="relative mx-auto grid min-h-[480px] max-w-[1360px] overflow-hidden bg-[#011c3a] px-6 py-12 text-white lg:grid-cols-[1fr_.8fr] lg:px-14 lg:py-16">
-        <div className="relative z-10 flex flex-col justify-between"><div><p className="text-[10px] tracking-[.3em] text-white/45">PAGE NOT FOUND</p><p className="mt-6 font-serif text-[92px] font-light leading-none tracking-[-.08em] sm:text-[150px] num-fa">۴۰۴</p><h1 className="mt-4 text-[24px] font-medium sm:text-[34px]">این مسیر به کلبه نمی‌رسد.</h1><p className="mt-4 max-w-md text-[12.5px] leading-7 text-white/65">ممکن است صفحه جابه‌جا شده باشد یا آدرس را اشتباه نوشته باشید. از فروشگاه، کالکشن‌ها یا جست‌وجو مسیر تازه‌ای پیدا کنید.</p></div><div className="mt-8 flex flex-wrap gap-3"><Link to="/shop" className="bg-white px-6 py-3 text-[11.5px] text-[#011c3a]">رفتن به فروشگاه</Link><Link to="/" className="border border-white/35 px-6 py-3 text-[11.5px] transition hover:border-white">صفحه اصلی</Link></div></div>
+        <div className="relative z-10 flex flex-col justify-between"><div><p className="text-[10px] tracking-[.3em] text-white/45">صفحه پیدا نشد</p><p className="mt-6 font-serif text-[92px] font-light leading-none tracking-[-.08em] sm:text-[150px] num-fa">۴۰۴</p><h1 className="mt-4 text-[24px] font-medium sm:text-[34px]">این مسیر به کلبه نمی‌رسد.</h1><p className="mt-4 max-w-md text-[12.5px] leading-7 text-white/65">ممکن است صفحه جابه‌جا شده باشد یا آدرس را اشتباه نوشته باشید. از فروشگاه، کالکشن‌ها یا جست‌وجو مسیر تازه‌ای پیدا کنید.</p></div><div className="mt-8 flex flex-wrap gap-3"><Link to="/shop" className="bg-white px-6 py-3 text-[11.5px] text-[#011c3a]">رفتن به فروشگاه</Link><Link to="/" className="border border-white/35 px-6 py-3 text-[11.5px] transition hover:border-white">صفحه اصلی</Link></div></div>
         <div aria-hidden="true" className="relative mt-12 hidden lg:block"><span className="absolute left-[14%] top-[6%] h-56 w-40 rotate-6 border border-white/20"/><span className="absolute left-[36%] top-[22%] h-56 w-40 -rotate-6 border border-white/40 bg-white/[.04]"/><span className="absolute bottom-[2%] left-[4%] font-serif text-[180px] leading-none text-white/[.035]">K</span><p className="absolute bottom-3 left-3 max-w-[220px] text-[10px] leading-6 text-white/35">گاهی بهترین پیداها از یک مسیر اشتباه شروع می‌شوند.</p></div>
       </section>
       <div className="mx-auto mt-12 w-full max-w-[1360px]">
-        <div className="mb-5 flex items-end justify-between"><div><p className="text-[9px] tracking-[.2em] text-neutral-400">CURATED FOR YOU</p><h2 className="mt-1 text-[16px] font-medium">شاید این‌ها را بخواهید</h2></div><Link to="/shop" className="text-[10.5px] underline">همه محصولات</Link></div>
+        <div className="mb-5 flex items-end justify-between"><div><p className="text-[9px] tracking-[.2em] text-neutral-400">انتخاب‌شده برای شما</p><h2 className="mt-1 text-[16px] font-medium">شاید این‌ها را بخواهید</h2></div><Link to="/shop" className="text-[10.5px] underline">همه محصولات</Link></div>
         <div className="grid grid-cols-2 gap-x-3 gap-y-8 lg:grid-cols-4">
           {products.slice(0, 4).map((p) => (
             <ProductCard key={p.id} product={p} />

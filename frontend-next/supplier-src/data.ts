@@ -27,7 +27,7 @@ export const orderRows = [
 ]
 
 export const rfqs = [
-  { id: 'RFQ-2048', title: 'پیراهن آکسفورد اختصاصی', customer: 'گروه هتل‌های هلیا', quantity: '۶۰۰ تکه', deadline: '۲۲ شهریور', fabric: 'Oxford Cotton 150gr', status: 'نیازمند قیمت‌گذاری', avatar: 'ه' },
+  { id: 'RFQ-2048', title: 'پیراهن آکسفورد اختصاصی', customer: 'گروه هتل‌های هلیا', quantity: '۶۰۰ تکه', deadline: '۲۲ شهریور', fabric: 'نخ آکسفورد ۱۵۰ گرم', status: 'نیازمند قیمت‌گذاری', avatar: 'ه' },
   { id: 'RFQ-2044', title: 'بارانی کوتاه برند اختصاصی', customer: 'بوتیک آلما', quantity: '۳۵۰ تکه', deadline: '۱۰ مهر', fabric: 'Water-repellent Twill', status: 'نیازمند پاسخ', avatar: 'آ' },
   { id: 'RFQ-2039', title: 'تی‌شرت پنبه‌ای با گلدوزی', customer: 'MARNI STUDIO', quantity: '۱٬۲۰۰ تکه', deadline: '۲۸ مهر', fabric: 'Combed Cotton 180gr', status: 'پیشنهاد ارسال شد', avatar: 'م' },
 ]

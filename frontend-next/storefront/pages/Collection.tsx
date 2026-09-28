@@ -12,7 +12,7 @@ export default function Collection() {
         <img src="/images/banner.jpg" alt="کالکشن پاییز ۱۴۰۵" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
-          <p className="text-[11px] tracking-[0.4em] text-white/80">AUTUMN 1405</p>
+          <p className="text-[11px] tracking-[0.4em] text-white/80">پاییز ۱۴۰۵</p>
           <h1 className="mt-4 text-[30px] font-medium lg:text-[44px]">کالکشن پاییز</h1>
           <p className="mx-auto mt-4 max-w-lg text-[13px] leading-relaxed text-white/85">
             پشم شورون، بافت کابلی و کشمیر — سیزده قطعه برای سردترین روزهای سال.

@@ -286,7 +286,7 @@ export default function SiteHeader() {
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <Link to="/try-on" className="tryon-menu-link flex items-center justify-between rounded-2xl px-4 py-3.5">
                 <span>
-                  <span className="block text-[13px] font-medium">Try On Me</span>
+                  <span className="block text-[13px] font-medium">پرو مجازی تن من</span>
                   <span className="mt-1 block text-[10px] opacity-70">لباس را روی تصویر خودت امتحان کن</span>
                 </span>
                 <Icon name="star" className="h-5 w-5" />

@@ -514,7 +514,7 @@ function ProductsPanel() {
                       <img src={p.images[0]??"/images/flat.jpg"} alt="" className="h-11 w-9 object-cover" loading="lazy" />
                       <div>
                         <p className="font-medium">{p.name}</p>
-                        <p className="mt-0.5 text-[10.5px] text-neutral-500">{p.latin}</p>
+                        <p className="mt-0.5 text-[10.5px] text-neutral-500">{p.subtitle || p.categoryLabel}</p>
                       </div>
                     </div>
                   </td>
@@ -562,7 +562,7 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[9px] tracking-[.22em] text-neutral-400">ORDER INBOX</p><h2 className="mt-2 text-[18px] font-medium">اینباکس سفارش‌ها</h2><p className="mt-1 text-[10px] text-neutral-500">دریافت، بررسی، آماده‌سازی، ارسال و خدمات پس از فروش در یک جریان.</p></div><div className="flex border border-neutral-300 bg-white">{([["new","جدید"],["processing","در جریان"],["all","همه"]] as const).map(([id,label])=><button key={id} onClick={()=>setInbox(id)} className={`h-10 px-4 text-[10.5px] ${inbox===id?'bg-[#011c3a] text-white':''}`}>{label}</button>)}</div></div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[9px] tracking-[.22em] text-neutral-400">صندوق سفارش‌ها</p><h2 className="mt-2 text-[18px] font-medium">اینباکس سفارش‌ها</h2><p className="mt-1 text-[10px] text-neutral-500">دریافت، بررسی، آماده‌سازی، ارسال و خدمات پس از فروش در یک جریان.</p></div><div className="flex border border-neutral-300 bg-white">{([["new","جدید"],["processing","در جریان"],["all","همه"]] as const).map(([id,label])=><button key={id} onClick={()=>setInbox(id)} className={`h-10 px-4 text-[10.5px] ${inbox===id?'bg-[#011c3a] text-white':''}`}>{label}</button>)}</div></div>
       <div className="mb-4 flex flex-wrap gap-2">
         {statuses.map((s) => (
           <button
@@ -617,7 +617,7 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
           </tbody>
         </table>
       </div>
-      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">ORDER DETAIL</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3><button onClick={()=>onOpenCustomer?.(selected.customer)} className="mt-2 text-[10px] text-[#011c3a] underline underline-offset-4">مشاهده پروفایل ۳۶۰ {selected.customer}</button></div><div className="flex gap-2"><button onClick={()=>printInvoice(selected)} className="h-9 border border-[#011c3a] px-3 text-[10px]">فاکتور PDF</button><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین · تأیید شده"],["روش ارسال","پست پیشتاز"],["کد پیگیری",selected.status==="در حال ارسال"?"۷۸۴۵۱۲۳۹۰۱":"در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[#f6f6f4] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl><div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]"><div><h4 className="text-[11px] font-medium">تایم‌لاین پردازش</h4><div className="mt-3 grid gap-2 sm:grid-cols-4">{["پرداخت تأیید شد","بررسی سفارش","آماده‌سازی انبار","تحویل به حمل"].map((step,index)=><div key={step} className={`border-t-2 pt-2 text-[9px] ${index<(["پرداخت شده","در حال پردازش","در حال ارسال","تحویل شده"].indexOf(selected.status)+1)?'border-[#36563a] text-[#36563a]':'border-neutral-200 text-neutral-400'}`}>{step}</div>)}</div></div><aside className="border border-neutral-200 p-3"><p className="text-[9px] text-neutral-400">نشانی و تحویل</p><p className="mt-2 text-[10px] leading-5">تهران، خیابان ولیعصر، کوچه سرو، پلاک ۲۴</p><p className="mt-2 text-[9px] text-neutral-500">بازه تحویل: ۱۴ تا ۱۸ · تماس قبل از تحویل</p></aside></div></section>}
+      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">جزئیات سفارش</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3><button onClick={()=>onOpenCustomer?.(selected.customer)} className="mt-2 text-[10px] text-[#011c3a] underline underline-offset-4">مشاهده پروفایل ۳۶۰ {selected.customer}</button></div><div className="flex gap-2"><button onClick={()=>printInvoice(selected)} className="h-9 border border-[#011c3a] px-3 text-[10px]">فاکتور PDF</button><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین · تأیید شده"],["روش ارسال","پست پیشتاز"],["کد پیگیری",selected.status==="در حال ارسال"?"۷۸۴۵۱۲۳۹۰۱":"در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[#f6f6f4] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl><div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]"><div><h4 className="text-[11px] font-medium">تایم‌لاین پردازش</h4><div className="mt-3 grid gap-2 sm:grid-cols-4">{["پرداخت تأیید شد","بررسی سفارش","آماده‌سازی انبار","تحویل به حمل"].map((step,index)=><div key={step} className={`border-t-2 pt-2 text-[9px] ${index<(["پرداخت شده","در حال پردازش","در حال ارسال","تحویل شده"].indexOf(selected.status)+1)?'border-[#36563a] text-[#36563a]':'border-neutral-200 text-neutral-400'}`}>{step}</div>)}</div></div><aside className="border border-neutral-200 p-3"><p className="text-[9px] text-neutral-400">نشانی و تحویل</p><p className="mt-2 text-[10px] leading-5">تهران، خیابان ولیعصر، کوچه سرو، پلاک ۲۴</p><p className="mt-2 text-[9px] text-neutral-500">بازه تحویل: ۱۴ تا ۱۸ · تماس قبل از تحویل</p></aside></div></section>}
     </div>
   );
 }
@@ -712,7 +712,7 @@ function CustomersPanel() {
           </div>
         </div>
       )}
-      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">CUSTOMER 360</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول و اعتبار</p><p className="mt-3 text-[10px] leading-6 text-white/70">کیف پول کلبه هنوز راه‌اندازی نشده است. موجودی و تراکنش‌های مالی پس از ساخته شدن ماژول «کیف پول و دفتر کل» (فاز ۵) و به‌صورت فقط‌افزودنی (append-only) نمایش داده می‌شوند؛ تا آن زمان هیچ عددی در پنل به‌عنوان موجودی مالی قابل ویرایش نیست.</p></aside></section>}
+      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">نمای ۳۶۰ درجهٔ مشتری</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول و اعتبار</p><p className="mt-3 text-[10px] leading-6 text-white/70">کیف پول کلبه هنوز راه‌اندازی نشده است. موجودی و تراکنش‌های مالی پس از ساخته شدن ماژول «کیف پول و دفتر کل» (فاز ۵) و به‌صورت فقط‌افزودنی (append-only) نمایش داده می‌شوند؛ تا آن زمان هیچ عددی در پنل به‌عنوان موجودی مالی قابل ویرایش نیست.</p></aside></section>}
     </div>
   );
 }
@@ -881,7 +881,7 @@ function WholesalePanel() {
           </tbody>
         </table>
       </div>
-      {selected&&<section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات درخواست عمده"><div className="flex justify-between"><div><p className="text-[9px] text-neutral-400">WHOLESALE LEAD</p><h3 className="mt-2 text-[15px] font-medium">{selected.store}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-4 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["متقاضی",selected.name],["شهر",selected.city],["تماس",selected.phone],["پلن",selected.plan],["وضعیت",selected.status]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-neutral-400">{a}</p><p className="mt-1 font-medium num-fa">{b}</p></div>)}</div></section>}
+      {selected&&<section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات درخواست عمده"><div className="flex justify-between"><div><p className="text-[9px] text-neutral-400">سرنخ عمده</p><h3 className="mt-2 text-[15px] font-medium">{selected.store}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-4 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["متقاضی",selected.name],["شهر",selected.city],["تماس",selected.phone],["پلن",selected.plan],["وضعیت",selected.status]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-neutral-400">{a}</p><p className="mt-1 font-medium num-fa">{b}</p></div>)}</div></section>}
     </div>
   );
 }
@@ -923,7 +923,7 @@ function ReportsPanel() {
 
   return (
     <div className="space-y-6">
-      <header><p className="text-[9px] tracking-[.22em] text-neutral-400">COMMERCE INTELLIGENCE</p><h2 className="mt-2 text-[18px] font-medium">تحلیل رفتار و فروش</h2><p className="mt-1 text-[10px] text-neutral-500">داده‌ها از بازدید، محصول، سبد و پرداخت واقعی همین ویترین جمع‌آوری می‌شوند.</p></header>
+      <header><p className="text-[9px] tracking-[.22em] text-neutral-400">هوش تجاری</p><h2 className="mt-2 text-[18px] font-medium">تحلیل رفتار و فروش</h2><p className="mt-1 text-[10px] text-neutral-500">داده‌ها از بازدید، محصول، سبد و پرداخت واقعی همین ویترین جمع‌آوری می‌شوند.</p></header>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {reports.map((r) => (
@@ -979,7 +979,7 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
             </button>
             <div className="flex flex-col leading-none">
               <span className="text-[15px] font-semibold tracking-[0.12em]">کلبه وینتیج</span>
-              <span className="mt-1 text-[8px] tracking-[0.35em] text-neutral-400">ADMIN PANEL</span>
+              <span className="mt-1 text-[8px] tracking-[0.35em] text-neutral-400">پنل مدیریت</span>
             </div>
           </div>
           <div className="flex items-center gap-4">

@@ -30,7 +30,7 @@ export default function SiteFooter() {
           <div className="flex items-center justify-between gap-4 border-b border-current/10 py-5 sm:justify-center sm:py-7">
             <div className="sm:text-center">
               <span className="block text-[17px] font-semibold tracking-[0.12em] sm:text-[20px]">{header.brand}</span>
-              <span className="mt-1 block text-[7.5px] tracking-[0.34em] opacity-45">{header.latinBrand}</span>
+              {header.latinBrand ? <span className="mt-1 block text-[7.5px] tracking-[0.2em] opacity-45">{header.latinBrand}</span> : null}
             </div>
             {socials.length ? <div className="flex gap-1.5 sm:hidden">{socials.slice(0, 3).map((social, index) => <a key={`${social.url}-${index}`} href={social.url} target="_blank" rel="noreferrer" aria-label={social.label} className="grid h-8 w-8 place-items-center rounded-full border border-current/20 opacity-70"><Icon name={social.icon} className="h-3.5 w-3.5" /></a>)}</div> : null}
           </div>

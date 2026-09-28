@@ -13,6 +13,8 @@ import { defineConfig } from "vitest/config";
  * پس از استقرار NestJS (فاز ۲)، همین تست‌ها به آزمون هم‌ارزی (Parity) تبدیل می‌شوند.
  */
 export default defineConfig({
+  // فایل‌های .tsx فروشگاه با رانتایم اتوماتیک React کامپایل می‌شوند (مثل Next).
+  esbuild: { jsx: "automatic", jsxImportSource: "react" },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "storefront"),
@@ -21,7 +23,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
     globalSetup: ["./test/global-setup.ts"],
     setupFiles: ["./test/setup.ts"],
     // تست‌ها روی یک دیتابیس مشترک اجرا می‌شوند؛ اجرای موازی فایل‌ها

@@ -286,7 +286,7 @@ export function ShippingLabel({ orderId, items }: { orderId: string; items: Arra
     {/* برچسب ارسال قابل چاپ */}
     <div id={`label-${orderId}`} style={{ border: '2px solid #011c3a', padding: 16, borderRadius: 4, background: 'var(--kv-surface)', maxWidth: 380 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #011c3a', paddingBottom: 8, marginBottom: 12 }}>
-        <b style={{ fontSize: 14, letterSpacing: 2 }}>KOLBE VINTAGE</b>
+        <b style={{ fontSize: 14, letterSpacing: 2 }}>کلبه وینتیج</b>
         <span style={{ fontSize: 9, color: 'var(--kv-text-muted)' }}>برچسب ارسال</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 10 }}>

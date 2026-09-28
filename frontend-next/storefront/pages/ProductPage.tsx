@@ -418,7 +418,7 @@ function WholesaleOrderPanel({
     <div className="mt-6 border-t border-neutral-200 pt-6">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] tracking-[0.22em] text-neutral-400">WHOLESALE ORDER</p>
+          <p className="text-[10px] tracking-[0.22em] text-neutral-400">سفارش عمده</p>
           <h2 className="mt-1 text-[16px] font-medium">ترکیب سفارش عمده</h2>
         </div>
         <span className="rounded-full bg-[#f6f6f4] px-3 py-1.5 text-[10.5px] num-fa">{fa(lines.length)} ردیف سفارش</span>
@@ -609,7 +609,7 @@ function Reviews({ product }: { product: Product }) {
       <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
         <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-[10px] tracking-[0.3em] text-neutral-400">CUSTOMER REVIEWS</p>
+            <p className="text-[10px] tracking-[0.3em] text-neutral-400">نظرات مشتریان</p>
             <h2 className="mt-2 text-[20px] font-medium">نظرات مشتریان</h2>
           </div>
           <p className="text-[11.5px] text-neutral-500 num-fa">بر اساس {fa(product.reviewCount)} خرید ثبت‌شده</p>
@@ -902,7 +902,7 @@ export default function ProductPage({
         {wholesale && (
           <div className="flex items-center justify-between gap-4 bg-[#011c3a] px-4 py-3 text-white lg:px-8">
             <div>
-              <p className="text-[10px] tracking-[0.25em] text-white/55">WHOLESALE CATALOG</p>
+              <p className="text-[10px] tracking-[0.25em] text-white/55">کاتالوگ عمده</p>
               <p className="mt-0.5 text-[12px]">مشاهده محصول در حالت سفارش عمده</p>
             </div>
             <Link to="/wholesale?section=catalog" className="shrink-0 text-[11.5px] underline underline-offset-4">بازگشت به کاتالوگ</Link>
@@ -941,7 +941,7 @@ export default function ProductPage({
                   <span className="shrink-0 text-[10px] tracking-wide text-neutral-400" dir="ltr">{product.specs.code}</span>
                 </div>
                 <h1 className="mt-2.5 text-[23px] font-semibold leading-snug lg:text-[26px]">{product.name}</h1>
-                <p className="mt-1 text-[10.5px] tracking-[0.22em] text-neutral-400" dir="ltr">{product.latin.toUpperCase()}</p>
+                <p className="mt-1 text-[12px] text-[var(--kv-text-muted)]">{product.subtitle}</p>
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px]">
                   <button type="button" onClick={() => scrollToSection("reviews")} className="flex items-center gap-1.5 hover:underline">
@@ -1130,7 +1130,7 @@ export default function ProductPage({
         <section id="details" className="scroll-mt-[84px] border-t border-neutral-200 lg:scroll-mt-[177px]">
           <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
             <header>
-              <p className="text-[10px] tracking-[0.3em] text-neutral-400">PRODUCT DETAILS</p>
+              <p className="text-[10px] tracking-[0.3em] text-neutral-400">مشخصات محصول</p>
               <h2 className="mt-2 text-[20px] font-medium">جزئیات محصول</h2>
             </header>
 
@@ -1199,7 +1199,7 @@ export default function ProductPage({
           <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[177px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
-                <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
+                <p className="text-[11px] tracking-[0.3em] text-neutral-400">تکمیل استایل</p>
                 <h2 className="mt-2 text-[20px] font-medium">با این ست کنید</h2>
                 <p className="mt-2 text-[12.5px] text-neutral-500">
                   یک ست یکپارچه از محصولات مکمل؛ پیشنهادها با رفتار خرید، دسته، فصل و رنگ محصول هماهنگ می‌شوند.
@@ -1251,7 +1251,7 @@ export default function ProductPage({
           <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[177px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
-                <p className="text-[11px] tracking-[0.3em] text-neutral-400">COMPLETE THE LOOK</p>
+                <p className="text-[11px] tracking-[0.3em] text-neutral-400">تکمیل استایل</p>
                 <h2 className="mt-2 text-[20px] font-medium">با این ست کنید</h2>
                 <p className="mt-2 text-[12.5px] text-neutral-500">{lookSettings.subtitle}</p>
               </div>
@@ -1299,7 +1299,7 @@ export default function ProductPage({
           <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
             <div className="mb-6 flex items-end justify-between gap-3">
               <div>
-                <p className="text-[10px] tracking-[0.3em] text-neutral-400">YOU MAY ALSO LIKE</p>
+                <p className="text-[10px] tracking-[0.3em] text-neutral-400">پیشنهادهای مشابه</p>
                 <h2 className="mt-2 text-[20px] font-medium">محصولات مشابه</h2>
               </div>
               <Link to={`/shop?cat=${product.category}`} className="shrink-0 text-[11.5px] text-neutral-500 underline underline-offset-4 hover:text-[#011c3a]">
@@ -1425,7 +1425,7 @@ export default function ProductPage({
             <div className="size-advisor-modal liquid-surface relative max-h-[calc(100dvh-2rem)] w-full max-w-[620px] overflow-y-auto rounded-[1.75rem] border p-3 sm:p-4">
               <div className="flex items-center justify-between px-2 pb-3">
                 <div>
-                  <p className="text-[9px] tracking-[0.2em] text-neutral-400">SMART FIT</p>
+                  <p className="text-[9px] tracking-[0.2em] text-neutral-400">تناسب هوشمند</p>
                   <h2 id="size-advisor-title" className="mt-1 text-[15px] font-medium">استایل‌ساز و پیشنهاد سایز</h2>
                 </div>
                 <button onClick={() => setSizeAdvisorOpen(false)} className="storefront-icon-action flex h-10 w-10 items-center justify-center rounded-full border" aria-label="بستن">

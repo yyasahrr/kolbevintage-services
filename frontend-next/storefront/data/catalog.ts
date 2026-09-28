@@ -132,7 +132,7 @@ export const products: Product[] = [
   {
     id: "blazer-oxford",
     name: "بلیزر آکسفورد",
-    latin: "The Oxford Blazer",
+    latin: "کت آکسفوردی",
     subtitle: "پشم بکر، آستر ابریشمی، دوخت دست",
     price: 4_850_000,
     images: [
@@ -223,7 +223,7 @@ export const products: Product[] = [
   {
     id: "shirt-linen",
     name: "پیراهن کتان کلبه",
-    latin: "The Linen Shirt",
+    latin: "پیراهن کتان",
     subtitle: "کتان شسته، یقه فرانسوی",
     price: 2_390_000,
     images: [
@@ -299,7 +299,7 @@ export const products: Product[] = [
   {
     id: "knit-cable",
     name: "پلیور بافت کابلی",
-    latin: "The Cable Knit",
+    latin: "بافت کابلی",
     subtitle: "پشم مرینوس، بافت دست",
     price: 3_180_000,
     images: [
@@ -379,7 +379,7 @@ export const products: Product[] = [
   {
     id: "trouser-pleated",
     name: "شلوار پیلی‌دار کلاسیک",
-    latin: "The Pleated Trouser",
+    latin: "شلوار پلیسه",
     subtitle: "فاستونی پشمی، فرم‌دار",
     price: 2_950_000,
     images: [
@@ -443,7 +443,7 @@ export const products: Product[] = [
   {
     id: "polo-pique",
     name: "پولوشرت پیکه",
-    latin: "The Piqué Polo",
+    latin: "پولو پیکه",
     subtitle: "پنبه ارگانیک، یقه فرم‌دار",
     price: 1_890_000,
     images: [

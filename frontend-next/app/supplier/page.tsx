@@ -36,7 +36,7 @@ const SupplierApp = dynamic(() => import("../../supplier-src/App"), {
           animation: "kolbe-boot-spin 0.8s linear infinite",
         }}
       />
-      <p style={{ fontSize: 12, letterSpacing: "0.2em", opacity: 0.55 }}>SUPPLIER PORTAL</p>
+      <p style={{ fontSize: 12, letterSpacing: "0.2em", opacity: 0.55 }}>پورتال تأمین‌کننده</p>
       <style>{`@keyframes kolbe-boot-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   ),

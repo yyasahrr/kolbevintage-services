@@ -413,7 +413,7 @@ export function Messages() {
 export function ProductReview() {
   return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="در حال بررسی"/><h1>در حال بررسی کلبه</h1><p>محصولات ارسالی شما که منتظر تأیید تیم کاتالوگ کلبه هستند.</p></div></div>
   <section className="surface" style={{padding:16}}>
-    <div className="ledger-table"><div className="ledger-row header"><span>محصول</span><span>SKU</span><span>سری</span><span>وضعیت</span></div>
+    <div className="ledger-table"><div className="ledger-row header"><span>محصول</span><span>کد کالا</span><span>سری</span><span>وضعیت</span></div>
     <div className="ledger-row"><b>پیراهن لینن</b><span>NG-LIN-301</span><span>سری کامل (۸ تیکه)</span><Status>در بررسی</Status></div>
     <div className="ledger-row"><b>وست پشمی</b><span>NG-VST-041</span><span>نیم‌سری (۵ تیکه)</span><Status>نیازمند اصلاح</Status></div>
     </div>

@@ -64,7 +64,7 @@ function CategoryPreview({ items, layout, ratio, radius, showBadges }: { items: 
                 {showBadges && item.badge && <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[8px] text-neutral-800">{item.badge}</span>}
                 <div className="absolute inset-x-0 bottom-0 p-2 text-white">
                   <p className="text-[11px] font-medium">{item.label}</p>
-                  <p className="text-[7px] tracking-[0.15em] text-white/75">{item.latin}</p>
+                  <p className="text-[8px] text-white/75">{item.label}</p>
                 </div>
               </article>
             );
@@ -117,7 +117,7 @@ function CategoryStudio({ settings }: { settings: SiteSettings }) {
   };
   const add = () => {
     const id = `category-${Date.now()}`;
-    update({ ...config, items: [...config.items, { id, label: "دسته جدید", latin: "NEW CATEGORY", image: "/images/model-front.jpg", to: "/shop", kind: "collection", badge: "", enabled: true, featured: false }] });
+    update({ ...config, items: [...config.items, { id, label: "دسته جدید", latin: "دستهٔ جدید", image: "/images/model-front.jpg", to: "/shop", kind: "collection", badge: "", enabled: true, featured: false }] });
     setSelectedId(id);
   };
   const installPack = (kind: "product" | "style") => {
@@ -175,7 +175,7 @@ const tokenFields: Array<{ key: keyof ThemeTokens; label: string }> = [
 function ThemeMiniature({ theme, mode }: { theme: SiteTheme; mode: "light" | "dark" }) {
   const t = theme[mode];
   const style = { "--p-bg": t.background, "--p-surface": t.surface, "--p-text": t.text, "--p-muted": t.muted, "--p-primary": t.primary, "--p-primary-text": t.primaryText, "--p-accent": t.accent, "--p-border": t.border } as CSSProperties;
-  return <div style={style} className="overflow-hidden rounded-xl border border-[var(--p-border)] bg-[var(--p-bg)] p-3 text-[var(--p-text)]"><div className="flex items-center justify-between border-b border-[var(--p-border)] pb-2"><span className="text-[9px] font-semibold">KOLBE</span><div className="flex gap-1"><i className="h-1.5 w-1.5 rounded-full bg-[var(--p-accent)]" /><i className="h-1.5 w-1.5 rounded-full bg-[var(--p-primary)]" /></div></div><div className="mt-3 grid grid-cols-[1.2fr_.8fr] gap-2"><div><div className="h-2 w-14 rounded bg-[var(--p-text)]" /><div className="mt-2 h-1.5 w-full rounded bg-[var(--p-muted)] opacity-50" /><div className="mt-1 h-1.5 w-3/4 rounded bg-[var(--p-muted)] opacity-35" /><div className="mt-3 inline-block rounded bg-[var(--p-primary)] px-2 py-1 text-[7px] text-[var(--p-primary-text)]">مشاهده</div></div><div className="min-h-16 rounded-lg bg-[var(--p-surface)] ring-1 ring-[var(--p-border)]" /></div></div>;
+  return <div style={style} className="overflow-hidden rounded-xl border border-[var(--p-border)] bg-[var(--p-bg)] p-3 text-[var(--p-text)]"><div className="flex items-center justify-between border-b border-[var(--p-border)] pb-2"><span className="text-[9px] font-semibold">کلبه</span><div className="flex gap-1"><i className="h-1.5 w-1.5 rounded-full bg-[var(--p-accent)]" /><i className="h-1.5 w-1.5 rounded-full bg-[var(--p-primary)]" /></div></div><div className="mt-3 grid grid-cols-[1.2fr_.8fr] gap-2"><div><div className="h-2 w-14 rounded bg-[var(--p-text)]" /><div className="mt-2 h-1.5 w-full rounded bg-[var(--p-muted)] opacity-50" /><div className="mt-1 h-1.5 w-3/4 rounded bg-[var(--p-muted)] opacity-35" /><div className="mt-3 inline-block rounded bg-[var(--p-primary)] px-2 py-1 text-[7px] text-[var(--p-primary-text)]">مشاهده</div></div><div className="min-h-16 rounded-lg bg-[var(--p-surface)] ring-1 ring-[var(--p-border)]" /></div></div>;
 }
 
 function ColorField({ field, value, onChange }: { field: { key: keyof ThemeTokens; label: string }; value: string; onChange: (value: string) => void }) {
@@ -214,5 +214,5 @@ function ThemeStudio({ settings }: { settings: SiteSettings }) {
 export default function DesignSystemStudio() {
   const settings = useSiteSettings();
   const [tab, setTab] = useState<"categories" | "themes">("categories");
-  return <div className="space-y-5" dir="rtl"><header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[9px] font-semibold tracking-[0.24em] text-[#a35f4c]">DESIGN CONTROL</p><h1 className="mt-1 text-[20px] font-medium text-[#0b2a46]">مرکز طراحی فروشگاه</h1><p className="mt-1 max-w-2xl text-[11px] leading-5 text-neutral-500">دسته‌بندی‌ها، چیدمان‌های ریسپانسیو و هویت رنگی همه بخش‌های سایت را از یک نقطه مدیریت کنید.</p></div><StudioTabs value={tab} onChange={setTab} /></header>{tab === "categories" ? <CategoryStudio settings={settings} /> : <ThemeStudio settings={settings} />}</div>;
+  return <div className="space-y-5" dir="rtl"><header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[9px] font-semibold tracking-[0.24em] text-[#a35f4c]">کنترل طراحی</p><h1 className="mt-1 text-[20px] font-medium text-[#0b2a46]">مرکز طراحی فروشگاه</h1><p className="mt-1 max-w-2xl text-[11px] leading-5 text-neutral-500">دسته‌بندی‌ها، چیدمان‌های ریسپانسیو و هویت رنگی همه بخش‌های سایت را از یک نقطه مدیریت کنید.</p></div><StudioTabs value={tab} onChange={setTab} /></header>{tab === "categories" ? <CategoryStudio settings={settings} /> : <ThemeStudio settings={settings} />}</div>;
 }

@@ -182,7 +182,7 @@ export default function SiteBuilder({ mode = "all" }: { mode?: "all" | "sections
                 <StyleCardVisual key={c.id} card={c} onChange={(next) => { const cards = [...builder.stylesSection.cards]; cards[i] = next; patch({ stylesSection: { ...builder.stylesSection, cards } }); }} onRemove={() => patch({ stylesSection: { ...builder.stylesSection, cards: builder.stylesSection.cards.filter((x) => x.id !== c.id) } })} />
               )}
             />
-            <button onClick={() => patch({ stylesSection: { ...builder.stylesSection, cards: [...builder.stylesSection.cards, { id: `st-${Date.now()}`, name: "استایل جدید", latin: "NEW STYLE", img: "/images/flat.jpg", tagline: "", count: "۰" }] } })} className={btnPrimary + " mt-3"}>+ کارت استایل جدید</button>
+            <button onClick={() => patch({ stylesSection: { ...builder.stylesSection, cards: [...builder.stylesSection.cards, { id: `st-${Date.now()}`, name: "استایل جدید", latin: "سبک جدید", img: "/images/flat.jpg", tagline: "", count: "۰" }] } })} className={btnPrimary + " mt-3"}>+ کارت استایل جدید</button>
           </div>
         </section>
       )}
@@ -510,8 +510,8 @@ function BannerPreview({ config }: { config: SiteBuilder["banner"] }) {
 
 function StyleSectionPreview({ config }: { config: SiteBuilder["stylesSection"] }) {
   const samples = config.cards.length ? config.cards : [
-    {id:"sample-1",name:"اولد مانی",latin:"OLD MONEY",img:"/images/model-full.jpg",tagline:"کلاسیک آرام",count:"۲۴"},
-    {id:"sample-2",name:"دارک آکادمیا",latin:"DARK ACADEMIA",img:"/images/model-teal.jpg",tagline:"لایه‌های عمیق",count:"۱۸"},
+    {id:"sample-1",name:"اولد مانی",latin:"اولد مانی",img:"/images/model-full.jpg",tagline:"کلاسیک آرام",count:"۲۴"},
+    {id:"sample-2",name:"دارک آکادمیا",latin:"دارک آکادمیا",img:"/images/model-teal.jpg",tagline:"لایه‌های عمیق",count:"۱۸"},
     {id:"sample-3",name:"وینتیج",latin:"VINTAGE",img:"/images/banner.jpg",tagline:"جزئیات ماندگار",count:"۳۲"},
   ];
   const ratio = config.imageRatio === "portrait" ? "aspect-[3/4]" : config.imageRatio === "square" ? "aspect-square" : "aspect-[4/3]";
@@ -523,7 +523,7 @@ function PopupBuilderPreview({ config }: { config: SiteBuilder["popup"] }) {
   const width = config.width === "sm" ? "max-w-sm" : config.width === "lg" ? "max-w-3xl" : "max-w-xl";
   const radius = config.radius === "round" ? "rounded-[18px]" : config.radius === "soft" ? "rounded-[6px]" : "rounded-none";
   const reverse = config.layout === "image-left" ? "md:flex-row-reverse" : "md:flex-row";
-  return <div className="mt-4 grid min-h-72 place-items-center overflow-hidden border border-neutral-200 bg-neutral-100 p-4"><div dir={config.direction} className={`flex w-full overflow-hidden border border-black/10 ${width} ${radius} ${reverse}`} style={{background:config.bg,color:config.textColor,backgroundImage:config.layout==='background'&&config.bgImage?`linear-gradient(#0007,#0007),url(${config.bgImage})`:undefined,backgroundSize:'cover'}}>{config.layout!=="background"?<img src={config.image||"/images/detail-collar.jpg"} alt="" className="hidden w-[38%] object-cover md:block"/>:null}<div className="flex-1 p-5"><span className="text-[8px] tracking-[.2em] opacity-55">POPUP PREVIEW</span><h3 className="mt-2 text-[17px] font-medium">{config.title}</h3><p className="mt-2 text-[10px] leading-5 opacity-70">{config.body}</p>{config.couponCode?<span className="mt-3 inline-block border border-dashed border-current px-3 py-1 text-[10px]">{config.couponCode}</span>:null}<div className="mt-4 flex"><input readOnly placeholder={config.inputPlaceholder} className="h-9 min-w-0 flex-1 border border-current/20 bg-white/60 px-2 text-[9px]"/><button className="h-9 px-3 text-[9px] text-white" style={{background:config.accent}}>{config.ctaLabel}</button></div></div></div></div>;
+  return <div className="mt-4 grid min-h-72 place-items-center overflow-hidden border border-neutral-200 bg-neutral-100 p-4"><div dir={config.direction} className={`flex w-full overflow-hidden border border-black/10 ${width} ${radius} ${reverse}`} style={{background:config.bg,color:config.textColor,backgroundImage:config.layout==='background'&&config.bgImage?`linear-gradient(#0007,#0007),url(${config.bgImage})`:undefined,backgroundSize:'cover'}}>{config.layout!=="background"?<img src={config.image||"/images/detail-collar.jpg"} alt="" className="hidden w-[38%] object-cover md:block"/>:null}<div className="flex-1 p-5"><span className="text-[8px] tracking-[.2em] opacity-55">پیش‌نمایش پاپ‌آپ</span><h3 className="mt-2 text-[17px] font-medium">{config.title}</h3><p className="mt-2 text-[10px] leading-5 opacity-70">{config.body}</p>{config.couponCode?<span className="mt-3 inline-block border border-dashed border-current px-3 py-1 text-[10px]">{config.couponCode}</span>:null}<div className="mt-4 flex"><input readOnly placeholder={config.inputPlaceholder} className="h-9 min-w-0 flex-1 border border-current/20 bg-white/60 px-2 text-[9px]"/><button className="h-9 px-3 text-[9px] text-white" style={{background:config.accent}}>{config.ctaLabel}</button></div></div></div></div>;
 }
 
 function SmartStyleSuggestions({ anchorId, onApply }: { anchorId: string; onApply: (items: SiteBuilder["look"]["products"]) => void }) {

@@ -136,7 +136,7 @@ function FilterPanel({
         {styles.map((s) => (
           <CheckRow
             key={s.slug}
-            label={`${s.name} / ${s.latin}`}
+            label={s.name}
             count={countBy((p) => p.style === s.slug)}
             checked={f.styles.includes(s.slug)}
             onChange={() => toggle("styles", s.slug)}

@@ -45,7 +45,7 @@ function BootScreen() {
           animation: "kolbe-boot-spin 0.8s linear infinite",
         }}
       />
-      <p style={{ fontSize: 12, letterSpacing: "0.2em", opacity: 0.55 }}>KOLBE VINTAGE</p>
+      <p style={{ fontSize: 12, letterSpacing: "0.2em", opacity: 0.55 }}>کلبه وینتیج</p>
       <style>{`@keyframes kolbe-boot-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );

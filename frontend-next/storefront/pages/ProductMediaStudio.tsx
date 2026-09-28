@@ -98,7 +98,7 @@ export default function ProductMediaStudio({ value, onChange }: { value: AdminPr
     <section className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-neutral-200 pb-5">
         <div>
-          <p className="text-[9px] font-medium tracking-[.18em] text-neutral-400">PRODUCT MEDIA LIBRARY</p>
+          <p className="text-[9px] font-medium tracking-[.18em] text-neutral-400">کتابخانهٔ رسانهٔ محصول</p>
           <h2 className="mt-1 text-[15px] font-medium">گالری یکپارچه محصول</h2>
           <p className="mt-1 max-w-2xl text-[10px] leading-6 text-neutral-500">تصویر و ویدئو را در یک ترتیب واقعی مدیریت کنید؛ برای هر مورد نقش، متن جایگزین، رنگ مرتبط و پوستر مستقل تعیین کنید.</p>
         </div>
@@ -128,7 +128,7 @@ export default function ProductMediaStudio({ value, onChange }: { value: AdminPr
               <article key={item.id} className={(selected?.id === item.id ? "border-[#011c3a] ring-1 ring-[#011c3a]" : "border-neutral-200") + " group relative border bg-white p-2 transition"}>
                 <button type="button" onClick={() => setSelectedId(item.id)} className="block w-full text-right focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]">
                   <div className="relative aspect-[4/5] overflow-hidden bg-neutral-100">
-                    {item.kind === "image" ? <img src={item.src} alt={item.alt} className="h-full w-full object-cover" /> : item.poster ? <img src={item.poster} alt={`پوستر ${item.alt}`} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-neutral-500">VIDEO</div>}
+                    {item.kind === "image" ? <img src={item.src} alt={item.alt} className="h-full w-full object-cover" /> : item.poster ? <img src={item.poster} alt={`پوستر ${item.alt}`} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[10px] text-neutral-500">ویدیو</div>}
                     <span className="absolute right-1.5 top-1.5 bg-white/90 px-1.5 py-1 text-[8px]">{item.kind === "image" ? "تصویر" : "ویدئو"}</span>
                   </div>
                   <p className="mt-2 truncate text-[9.5px] font-medium">{item.alt || "بدون عنوان"}</p>
@@ -144,7 +144,7 @@ export default function ProductMediaStudio({ value, onChange }: { value: AdminPr
           </div>
 
           {selected && <aside className="h-fit border border-neutral-200 bg-[#fafaf8] p-4 xl:sticky xl:top-24">
-            <p className="text-[9px] font-medium tracking-[.14em] text-neutral-400">MEDIA INSPECTOR</p>
+            <p className="text-[9px] font-medium tracking-[.14em] text-neutral-400">بازبین رسانه</p>
             <h3 className="mt-1 text-[12px] font-medium">تنظیمات رسانه انتخابی</h3>
             <div className="mt-4 space-y-4">
               <label className="block text-[10px] text-neutral-500">متن جایگزین و عنوان<input className={control + " mt-1"} value={selected.alt} onChange={(event) => patchItem(selected.id, { alt: event.target.value })} placeholder="توصیف دقیق تصویر برای دسترس‌پذیری" /></label>

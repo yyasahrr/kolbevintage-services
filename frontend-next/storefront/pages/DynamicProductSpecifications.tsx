@@ -39,7 +39,7 @@ export default function DynamicProductSpecifications({ value, onChange }: { valu
   return (
     <section className="space-y-6">
       <header className="border-b border-neutral-200 pb-5">
-        <p className="text-[9px] font-medium tracking-[.18em] text-neutral-400">PRODUCT TYPE SCHEMA</p>
+        <p className="text-[9px] font-medium tracking-[.18em] text-neutral-400">ساختار نوع محصول</p>
         <h2 className="mt-1 text-[15px] font-medium">نوع محصول، مشخصات را تعیین می‌کند</h2>
         <p className="mt-1 max-w-3xl text-[10px] leading-6 text-neutral-500">ابتدا نوع محصول را انتخاب کنید. فقط فیلدهای مرتبط با همان نوع نمایش داده و در صفحه محصول منتشر می‌شوند؛ مشخصات کفش دیگر هیچ وابستگی‌ای به فیلدهای لباس ندارد.</p>
       </header>
