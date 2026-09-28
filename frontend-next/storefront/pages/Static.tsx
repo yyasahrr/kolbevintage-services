@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
 import { products, productById, specLabels, specOrder } from "../data/catalog";
-import { fa, toman } from "../utils/format";
+import { codeLabel, fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import ProductCard from "../components/ProductCard";
 import { createCustomer, loadCustomer, saveCustomer } from "../customerIdentity";
@@ -344,7 +344,7 @@ export function Account() {
           <section className="liquid-panel account-auth-panel flex flex-col justify-center p-5 sm:p-7 lg:p-8">
             <p className="text-[9px] tracking-[0.25em] text-neutral-400">یک حساب واحد</p>
             <h1 className="mt-2 text-[25px] font-medium">ورود یا ساخت حساب</h1>
-            <p className="mt-2 max-w-md text-[11.5px] leading-[1.9] text-neutral-500">سفارش‌ها، سایزهای ذخیره‌شده، آدرس‌ها و تصویرهای Try On Me را در یک حساب نگه دارید.</p>
+            <p className="mt-2 max-w-md text-[11.5px] leading-[1.9] text-neutral-500">سفارش‌ها، سایزهای ذخیره‌شده، آدرس‌ها و تصویرهای اتاق پروی مجازی را در یک حساب نگه دارید.</p>
             <div className="mt-5 grid grid-cols-2 border border-neutral-200 p-1"><button type="button" onClick={()=>setAuthMode("login")} className={(authMode==="login"?"bg-[var(--kv-primary)] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ورود</button><button type="button" onClick={()=>setAuthMode("register")} className={(authMode==="register"?"bg-[var(--kv-primary)] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ساخت حساب</button></div>
             <form onSubmit={submitAuth} className="mt-4 grid gap-3">
               {authMode === "register" && <><label className="block text-[10px] text-neutral-500">نام و نام خانوادگی<input name="name" autoComplete="name" value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} className={input + " mt-1.5"} required /></label><label className="block text-[10px] text-neutral-500">شماره موبایل<input name="phone" type="tel" inputMode="tel" autoComplete="tel" value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} className={input + " mt-1.5"} minLength={10} required /></label></>}
@@ -369,7 +369,7 @@ export function Account() {
         <aside>
           <div className="mb-5 rounded-[3px] border border-neutral-200 p-4">
             <div className="flex items-start justify-between gap-2"><p className="text-[13px] font-medium">{customer.name}</p>{membership?.customerId === customer.id && <span className="bg-[var(--kv-primary)] px-1.5 py-0.5 text-[8px] text-white">ویژه</span>}</div>
-            <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{fa(customer.phone)}</p>
+            <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{customer.phone ? fa(customer.phone) : "شماره ثبت نشده"}</p>
           </div>
           <nav className="space-y-1">
             {tabs.map((t) => (
@@ -400,7 +400,7 @@ export function Account() {
                 <div key={o.code} className="rounded-[3px] border border-neutral-200 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-[12.5px] font-medium num-fa">سفارش {o.code}</p>
+                      <p className="text-[12.5px] font-medium num-fa">سفارش {codeLabel(o.code) ?? "—"}</p>
                       <p className="mt-1 text-[11.5px] text-neutral-500">
                         {o.date} — {fa(o.items)} کالا
                       </p>

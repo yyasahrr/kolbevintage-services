@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
 import { trackCommerceEvent } from "../lib/analytics";
-import { toman, fa } from "../utils/format";
+import { sizeLabel, toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
 import { api, ApiError } from "../lib/api";
 
@@ -296,7 +296,7 @@ export default function Checkout() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[12px]">{l.name}</p>
                     <p className="mt-0.5 text-[10.5px] text-neutral-500">
-                      {l.colour} — {l.size} — {fa(l.qty)} عدد
+                      {l.colour} — {sizeLabel(l.size)} — {fa(l.qty)} عدد
                     </p>
                   </div>
                   <span className="shrink-0 text-[11.5px] num-fa">{toman(l.price * l.qty)}</span>

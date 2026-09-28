@@ -3,6 +3,7 @@ import Icon from "../components/Icon";
 import { products, type Product } from "../data/catalog";
 import { ApiError, api } from "../lib/api";
 import { Link, useRouter } from "../router";
+import { fa } from "../utils/format";
 
 type GarmentCategory = "upper_body" | "lower_body";
 type GenerationStatus = "idle" | "uploading" | "processing" | "success" | "error";
@@ -243,7 +244,7 @@ export default function TryOn() {
         <div className="tryon-copy liquid-panel flex flex-col justify-between p-6 sm:p-8">
           <div>
             <span className="ai-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] tracking-[0.12em]">
-              <Icon name="star" className="h-3.5 w-3.5" /> POWERED BY PERFECT CORP
+              <Icon name="star" className="h-3.5 w-3.5" /> فناوری پرو مجازی
             </span>
             <h1 className="mt-5 text-[30px] font-medium leading-[1.45] sm:text-[40px]">لباس را قبل از خرید روی خودت ببین</h1>
             <p className="mt-3 max-w-xl text-[13px] leading-[2] text-neutral-500">
@@ -255,7 +256,7 @@ export default function TryOn() {
               <div key={item} className="tryon-step rounded-2xl px-2 py-3"><span className="mb-1 block text-[15px]">{index + 1}</span>{item}</div>
             ))}
           </div>
-          <p className="mt-4 text-[10px] leading-5 text-neutral-400">تصاویر فقط برای ساخت نتیجه به سرویس Perfect Corp ارسال می‌شوند. عکس واضح، تک‌نفره و روبه‌رو بهترین نتیجه را می‌دهد.</p>
+          <p className="mt-4 text-[10px] leading-5 text-neutral-400">تصاویر فقط برای ساخت نتیجه به سرویس پرو مجازی ارسال می‌شوند. عکس واضح، تک‌نفره و روبه‌رو بهترین نتیجه را می‌دهد.</p>
         </div>
 
         <div className="tryon-preview liquid-panel min-h-[460px] p-3 sm:p-4" aria-live="polite">
@@ -323,7 +324,7 @@ export default function TryOn() {
         ) : null}
 
         <div className="mt-6 flex flex-col gap-3 border-t border-neutral-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[10.5px] leading-6 text-neutral-500">{selectedProducts.length ? `${selectedProducts.length} لباس انتخاب شده؛ حدود ${selectedProducts.length * 2} واحد API مصرف می‌شود.` : "حداقل یک لباس انتخاب کن."}</p>
+          <p className="text-[10.5px] leading-6 text-neutral-500">{selectedProducts.length ? `${fa(selectedProducts.length)} لباس انتخاب شده؛ حدود ${fa(selectedProducts.length * 2)} واحد پردازش مصرف می‌شود.` : "حداقل یک لباس انتخاب کن."}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             {resultUrl ? <button type="button" onClick={downloadResult} disabled={isDownloading} className="storefront-secondary-action flex min-h-12 items-center justify-center rounded-full px-6 text-[12px] disabled:opacity-50">{isDownloading ? "در حال دانلود…" : "دانلود تصویر"}</button> : null}
             <button type="button" onClick={generate} disabled={!portraitFile || !selectedProducts.length || isWorking} className="ai-tryon-button flex min-h-12 items-center justify-center gap-2 rounded-full px-7 text-[12.5px] font-medium disabled:cursor-not-allowed disabled:opacity-45">

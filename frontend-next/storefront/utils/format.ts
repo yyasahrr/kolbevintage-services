@@ -1,7 +1,13 @@
 const FA_DIGITS = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
 
-/** تبدیل ارقام لاتین به فارسی */
-export function fa(input: string | number): string {
+/**
+ * تبدیل ارقام لاتین به فارسی.
+ *
+ * مقدار خالی/تعریف‌نشده به «—» تبدیل می‌شود؛ پیش‌تر رشتهٔ «undefined» در جاهایی
+ * مثل تلفن ناقص حساب کاربری به رابط درز می‌کرد و هم زشت بود و هم متن لاتین.
+ */
+export function fa(input: string | number | null | undefined): string {
+  if (input === null || input === undefined || input === "") return "—";
   return String(input).replace(/\d/g, (d) => FA_DIGITS[Number(d)]);
 }
 

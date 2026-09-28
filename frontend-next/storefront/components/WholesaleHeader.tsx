@@ -31,7 +31,7 @@ export default function WholesaleHeader({
             کلبه وینتیج
           </span>
           <span className="mt-[3px] whitespace-nowrap text-[7px] tracking-[0.34em] text-neutral-400 sm:text-[8px] sm:tracking-[0.38em]">
-            KOLBE VINTAGE
+            کلبه وینتیج
           </span>
         </Link>
       </div>

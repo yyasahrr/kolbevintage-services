@@ -1,7 +1,7 @@
 import { Link } from "../router";
 import { useStore, lineKey } from "../store";
 import { products } from "../data/catalog";
-import { toman, fa } from "../utils/format";
+import { sizeLabel, toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
 import ProductCard from "../components/ProductCard";
 
@@ -44,7 +44,7 @@ export default function Cart() {
                         {l.name}
                       </Link>
                       <p className="mt-1 text-[11.5px] text-neutral-500">
-                        {l.colour} — سایز {l.size}
+                        {l.colour} — سایز {sizeLabel(l.size)}
                       </p>
                     </div>
                     <span className="shrink-0 text-[13px] num-fa">{toman(l.price)}</span>

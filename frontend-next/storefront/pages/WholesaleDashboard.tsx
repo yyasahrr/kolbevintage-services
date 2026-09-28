@@ -49,7 +49,7 @@ export default function WholesaleDashboard() {
     <div className="min-h-screen bg-[var(--kv-canvas)]">
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[var(--kv-primary)] text-white">
         <div className="mx-auto flex w-full items-center justify-between px-4 py-4 lg:px-8">
-          <div className="flex items-center gap-4"><div className="flex h-9 w-9 items-center justify-center border border-white/30 text-[11px] font-semibold">KV</div><div><p className="text-[14px] font-medium">پنل شرکای تجاری</p><p className="mt-0.5 text-[8px] tracking-[0.3em] text-white/45">کلبه وینتیج WHOLESALE</p></div></div>
+          <div className="flex items-center gap-4"><div className="flex h-9 w-9 items-center justify-center border border-white/30 text-[11px] font-semibold">KV</div><div><p className="text-[14px] font-medium">پنل شرکای تجاری</p><p className="mt-0.5 text-[8px] tracking-[0.3em] text-white/45">کلبه وینتیج — بازار عمده</p></div></div>
           <div className="flex items-center gap-3 sm:gap-5"><Link to="/wholesale?section=catalog" className="hidden text-[11.5px] text-white/70 hover:text-white sm:block">کاتالوگ عمده</Link><div className="border-r border-white/20 pr-3 text-left sm:pr-5"><p className="text-[10.5px] font-medium">{membership.storeName}</p><p className="mt-0.5 text-[8.5px] text-white/45">عضویت ویژه · {membership.planName}</p></div></div>
         </div>
       </header>

@@ -21,7 +21,7 @@ function BuildShape({ id, active }: { id: Build; active: boolean }) {
     full: { s: 19, w: 17 },
   };
   const { s, w } = widths[id];
-  const stroke = active ? "currentColor" : "#9aa5ad";
+  const stroke = active ? "currentColor" : "#b3a999";
   return (
     <svg viewBox="0 0 40 56" className="h-14 w-10">
       <circle cx="20" cy="8" r="5.5" fill="none" stroke={stroke} strokeWidth="1.5" />

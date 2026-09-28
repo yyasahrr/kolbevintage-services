@@ -14,6 +14,7 @@ import type { AdminProductRecord } from "../adminProducts";
 import { recommendStyleProducts } from "../lib/styleIntelligence";
 import { readCommerceEvents } from "../lib/analytics";
 import { getProductTypeDefinition } from "../productSchemas";
+import { useCatalog } from "../lib/catalogClient";
 
 /*
  * چیدمان صفحه جزیات محصول — بر اساس الگوی استاندارد PDP (آمازون / دیجی‌کالا / زالاندو)
@@ -664,7 +665,7 @@ function Reviews({ product }: { product: Product }) {
                 </div>
                 <p className="mt-2 text-[12.5px] leading-relaxed text-neutral-600">{r.text}</p>
                 <p className="mt-2.5 text-[11px] text-neutral-500">
-                  {r.author} — سایز {r.size} — فیت: {r.fit}
+                  {r.author} — سایز {sizeLabel(r.size)} — فیت: {r.fit}
                 </p>
               </article>
             ))}
@@ -696,7 +697,15 @@ export default function ProductPage({
 }) {
   const { query } = useRouter();
   const wholesale = query.get("wholesale") === "1";
-  const product = productById(id);
+  /**
+   * شناسهٔ مسیر می‌تواند شناژهٔ کالای واقعی API باشد (مثل classic-short-sleeve) یا
+   * شناسهٔ فهرست نمایشی توسعه. پس اول فهرست محلی و در نبودش کاتالوگ زنده
+   * بررسی می‌شود؛ بدون این کار کالای واقعیِ کاتالوگ «یافت نشد» می‌شد.
+   */
+  const catalog = useCatalog();
+  const demoProduct = productById(id);
+  const liveProduct = catalog.items.find((item) => item.id === id || (item as { slug?: string }).slug === id);
+  const product = demoProduct ?? liveProduct;
   const { addToCart, toggleWish, isWished, toggleCompare, compare } = useStore();
   const { builder } = useSiteSettings();
 
@@ -718,7 +727,10 @@ export default function ProductPage({
   const lookSettings = builder.look;
 
   /* ست اختصاصی محصول از پنل ادمین: عکس محصول روی تن مدل + هات‌اسپات مکملها */
-  const adminLook = (product as AdminProductRecord).admin?.look;
+  // پیش از گارد «کالا یافت نشد» اجرا می‌شود؛ پس باید ایمن باشد. پیش‌تر
+  // `(undefined as …).admin` برای شناسهٔ ناموجود استثنا می‌داد و صفحهٔ کالا
+  // به‌جای پیام فارسی، پوستهٔ خطای پورتال نشان می‌داد.
+  const adminLook = (product as AdminProductRecord | undefined)?.admin?.look;
   const productLookHotspots = (adminLook?.hotspots ?? []).filter((h) => h.visible && h.productId);
   const productLookImage = adminLook?.image || lookSettings.image || product?.images[0] || "";
 
@@ -788,10 +800,22 @@ export default function ProductPage({
   if (!product) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-        <p className="text-[14px]">محصول یافت نشد.</p>
-        <Link to="/shop" className="storefront-primary-action rounded-full px-6 py-2.5 text-[12.5px] font-medium">
-          بازگشت به فروشگاه
-        </Link>
+        <p className="text-[14px]">
+          {catalog.state === "loading" ? "در حال دریافت کالا…" : catalog.state === "error" ? "دریافت کالاها ناموفق بود." : "این کالا در فهرست پیدا نشد."}
+        </p>
+        <p className="max-w-[420px] text-[11.5px] leading-6 text-neutral-500">
+          {catalog.state === "loading" ? "لحظه‌ای بعد دوباره تلاش کنید." : "ممکن است نشانی کالا تغییر کرده یا کالا از فهرست برداشته شده باشد. از فهرست کالاها ادامه دهید."}
+        </p>
+        <div className="flex items-center gap-2">
+          {catalog.state === "error" ? (
+            <button type="button" onClick={catalog.retry} className="rounded-full border border-neutral-300 px-5 py-2.5 text-[12px]">
+              تلاش دوباره
+            </button>
+          ) : null}
+          <Link to="/shop" className="storefront-primary-action rounded-full px-6 py-2.5 text-[12.5px] font-medium">
+            بازگشت به فروشگاه
+          </Link>
+        </div>
       </div>
     );
   }
@@ -1070,7 +1094,7 @@ export default function ProductPage({
                         <Icon name="user" className="h-4 w-4" /> پیشنهاد هوشمند سایز
                       </button>
                       <Link to={`/try-on?top=${product.id}`} className="ai-tryon-button flex min-h-11 items-center justify-center gap-2 rounded-full px-3 text-[11.5px] font-medium">
-                        <Icon name="star" className="h-4 w-4" /> Try On Me
+                        <Icon name="star" className="h-4 w-4" /> اتاق پروی مجازی
                       </Link>
                     </div>
                   </div>

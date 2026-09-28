@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { AdminProductRecord } from "../adminProducts";
 import { getProductTypeDefinition, PRODUCT_TYPES, type AttributeField, type ProductTypeId, type SizeColumn } from "../productSchemas";
+import { sizeLabel } from "../utils/format";
 
 const input = "h-10 w-full border border-neutral-300 bg-white px-3 text-[11px] outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]";
 
@@ -75,7 +76,7 @@ export default function DynamicProductSpecifications({ value, onChange }: { valu
           <div className="mt-4 overflow-x-auto border border-neutral-200">
             <table className="w-full min-w-[520px] text-right text-[10px]">
               <thead className="bg-neutral-50"><tr>{type.sizeColumns.map((column) => <th key={column.id} className="border-b p-3 font-medium">{column.label}{column.unit ? ` (${column.unit})` : ""}</th>)}<th className="border-b p-3"><span className="sr-only">عملیات</span></th></tr></thead>
-              <tbody>{value.sizeChart.map((row, index) => <tr key={`${row.size}-${index}`} className="border-b last:border-0">{type.sizeColumns.map((column) => <td key={column.id} className="p-1.5"><input aria-label={`${column.label} ردیف ${index + 1}`} value={row[column.id]} onChange={(event) => patchSize(index, column.id, event.target.value)} className="h-9 w-full min-w-24 border border-neutral-200 bg-white px-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" /></td>)}<td className="p-2"><button type="button" aria-label={`حذف اندازه ${row.size}`} onClick={() => onChange({ ...value, sizeChart: value.sizeChart.filter((_, rowIndex) => rowIndex !== index) })} className="text-red-700 underline">حذف</button></td></tr>)}</tbody>
+              <tbody>{value.sizeChart.map((row, index) => <tr key={`${row.size}-${index}`} className="border-b last:border-0">{type.sizeColumns.map((column) => <td key={column.id} className="p-1.5"><input aria-label={`${column.label} ردیف ${index + 1}`} value={row[column.id]} onChange={(event) => patchSize(index, column.id, event.target.value)} className="h-9 w-full min-w-24 border border-neutral-200 bg-white px-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" /></td>)}<td className="p-2"><button type="button" aria-label={`حذف اندازه ${sizeLabel(row.size)}`} onClick={() => onChange({ ...value, sizeChart: value.sizeChart.filter((_, rowIndex) => rowIndex !== index) })} className="text-red-700 underline">حذف</button></td></tr>)}</tbody>
             </table>
             {!value.sizeChart.length && <p className="p-8 text-center text-[10px] text-neutral-400">هنوز اندازه‌ای تعریف نشده است.</p>}
           </div>

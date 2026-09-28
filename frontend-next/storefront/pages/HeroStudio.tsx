@@ -134,8 +134,8 @@ export default function HeroStudio() {
           <h3 className="text-[12.5px] font-medium">۲. تصویر پس‌زمینه</h3>
           <div className="mt-3 space-y-3">
             <label className="block">
-              <span className={label}>آدرس تصویر (URL)</span>
-              <input className={input} dir="ltr" value={config.bgImage.startsWith("data:") ? "(تصویر آپلودشده)" : config.bgImage} onChange={(e) => patch({ bgImage: e.target.value })} placeholder="/images/hero.jpg یا https://…" />
+              <span className={label}>نشانی تصویر</span>
+              <input className={input} dir="ltr" value={config.bgImage.startsWith("data:") ? "(تصویر آپلودشده)" : config.bgImage} onChange={(e) => patch({ bgImage: e.target.value })} placeholder="نشانی تصویر هیرو" />
             </label>
             <div className="flex flex-wrap items-center gap-3">
               <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0], (url) => patch({ bgImage: url }))} />
@@ -157,7 +157,7 @@ export default function HeroStudio() {
             <label className="block sm:col-span-2"><span className={label}>تیتر</span><input className={input} value={config.title} onChange={(e) => patch({ title: e.target.value })} /></label>
             <label className="block sm:col-span-2"><span className={label}>زیرتیتر / توضیح</span><textarea className="min-h-20 w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[var(--kv-primary)]" value={config.subtitle} onChange={(e) => patch({ subtitle: e.target.value })} /></label>
             <label className="block"><span className={label}>متن دکمه</span><input className={input} value={config.ctaLabel} onChange={(e) => patch({ ctaLabel: e.target.value })} /></label>
-            <label className="block"><span className={label}>لینک دکمه</span><input className={input} dir="ltr" value={config.ctaTo} onChange={(e) => patch({ ctaTo: e.target.value })} placeholder="/shop" /></label>
+            <label className="block"><span className={label}>لینک دکمه</span><input className={input} dir="ltr" value={config.ctaTo} onChange={(e) => patch({ ctaTo: e.target.value })} placeholder="نشانی مقصد دکمه" /></label>
           </div>
         </section>
 
@@ -199,12 +199,12 @@ export default function HeroStudio() {
       {config.template === 5 && (
         <section className="rounded-[6px] border border-neutral-200 p-4">
           <h3 className="text-[12.5px] font-medium">ویدیوهای هیرو (۳ عدد)</h3>
-          <p className="mt-1 text-[10.5px] text-neutral-500">آدرس مستقیم فایل ویدیو (mp4/webm) — فایلها را در پوشه public/videos قرار دهید.</p>
+          <p className="mt-1 text-[10.5px] text-neutral-500">نشانی مستقیم فایل ویدیو — فایل‌ها را در پوشهٔ ویدیوهای سایت قرار دهید.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             {([["video1", "ویدیو ۱ (راست)"], ["video2", "ویدیو ۲ (وسط)"], ["video3", "ویدیو ۳ (چپ)"]] as const).map(([field, label]) => (
               <label key={field} className="block">
                 <span className={label}>{label}</span>
-                <input className={input} dir="ltr" value={(config as any)[field] ?? ""} onChange={(e) => patch({ [field]: e.target.value } as any)} placeholder="/videos/hero-1.mp4" />
+                <input className={input} dir="ltr" value={(config as any)[field] ?? ""} onChange={(e) => patch({ [field]: e.target.value } as any)} placeholder="نشانی ویدیو ۱" />
               </label>
             ))}
           </div>
@@ -217,12 +217,12 @@ export default function HeroStudio() {
           <p className="mt-1 text-[10.5px] text-neutral-500">تمپلیت سینمایی — ویدیو کل نمایشگر را می‌پوشاند؛ هدر سایت هنگام اسکرول شفاف می‌شود.</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className={label}>آدرس فایل ویدیو (mp4/webm)</span>
-              <input className={input} dir="ltr" value={config.heroVideo.startsWith("data:") ? "(فایل آپلودشده)" : config.heroVideo} onChange={(e) => patch({ heroVideo: e.target.value })} placeholder="/videos/hero-2.mp4" />
+              <span className={label}>نشانی فایل ویدیو</span>
+              <input className={input} dir="ltr" value={config.heroVideo.startsWith("data:") ? "(فایل آپلودشده)" : config.heroVideo} onChange={(e) => patch({ heroVideo: e.target.value })} placeholder="نشانی ویدیو ۲" />
             </label>
             <label className="block">
               <span className={label}>تصویر پوستر (تا لحظهٔ لود ویدیو)</span>
-              <input className={input} dir="ltr" value={config.videoPoster.startsWith("data:") ? "(تصویر آپلودشده)" : config.videoPoster} onChange={(e) => patch({ videoPoster: e.target.value })} placeholder="/images/model-full.jpg" />
+              <input className={input} dir="ltr" value={config.videoPoster.startsWith("data:") ? "(تصویر آپلودشده)" : config.videoPoster} onChange={(e) => patch({ videoPoster: e.target.value })} placeholder="نشانی تصویر پوستر" />
             </label>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">

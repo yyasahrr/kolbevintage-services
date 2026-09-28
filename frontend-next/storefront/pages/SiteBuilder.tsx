@@ -286,7 +286,7 @@ export default function SiteBuilder({ mode = "all" }: { mode?: "all" | "sections
                       <img src={lp.img} alt="" className="h-12 w-10 rounded-[3px] object-cover" />
                       <div className="min-w-0 flex-1 space-y-1">
                         <input className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px]" value={lp.name} placeholder="نام محصول" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, name: e.target.value }; patch({ look: { ...builder.look, products } }); }} />
-                        <input className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px]" dir="ltr" value={lp.to} placeholder="/product/…" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, to: e.target.value }; patch({ look: { ...builder.look, products } }); }} />
+                        <input className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px]" dir="ltr" value={lp.to} placeholder="نشانی صفحهٔ محصول" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, to: e.target.value }; patch({ look: { ...builder.look, products } }); }} />
                       </div>
                     </div>
                     <input type="number" className="h-8 w-full rounded-[3px] border border-neutral-300 px-2 text-[11px] num-fa" value={lp.price} placeholder="قیمت" onChange={(e) => { const products = [...builder.look.products]; products[i] = { ...lp, price: Number(e.target.value) }; patch({ look: { ...builder.look, products } }); }} />
@@ -341,15 +341,15 @@ export default function SiteBuilder({ mode = "all" }: { mode?: "all" | "sections
             </label>
           </div>
           <div className="mt-3 space-y-3">
-            <label className="block max-w-sm"><span className={label}>آیدی اینستاگرام (کانکت)</span><input className={input} dir="ltr" value={builder.instagram.username} onChange={(e) => patch({ instagram: { ...builder.instagram, username: e.target.value } })} placeholder="kolbe.vintage" /></label>
+            <label className="block max-w-sm"><span className={label}>آیدی اینستاگرام (کانکت)</span><input className={input} dir="ltr" value={builder.instagram.username} onChange={(e) => patch({ instagram: { ...builder.instagram, username: e.target.value } })} placeholder="شناسهٔ اینستاگرام" /></label>
             {builder.instagram.cards.map((c, i) => (
               <InstaCardEditor key={c.id} card={c} onChange={(next) => { const cards = [...builder.instagram.cards]; cards[i] = next; patch({ instagram: { ...builder.instagram, cards } }); }} onRemove={() => patch({ instagram: { ...builder.instagram, cards: builder.instagram.cards.filter((x) => x.id !== c.id) } })} />
             ))}
             <button onClick={() => patch({ instagram: { ...builder.instagram, cards: [...builder.instagram.cards, { id: `ic-${Date.now()}`, icon: "star", title: "کارت جدید", text: "توضیح کوتاه" }] } })} className={btn}>+ کارت جدید</button>
             <div className="mt-4 rounded-[4px] border border-dashed border-neutral-300 p-3">
-              <label className="flex items-center gap-2 text-[11px]"><input type="checkbox" checked={builder.instagram.cta.enabled} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, enabled: e.target.checked } } })} className="accent-[var(--kv-primary)]" />کارت CTA فعال باشد</label>
+              <label className="flex items-center gap-2 text-[11px]"><input type="checkbox" checked={builder.instagram.cta.enabled} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, enabled: e.target.checked } } })} className="accent-[var(--kv-primary)]" />کارت فراخوان فعال باشد</label>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className="block"><span className={label}>تیتر CTA</span><input className={input} value={builder.instagram.cta.title} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, title: e.target.value } } })} /></label>
+                <label className="block"><span className={label}>تیتر فراخوان</span><input className={input} value={builder.instagram.cta.title} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, title: e.target.value } } })} /></label>
                 <label className="block"><span className={label}>متن</span><input className={input} value={builder.instagram.cta.text} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, text: e.target.value } } })} /></label>
                 <label className="block"><span className={label}>متن دکمه</span><input className={input} value={builder.instagram.cta.buttonLabel} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, buttonLabel: e.target.value } } })} /></label>
                 <label className="block"><span className={label}>لینک</span><input className={input} dir="ltr" value={builder.instagram.cta.buttonTo} onChange={(e) => patch({ instagram: { ...builder.instagram, cta: { ...builder.instagram.cta, buttonTo: e.target.value } } })} /></label>
@@ -372,9 +372,9 @@ export default function SiteBuilder({ mode = "all" }: { mode?: "all" | "sections
             <p className="text-[11px] text-neutral-500">شبکه‌های اجتماعی / لینک‌های بالای فوتر:</p>
             {builder.footer.socials.map((soc, i) => (
               <div key={i} className="grid gap-2 rounded-[4px] border border-neutral-200 p-3 sm:grid-cols-[110px_1fr_1fr_auto]">
-                <input className={input} value={soc.icon} onChange={(e) => { const socials = [...builder.footer.socials]; socials[i] = { ...soc, icon: e.target.value }; patch({ footer: { ...builder.footer, socials } }); }} placeholder="آیکون (mail/phone/star)" />
+                <input className={input} value={soc.icon} onChange={(e) => { const socials = [...builder.footer.socials]; socials[i] = { ...soc, icon: e.target.value }; patch({ footer: { ...builder.footer, socials } }); }} placeholder="آیکون (رایانامه/تلفن/ستاره)" />
                 <input className={input} value={soc.label} onChange={(e) => { const socials = [...builder.footer.socials]; socials[i] = { ...soc, label: e.target.value }; patch({ footer: { ...builder.footer, socials } }); }} placeholder="برچسب" />
-                <input className={input} dir="ltr" value={soc.url} onChange={(e) => { const socials = [...builder.footer.socials]; socials[i] = { ...soc, url: e.target.value }; patch({ footer: { ...builder.footer, socials } }); }} placeholder="https://…" />
+                <input className={input} dir="ltr" value={soc.url} onChange={(e) => { const socials = [...builder.footer.socials]; socials[i] = { ...soc, url: e.target.value }; patch({ footer: { ...builder.footer, socials } }); }} placeholder="نشانی پیوند" />
                 <button onClick={() => patch({ footer: { ...builder.footer, socials: builder.footer.socials.filter((_, j) => j !== i) } })} className={btn}>حذف</button>
               </div>
             ))}
@@ -427,7 +427,7 @@ function PostEditor({ post, onChange, onRemove }: { post: BuilderPost; onChange:
       {open && (
         <div className="grid gap-2 border-t border-neutral-200 p-3 sm:grid-cols-2">
           <label className="block"><span className={label}>عنوان</span><input className={input} value={post.title} onChange={(e) => onChange({ ...post, title: e.target.value })} /></label>
-          <label className="block"><span className={label}>نامک (slug)</span><input className={input} dir="ltr" value={post.slug} onChange={(e) => onChange({ ...post, slug: e.target.value })} /></label>
+          <label className="block"><span className={label}>نامک</span><input className={input} dir="ltr" value={post.slug} onChange={(e) => onChange({ ...post, slug: e.target.value })} /></label>
           <label className="block"><span className={label}>دسته</span><input className={input} value={post.category} onChange={(e) => onChange({ ...post, category: e.target.value })} /></label>
           <label className="block"><span className={label}>تاریخ</span><input type="date" className={input} dir="ltr" value={post.date} onChange={(e) => onChange({ ...post, date: e.target.value })} /></label>
           <label className="block"><span className={label}>زمان مطالعه (دقیقه)</span><input type="number" className={input} value={post.readTime} onChange={(e) => onChange({ ...post, readTime: e.target.value })} /></label>

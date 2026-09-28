@@ -29,7 +29,7 @@ export default function SiteHeader() {
   const headerStyle = {
     "--video-header-color": settings.header.videoHeroTextColor || "#ffffff",
     "--header-background": settings.header.backgroundColor || "#fffdfa",
-    "--header-text": settings.header.textColor || "#071c31",
+    "--header-text": settings.header.textColor || "#1a1714",
     "--header-border": settings.header.borderColor || "#d8d3ca",
     "--header-height": `${Math.min(88, Math.max(56, settings.header.height || 66))}px`,
   } as CSSProperties;

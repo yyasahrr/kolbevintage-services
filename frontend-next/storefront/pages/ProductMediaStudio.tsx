@@ -112,14 +112,14 @@ export default function ProductMediaStudio({ value, onChange }: { value: AdminPr
 
       <div className="grid gap-3 border border-neutral-200 bg-[var(--kv-canvas)] p-3 sm:grid-cols-[110px_1fr_auto]">
         <label className="text-[10px] text-neutral-500">نوع لینک<select className={control + " mt-1"} value={urlKind} onChange={(event) => setUrlKind(event.target.value as "image" | "video")}><option value="image">تصویر</option><option value="video">ویدئو</option></select></label>
-        <label className="text-[10px] text-neutral-500">آدرس CDN یا فایل خارجی<input className={control + " mt-1"} dir="ltr" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://cdn.example.com/product.webp" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addUrl(); } }} /></label>
+        <label className="text-[10px] text-neutral-500">نشانی بیرونی فایل<input className={control + " mt-1"} dir="ltr" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="نشانی تصویر محصول" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addUrl(); } }} /></label>
         <button type="button" onClick={addUrl} className="mt-auto h-10 border border-[var(--kv-primary)] px-4 text-[10px] transition hover:bg-[var(--kv-primary)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]">افزودن لینک</button>
       </div>
 
       {!items.length ? (
         <button type="button" onClick={() => inputRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void addFiles(event.dataTransfer.files); }} className="flex min-h-64 w-full flex-col items-center justify-center border border-dashed border-neutral-300 bg-neutral-50 px-6 text-center transition hover:border-[var(--kv-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]">
           <span className="text-[13px] font-medium">فایل‌ها را اینجا رها کنید</span>
-          <span className="mt-2 max-w-md text-[10px] leading-5 text-neutral-500">تصویرها بهینه می‌شوند. برای ویدئوهای حجیم از CDN استفاده کنید تا صفحه محصول سریع بماند.</span>
+          <span className="mt-2 max-w-md text-[10px] leading-5 text-neutral-500">تصویرها بهینه می‌شوند. برای ویدئوهای حجیم از میزبان فایل استفاده کنید تا صفحه محصول سریع بماند.</span>
         </button>
       ) : (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -151,7 +151,7 @@ export default function ProductMediaStudio({ value, onChange }: { value: AdminPr
               <label className="block text-[10px] text-neutral-500">نقش رسانه<select className={control + " mt-1"} value={selected.role} onChange={(event) => patchItem(selected.id, { role: event.target.value as ProductMediaRole })}>{Object.entries(roleLabels).filter(([key]) => selected.kind === "image" || key !== "primary").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
               <label className="block text-[10px] text-neutral-500">اتصال به رنگ<select className={control + " mt-1"} value={selected.variantColour ?? ""} onChange={(event) => patchItem(selected.id, { variantColour: event.target.value })}><option value="">بدون اتصال</option>{value.colours.map((colour) => <option key={colour.name}>{colour.name}</option>)}</select></label>
               {selected.kind === "video" && <>
-                <label className="block text-[10px] text-neutral-500">آدرس پوستر ویدئو<input className={control + " mt-1"} dir="ltr" value={selected.poster ?? ""} onChange={(event) => patchItem(selected.id, { poster: event.target.value })} placeholder="https://cdn.example.com/poster.webp" /></label>
+                <label className="block text-[10px] text-neutral-500">آدرس پوستر ویدئو<input className={control + " mt-1"} dir="ltr" value={selected.poster ?? ""} onChange={(event) => patchItem(selected.id, { poster: event.target.value })} placeholder="نشانی تصویر پوستر" /></label>
                 <label className="block border border-dashed border-neutral-300 bg-white p-3 text-center text-[9.5px] transition hover:border-[var(--kv-primary)]">آپلود پوستر<input className="sr-only" type="file" accept="image/*" onChange={async (event) => { const file = event.target.files?.[0]; if (file) patchItem(selected.id, { poster: await fileToOptimizedDataUrl(file, 1400, 0.84) }); }} /></label>
               </>}
               <label className="block text-[10px] text-neutral-500">آدرس منبع<input className={control + " mt-1"} dir="ltr" value={selected.src} onChange={(event) => patchItem(selected.id, { src: event.target.value })} /></label>
