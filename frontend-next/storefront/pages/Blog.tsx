@@ -51,7 +51,7 @@ export function BlogList() {
             onClick={() => setCat(c)}
             className={
               "rounded-[3px] border px-3.5 py-1.5 text-[11.5px] transition " +
-              (cat === c ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]")
+              (cat === c ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]")
             }
           >
             {c}
@@ -135,7 +135,7 @@ export function BlogPost({ slug }: { slug: string }) {
           <ol className="mt-3 space-y-2 border-r border-neutral-200 pr-3">
             {a.body.map((p, i) => (
               <li key={i}>
-                <a href={`#p-${i}`} className="text-[11.5px] leading-relaxed text-neutral-500 hover:text-[#011c3a]">
+                <a href={`#p-${i}`} className="text-[11.5px] leading-relaxed text-neutral-500 hover:text-[var(--kv-primary)]">
                   {fa(i + 1)}. {p.slice(0, 34)}…
                 </a>
               </li>
@@ -164,7 +164,7 @@ export function BlogPost({ slug }: { slug: string }) {
         </article>
       </div>
 
-      <section className="bg-[#f6f6f4] py-14">
+      <section className="bg-[var(--kv-canvas)] py-14">
         <div className="mx-auto w-full px-4 lg:px-8">
           <h3 className="mb-6 text-[17px] font-medium">مقالات دیگر</h3>
           <div className="grid gap-4 sm:grid-cols-3">

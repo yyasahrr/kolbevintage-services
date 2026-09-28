@@ -104,7 +104,7 @@ export default function Lightbox({
               setZoom(1);
               setI(idx);
             }}
-            className={"shrink-0 border-2 transition " + (idx === i ? "border-[#011c3a]" : "border-transparent")}
+            className={"shrink-0 border-2 transition " + (idx === i ? "border-[var(--kv-primary)]" : "border-transparent")}
           >
             <img src={src} alt="" className="h-16 w-12 object-cover" loading="lazy" />
           </button>

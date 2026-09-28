@@ -72,7 +72,7 @@ export default function CartDrawer() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <p className="text-[12.5px] font-medium">{l.name}</p>
-                        <button onClick={() => removeLine(k)} aria-label="حذف" className="text-neutral-400 hover:text-[#011c3a]">
+                        <button onClick={() => removeLine(k)} aria-label="حذف" className="text-neutral-400 hover:text-[var(--kv-primary)]">
                           <Icon name="trash" className="h-4 w-4" />
                         </button>
                       </div>

@@ -3,7 +3,7 @@ import { useSiteSettings } from "../siteSettings";
 
 type Scene = {
   key: string;
-  latin: string;
+  label: string;
   title: string;
   note: string;
   symbols: string[];
@@ -12,35 +12,35 @@ type Scene = {
 const scenes: Record<string, Scene> = {
   valentine: {
     key: "valentine",
-    latin: "نامه‌های عاشقانه از کلبه",
+    label: "نامه‌های عاشقانه از کلبه",
     title: "فصل دوست‌داشتن",
     note: "انتخاب‌های رمانتیک برای ولنتاین",
     symbols: ["♥", "♡", "kiss", "♥", "kiss", "♡", "♥", "♡"],
   },
   "black-friday": {
     key: "black-friday",
-    latin: "جمعهٔ سیاه / نسخهٔ محدود",
+    label: "جمعهٔ سیاه / نسخهٔ محدود",
     title: "جمعه سیاه کلبه",
     note: "پیشنهادهای محدود این هفته",
     symbols: ["٪", "SALE", "✦", "٪", "SALE", "✦", "٪", "SALE"],
   },
   nowruz: {
     key: "nowruz",
-    latin: "نوروز / فصلی تازه",
+    label: "نوروز / فصلی تازه",
     title: "بهار نو، استایل نو",
     note: "انتخاب‌های روشن برای شروع سال",
     symbols: ["✿", "❋", "✦", "✿", "❋", "✦", "✿", "❋"],
   },
   yalda: {
     key: "yalda",
-    latin: "یلدا / بلندترین شب",
+    label: "یلدا / بلندترین شب",
     title: "روایت سرخ شب یلدا",
     note: "انتخاب‌های گرم برای بلندترین شب",
     symbols: ["pomegranate", "✦", "●", "pomegranate", "✦", "●", "pomegranate", "✦"],
   },
   "dark-academia": {
     key: "dark-academia",
-    latin: "انجمن کتاب‌خوانی پاییز",
+    label: "انجمن کتاب‌خوانی پاییز",
     title: "فصل کتابخانه و پارچه‌های سنگین",
     note: "منتخب دارک آکادمیا",
     symbols: ["§", "✦", "A", "§", "✦", "V", "§", "✦"],
@@ -89,7 +89,7 @@ export default function SeasonalAtmosphere() {
           <aside className={`seasonal-ribbon scene-${scene.key}`} aria-label={`تم مناسبتی ${theme.name}`}>
             <span className="seasonal-ribbon-mark" aria-hidden="true">{scene.key === "valentine" ? "♥" : scene.key === "yalda" ? "●" : "✦"}</span>
             <span className="seasonal-ribbon-copy"><b>{scene.title}</b><small>{scene.note}</small></span>
-            <span className="seasonal-ribbon-latin">{scene.latin}</span>
+            <span className="seasonal-ribbon-latin">{scene.label}</span>
           </aside>
         </>
       ) : null}

@@ -24,7 +24,7 @@ async function api<T = unknown>(path: string, init?: { method?: string; body?: u
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     const message = String((data as any)?.message ?? '')
-    if (message.includes('Publishable API key') || (data as any)?.type === 'not_allowed') throw new ApiError('BAD_API_KEY', 'نسخه صفحه قدیمی است؛ صفحه را با Ctrl+Shift+R رفرش کنید.')
+    if (message.includes('Publishable API key') || (data as any)?.type === 'not_allowed') throw new ApiError('BAD_API_KEY', 'نسخه صفحه قدیمی است؛ صفحه را با دوباره بارگذاری کنید.')
     throw new ApiError(String((data as any)?.error ?? `HTTP_${response.status}`))
   }
   return data as T
@@ -108,7 +108,7 @@ export async function createSupplierProduct(input: CreateSupplierProductInput) {
     })
     return data.product
   } catch (error) {
-    if (error instanceof ApiError && error.code === 'DUPLICATE_SKU') throw new Error('این SKU قبلاً ثبت شده است.')
+    if (error instanceof ApiError && error.code === 'DUPLICATE_SKU') throw new Error('این کد کالا قبلاً ثبت شده است.')
     throw new Error('ثبت محصول انجام نشد. دوباره تلاش کنید.')
   }
 }

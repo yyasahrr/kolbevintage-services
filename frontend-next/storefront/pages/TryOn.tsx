@@ -279,7 +279,7 @@ export default function TryOn() {
             ) : null}
 
             {isWorking ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#102b3d]/70 px-6 text-center text-white backdrop-blur-sm">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--kv-ink)]/70 px-6 text-center text-white backdrop-blur-sm">
                 <span className="h-9 w-9 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 <b className="mt-4 text-[13px] font-medium">{status === "uploading" ? "در حال آماده‌سازی تصاویر…" : `در حال ساخت مرحله ${processingStep} از ${selectedProducts.length}…`}</b>
                 <span className="mt-2 text-[10.5px] text-white/70">برای هر لباس یک مرحلهٔ جدا پردازش می‌شود.</span>
@@ -294,7 +294,7 @@ export default function TryOn() {
       <section className="tryon-builder liquid-panel mx-auto mt-5 max-w-[1240px] p-4 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div><h2 className="text-[19px] font-medium">استایل موردنظرت را انتخاب کن</h2><p className="mt-1 text-[11.5px] text-neutral-500">از هر دسته حداکثر یک مورد؛ برای حذف، روی انتخاب فعال دوباره بزن.</p></div>
-          <label className="storefront-secondary-action flex min-h-11 cursor-pointer items-center justify-center rounded-full px-5 text-[12px] focus-within:ring-2 focus-within:ring-[#4b788d]">
+          <label className="storefront-secondary-action flex min-h-11 cursor-pointer items-center justify-center rounded-full px-5 text-[12px] focus-within:ring-2 focus-within:ring-[var(--kv-primary)]">
             {portraitFile ? "تغییر تصویر من" : "آپلود تصویر من"}
             <input type="file" accept="image/jpeg,image/png" className="sr-only" disabled={isWorking} onChange={(event) => choosePortrait(event.target.files?.[0])} />
           </label>
@@ -302,7 +302,7 @@ export default function TryOn() {
 
         <div className="mt-5 flex gap-2 border-b border-neutral-200 pb-3" role="tablist" aria-label="دسته‌بندی لباس">
           {garmentGroups.map((group) => (
-            <button key={group.key} type="button" role="tab" aria-selected={activeCategory === group.key} disabled={isWorking} onClick={() => chooseCategory(group.key)} className={`rounded-full px-4 py-2 text-[11.5px] transition disabled:cursor-not-allowed disabled:opacity-50 ${activeCategory === group.key ? "bg-[#244e62] text-white" : "bg-black/5 text-neutral-600 hover:bg-black/10"}`}>
+            <button key={group.key} type="button" role="tab" aria-selected={activeCategory === group.key} disabled={isWorking} onClick={() => chooseCategory(group.key)} className={`rounded-full px-4 py-2 text-[11.5px] transition disabled:cursor-not-allowed disabled:opacity-50 ${activeCategory === group.key ? "bg-[var(--kv-accent)] text-white" : "bg-black/5 text-neutral-600 hover:bg-black/10"}`}>
               {group.title}
             </button>
           ))}
@@ -311,7 +311,7 @@ export default function TryOn() {
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {visibleProducts.map((product) => (
-            <button key={product.id} type="button" disabled={isWorking} onClick={() => chooseProduct(product)} aria-pressed={selected[activeCategory]?.id === product.id} className={`tryon-option flex items-center gap-2 rounded-2xl p-2 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4b788d] disabled:cursor-not-allowed disabled:opacity-50 ${selected[activeCategory]?.id === product.id ? "is-selected" : ""}`}>
+            <button key={product.id} type="button" disabled={isWorking} onClick={() => chooseProduct(product)} aria-pressed={selected[activeCategory]?.id === product.id} className={`tryon-option flex items-center gap-2 rounded-2xl p-2 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)] disabled:cursor-not-allowed disabled:opacity-50 ${selected[activeCategory]?.id === product.id ? "is-selected" : ""}`}>
               <img src={product.images[0]} alt="" className="h-16 w-12 shrink-0 rounded-xl object-cover" />
               <span className="min-w-0 text-[11px]"><b className="block truncate font-medium">{product.name}</b><span className="mt-1 block truncate text-neutral-400">{product.categoryLabel}</span></span>
             </button>

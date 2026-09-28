@@ -3,7 +3,7 @@ import { useSiteSettings, saveSiteSettings, defaultHeroStudio, type HeroStudioCo
 import { HERO_TEMPLATES, HeroStudioRenderer } from "../components/heroTemplates";
 
 const input =
-  "h-10 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
+  "h-10 w-full rounded-[3px] border border-neutral-300 bg-white px-3 text-[12px] outline-none transition focus:border-[var(--kv-primary)]";
 
 /** فایل تصویر را برای ذخیرهسازی localStorage بهینه میکند (حداکثر 1920px، JPEG). */
 async function fileToOptimizedDataUrl(file: File, maxSize = 1920, quality = 0.85): Promise<string> {
@@ -85,9 +85,9 @@ export default function HeroStudio() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={resetAll} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">بازنشانی</button>
-          <button onClick={unpublish} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">لغو انتشار</button>
-          <button onClick={publish} className="h-10 rounded-[3px] bg-[#011c3a] px-6 text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px">انتشار روی سایت</button>
+          <button onClick={resetAll} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[var(--kv-primary)]">بازنشانی</button>
+          <button onClick={unpublish} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[var(--kv-primary)]">لغو انتشار</button>
+          <button onClick={publish} className="h-10 rounded-[3px] bg-[var(--kv-primary)] px-6 text-[11.5px] font-medium text-white transition hover:bg-[var(--kv-primary)] active:translate-y-px">انتشار روی سایت</button>
         </div>
       </div>
 
@@ -119,7 +119,7 @@ export default function HeroStudio() {
                 onClick={() => patch({ template: template.id })}
                 className={
                   "rounded-[4px] border p-3 text-right transition " +
-                  (config.template === template.id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]")
+                  (config.template === template.id ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]")
                 }
               >
                 <span className="block text-[11px] font-medium">{template.name}</span>
@@ -139,12 +139,12 @@ export default function HeroStudio() {
             </label>
             <div className="flex flex-wrap items-center gap-3">
               <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0], (url) => patch({ bgImage: url }))} />
-              <button type="button" onClick={() => bgFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">آپلود از سیستم</button>
+              <button type="button" onClick={() => bgFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[var(--kv-primary)]">آپلود از سیستم</button>
               <span className="text-[10px] text-neutral-400">بهینه‌سازی خودکار برای وب</span>
             </div>
             <label className="block">
               <span className={label}>تیرگی پوشش: {Math.round(config.overlay * 100)}٪</span>
-              <input type="range" min={0} max={85} value={Math.round(config.overlay * 100)} onChange={(e) => patch({ overlay: Number(e.target.value) / 100 })} className="w-full accent-[#011c3a]" />
+              <input type="range" min={0} max={85} value={Math.round(config.overlay * 100)} onChange={(e) => patch({ overlay: Number(e.target.value) / 100 })} className="w-full accent-[var(--kv-primary)]" />
             </label>
           </div>
         </section>
@@ -155,7 +155,7 @@ export default function HeroStudio() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block sm:col-span-2"><span className={label}>بالانویس</span><input className={input} value={config.eyebrow} onChange={(e) => patch({ eyebrow: e.target.value })} /></label>
             <label className="block sm:col-span-2"><span className={label}>تیتر</span><input className={input} value={config.title} onChange={(e) => patch({ title: e.target.value })} /></label>
-            <label className="block sm:col-span-2"><span className={label}>زیرتیتر / توضیح</span><textarea className="min-h-20 w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[#011c3a]" value={config.subtitle} onChange={(e) => patch({ subtitle: e.target.value })} /></label>
+            <label className="block sm:col-span-2"><span className={label}>زیرتیتر / توضیح</span><textarea className="min-h-20 w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[var(--kv-primary)]" value={config.subtitle} onChange={(e) => patch({ subtitle: e.target.value })} /></label>
             <label className="block"><span className={label}>متن دکمه</span><input className={input} value={config.ctaLabel} onChange={(e) => patch({ ctaLabel: e.target.value })} /></label>
             <label className="block"><span className={label}>لینک دکمه</span><input className={input} dir="ltr" value={config.ctaTo} onChange={(e) => patch({ ctaTo: e.target.value })} placeholder="/shop" /></label>
           </div>
@@ -165,7 +165,7 @@ export default function HeroStudio() {
         <section className="hidden rounded-[6px] border border-neutral-200 p-4" aria-hidden="true">
           <h3 className="text-[12.5px] font-medium">۴. شمارنده جشنواره</h3>
           <label className="mt-3 flex items-center gap-2 text-[11.5px]">
-            <input type="checkbox" checked={config.countdown.enabled} onChange={(e) => patchCountdown({ enabled: e.target.checked })} className="accent-[#011c3a]" />
+            <input type="checkbox" checked={config.countdown.enabled} onChange={(e) => patchCountdown({ enabled: e.target.checked })} className="accent-[var(--kv-primary)]" />
             نمایش شمارنده معکوس در هیرو
           </label>
           {config.countdown.enabled && (
@@ -179,7 +179,7 @@ export default function HeroStudio() {
                 <span className={label}>استایل شمارنده</span>
                 <div className="grid grid-cols-4 gap-1.5">
                   {([["glass", "شیشه‌ای"], ["dark", "سرمه‌ای"], ["light", "روشن"], ["solid", "تخت رنگی"]] as const).map(([id, name]) => (
-                    <button key={id} type="button" onClick={() => patchCountdown({ style: id })} className={(config.countdown.style === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]") + " h-9 rounded-[3px] border text-[10.5px] transition"}>{name}</button>
+                    <button key={id} type="button" onClick={() => patchCountdown({ style: id })} className={(config.countdown.style === id ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]") + " h-9 rounded-[3px] border text-[10.5px] transition"}>{name}</button>
                   ))}
                 </div>
               </div>
@@ -188,7 +188,7 @@ export default function HeroStudio() {
               <label className="block sm:col-span-2"><span className={label}>تصویر پس‌زمینه شمارنده (اختیاری)</span><input className={input} dir="ltr" value={config.countdown.bgImage.startsWith("data:") ? "(تصویر آپلودشده)" : config.countdown.bgImage} onChange={(e) => patchCountdown({ bgImage: e.target.value })} placeholder="خالی = بدون تصویر" /></label>
               <div className="sm:col-span-2">
                 <input ref={timerFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0], (url) => patchCountdown({ bgImage: url }))} />
-                <button type="button" onClick={() => timerFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">آپلود تصویر پس‌زمینه شمارنده</button>
+                <button type="button" onClick={() => timerFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[var(--kv-primary)]">آپلود تصویر پس‌زمینه شمارنده</button>
               </div>
             </div>
           )}
@@ -227,7 +227,7 @@ export default function HeroStudio() {
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input ref={heroVideoFileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 8_000_000) { flash("فایل ویدیو باید کمتر از ۸ مگابایت باشد؛ از URL استفاده کنید."); return; } const reader = new FileReader(); reader.onload = () => patch({ heroVideo: String(reader.result) }); reader.readAsDataURL(file); }} />
-            <button type="button" onClick={() => heroVideoFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[#011c3a]">آپلود ویدیو از سیستم</button>
+            <button type="button" onClick={() => heroVideoFileRef.current?.click()} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px] transition hover:border-[var(--kv-primary)]">آپلود ویدیو از سیستم</button>
             <span className="text-[10px] text-neutral-400">حداکثر ۸ مگابایت — ویدیو جداگانه روی سرور ذخیره و پخش می‌شود</span>
           </div>
         </section>
@@ -241,12 +241,12 @@ export default function HeroStudio() {
             <span className={label}>شکل تصویر (تمپلیت اسپلیت)</span>
             <div className="grid grid-cols-3 gap-1.5">
               {([["rect", "مستطیل"], ["rounded", "گرد"], ["circle", "دایره‌ای"]] as const).map(([id, name]) => (
-                <button key={id} type="button" onClick={() => patch({ imageShape: id })} className={(config.imageShape === id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]") + " h-9 rounded-[3px] border text-[10.5px] transition"}>{name}</button>
+                <button key={id} type="button" onClick={() => patch({ imageShape: id })} className={(config.imageShape === id ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]") + " h-9 rounded-[3px] border text-[10.5px] transition"}>{name}</button>
               ))}
             </div>
           </div>
           <label className="flex items-center gap-2 self-end text-[11.5px]">
-            <input type="checkbox" checked={config.dark} onChange={(e) => patch({ dark: e.target.checked })} className="accent-[#011c3a]" />
+            <input type="checkbox" checked={config.dark} onChange={(e) => patch({ dark: e.target.checked })} className="accent-[var(--kv-primary)]" />
             حالت تیره پس‌زمینه (تمپلیت اسپلیت)
           </label>
           <label className="block"><span className={label}>رنگ تیتر (خالی = پیش‌فرض)</span><input type="color" value={config.titleColor || "#ffffff"} onChange={(e) => patch({ titleColor: e.target.value })} className="h-10 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></label>

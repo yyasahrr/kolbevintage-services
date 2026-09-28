@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useRouter } from "../router";
 import { products, type Product } from "../data/catalog";
-import { fa, toman } from "../utils/format";
+import { fa, sizeLabel, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import { restoreSiteCustomer, signInSiteCustomer } from "../lib/siteAuthApi";
 import { restoreWholesaleVip, applyWholesaleVip, signInWholesaleVip, loadWholesaleMembership } from "../lib/wholesaleVipApi";
@@ -14,8 +14,8 @@ import { saveWholesaleMembership } from "../wholesaleMembership";
 import { loadKolbeWholesaleCatalog } from "./WholesaleCatalogManager";
 
 /* ================================================================
-   بازار عمده کلبه — کاتالوگ عمومی با قیمت ویژه VIP
-   همه محصولات قابل مشاهده؛ قیمت فقط برای اعضای VIP فعال
+   بازار عمده کلبه — کاتالوگ عمومی با قیمت ویژهٔ اعضا
+   همه محصولات قابل مشاهده؛ قیمت فقط برای اعضای فعال
    ================================================================ */
 
 const SERIES_INFO = [
@@ -36,7 +36,7 @@ const VIP_PLANS = [
     highlight: true,
   },
   {
-    id: "vip", name: "ویژه VIP", price: "۲۴٬۰۰۰٬۰۰۰", period: "سالانه",
+    id: "vip", name: "اشتراک ویژه", price: "۲۴٬۰۰۰٬۰۰۰", period: "سالانه",
     features: ["همه مزایای حرفه‌ای", "تخفیف ۴۵٪", "دوخت اختصاصی برند شما", "بسته‌بندی سفارشی", "تسویه چکی"],
   },
 ];
@@ -127,7 +127,7 @@ export default function Wholesale() {
   };
 
   return (
-    <div className="storefront-shell flex min-h-screen flex-col bg-[#f7f5f0]">
+    <div className="storefront-shell flex min-h-screen flex-col bg-[var(--kv-canvas)]">
       <SiteHeader />
       <div className="flex-1">
 
@@ -136,18 +136,18 @@ export default function Wholesale() {
           <div className="mx-auto max-w-[1400px] px-4 py-4 lg:px-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h1 className="text-[22px] font-medium text-[#011c3a]">خرید عمده</h1>
+                <h1 className="text-[22px] font-medium text-[var(--kv-primary)]">خرید عمده</h1>
                 <p className="mt-1 text-[11.5px] text-neutral-500">
                   {hasVip
                     ? `قیمت‌های عمده فعال — ${vipAccount?.storeName} (${vipAccount?.planName})`
-                    : "محصولات برای همه قابل مشاهده — قیمت‌ها ویژه اعضای VIP"}
+                    : "محصولات برای همه قابل مشاهده — قیمت‌ها ویژهٔ اعضای ویژه"}
                 </p>
               </div>
               {/* وضعیت کاربر */}
               <div className="flex items-center gap-2">
                 {hasVip && (
-                  <span className="flex items-center gap-2 rounded-full border border-[#b9cfbc] bg-[#edf3ee] px-4 py-2 text-[11px] text-[#36563a]">
-                    <Icon name="shield" className="h-3.5 w-3.5" /> VIP فعال
+                  <span className="flex items-center gap-2 rounded-full border border-[var(--kv-border-strong)] bg-[var(--kv-surface-muted)] px-4 py-2 text-[11px] text-[var(--kv-accent)]">
+                    <Icon name="shield" className="h-3.5 w-3.5" /> عضویت ویژه فعال
                   </span>
                 )}
               </div>
@@ -155,7 +155,7 @@ export default function Wholesale() {
           </div>
         </section>
 
-        <section className="border-b border-neutral-200 bg-[#f7f5f0]"><div className="mx-auto grid max-w-[1400px] gap-3 px-4 py-4 sm:grid-cols-2 lg:px-8"><button onClick={()=>setSource('kolbe')} className={`border p-4 text-right transition ${source==='kolbe'?'border-[#011c3a] bg-[#011c3a] text-white':'border-neutral-200 bg-white'}`}><span className="text-[9px] tracking-[.2em] opacity-50">کلبه DIRECT</span><strong className="mt-1 block text-[14px]">خرید مستقیم از کلبه وینتیج</strong><span className="mt-1 block text-[9.5px] opacity-65">موجودی و ارسال مستقیم از انبار کلبه</span></button><button onClick={()=>setSource('marketplace')} className={`border p-4 text-right transition ${source==='marketplace'?'border-[#011c3a] bg-[#011c3a] text-white':'border-neutral-200 bg-white'}`}><span className="text-[9px] tracking-[.2em] opacity-50">فروشندگان منتخب</span><strong className="mt-1 block text-[14px]">خرید از فروشندگان منتخب</strong><span className="mt-1 block text-[9.5px] opacity-65">سفارش واحد، تأمین چندفروشنده‌ای و ارسال تجمیعی</span></button></div><div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2 px-4 pb-4 lg:px-8"><span className="text-[10px] text-neutral-500">روش سفارش:</span><button onClick={()=>setOrderMode('normal')} className={`h-8 px-3 text-[9.5px] ${orderMode==='normal'?'bg-[#011c3a] text-white':'border border-neutral-300 bg-white'}`}>سفارش عادی · انتخاب دقیق تنوع</button><button onClick={()=>setOrderMode('quick')} className={`h-8 px-3 text-[9.5px] ${orderMode==='quick'?'bg-[#011c3a] text-white':'border border-neutral-300 bg-white'}`}>سفارش سریع · تکرار موجودی پیشنهادی</button><span className="mr-auto text-[9px] text-neutral-400">خروجی نهایی همیشه یک سفارش و یک مرسوله تجمیعی است.</span></div></section>
+        <section className="border-b border-neutral-200 bg-[var(--kv-canvas)]"><div className="mx-auto grid max-w-[1400px] gap-3 px-4 py-4 sm:grid-cols-2 lg:px-8"><button onClick={()=>setSource('kolbe')} className={`border p-4 text-right transition ${source==='kolbe'?'border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white':'border-neutral-200 bg-white'}`}><span className="text-[9px] tracking-[.2em] opacity-50">کلبهٔ مستقیم</span><strong className="mt-1 block text-[14px]">خرید مستقیم از کلبه وینتیج</strong><span className="mt-1 block text-[9.5px] opacity-65">موجودی و ارسال مستقیم از انبار کلبه</span></button><button onClick={()=>setSource('marketplace')} className={`border p-4 text-right transition ${source==='marketplace'?'border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white':'border-neutral-200 bg-white'}`}><span className="text-[9px] tracking-[.2em] opacity-50">فروشندگان منتخب</span><strong className="mt-1 block text-[14px]">خرید از فروشندگان منتخب</strong><span className="mt-1 block text-[9.5px] opacity-65">سفارش واحد، تأمین چندفروشنده‌ای و ارسال تجمیعی</span></button></div><div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-2 px-4 pb-4 lg:px-8"><span className="text-[10px] text-neutral-500">روش سفارش:</span><button onClick={()=>setOrderMode('normal')} className={`h-8 px-3 text-[9.5px] ${orderMode==='normal'?'bg-[var(--kv-primary)] text-white':'border border-neutral-300 bg-white'}`}>سفارش عادی · انتخاب دقیق تنوع</button><button onClick={()=>setOrderMode('quick')} className={`h-8 px-3 text-[9.5px] ${orderMode==='quick'?'bg-[var(--kv-primary)] text-white':'border border-neutral-300 bg-white'}`}>سفارش سریع · تکرار موجودی پیشنهادی</button><span className="mr-auto text-[9px] text-neutral-400">خروجی نهایی همیشه یک سفارش و یک مرسوله تجمیعی است.</span></div></section>
 
         {/* بدنه: فیلتر عمودی (راست) + گرید (چپ) */}
         <div className="mx-auto flex w-full max-w-[1400px] gap-5 px-4 py-5 lg:px-8">
@@ -180,7 +180,7 @@ export default function Wholesale() {
               <p className="mb-2 text-[10.5px] font-medium text-neutral-500">دسته‌بندی</p>
               <div className="flex flex-col gap-1">
                 {categories.map(cat => (
-                  <button key={cat} onClick={() => { setCategory(cat); setShown(12); }} className={`rounded px-3 py-2 text-right text-[11px] transition ${category === cat ? "bg-[#011c3a] text-white" : "text-neutral-600 hover:bg-neutral-100"}`}>
+                  <button key={cat} onClick={() => { setCategory(cat); setShown(12); }} className={`rounded px-3 py-2 text-right text-[11px] transition ${category === cat ? "bg-[var(--kv-primary)] text-white" : "text-neutral-600 hover:bg-neutral-100"}`}>
                     {cat}
                   </button>
                 ))}
@@ -190,7 +190,7 @@ export default function Wholesale() {
               <p className="mb-2 text-[10.5px] font-medium text-neutral-500">چینش</p>
               <div className="flex gap-1.5">
                 {([3, 4, 5] as const).map(n => (
-                  <button key={n} onClick={() => setGridCols(n)} className={`flex h-8 w-8 items-center justify-center rounded border text-[10px] transition ${gridCols === n ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-200 text-neutral-400 hover:border-neutral-400"}`} aria-label={`${n} ستونه`}>
+                  <button key={n} onClick={() => setGridCols(n)} className={`flex h-8 w-8 items-center justify-center rounded border text-[10px] transition ${gridCols === n ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-200 text-neutral-400 hover:border-neutral-400"}`} aria-label={`${n} ستونه`}>
                     {fa(n)}
                   </button>
                 ))}
@@ -211,7 +211,7 @@ export default function Wholesale() {
           </div>
           {shown < filtered.length && (
             <div className="mt-6 text-center">
-              <button onClick={() => setShown(sh => sh + 8)} className="rounded-full border border-neutral-300 px-8 py-3 text-[12px] transition hover:border-[#011c3a]">
+              <button onClick={() => setShown(sh => sh + 8)} className="rounded-full border border-neutral-300 px-8 py-3 text-[12px] transition hover:border-[var(--kv-primary)]">
                 مشاهده بیشتر ({fa(filtered.length - shown)} محصول دیگر)
               </button>
             </div>
@@ -241,43 +241,43 @@ export default function Wholesale() {
       {showLoginModal && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 px-4" onClick={() => setShowLoginModal(false)}>
           <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-center text-[17px] font-medium text-[#011c3a]">ورود به کلبه وینتیج</h3>
+            <h3 className="text-center text-[17px] font-medium text-[var(--kv-primary)]">ورود به کلبه وینتیج</h3>
             <p className="mt-1 text-center text-[11px] text-neutral-500">برای مشاهده قیمت‌های عمده وارد شوید</p>
             {loginError && <p role="alert" className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">{loginError}</p>}
             <form onSubmit={handleLogin} className="mt-4 space-y-3">
-              <input type="email" required value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} placeholder="ایمیل" className="h-11 w-full rounded border border-neutral-300 px-3 text-[12px] outline-none focus:border-[#011c3a]" />
-              <input type="password" required value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} placeholder="رمز عبور" className="h-11 w-full rounded border border-neutral-300 px-3 text-[12px] outline-none focus:border-[#011c3a]" />
-              <button type="submit" className="h-11 w-full rounded bg-[#011c3a] text-[12.5px] font-medium text-white transition hover:bg-[#0a2c55]">ورود</button>
+              <input type="email" required value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} placeholder="ایمیل" className="h-11 w-full rounded border border-neutral-300 px-3 text-[12px] outline-none focus:border-[var(--kv-primary)]" />
+              <input type="password" required value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} placeholder="رمز عبور" className="h-11 w-full rounded border border-neutral-300 px-3 text-[12px] outline-none focus:border-[var(--kv-primary)]" />
+              <button type="submit" className="h-11 w-full rounded bg-[var(--kv-primary)] text-[12.5px] font-medium text-white transition hover:bg-[var(--kv-primary)]">ورود</button>
             </form>
-            <p className="mt-4 text-center text-[10.5px] text-neutral-400">حساب ندارید؟ <Link to="/account" className="text-[#011c3a] underline">ثبت‌نام</Link></p>
+            <p className="mt-4 text-center text-[10.5px] text-neutral-400">حساب ندارید؟ <Link to="/account" className="text-[var(--kv-primary)] underline">ثبت‌نام</Link></p>
           </div>
         </div>
       )}
 
-      {/* مودال انتخاب پلن VIP */}
+      {/* مودال انتخاب پلن ویژه */}
       {showVipPlans && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 px-4 py-8 overflow-y-auto" onClick={() => setShowVipPlans(false)}>
           <div className="w-full max-w-3xl rounded-lg bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="mb-5 text-center">
-              <h3 className="text-[18px] font-medium text-[#011c3a]">اشتراک VIP بازار عمده</h3>
+              <h3 className="text-[18px] font-medium text-[var(--kv-primary)]">اشتراک ویژهٔ بازار عمده</h3>
               <p className="mt-1 text-[11.5px] text-neutral-500">پلن مناسب کسب‌وکار خود را انتخاب کنید</p>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               {VIP_PLANS.map(plan => (
-                <div key={plan.id} className={`rounded-lg border p-5 ${plan.highlight ? "border-[#011c3a] shadow-md" : "border-neutral-200"}`}>
-                  {plan.highlight && <span className="mb-2 inline-block rounded-full bg-[#011c3a] px-3 py-1 text-[9px] text-white">پیشنهاد ما</span>}
+                <div key={plan.id} className={`rounded-lg border p-5 ${plan.highlight ? "border-[var(--kv-primary)] shadow-md" : "border-neutral-200"}`}>
+                  {plan.highlight && <span className="mb-2 inline-block rounded-full bg-[var(--kv-primary)] px-3 py-1 text-[9px] text-white">پیشنهاد ما</span>}
                   <h4 className="text-[15px] font-medium">{plan.name}</h4>
-                  <p className="mt-2 text-[20px] font-medium text-[#011c3a] num-fa">{plan.price}</p>
+                  <p className="mt-2 text-[20px] font-medium text-[var(--kv-primary)] num-fa">{plan.price}</p>
                   <p className="text-[9.5px] text-neutral-400">تومان / {plan.period}</p>
                   <ul className="mt-4 space-y-2">
                     {plan.features.map(f => (
                       <li key={f} className="flex items-start gap-2 text-[10.5px] text-neutral-600">
-                        <Icon name="check" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#3d5c3a]" strokeWidth={2.5} />
+                        <Icon name="check" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--kv-accent)]" strokeWidth={2.5} />
                         {f}
                       </li>
                     ))}
                   </ul>
-                  <button disabled={vipBusy} onClick={()=>void handleApplyVip(plan)} className={`mt-5 h-10 w-full rounded text-[11.5px] font-medium transition disabled:opacity-45 ${plan.highlight ? "bg-[#011c3a] text-white hover:bg-[#0a2c55]" : "border border-[#011c3a] text-[#011c3a] hover:bg-[#011c3a] hover:text-white"}`}>
+                  <button disabled={vipBusy} onClick={()=>void handleApplyVip(plan)} className={`mt-5 h-10 w-full rounded text-[11.5px] font-medium transition disabled:opacity-45 ${plan.highlight ? "bg-[var(--kv-primary)] text-white hover:bg-[var(--kv-primary)]" : "border border-[var(--kv-primary)] text-[var(--kv-primary)] hover:bg-[var(--kv-primary)] hover:text-white"}`}>
                     {vipBusy?"در حال فعال‌سازی…":`پرداخت آزمایشی و فعال‌سازی ${plan.name}`}
                   </button>
                 </div>
@@ -285,7 +285,7 @@ export default function Wholesale() {
             </div>
             <p className="mt-4 text-center text-[9.5px] leading-5 text-neutral-400">درگاه بانکی این محیط تنظیم نشده است؛ این دکمه چرخه پرداخت موفق و فعال‌سازی خودکار را برای تست شبیه‌سازی می‌کند.</p>
             {vipError&&<p role="alert" className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-center text-[10px] text-red-700">{vipError}</p>}
-            {vipPending&&!hasVip&&<p role="status" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2 text-center text-[10px] text-amber-800">درخواست عضویت VIP شما ثبت شده و در انتظار تأیید کارشناسان کلبه است.</p>}
+            {vipPending&&!hasVip&&<p role="status" className="mt-4 border border-amber-200 bg-amber-50 px-3 py-2 text-center text-[10px] text-amber-800">درخواست عضویت ویژهٔ شما ثبت شده و در انتظار تأیید کارشناسان کلبه است.</p>}
             <button onClick={() => setShowVipPlans(false)} className="mt-4 block mx-auto text-[11px] text-neutral-400 underline">بستن</button>
           </div>
         </div>
@@ -312,13 +312,13 @@ function WholesaleCard({ product, hasVip, onOpen }: { product: Product; hasVip: 
           <img src={product.images[1]} alt="" loading="lazy" aria-hidden className="absolute inset-0 aspect-[4/5] w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         )}
         {product.badges.length > 0 && (
-          <span className="absolute right-2 top-2 rounded-full bg-[#011c3a] px-2 py-0.5 text-[9px] font-medium text-white">{product.badges[0]}</span>
+          <span className="absolute right-2 top-2 rounded-full bg-[var(--kv-primary)] px-2 py-0.5 text-[9px] font-medium text-white">{product.badges[0]}</span>
         )}
       </div>
       <div className="flex flex-1 flex-col p-3">
         <p className="text-[9.5px] text-neutral-400">{product.categoryLabel}</p>
-        <h3 className="mt-1 line-clamp-2 text-[12.5px] font-medium leading-snug text-[#011c3a]">{product.name}</h3>
-        <p className="mt-1 text-[10.5px] text-neutral-400">{product.latin}</p>
+        <h3 className="mt-1 line-clamp-2 text-[12.5px] font-medium leading-snug text-[var(--kv-primary)]">{product.name}</h3>
+        <p className="mt-1 text-[10.5px] text-neutral-400">{product.subtitle}</p>
         {/* رنگها */}
         <div className="mt-2 flex gap-1">
           {product.colours.slice(0, 5).map(c => (
@@ -329,12 +329,12 @@ function WholesaleCard({ product, hasVip, onOpen }: { product: Product; hasVip: 
         <div className="mt-auto pt-3">
           {hasVip ? (
             <div>
-              <p className="text-[14px] font-medium text-[#011c3a] num-fa">{toman(Math.round(product.price * 0.65))}</p>
+              <p className="text-[14px] font-medium text-[var(--kv-primary)] num-fa">{toman(Math.round(product.price * 0.65))}</p>
               <p className="mt-0.5 text-[9px] text-neutral-400">قیمت عمده هر تیکه</p>
             </div>
           ) : (
-            <div className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-neutral-200 bg-[#f7f5f0] text-[10.5px] text-neutral-500">
-              <Icon name="shield" className="h-3 w-3" /> قیمت ویژه VIP
+            <div className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-neutral-200 bg-[var(--kv-canvas)] text-[10.5px] text-neutral-500">
+              <Icon name="shield" className="h-3 w-3" /> قیمت ویژهٔ اعضا
             </div>
           )}
         </div>
@@ -344,7 +344,7 @@ function WholesaleCard({ product, hasVip, onOpen }: { product: Product; hasVip: 
 }
 
 /* ================================================================
-   مودال جزئیات محصول — رنگها، سریها، مشخصات (قیمت فقط VIP)
+   مودال جزئیات محصول — رنگها، سریها، مشخصات (قیمت فقط برای اعضا)
    ================================================================ */
 
 function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onVipPlans }: {
@@ -375,7 +375,7 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
             {product.images.length > 1 && (
               <div className="mt-3 flex gap-2">
                 {product.images.map((img, i) => (
-                  <button key={i} onClick={() => setActiveImage(i)} className={`h-16 w-12 overflow-hidden rounded border-2 transition ${activeImage === i ? "border-[#011c3a]" : "border-transparent opacity-60"}`}>
+                  <button key={i} onClick={() => setActiveImage(i)} className={`h-16 w-12 overflow-hidden rounded border-2 transition ${activeImage === i ? "border-[var(--kv-primary)]" : "border-transparent opacity-60"}`}>
                     <img src={img} alt="" className="h-full w-full object-cover" />
                   </button>
                 ))}
@@ -385,8 +385,8 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
 
           {/* اطلاعات */}
           <div className="p-5 md:p-6">
-            <p className="text-[10px] tracking-[0.25em] text-neutral-400">{product.latin.toUpperCase()}</p>
-            <h2 className="mt-2 text-[22px] font-medium text-[#011c3a]">{product.name}</h2>
+            <p className="text-[10px] text-neutral-400">{product.categoryLabel || product.subtitle}</p>
+            <h2 className="mt-2 text-[22px] font-medium text-[var(--kv-primary)]">{product.name}</h2>
             <p className="mt-1 text-[12px] text-neutral-500">{product.subtitle}</p>
 
             {/* رنگها */}
@@ -394,7 +394,7 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
               <p className="text-[11.5px] font-medium">رنگ‌های موجود</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {product.colours.map((colour, i) => (
-                  <button key={colour.name} onClick={() => setActiveColour(i)} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10.5px] transition ${activeColour === i ? "border-[#011c3a] bg-[#f7f5f0]" : "border-neutral-200 hover:border-neutral-400"}`}>
+                  <button key={colour.name} onClick={() => setActiveColour(i)} className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10.5px] transition ${activeColour === i ? "border-[var(--kv-primary)] bg-[var(--kv-canvas)]" : "border-neutral-200 hover:border-neutral-400"}`}>
                     <span className="h-4 w-4 rounded-full border border-neutral-200" style={{ background: colour.hex }} />
                     {colour.name}
                   </button>
@@ -407,12 +407,12 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
               <p className="text-[11.5px] font-medium">نوع سری عرضه</p>
               <div className="mt-2 grid gap-2">
                 {SERIES_INFO.map(s => (
-                  <button key={s.id} onClick={() => setSelectedSeries(s.id)} className={`flex items-center justify-between rounded border p-3 text-right transition ${selectedSeries === s.id ? "border-[#011c3a] bg-[#f7f5f0]" : "border-neutral-200 hover:border-neutral-400"}`}>
+                  <button key={s.id} onClick={() => setSelectedSeries(s.id)} className={`flex items-center justify-between rounded border p-3 text-right transition ${selectedSeries === s.id ? "border-[var(--kv-primary)] bg-[var(--kv-canvas)]" : "border-neutral-200 hover:border-neutral-400"}`}>
                     <div>
-                      <span className="text-[11px] font-medium">{s.label}</span>
+                      <span className="text-[11px] font-medium">{sizeLabel(s.label)}</span>
                       <span className="mt-0.5 block text-[9px] text-neutral-400">{s.desc}</span>
                     </div>
-                    <span className="text-[11px] font-medium text-[#011c3a] num-fa">{fa(s.pieces)} تیکه</span>
+                    <span className="text-[11px] font-medium text-[var(--kv-primary)] num-fa">{fa(s.pieces)} تیکه</span>
                   </button>
                 ))}
               </div>
@@ -424,7 +424,7 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {product.sizes.map(size => (
                   <span key={size.label} className={`rounded border px-2.5 py-1 text-[10px] ${size.inStock ? "border-neutral-300 text-neutral-700" : "border-neutral-200 text-neutral-300 line-through"}`}>
-                    {size.label}
+                    {sizeLabel(size.label)}
                   </span>
                 ))}
               </div>
@@ -436,40 +436,40 @@ function ProductDetailModal({ product, hasVip, isLoggedIn, onClose, onLogin, onV
             </div>
 
             {/* قیمت */}
-            <div className="mt-5 rounded-lg p-4" style={{ background: hasVip ? "#edf3ee" : "#f7f5f0" }}>
+            <div className="mt-5 rounded-lg p-4" style={{ background: hasVip ? "var(--kv-surface-muted)" : "var(--kv-canvas)" }}>
               {hasVip ? (
                 <div>
                   <div className="flex items-baseline justify-between">
                     <div>
                       <p className="text-[9.5px] text-neutral-500">قیمت هر تیکه</p>
-                      <p className="mt-1 text-[16px] font-medium text-[#011c3a] num-fa">{toman(wholesaleUnit)}</p>
+                      <p className="mt-1 text-[16px] font-medium text-[var(--kv-primary)] num-fa">{toman(wholesaleUnit)}</p>
                     </div>
                     <div className="text-left">
                       <p className="text-[9.5px] text-neutral-500">قیمت {series.label}</p>
-                      <p className="mt-1 text-[18px] font-medium text-[#011c3a] num-fa">{toman(seriesPrice)}</p>
+                      <p className="mt-1 text-[18px] font-medium text-[var(--kv-primary)] num-fa">{toman(seriesPrice)}</p>
                     </div>
                   </div>
-                  <button className="mt-3 h-11 w-full rounded-full bg-[#011c3a] text-[12px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px">
+                  <button className="mt-3 h-11 w-full rounded-full bg-[var(--kv-primary)] text-[12px] font-medium text-white transition hover:bg-[var(--kv-primary)] active:translate-y-px">
                     افزودن {series.label} به سفارش
                   </button>
                 </div>
               ) : (
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-500">
-                    <Icon name="shield" className="h-4 w-4" /> قیمت ویژه اعضای VIP
+                    <Icon name="shield" className="h-4 w-4" /> قیمت ویژهٔ اعضا
                   </div>
                   <div className="mt-3 flex flex-col gap-2">
                     {!isLoggedIn ? (
-                      <button onClick={onLogin} className="h-10 w-full rounded-full bg-[#011c3a] text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55]">
+                      <button onClick={onLogin} className="h-10 w-full rounded-full bg-[var(--kv-primary)] text-[11.5px] font-medium text-white transition hover:bg-[var(--kv-primary)]">
                         ورود / ثبت‌نام
                       </button>
                     ) : (
-                      <button onClick={onVipPlans} className="h-10 w-full rounded-full bg-[#011c3a] text-[11.5px] font-medium text-white transition hover:bg-[#0a2c55]">
-                        تهیه اشتراک VIP
+                      <button onClick={onVipPlans} className="h-10 w-full rounded-full bg-[var(--kv-primary)] text-[11.5px] font-medium text-white transition hover:bg-[var(--kv-primary)]">
+                        تهیه اشتراک ویژه
                       </button>
                     )}
                     <p className="text-[9.5px] text-neutral-400">
-                      {isLoggedIn ? "برای دیدن قیمت‌ها اشتراک VIP تهیه کنید" : "ابتدا وارد شوید، سپس اشتراک تهیه کنید"}
+                      {isLoggedIn ? "برای دیدن قیمت‌ها اشتراک ویژه تهیه کنید" : "ابتدا وارد شوید، سپس اشتراک تهیه کنید"}
                     </p>
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
-import { toman, fa } from "../utils/format";
+import { sizeLabel, toman, fa } from "../utils/format";
 import type { Product } from "../data/catalog";
 import { isInstallmentAvailable, type PurchaseChannel } from "../lib/purchaseChannel";
 import Icon from "./Icon";
@@ -106,7 +106,7 @@ export default function ProductCard({
               {product.badges.slice(0, 2).map((b) => (
                 <span
                   key={b}
-                  className="rounded-[3px] bg-[#011c3a] px-2 py-[3px] text-[9px] font-medium text-white"
+                  className="rounded-[3px] bg-[var(--kv-primary)] px-2 py-[3px] text-[9px] font-medium text-white"
                 >
                   {b}
                 </span>
@@ -174,7 +174,7 @@ export default function ProductCard({
                   aria-label={`عکس ${fa(i + 1)}`}
                   className={
                     "h-[3px] w-4 rounded-full transition " +
-                    (i === idx && colourIdx === 0 ? "bg-[#011c3a]" : "bg-white/70")
+                    (i === idx && colourIdx === 0 ? "bg-[var(--kv-primary)]" : "bg-white/70")
                   }
                 />
               ))}
@@ -211,7 +211,7 @@ export default function ProductCard({
               aria-label={c.name}
               className={
                 "h-[13px] w-[13px] rounded-full border transition " +
-                (colourIdx === i ? "border-[#011c3a] ring-1 ring-[#011c3a]/30" : "border-neutral-300")
+                (colourIdx === i ? "border-[var(--kv-primary)] ring-1 ring-[var(--kv-primary)]/30" : "border-neutral-300")
               }
               style={{ background: c.hex }}
             />
@@ -226,7 +226,7 @@ export default function ProductCard({
               onClick={() => toggleCompare(product.id)}
               className={
                 "mr-auto text-[10.5px] transition " +
-                (inCompare ? "text-[#011c3a] underline" : "text-neutral-400 hover:text-[#011c3a]")
+                (inCompare ? "text-[var(--kv-primary)] underline" : "text-neutral-400 hover:text-[var(--kv-primary)]")
               }
             >
               {inCompare ? "در مقایسه" : "مقایسه"}
@@ -234,7 +234,7 @@ export default function ProductCard({
           )}
         </div> : null}
 
-        {!product.pricePending && isInstallmentAvailable(channel) && cardSettings.showInstallment && installment.enabled && installment.showOnCard ? <div className="mt-2 border-r-2 border-[#ffd200] pr-2 text-[9.5px] leading-5 text-neutral-500"><span className="font-medium text-[#011c3a]">{installment.provider === "digipay" ? "دیجی‌پی" : installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : "اسنپ‌پی"}</span> · {installment.installments.toLocaleString("fa-IR")} قسط از {toman(Math.ceil(installmentPrice/installment.installments))}</div> : null}
+        {!product.pricePending && isInstallmentAvailable(channel) && cardSettings.showInstallment && installment.enabled && installment.showOnCard ? <div className="mt-2 border-r-2 border-[var(--kv-warning)] pr-2 text-[9.5px] leading-5 text-neutral-500"><span className="font-medium text-[var(--kv-primary)]">{installment.provider === "digipay" ? "دیجی‌پی" : installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : "اسنپ‌پی"}</span> · {installment.installments.toLocaleString("fa-IR")} قسط از {toman(Math.ceil(installmentPrice/installment.installments))}</div> : null}
 
         {cardSettings.showQuickAdd ? <div className="product-card-purchase mt-auto pt-4">
           {sizeOpen && (
@@ -250,7 +250,7 @@ export default function ProductCard({
                       (selectedSize === size.label ? "is-selected" : "")
                     }
                   >
-                    {size.label}
+                    {sizeLabel(size.label)}
                   </button>
                 ))}
             </div>

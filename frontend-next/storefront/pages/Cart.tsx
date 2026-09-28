@@ -17,7 +17,7 @@ export default function Cart() {
         <Icon name="bag" className="h-12 w-12 text-neutral-300" />
         <h1 className="text-[20px] font-medium">سبد خرید شما خالی است</h1>
         <p className="text-[12.5px] text-neutral-500">هنوز محصولی به سبد اضافه نکرده‌اید.</p>
-        <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-8 py-3 text-[13px] font-medium text-white">
+        <Link to="/shop" className="rounded-[3px] bg-[var(--kv-primary)] px-8 py-3 text-[13px] font-medium text-white">
           شروع خرید
         </Link>
       </main>
@@ -60,7 +60,7 @@ export default function Cart() {
                         <Icon name="plus" className="h-3 w-3" />
                       </button>
                     </div>
-                    <button onClick={() => removeLine(k)} className="flex items-center gap-1.5 text-[11.5px] text-neutral-500 hover:text-[#011c3a]">
+                    <button onClick={() => removeLine(k)} className="flex items-center gap-1.5 text-[11.5px] text-neutral-500 hover:text-[var(--kv-primary)]">
                       <Icon name="trash" className="h-3.5 w-3.5" />
                       حذف
                     </button>
@@ -91,7 +91,7 @@ export default function Cart() {
 
             <Link
               to="/checkout"
-              className="mt-5 flex h-11 items-center justify-center rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
+              className="mt-5 flex h-11 items-center justify-center rounded-[3px] bg-[var(--kv-primary)] text-[13px] font-medium text-white transition hover:bg-[var(--kv-primary)]"
             >
               ادامه و پرداخت
             </Link>

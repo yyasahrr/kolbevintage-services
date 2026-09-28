@@ -34,8 +34,8 @@ export function useCountdown(targetISO: string): CountdownState | null {
 
 const STYLE_CLASSES: Record<HeroStudioConfig["countdown"]["style"], string> = {
   glass: "border border-white/30 bg-white/10 text-white backdrop-blur-md",
-  dark: "border border-white/10 bg-[#011c3a]/95 text-white",
-  light: "border border-neutral-200 bg-white/95 text-[#011c3a] shadow-[0_18px_50px_rgba(7,28,49,0.14)]",
+  dark: "border border-white/10 bg-[var(--kv-primary)]/95 text-white",
+  light: "border border-neutral-200 bg-white/95 text-[var(--kv-primary)] shadow-[0_18px_50px_rgba(7,28,49,0.14)]",
   solid: "border border-transparent text-white",
 };
 

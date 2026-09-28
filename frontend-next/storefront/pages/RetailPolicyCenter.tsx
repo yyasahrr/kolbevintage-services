@@ -86,7 +86,7 @@ const policies: RetailPolicy[] = [
   { id: 39, area: "امنیت", title: "ورود مدیر", decision: "احراز هویت دومرحله‌ای" },
   { id: 40, area: "امنیت", title: "ثبت فعالیت", decision: "همه عملیات و مشاهده اطلاعات حساس" },
   { id: 41, area: "گزارش", title: "گزارش فروش", decision: "ناخالص، تخفیف، مرجوعی و سود خالص" },
-  { id: 42, area: "گزارش", title: "فرمت خروجی", decision: "PDF، Excel و CSV" },
+  { id: 42, area: "گزارش", title: "فرمت خروجی", decision: "خروجی چاپی، صفحه‌گسترده و دادهٔ متنی" },
   { id: 43, area: "گزارش", title: "گزارش اختصاصی", decision: "گزارش‌ساز کامل" },
   { id: 44, area: "مالی", title: "مغایرت پرداخت", decision: "دستی، هشدار، تطبیق بانکی و حسابداری" },
   { id: 45, area: "مالی", title: "محاسبه مالیات", decision: "سامانه حسابداری" },
@@ -140,10 +140,10 @@ export default function RetailPolicyCenter() {
         <h1 className="mt-2 text-[22px] font-medium">تنظیمات اجرایی خرده کلبه</h1>
         <p className="mt-2 max-w-3xl text-[11px] leading-7 text-neutral-500">۵۰ تصمیم تأییدشده کارفرما به‌عنوان خط‌مشی فعال پنل مدیر کل ثبت شده‌اند. تنظیمات حساس این صفحه در مرورگر ذخیره و در بازگشت بعدی بازیابی می‌شوند.</p>
       </div>
-      <button type="button" onClick={() => persist()} className="h-10 bg-[#011c3a] px-5 text-[11px] font-medium text-white transition hover:bg-[#0a2c55] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2">ذخیره تنظیمات خرده</button>
+      <button type="button" onClick={() => persist()} className="h-10 bg-[var(--kv-primary)] px-5 text-[11px] font-medium text-white transition hover:bg-[var(--kv-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)] focus-visible:ring-offset-2">ذخیره تنظیمات خرده</button>
     </header>
 
-    {saved ? <p role="status" className="border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2.5 text-[10.5px] text-[#36563a]">تنظیمات خرده با موفقیت ذخیره شد.</p> : null}
+    {saved ? <p role="status" className="border border-[var(--kv-border-strong)] bg-[var(--kv-surface-muted)] px-3 py-2.5 text-[10.5px] text-[var(--kv-accent)]">تنظیمات خرده با موفقیت ذخیره شد.</p> : null}
 
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="خلاصه پیکربندی">
       {[
@@ -174,7 +174,7 @@ export default function RetailPolicyCenter() {
     <section className="grid gap-4 xl:grid-cols-2">
       <div className="border border-neutral-200 bg-white p-4 sm:p-5">
         <h2 className="text-[12px] font-medium">شهرهای مجاز ارسال</h2>
-        <div className="mt-4 flex gap-2"><input aria-label="نام شهر جدید" value={city} onChange={(event) => setCity(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCity(); } }} placeholder="نام شهر" className="h-10 min-w-0 flex-1 border border-neutral-300 px-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" /><button type="button" onClick={addCity} disabled={!city.trim()} className="h-10 bg-[#011c3a] px-4 text-[10.5px] text-white disabled:cursor-not-allowed disabled:opacity-40">افزودن</button></div>
+        <div className="mt-4 flex gap-2"><input aria-label="نام شهر جدید" value={city} onChange={(event) => setCity(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCity(); } }} placeholder="نام شهر" className="h-10 min-w-0 flex-1 border border-neutral-300 px-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" /><button type="button" onClick={addCity} disabled={!city.trim()} className="h-10 bg-[var(--kv-primary)] px-4 text-[10.5px] text-white disabled:cursor-not-allowed disabled:opacity-40">افزودن</button></div>
         <div className="mt-4 flex flex-wrap gap-2">{settings.shippingCities.map((item) => <span key={item} className="flex items-center gap-2 border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-[10px]">{item}<button type="button" aria-label={`حذف شهر ${item}`} onClick={() => persist({ ...settings, shippingCities: settings.shippingCities.filter((value) => value !== item) })} className="text-red-700">×</button></span>)}</div>
       </div>
       <div className="border border-neutral-200 bg-white p-4 sm:p-5">
@@ -186,11 +186,11 @@ export default function RetailPolicyCenter() {
     <section>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h2 className="text-[14px] font-medium">فهرست سیاست‌های اعمال‌شده</h2><p className="mt-1 text-[10px] text-neutral-500">نمایش {fa(visible.length)} سیاست از {fa(policies.length)}</p></div>
-        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[240px_180px]"><input aria-label="جست‌وجوی سیاست" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="جست‌وجوی تصمیم یا قابلیت" className="h-10 border border-neutral-300 bg-white px-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" /><select aria-label="فیلتر حوزه سیاست" value={area} onChange={(event) => setArea(event.target.value)} className="h-10 border border-neutral-300 bg-white px-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]">{areas.map((item) => <option key={item}>{item}</option>)}</select></div>
+        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[240px_180px]"><input aria-label="جست‌وجوی سیاست" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="جست‌وجوی تصمیم یا قابلیت" className="h-10 border border-neutral-300 bg-white px-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" /><select aria-label="فیلتر حوزه سیاست" value={area} onChange={(event) => setArea(event.target.value)} className="h-10 border border-neutral-300 bg-white px-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]">{areas.map((item) => <option key={item}>{item}</option>)}</select></div>
       </div>
       <div className="mt-4 overflow-hidden border border-neutral-200 bg-white">
         <div className="hidden grid-cols-[70px_140px_1fr_1.5fr_90px] bg-neutral-50 px-4 py-3 text-[9.5px] text-neutral-500 md:grid"><span>شماره</span><span>حوزه</span><span>قابلیت</span><span>تصمیم اعمال‌شده</span><span>وضعیت</span></div>
-        <div className="divide-y divide-neutral-100">{visible.map((policy) => <article key={policy.id} className="grid gap-2 px-4 py-3 text-[10.5px] transition hover:bg-neutral-50 md:grid-cols-[70px_140px_1fr_1.5fr_90px] md:items-center"><span className="text-neutral-400 num-fa">{fa(policy.id)}</span><span>{policy.area}</span><strong className="font-medium">{policy.title}</strong><span className="leading-6 text-neutral-600">{policy.decision}</span><span className="w-fit bg-[#edf3ee] px-2 py-1 text-[9px] text-[#36563a]">فعال</span></article>)}</div>
+        <div className="divide-y divide-neutral-100">{visible.map((policy) => <article key={policy.id} className="grid gap-2 px-4 py-3 text-[10.5px] transition hover:bg-neutral-50 md:grid-cols-[70px_140px_1fr_1.5fr_90px] md:items-center"><span className="text-neutral-400 num-fa">{fa(policy.id)}</span><span>{policy.area}</span><strong className="font-medium">{policy.title}</strong><span className="leading-6 text-neutral-600">{policy.decision}</span><span className="w-fit bg-[var(--kv-surface-muted)] px-2 py-1 text-[9px] text-[var(--kv-accent)]">فعال</span></article>)}</div>
         {!visible.length ? <div className="py-12 text-center"><p className="text-[11px] font-medium">سیاستی پیدا نشد</p><p className="mt-1 text-[10px] text-neutral-400">عبارت جست‌وجو یا فیلتر حوزه را تغییر دهید.</p></div> : null}
       </div>
     </section>

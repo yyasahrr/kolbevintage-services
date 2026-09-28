@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { AdminProductRecord } from "../adminProducts";
 import { getProductTypeDefinition, PRODUCT_TYPES, type AttributeField, type ProductTypeId, type SizeColumn } from "../productSchemas";
 
-const input = "h-10 w-full border border-neutral-300 bg-white px-3 text-[11px] outline-none transition focus-visible:ring-2 focus-visible:ring-[#011c3a]";
+const input = "h-10 w-full border border-neutral-300 bg-white px-3 text-[11px] outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]";
 
 export default function DynamicProductSpecifications({ value, onChange }: { value: AdminProductRecord; onChange: (value: AdminProductRecord) => void }) {
   const selectedId = value.admin.productTypeId;
@@ -48,7 +48,7 @@ export default function DynamicProductSpecifications({ value, onChange }: { valu
         <legend className="mb-3 text-[10px] font-medium">نوع محصول</legend>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           {PRODUCT_TYPES.map((item) => (
-            <button key={item.id} type="button" onClick={() => chooseType(item.id)} className={(selectedId === item.id ? "border-[#011c3a] bg-[#f1f4f7]" : "border-neutral-200 bg-white hover:border-neutral-400") + " min-h-28 border p-3 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]"}>
+            <button key={item.id} type="button" onClick={() => chooseType(item.id)} className={(selectedId === item.id ? "border-[var(--kv-primary)] bg-[var(--kv-canvas)]" : "border-neutral-200 bg-white hover:border-neutral-400") + " min-h-28 border p-3 text-right transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]"}>
               <span className="block text-[12px] font-medium">{item.label}</span>
               <span className="mt-1 block text-[9px] leading-5 text-neutral-500">{item.description}</span>
               <span className="mt-2 block text-[8.5px] text-neutral-400">{item.example}</span>
@@ -70,20 +70,20 @@ export default function DynamicProductSpecifications({ value, onChange }: { valu
         <section className="border-t border-neutral-200 pt-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h3 className="text-[12px] font-medium">راهنمای اندازه مخصوص {type.label}</h3><p className="mt-1 text-[9.5px] text-neutral-500">ستون‌ها نیز براساس نوع محصول تغییر می‌کنند.</p></div>
-            <button type="button" onClick={addSize} className="h-9 border border-neutral-300 px-3 text-[10px] transition hover:border-[#011c3a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]">افزودن اندازه</button>
+            <button type="button" onClick={addSize} className="h-9 border border-neutral-300 px-3 text-[10px] transition hover:border-[var(--kv-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]">افزودن اندازه</button>
           </div>
           <div className="mt-4 overflow-x-auto border border-neutral-200">
             <table className="w-full min-w-[520px] text-right text-[10px]">
               <thead className="bg-neutral-50"><tr>{type.sizeColumns.map((column) => <th key={column.id} className="border-b p-3 font-medium">{column.label}{column.unit ? ` (${column.unit})` : ""}</th>)}<th className="border-b p-3"><span className="sr-only">عملیات</span></th></tr></thead>
-              <tbody>{value.sizeChart.map((row, index) => <tr key={`${row.size}-${index}`} className="border-b last:border-0">{type.sizeColumns.map((column) => <td key={column.id} className="p-1.5"><input aria-label={`${column.label} ردیف ${index + 1}`} value={row[column.id]} onChange={(event) => patchSize(index, column.id, event.target.value)} className="h-9 w-full min-w-24 border border-neutral-200 bg-white px-2 outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" /></td>)}<td className="p-2"><button type="button" aria-label={`حذف اندازه ${row.size}`} onClick={() => onChange({ ...value, sizeChart: value.sizeChart.filter((_, rowIndex) => rowIndex !== index) })} className="text-red-700 underline">حذف</button></td></tr>)}</tbody>
+              <tbody>{value.sizeChart.map((row, index) => <tr key={`${row.size}-${index}`} className="border-b last:border-0">{type.sizeColumns.map((column) => <td key={column.id} className="p-1.5"><input aria-label={`${column.label} ردیف ${index + 1}`} value={row[column.id]} onChange={(event) => patchSize(index, column.id, event.target.value)} className="h-9 w-full min-w-24 border border-neutral-200 bg-white px-2 outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" /></td>)}<td className="p-2"><button type="button" aria-label={`حذف اندازه ${row.size}`} onClick={() => onChange({ ...value, sizeChart: value.sizeChart.filter((_, rowIndex) => rowIndex !== index) })} className="text-red-700 underline">حذف</button></td></tr>)}</tbody>
             </table>
             {!value.sizeChart.length && <p className="p-8 text-center text-[10px] text-neutral-400">هنوز اندازه‌ای تعریف نشده است.</p>}
           </div>
-          <label className="mt-4 block text-[10px] text-neutral-500">راهنمای انتخاب اندازه<textarea value={value.sizeAdvice} onChange={(event) => onChange({ ...value, sizeAdvice: event.target.value })} rows={3} className="mt-1 w-full border border-neutral-300 p-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" placeholder={`نکته‌های انتخاب اندازه ${type.label} را بنویسید…`} /></label>
+          <label className="mt-4 block text-[10px] text-neutral-500">راهنمای انتخاب اندازه<textarea value={value.sizeAdvice} onChange={(event) => onChange({ ...value, sizeAdvice: event.target.value })} rows={3} className="mt-1 w-full border border-neutral-300 p-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" placeholder={`نکته‌های انتخاب اندازه ${type.label} را بنویسید…`} /></label>
         </section>
 
         <section className="border-t border-neutral-200 pt-6">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-[12px] font-medium">مشخصات اختصاصی</h3><p className="mt-1 text-[9.5px] text-neutral-500">فقط برای مواردی که در الگوی {type.label} وجود ندارد.</p></div><button type="button" onClick={() => onChange({ ...value, admin: { ...value.admin, customSpecs: [...value.admin.customSpecs, { id: `spec-${Date.now()}`, label: "", value: "" }] } })} className="h-9 border border-neutral-300 px-3 text-[10px] hover:border-[#011c3a]">افزودن مشخصه</button></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-[12px] font-medium">مشخصات اختصاصی</h3><p className="mt-1 text-[9.5px] text-neutral-500">فقط برای مواردی که در الگوی {type.label} وجود ندارد.</p></div><button type="button" onClick={() => onChange({ ...value, admin: { ...value.admin, customSpecs: [...value.admin.customSpecs, { id: `spec-${Date.now()}`, label: "", value: "" }] } })} className="h-9 border border-neutral-300 px-3 text-[10px] hover:border-[var(--kv-primary)]">افزودن مشخصه</button></div>
           <div className="mt-3 space-y-2">{value.admin.customSpecs.map((item) => <div key={item.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="عنوان مشخصه اختصاصی" value={item.label} onChange={(event) => onChange({ ...value, admin: { ...value.admin, customSpecs: value.admin.customSpecs.map((entry) => entry.id === item.id ? { ...entry, label: event.target.value } : entry) } })} className={input} placeholder="عنوان" /><input aria-label="مقدار مشخصه اختصاصی" value={item.value} onChange={(event) => onChange({ ...value, admin: { ...value.admin, customSpecs: value.admin.customSpecs.map((entry) => entry.id === item.id ? { ...entry, value: event.target.value } : entry) } })} className={input} placeholder="مقدار" /><button type="button" onClick={() => onChange({ ...value, admin: { ...value.admin, customSpecs: value.admin.customSpecs.filter((entry) => entry.id !== item.id) } })} className="px-3 text-[10px] text-red-700 underline">حذف</button></div>)}</div>
         </section>
       </>}
@@ -94,6 +94,6 @@ export default function DynamicProductSpecifications({ value, onChange }: { valu
 function AttributeControl({ field, value, onChange }: { field: AttributeField; value: string; onChange: (value: string) => void }) {
   const label = <span className="mb-1.5 block text-[10px] text-neutral-500">{field.label}{field.required && <b className="mr-1 text-red-700">*</b>}{field.unit && <span className="mr-1 text-neutral-400">({field.unit})</span>}</span>;
   if (field.type === "select") return <label>{label}<select aria-label={field.label} value={value} onChange={(event) => onChange(event.target.value)} className={input}><option value="">انتخاب کنید</option>{field.options?.map((option) => <option key={option}>{option}</option>)}</select></label>;
-  if (field.type === "textarea") return <label className="sm:col-span-2">{label}<textarea aria-label={field.label} value={value} onChange={(event) => onChange(event.target.value)} rows={3} className="w-full border border-neutral-300 p-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]" placeholder={field.placeholder} /></label>;
+  if (field.type === "textarea") return <label className="sm:col-span-2">{label}<textarea aria-label={field.label} value={value} onChange={(event) => onChange(event.target.value)} rows={3} className="w-full border border-neutral-300 p-3 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]" placeholder={field.placeholder} /></label>;
   return <label>{label}<input aria-label={field.label} type={field.type} value={value} onChange={(event) => onChange(event.target.value)} className={input} placeholder={field.placeholder} /></label>;
 }

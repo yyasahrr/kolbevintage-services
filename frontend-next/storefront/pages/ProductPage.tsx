@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { Link, useRouter } from "../router";
 import { productById, products, type Product } from "../data/catalog";
 import { useStore } from "../store";
-import { toman, fa } from "../utils/format";
+import { codeLabel, fa, sizeLabel, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import { isInstallmentAvailable, type PurchaseChannel } from "../lib/purchaseChannel";
 import Lightbox from "../components/Lightbox";
@@ -233,7 +233,7 @@ function Gallery({
           {product.badges.length > 0 && (
             <div className="absolute right-3 top-3 z-10 flex gap-1.5">
               {product.badges.map((b) => (
-                <span key={b} className="pdp-badge rounded-full bg-[#c9654d] px-3 py-1 text-[10px] font-medium text-white">{b}</span>
+                <span key={b} className="pdp-badge rounded-full bg-[var(--kv-danger)] px-3 py-1 text-[10px] font-medium text-white">{b}</span>
               ))}
             </div>
           )}
@@ -303,7 +303,7 @@ function ColourWheel({
     <div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-[12.5px] font-medium">
-          رنگ: <span className="text-[#011c3a]">{sel.name}</span>
+          رنگ: <span className="text-[var(--kv-primary)]">{sel.name}</span>
         </p>
         <p className="text-[11px] text-neutral-500 num-fa">{fa(n)} رنگ</p>
       </div>
@@ -421,7 +421,7 @@ function WholesaleOrderPanel({
           <p className="text-[10px] tracking-[0.22em] text-neutral-400">سفارش عمده</p>
           <h2 className="mt-1 text-[16px] font-medium">ترکیب سفارش عمده</h2>
         </div>
-        <span className="rounded-full bg-[#f6f6f4] px-3 py-1.5 text-[10.5px] num-fa">{fa(lines.length)} ردیف سفارش</span>
+        <span className="rounded-full bg-[var(--kv-canvas)] px-3 py-1.5 text-[10.5px] num-fa">{fa(lines.length)} ردیف سفارش</span>
       </div>
 
       <ColourWheel product={product} selected={colourIdx} onSelect={onColourChange} />
@@ -445,7 +445,7 @@ function WholesaleOrderPanel({
         <p className="mb-3 text-[11.5px] font-medium">انتخاب کالکشن آماده</p>
         <div className="grid gap-2 sm:grid-cols-3">
           {collectionPacks.map((item) => (
-            <button key={item.id} type="button" onClick={() => setPackId(item.id)} className={(packId === item.id ? "border-[#011c3a] bg-[#f3f5f7]" : "border-neutral-200 hover:border-[#011c3a]") + " rounded-xl border p-3 text-right transition"} >
+            <button key={item.id} type="button" onClick={() => setPackId(item.id)} className={(packId === item.id ? "border-[var(--kv-primary)] bg-[var(--kv-canvas)]" : "border-neutral-200 hover:border-[var(--kv-primary)]") + " rounded-xl border p-3 text-right transition"} >
               <span className="block text-[11.5px] font-medium">{item.name}</span>
               <span className="mt-1 block text-[10px] text-neutral-500 num-fa">{fa(item.qty)} عدد · {item.mix}</span>
             </button>
@@ -454,8 +454,8 @@ function WholesaleOrderPanel({
         <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
           <label>
             <span className="mb-1.5 block text-[10px] text-neutral-500">سایز مرجع الگو</span>
-            <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="h-10 w-full rounded-[10px] border border-neutral-300 bg-white px-2 text-[12px] outline-none focus:border-[#011c3a]">
-              {product.sizes.map((size) => <option key={size.label} value={size.label} disabled={!size.inStock}>{size.label} {!size.inStock ? "— ناموجود" : ""}</option>)}
+            <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="h-10 w-full rounded-[10px] border border-neutral-300 bg-white px-2 text-[12px] outline-none focus:border-[var(--kv-primary)]">
+              {product.sizes.map((size) => <option key={size.label} value={size.label} disabled={!size.inStock}>{sizeLabel(size.label)} {!size.inStock ? "— ناموجود" : ""}</option>)}
             </select>
           </label>
           <button type="button" onClick={addLine} className="storefront-primary-action h-10 self-end rounded-full px-5 text-[11.5px] font-medium">
@@ -473,7 +473,7 @@ function WholesaleOrderPanel({
             ))}
           </div>
           <label className="mt-3 block text-[10px] text-neutral-500">توضیحات تولید، محل لوگو یا مشخصات فایل
-            <textarea value={customizationNote} onChange={e => setCustomizationNote(e.target.value)} rows={3} placeholder="مثلاً لوگو روی آستین چپ با نخ سرمه‌ای دوخته شود…" className="mt-1.5 w-full resize-y rounded-[10px] border border-neutral-300 p-3 text-[11px] outline-none focus:border-[#011c3a]" />
+            <textarea value={customizationNote} onChange={e => setCustomizationNote(e.target.value)} rows={3} placeholder="مثلاً لوگو روی آستین چپ با نخ سرمه‌ای دوخته شود…" className="mt-1.5 w-full resize-y rounded-[10px] border border-neutral-300 p-3 text-[11px] outline-none focus:border-[var(--kv-primary)]" />
           </label>
         </fieldset>
         <p className="mt-3 text-[10px] text-neutral-500 num-fa">جمع این کالکشن: {fa(qty)} عدد · {toman(qty * unitPrice)}</p>
@@ -503,7 +503,7 @@ function WholesaleOrderPanel({
               </div>
             ))}
           </div>
-          <div className="mt-2 flex items-center justify-between rounded-xl bg-[#f6f6f4] p-4 text-[12px]">
+          <div className="mt-2 flex items-center justify-between rounded-xl bg-[var(--kv-canvas)] p-4 text-[12px]">
             <span>جمع کل کالکشن</span>
             <strong className="text-[17px] font-medium num-fa">{fa(total)} عدد</strong>
           </div>
@@ -511,7 +511,7 @@ function WholesaleOrderPanel({
       )}
 
       {submitted ? (
-        <div className="mt-4 rounded-2xl border border-[#011c3a] bg-white p-4 text-center">
+        <div className="mt-4 rounded-2xl border border-[var(--kv-primary)] bg-white p-4 text-center">
           <Icon name="check" className="mx-auto h-5 w-5" strokeWidth={2.3} />
           <p className="mt-2 text-[12.5px] font-medium">پیش‌سفارش برای بررسی ثبت شد</p>
           <p className="mt-1 text-[10.5px] text-neutral-500">کارشناس فروش برای اعلام قیمت و موجودی نهایی با شما تماس می‌گیرد.</p>
@@ -527,7 +527,7 @@ function WholesaleOrderPanel({
         </button>
       )}
       <div className="mt-3 flex items-center justify-between gap-3 text-[10.5px] text-neutral-500">
-        <span>قیمت عمده بلافاصله پس از پرداخت پلن VIP نمایش داده می‌شود.</span>
+        <span>قیمت عمده بلافاصله پس از پرداخت پلن ویژه نمایش داده می‌شود.</span>
         <Link to="/wholesale" className="shrink-0 underline underline-offset-2">مشاهده پلن‌ها</Link>
       </div>
     </div>
@@ -551,7 +551,7 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
               </thead>
               <tbody>
                 {product.sizeChart.map((r, i) => (
-                  <tr key={r.size} className={i % 2 ? "bg-[#f6f6f4]" : ""}>
+                  <tr key={r.size} className={i % 2 ? "bg-[var(--kv-canvas)]" : ""}>
                     {definition.sizeColumns.map((column) => <td key={column.id} className={column.id === "size" ? "py-2 font-medium" : "py-2 num-fa"}>{fa(r[column.id])}</td>)}
                   </tr>
                 ))}
@@ -575,7 +575,7 @@ function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" 
           <ol className="space-y-2.5 text-[11.5px] leading-relaxed text-neutral-600">
             {guidance.map((t, i) => (
               <li key={i} className="flex gap-2">
-                <span className="mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#011c3a] text-[9px] text-white">
+                <span className="mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--kv-primary)] text-[9px] text-white">
                   {fa(i + 1)}
                 </span>
                 {t}
@@ -893,14 +893,14 @@ export default function ProductPage({
   const visibleSpecifications = [
     ...productType.groups.flatMap((group) => group.fields).map((field) => ({ label: field.label, value: attributeValues[field.id], unit: field.unit })).filter((item) => item.value?.trim()),
     ...(adminProduct.admin?.customSpecs ?? []).filter((item) => item.label.trim() && item.value.trim()).map((item) => ({ label: item.label, value: item.value, unit: undefined })),
-    { label: "کد محصول", value: product.specs.code, unit: undefined },
+    { label: "کد محصول", value: codeLabel(product.specs.code) ?? "—", unit: undefined },
   ];
 
   return (
     <>
       <main>
         {wholesale && (
-          <div className="flex items-center justify-between gap-4 bg-[#011c3a] px-4 py-3 text-white lg:px-8">
+          <div className="flex items-center justify-between gap-4 bg-[var(--kv-primary)] px-4 py-3 text-white lg:px-8">
             <div>
               <p className="text-[10px] tracking-[0.25em] text-white/55">کاتالوگ عمده</p>
               <p className="mt-0.5 text-[12px]">مشاهده محصول در حالت سفارش عمده</p>
@@ -921,7 +921,7 @@ export default function ProductPage({
               <Link to={`/shop?cat=${product.category}`} className="hover:underline">{product.categoryLabel}</Link>
             )}
             <span className="text-neutral-300">›</span>
-            <span className="truncate text-[#011c3a]">{product.name}</span>
+            <span className="truncate text-[var(--kv-primary)]">{product.name}</span>
           </nav>
 
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-start lg:gap-10 xl:gap-14">
@@ -938,7 +938,7 @@ export default function ProductPage({
                   <div className="flex min-w-0 items-center gap-1.5 text-neutral-500">
                     <span className="truncate">{product.fabricGroup} · {product.season}</span>
                   </div>
-                  <span className="shrink-0 text-[10px] tracking-wide text-neutral-400" dir="ltr">{product.specs.code}</span>
+                  <span className="shrink-0 text-[10px] tracking-wide text-neutral-400 num-fa">{codeLabel(product.specs.code) ?? ""}</span>
                 </div>
                 <h1 className="mt-2.5 text-[23px] font-semibold leading-snug lg:text-[26px]">{product.name}</h1>
                 <p className="mt-1 text-[12px] text-[var(--kv-text-muted)]">{product.subtitle}</p>
@@ -983,9 +983,9 @@ export default function ProductPage({
                         {size && <span className="mr-1.5 font-normal text-neutral-500">— {size}</span>}
                       </span>
                       <div className="flex items-center gap-3 text-[11.5px]">
-                        <button onClick={() => setOpenAcc(openAcc === "size-chart" ? null : "size-chart")} className="underline underline-offset-2 hover:text-[#011c3a]">جدول سایز</button>
+                        <button onClick={() => setOpenAcc(openAcc === "size-chart" ? null : "size-chart")} className="underline underline-offset-2 hover:text-[var(--kv-primary)]">جدول سایز</button>
                         <span className="h-3 w-px bg-neutral-300" />
-                        <button onClick={() => setOpenAcc(openAcc === "size-guide" ? null : "size-guide")} className="underline underline-offset-2 hover:text-[#011c3a]">راهنمای اندازه‌گیری</button>
+                        <button onClick={() => setOpenAcc(openAcc === "size-guide" ? null : "size-guide")} className="underline underline-offset-2 hover:text-[var(--kv-primary)]">راهنمای اندازه‌گیری</button>
                       </div>
                     </div>
 
@@ -1003,10 +1003,10 @@ export default function ProductPage({
                               ? "is-unavailable cursor-not-allowed"
                               : size === s.label
                                 ? "is-selected"
-                                : "hover:border-[#011c3a]")
+                                : "hover:border-[var(--kv-primary)]")
                           }
                         >
-                          {s.label}
+                          {sizeLabel(s.label)}
                           {!s.inStock && (
                             <svg viewBox="0 0 48 48" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden="true">
                               <line x1="4" y1="44" x2="44" y2="4" stroke="#c9c9c9" strokeWidth="1.5" />
@@ -1113,13 +1113,13 @@ export default function ProductPage({
                 aria-pressed={activeSection === s.id}
                 className={`pdp-subnav-link border-b-2 py-3 text-[12px] transition ${activeSection === s.id ? "is-active" : ""}`}
               >
-                {s.label}
+                {sizeLabel(s.label)}
               </button>
             ))}
             <button
               type="button"
               onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              className="mr-auto py-3 text-[11.5px] text-neutral-500 underline-offset-4 transition hover:text-[#011c3a] hover:underline"
+              className="mr-auto py-3 text-[11.5px] text-neutral-500 underline-offset-4 transition hover:text-[var(--kv-primary)] hover:underline"
             >
               ↑ بازگشت به خرید
             </button>
@@ -1175,7 +1175,7 @@ export default function ProductPage({
               <div>
                 <div className="flex items-center justify-between">
                   <h3 className="text-[15px] font-medium">مشخصات فنی</h3>
-                  <span className="text-[10.5px] text-neutral-400" dir="ltr">{product.specs.code}</span>
+                  <span className="text-[10.5px] text-neutral-400 num-fa">{codeLabel(product.specs.code) ?? ""}</span>
                 </div>
                 <div className="product-specs-table mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
                   <table className="w-full text-[12.5px]">
@@ -1196,7 +1196,7 @@ export default function ProductPage({
 
         {/* ═══════════════ با این ست کنید — ست اختصاصی محصول (هات‌اسپات مکملها) ═══════════════ */}
         {complementary.length > 0 && (
-          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[177px]">
+          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[var(--kv-canvas)] lg:scroll-mt-[177px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
                 <p className="text-[11px] tracking-[0.3em] text-neutral-400">تکمیل استایل</p>
@@ -1248,7 +1248,7 @@ export default function ProductPage({
 
         {/* ═══════════════ با این ست کنید (سراسری — کنترل‌شده از سایت‌ساز) ═══════════════ */}
         {lookSettings.enabled && complementary.length === 0 && (
-          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[#f6f6f4] lg:scroll-mt-[177px]">
+          <section id="look" className="scroll-mt-[84px] border-t border-neutral-200 bg-[var(--kv-canvas)] lg:scroll-mt-[177px]">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-12 lg:px-8 lg:py-16">
               <div className="mb-8">
                 <p className="text-[11px] tracking-[0.3em] text-neutral-400">تکمیل استایل</p>
@@ -1302,7 +1302,7 @@ export default function ProductPage({
                 <p className="text-[10px] tracking-[0.3em] text-neutral-400">پیشنهادهای مشابه</p>
                 <h2 className="mt-2 text-[20px] font-medium">محصولات مشابه</h2>
               </div>
-              <Link to={`/shop?cat=${product.category}`} className="shrink-0 text-[11.5px] text-neutral-500 underline underline-offset-4 hover:text-[#011c3a]">
+              <Link to={`/shop?cat=${product.category}`} className="shrink-0 text-[11.5px] text-neutral-500 underline underline-offset-4 hover:text-[var(--kv-primary)]">
                 مشاهده همه
               </Link>
             </div>

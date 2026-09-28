@@ -25,7 +25,7 @@ export default function Styles() {
         <img src={style.img} alt={style.name} className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-transparent" />
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
-          <p className="text-[11px] tracking-[0.4em] text-white/75">{style.latin.toUpperCase()}</p>
+          <p className="text-[11px] tracking-[0.4em] text-white/75">{style.name}</p>
           <h1 className="mt-3 text-[28px] font-medium lg:text-[38px]">{style.name}</h1>
           <p className="mt-3 max-w-lg text-[13px] leading-relaxed text-white/85">{style.tagline}</p>
         </div>
@@ -40,11 +40,11 @@ export default function Styles() {
               onClick={() => setActive(i)}
               className={
                 "shrink-0 rounded-[3px] border px-4 py-2 text-[12px] transition " +
-                (i === active ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]")
+                (i === active ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]")
               }
             >
               {s.name}
-              <span className="mr-1.5 text-[9px] tracking-widest opacity-60">{s.latin.toUpperCase()}</span>
+              <span className="mr-1.5 text-[9px] tracking-widest opacity-60">{s.name}</span>
             </button>
           ))}
         </div>
@@ -66,7 +66,7 @@ export default function Styles() {
             <p className="mt-4 text-[11.5px] text-neutral-500 num-fa">{fa(items.length)} محصول در این استایل</p>
             <Link
               to={`/shop?s=${style.slug}`}
-              className="mt-4 inline-block rounded-[3px] border border-[#011c3a] px-6 py-2.5 text-[12px] font-medium transition hover:bg-[#011c3a] hover:text-white"
+              className="mt-4 inline-block rounded-[3px] border border-[var(--kv-primary)] px-6 py-2.5 text-[12px] font-medium transition hover:bg-[var(--kv-primary)] hover:text-white"
             >
               مشاهده در فروشگاه
             </Link>

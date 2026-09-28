@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "کلبه وینتیج | پوشاک کلاسیک، وینتیج و دست‌دوز",
   description:
-    "کلبه وینتیج — پوشاک کلاسیک و وینتیج با دوخت دست. استایل‌های Old Money، Vintage، Dark Academia، Minimal و Neo Classic.",
+    "کلبه وینتیج — پوشاک کلاسیک و وینتیج با دوخت دست. استایل‌های کلاسیک اصیل، وینتیج، دانشگاهی تیره، مینیمال و نئوکلاسیک.",
   icons: { icon: "/favicon.svg" },
 };
 

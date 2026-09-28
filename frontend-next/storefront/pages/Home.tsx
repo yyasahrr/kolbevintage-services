@@ -92,7 +92,7 @@ function CollectionBanner() {
     return (
       <section className="grid overflow-hidden lg:grid-cols-2">
         <div className="relative min-h-[320px] lg:min-h-[520px]">{mediaEl}{overlay}{countdown}</div>
-        <div className="flex items-center justify-center bg-[#f7f5f0] px-8 py-16">{copy}</div>
+        <div className="flex items-center justify-center bg-[var(--kv-canvas)] px-8 py-16">{copy}</div>
       </section>
     );
   }
@@ -223,7 +223,7 @@ function BrandVideo() {
             href="https://www.aparat.com/"
             target="_blank"
             rel="noreferrer"
-            className="rounded-[3px] bg-white px-6 py-2.5 text-[12.5px] font-medium text-[#011c3a]"
+            className="rounded-[3px] bg-white px-6 py-2.5 text-[12.5px] font-medium text-[var(--kv-primary)]"
           >
             تماشا در آپارات
           </a>
@@ -245,7 +245,7 @@ function BrandVideo() {
             <button
               onClick={() => setPlaying(true)}
               aria-label="پخش ویدئو"
-              className="flex h-16 w-16 items-center justify-center rounded-full border border-white/60 backdrop-blur transition hover:bg-white hover:text-[#011c3a]"
+              className="flex h-16 w-16 items-center justify-center rounded-full border border-white/60 backdrop-blur transition hover:bg-white hover:text-[var(--kv-primary)]"
             >
               <Icon name="play" className="mr-1 h-6 w-6" fill="currentColor" strokeWidth={0} />
             </button>
@@ -304,7 +304,7 @@ function ShopTheLook() {
             onClick={() => setActive(i)}
             className={
               "rounded-full border px-4 py-2 text-[11.5px] transition " +
-              (i === active ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]")
+              (i === active ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]")
             }
           >
             {l.season}
@@ -322,7 +322,7 @@ function ShopTheLook() {
             decoding="async"
             className="aspect-[4/5] w-full object-cover"
           />
-          <span className="absolute right-4 top-4 rounded-full border border-white/35 bg-[#011c3a]/85 px-3 py-1.5 text-[9.5px] text-white backdrop-blur-sm">
+          <span className="absolute right-4 top-4 rounded-full border border-white/35 bg-[var(--kv-primary)]/85 px-3 py-1.5 text-[9.5px] text-white backdrop-blur-sm">
             روی نشانگرها بزنید
           </span>
           {look.items.map((item, i) => {
@@ -336,12 +336,12 @@ function ShopTheLook() {
                 key={item.productId}
                 to={`/product/${item.productId}`}
                 aria-label={`مشاهده ${item.name}`}
-                className="group absolute z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#011c3a] text-[10px] font-medium text-white shadow-[0_2px_12px_rgba(1,28,58,0.3)] transition hover:scale-110 focus-visible:scale-110"
+                className="group absolute z-10 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[var(--kv-primary)] text-[10px] font-medium text-white shadow-[0_2px_12px_rgba(1,28,58,0.3)] transition hover:scale-110 focus-visible:scale-110"
                 style={pos}
               >
                 <span className="absolute inset-[-7px] -z-10 rounded-full border border-white/80 bg-white/20 animate-ping" aria-hidden="true" />
                 <span>{fa(i + 1)}</span>
-                <span className="pointer-events-none absolute top-10 whitespace-nowrap border border-white/15 bg-[#011c3a] px-2.5 py-1.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                <span className="pointer-events-none absolute top-10 whitespace-nowrap border border-white/15 bg-[var(--kv-primary)] px-2.5 py-1.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
                   {item.name}
                 </span>
               </Link>
@@ -378,7 +378,7 @@ function ShopTheLook() {
                         img: p?.images[0] ?? look.img,
                       })
                     }
-                    className="shrink-0 rounded-full border border-neutral-300 px-3 py-1.5 text-[11px] transition hover:border-[#011c3a]"
+                    className="shrink-0 rounded-full border border-neutral-300 px-3 py-1.5 text-[11px] transition hover:border-[var(--kv-primary)]"
                   >
                     افزودن
                   </button>
@@ -394,7 +394,7 @@ function ShopTheLook() {
 
           <button
             onClick={addAll}
-            className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55]"
+            className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-[var(--kv-primary)] text-[13px] font-medium text-white transition hover:bg-[var(--kv-primary)]"
           >
             خرید کل ست
           </button>
@@ -428,7 +428,7 @@ function Journal() {
   if (!merged.length) return null;
 
   return (
-    <section className="journal-section bg-[#f6f6f4] py-16 lg:py-24">
+    <section className="journal-section bg-[var(--kv-canvas)] py-16 lg:py-24">
       <div className="mx-auto w-full max-w-[1200px] px-4 lg:px-8">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
@@ -451,7 +451,7 @@ function Journal() {
                   <img src={a.img} alt={a.title} loading="lazy" className="h-44 w-full object-cover sm:h-full" />
                   <div className="p-4 sm:p-5">
                     <div className="flex items-center gap-2">
-                      {a.pinned ? <span className="rounded-full bg-[#011c3a] px-2 py-0.5 text-[8.5px] text-white">سنجاق‌شده</span> : null}
+                      {a.pinned ? <span className="rounded-full bg-[var(--kv-primary)] px-2 py-0.5 text-[8.5px] text-white">سنجاق‌شده</span> : null}
                       <span className="text-[9.5px] tracking-[0.2em] text-neutral-400">{a.category}</span>
                     </div>
                     <h3 className="mt-2 text-[14px] font-medium leading-relaxed">{a.title}</h3>
@@ -522,8 +522,8 @@ function InstagramGrid() {
       {insta.cards.length > 0 && (
         <div className="mb-6 grid gap-3 sm:grid-cols-3 lg:mb-8">
           {insta.cards.map((card) => (
-            <div key={card.id} className="group flex items-center gap-3 border border-neutral-200 bg-white p-4 transition hover:border-[#011c3a]">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f6f6f4]"><Icon name={card.icon} className="h-5 w-5" strokeWidth={1.4} /></span>
+            <div key={card.id} className="group flex items-center gap-3 border border-neutral-200 bg-white p-4 transition hover:border-[var(--kv-primary)]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--kv-canvas)]"><Icon name={card.icon} className="h-5 w-5" strokeWidth={1.4} /></span>
               <div>
                 <p className="text-[12.5px] font-medium">{card.title}</p>
                 <p className="mt-0.5 text-[10.5px] text-neutral-500">{card.text}</p>
@@ -538,7 +538,7 @@ function InstagramGrid() {
             <p className="text-[14px] font-medium">{insta.cta.title}</p>
             <p className="mt-1 text-[11.5px] text-white/75">{insta.cta.text}</p>
           </div>
-          <a href={insta.cta.buttonTo} target="_blank" rel="noreferrer" className="rounded-[3px] bg-white px-6 py-2.5 text-[12px] font-medium text-[#011c3a] transition hover:bg-neutral-100">{insta.cta.buttonLabel}</a>
+          <a href={insta.cta.buttonTo} target="_blank" rel="noreferrer" className="rounded-[3px] bg-white px-6 py-2.5 text-[12px] font-medium text-[var(--kv-primary)] transition hover:bg-neutral-100">{insta.cta.buttonLabel}</a>
         </div>
       )}
       <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
@@ -572,7 +572,7 @@ function TrustRow() {
       <div className="mx-auto grid w-full grid-cols-2 gap-6 px-4 py-10 lg:grid-cols-4 lg:px-8">
         {trustBadges.map((b) => (
           <div key={b.title} className="flex flex-col items-center gap-2.5 text-center">
-            <Icon name={b.icon} className="h-6 w-6 text-[#011c3a]" strokeWidth={1.2} />
+            <Icon name={b.icon} className="h-6 w-6 text-[var(--kv-primary)]" strokeWidth={1.2} />
             <div>
               <p className="text-[12.5px] font-medium">{b.title}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">{b.text}</p>
@@ -630,8 +630,8 @@ function FeatureStrip() {
       <div className="mx-auto grid max-w-[1200px] grid-cols-2 gap-4 px-4 py-6 sm:grid-cols-4 sm:gap-6 lg:px-8 lg:py-8">
         {features.map(f => (
           <div key={f.title} className="flex flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-[#f7f5f0]">
-              <Icon name={f.icon} className="h-5 w-5 text-[#011c3a]" strokeWidth={1.3} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-[var(--kv-canvas)]">
+              <Icon name={f.icon} className="h-5 w-5 text-[var(--kv-primary)]" strokeWidth={1.3} />
             </div>
             <p className="mt-3 text-[12.5px] font-medium">{f.title}</p>
             <p className="mt-1 text-[10.5px] text-[var(--kv-text-muted)]">{f.text}</p>
@@ -727,7 +727,7 @@ function MidBanner() {
           <p className="kv-label text-white/75">کالکشن پاییز</p>
           <h2 className="mt-2 text-[18px] font-medium leading-snug sm:text-[32px]">پاییز، فصل پارچه‌های سنگین</h2>
           <p className="mt-1.5 max-w-md text-[10.5px] leading-relaxed text-white/80 sm:text-[12px]">پشم شورون، بافت کابلی و کشمیر برای سردترین روزهای سال.</p>
-          <span className="mt-4 rounded-full bg-white px-5 py-2 text-[11px] font-medium text-[#011c3a] transition group-hover:bg-neutral-100 sm:mt-5 sm:px-6 sm:py-2.5 sm:text-[12px]">مشاهده کالکشن</span>
+          <span className="mt-4 rounded-full bg-white px-5 py-2 text-[11px] font-medium text-[var(--kv-primary)] transition group-hover:bg-neutral-100 sm:mt-5 sm:px-6 sm:py-2.5 sm:text-[12px]">مشاهده کالکشن</span>
         </div>
         <FestivalCountdownOverlay config={builder.components.countdown} where="midBanner" />
       </Link>

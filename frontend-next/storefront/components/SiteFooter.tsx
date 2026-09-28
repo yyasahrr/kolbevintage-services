@@ -49,7 +49,7 @@ export default function SiteFooter() {
                 <li className="flex items-start gap-2"><Icon name="pin" className="mt-0.5 h-3.5 w-3.5 shrink-0" />{footer.address}</li>
                 <li className="flex items-center gap-2"><Icon name="phone" className="h-3.5 w-3.5 shrink-0" /><span className="num-fa">{footer.phone}</span></li>
                 <li className="flex items-center gap-2"><Icon name="clock" className="h-3.5 w-3.5 shrink-0" />{footer.hours}</li>
-                <li className="flex items-center gap-2"><Icon name="mail" className="h-3.5 w-3.5 shrink-0" />{footer.email}</li>
+                <li className="flex items-center gap-2"><Icon name="mail" className="h-3.5 w-3.5 shrink-0" /><a href={`mailto:${footer.email}`} className="hover:opacity-100">رایانامهٔ پشتیبانی</a></li>
               </ul>
               {socials.length ? <div className="mt-3 hidden gap-2 sm:flex">{socials.map((social, index) => <a key={`${social.url}-${index}`} href={social.url} target="_blank" rel="noreferrer" aria-label={social.label} className="grid h-8 w-8 place-items-center rounded-full border border-current/20 opacity-60 transition hover:opacity-100"><Icon name={social.icon} className="h-3.5 w-3.5" /></a>)}</div> : null}
             </FooterGroup>

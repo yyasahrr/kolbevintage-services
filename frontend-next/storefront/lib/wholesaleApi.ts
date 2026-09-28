@@ -264,7 +264,12 @@ export async function loadSystemLogs(filters: SystemLogFilters, signal?: AbortSi
     page: String(filters.page),
     limit: String(filters.limit),
   });
-  return api<SystemLogsResponse>(`/store/kolbe/admin/logs?${params.toString()}`, { signal });
+  const response = await api<SystemLogsResponse>(`/store/kolbe/admin/logs?${params.toString()}`, { signal });
+  // پاسخِ بی‌شکل (نسخهٔ قدیمی سرور یا پروکسی) نباید پنل را بیندازد؛ خطای خوانا می‌دهیم.
+  if (!response || !Array.isArray(response.logs) || !response.summary || !response.pagination) {
+    throw new ApiError("INVALID_RESPONSE", "پاسخ سرور برای لاگ‌های سیستم معتبر نیست.");
+  }
+  return response;
 }
 
 export async function updateSystemLogStatus(id: string, status: SystemLogStatus, note?: string) {

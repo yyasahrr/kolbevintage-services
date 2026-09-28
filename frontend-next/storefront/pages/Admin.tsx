@@ -1,14 +1,15 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "../router";
 import { products, categories, specLabels, specOrder, type Product } from "../data/catalog";
 import { styles, articles } from "../siteData";
-import { fa, toman } from "../utils/format";
+import { codeLabel, fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
 import { AccessSecurity, CommerceOperations, IntegrationsAutomation, SystemCenter } from "./AdminOperations";
 import AdminProductEditor from "./AdminProductEditor";
 import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
 import { loadHomepageJournalPins, saveHomepageJournalPins, saveManagedArticles } from "../journalSettings";
 import AdminCRM from "./AdminCRM";
+import { useResponsiveTables } from "../components/ResponsiveTable";
 import { loadSiteSettings, saveSiteSettings, type HeroTemplate } from "../siteSettings";
 import RetailPolicyCenter from "./RetailPolicyCenter";
 import { readCommerceEvents, type CommerceEvent } from "../lib/analytics";
@@ -21,7 +22,7 @@ const AdminSupportCenter = lazy(() => import("./AdminSupportCenter"));
 const MessagingAutomationCenter = lazy(() => import("./MessagingAutomationCenter"));
 
 const input =
-  "h-9 w-full rounded-[3px] border border-neutral-300 px-3 text-[12px] outline-none transition focus:border-[#011c3a]";
+  "h-9 w-full rounded-[3px] border border-neutral-300 px-3 text-[12px] outline-none transition focus:border-[var(--kv-primary)]";
 
 const nav = [
   { id: "retail-settings", label: "تنظیمات خرده", icon: "check" },
@@ -30,8 +31,8 @@ const nav = [
   { id: "products", label: "محصولات", icon: "bag" },
   { id: "orders", label: "سفارش‌ها", icon: "truck" },
   { id: "commerce", label: "مرجوعی و ارسال", icon: "return" },
-  { id: "customers", label: "CRM مشتریان", icon: "user" },
-  { id: "vip-customers", label: "مشتریان VIP", icon: "star" },
+  { id: "customers", label: "مشتریان", icon: "user" },
+  { id: "vip-customers", label: "مشتریان ویژه", icon: "star" },
   { id: "support", label: "پشتیبانی زنده", icon: "mail" },
   { id: "messaging", label: "پیامک و اتوماسیون", icon: "activity" },
   { id: "campaigns", label: "جشنواره و تخفیف", icon: "star" },
@@ -52,11 +53,11 @@ const orders = [
 ];
 
 const statusColour: Record<string, string> = {
-  "تحویل شده": "bg-[#eef4ee] text-[#3d5c3a]",
-  "در حال ارسال": "bg-[#eef2f7] text-[#22304a]",
-  "در حال پردازش": "bg-[#f7f4ea] text-[#7a6320]",
-  "پرداخت شده": "bg-[#f0f4f7] text-[#2f5c8a]",
-  "مرجوع شده": "bg-[#f7eeee] text-[#9e4b3c]",
+  "تحویل شده": "bg-[var(--kv-surface-muted)] text-[var(--kv-accent)]",
+  "در حال ارسال": "bg-[var(--kv-surface-muted)] text-[var(--kv-info)]",
+  "در حال پردازش": "bg-[var(--kv-surface)] text-[var(--kv-warning)]",
+  "پرداخت شده": "bg-[var(--kv-surface-muted)] text-[var(--kv-info)]",
+  "مرجوع شده": "bg-[var(--kv-surface-muted)] text-[var(--kv-danger)]",
 };
 
 const wholesaleRequests = [
@@ -91,7 +92,7 @@ function Dashboard() {
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11.5px] text-neutral-500">بازه آمار:</span>
         {([["today", "روزانه"], ["week", "هفتگی"], ["month", "ماهانه"], ["custom", "بازه دلخواه"]] as const).map(([id, name]) => (
-          <button key={id} onClick={() => setRange(id)} className={(range === id ? "bg-[#011c3a] text-white" : "border border-neutral-300 text-neutral-600 hover:border-[#011c3a]") + " rounded-[3px] px-3 py-1.5 text-[10.5px] transition"}>{name}</button>
+          <button key={id} onClick={() => setRange(id)} className={(range === id ? "bg-[var(--kv-primary)] text-white" : "border border-neutral-300 text-neutral-600 hover:border-[var(--kv-primary)]") + " rounded-[3px] px-3 py-1.5 text-[10.5px] transition"}>{name}</button>
         ))}
         {range === "custom" && (
           <span className="flex items-center gap-1.5 text-[10.5px] text-neutral-500">
@@ -103,14 +104,14 @@ function Dashboard() {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className={"rounded-[3px] border bg-white p-4 " + ((s as any).critical ? "border-[#d9b98f] bg-[#fffaf2]" : "border-neutral-200")}>
+          <div key={s.label} className={"rounded-[3px] border bg-white p-4 " + ((s as any).critical ? "border-[var(--kv-border-strong)] bg-[var(--kv-surface-muted)]" : "border-neutral-200")}>
             <p className="text-[11.5px] text-neutral-500">{s.label}</p>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="text-[22px] font-medium num-fa">{s.value}</span>
               <span className="text-[11px] text-neutral-400">{s.unit}</span>
             </div>
             {!(s as any).critical && (
-              <p className={"mt-1 text-[11px] num-fa " + (s.change.startsWith("-") ? "text-[#9e4b3c]" : "text-[#3d5c3a]")}>
+              <p className={"mt-1 text-[11px] num-fa " + (s.change.startsWith("-") ? "text-[var(--kv-danger)]" : "text-[var(--kv-accent)]")}>
                 {s.change} نسبت به بازه قبل
               </p>
             )}
@@ -124,7 +125,7 @@ function Dashboard() {
           <div className="mt-6 flex h-44 items-end gap-2">
             {bars.map((h, i) => (
               <div key={i} className="flex flex-1 flex-col items-center gap-2">
-                <div className="w-full rounded-t-[2px] bg-[#011c3a] transition-all hover:bg-[#0a2c55]" style={{ height: `${h}%` }} />
+                <div className="w-full rounded-t-[2px] bg-[var(--kv-primary)] transition-all hover:bg-[var(--kv-primary)]" style={{ height: `${h}%` }} />
                 <span className="text-[9px] text-neutral-400">{months[i]}</span>
               </div>
             ))}
@@ -164,7 +165,7 @@ function Dashboard() {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.code} className="border-b border-neutral-100">
-                  <td className="py-2.5 num-fa">{o.code}</td>
+                  <td className="py-2.5 num-fa">{codeLabel(o.code) ?? "—"}</td>
                   <td className="py-2.5">{o.customer}</td>
                   <td className="py-2.5 text-neutral-500">{o.date}</td>
                   <td className="py-2.5 num-fa">{toman(o.total)}</td>
@@ -198,13 +199,13 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
   return (
     <form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onSave({ ...product, name: String(data.get("name") || product.name), latin: String(data.get("latin") || product.latin), price: Number(data.get("price")) || 0, category: String(data.get("category") || product.category), categoryLabel: categories.find(item => item.slug === String(data.get("category")))?.label ?? product.categoryLabel, style: String(data.get("style") || product.style), description: String(data.get("description") || ""), specs: { ...product.specs, code: String(data.get("code") || product.specs.code) } }); setSaved(true); setTimeout(()=>setSaved(false),1800); }}>
       <div className="mb-5 flex items-center gap-3">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-neutral-500 hover:text-[#011c3a]">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-[12px] text-neutral-500 hover:text-[var(--kv-primary)]">
           <Icon name="chevronRight" className="h-4 w-4" />
           بازگشت
         </button>
         <h2 className="text-[16px] font-medium">{product.name}</h2>
-        {saved && <span role="status" className="mr-auto text-[10.5px] text-[#36563a]">ذخیره شد</span>}
-        <button type="submit" className={(saved ? "mr-2" : "mr-auto") + " rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white"}>
+        {saved && <span role="status" className="mr-auto text-[10.5px] text-[var(--kv-accent)]">ذخیره شد</span>}
+        <button type="submit" className={(saved ? "mr-2" : "mr-auto") + " rounded-[3px] bg-[var(--kv-primary)] px-5 py-2 text-[12px] font-medium text-white"}>
           {saved ? "ذخیره شد" : "ذخیره تغییرات"}
         </button>
       </div>
@@ -216,7 +217,7 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
             onClick={() => setTab(t.id)}
             className={
               "rounded-[3px] px-3 py-1.5 text-[11.5px] transition " +
-              (tab === t.id ? "bg-[#011c3a] text-white" : "border border-neutral-300 hover:border-[#011c3a]")
+              (tab === t.id ? "bg-[var(--kv-primary)] text-white" : "border border-neutral-300 hover:border-[var(--kv-primary)]")
             }
           >
             {t.label}
@@ -232,8 +233,8 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
               <input name="name" required className={input} defaultValue={product.name} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[11px] text-neutral-600">نام لاتین</span>
-              <input name="latin" className={input} defaultValue={product.latin} />
+              
+              
             </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-neutral-600">قیمت (تومان)</span>
@@ -261,7 +262,7 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
             </label>
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-[11px] text-neutral-600">توضیحات</span>
-              <textarea name="description" rows={5} className="w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[#011c3a]" defaultValue={product.description} />
+              <textarea name="description" rows={5} className="w-full rounded-[3px] border border-neutral-300 p-3 text-[12px] outline-none focus:border-[var(--kv-primary)]" defaultValue={product.description} />
             </label>
           </div>
         )}
@@ -277,12 +278,12 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
                     <input className={input + " max-w-[160px]"} defaultValue={c.name} />
                     <input className={input + " max-w-[100px]"} defaultValue={c.hex} />
                     <img src={c.img} alt="" className="h-9 w-7 object-cover" />
-                    <button className="mr-auto text-neutral-400 hover:text-[#9e4b3c]" aria-label="حذف">
+                    <button className="mr-auto text-neutral-400 hover:text-[var(--kv-danger)]" aria-label="حذف">
                       <Icon name="trash" className="h-4 w-4" />
                     </button>
                   </div>
                 ))}
-                <button className="h-9 w-full rounded-[3px] border border-dashed border-neutral-300 text-[11.5px] text-neutral-500 hover:border-[#011c3a]">
+                <button className="h-9 w-full rounded-[3px] border border-dashed border-neutral-300 text-[11.5px] text-neutral-500 hover:border-[var(--kv-primary)]">
                   + افزودن رنگ
                 </button>
               </div>
@@ -307,7 +308,7 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
                           <input className={input + " max-w-[90px]"} defaultValue={s.inStock ? Math.floor(Math.random() * 20) + 3 : 0} />
                         </td>
                         <td className="py-2">
-                          <span className={"rounded-[3px] px-2 py-1 text-[10.5px] " + (s.inStock ? "bg-[#eef4ee] text-[#3d5c3a]" : "bg-[#f7eeee] text-[#9e4b3c]")}>
+                          <span className={"rounded-[3px] px-2 py-1 text-[10.5px] " + (s.inStock ? "bg-[var(--kv-surface-muted)] text-[var(--kv-accent)]" : "bg-[var(--kv-surface-muted)] text-[var(--kv-danger)]")}>
                             {s.inStock ? "موجود" : "ناموجود"}
                           </span>
                         </td>
@@ -331,11 +332,11 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
                     <Icon name="close" className="h-2.5 w-2.5" />
                   </button>
                   {i === 0 && (
-                    <span className="absolute bottom-1 right-1 rounded-[2px] bg-[#011c3a] px-1.5 py-0.5 text-[8.5px] text-white">اصلی</span>
+                    <span className="absolute bottom-1 right-1 rounded-[2px] bg-[var(--kv-primary)] px-1.5 py-0.5 text-[8.5px] text-white">اصلی</span>
                   )}
                 </div>
               ))}
-              <button className="flex aspect-[3/4] items-center justify-center rounded-[3px] border border-dashed border-neutral-300 text-[11px] text-neutral-500 hover:border-[#011c3a]">
+              <button className="flex aspect-[3/4] items-center justify-center rounded-[3px] border border-dashed border-neutral-300 text-[11px] text-neutral-500 hover:border-[var(--kv-primary)]">
                 + افزودن
               </button>
             </div>
@@ -404,7 +405,7 @@ function ProductEditor({ product, onBack, onSave }: { product: Product; onBack: 
                       <div key={id} className="flex items-center gap-3 rounded-[3px] border border-neutral-200 p-2">
                         <img src={p.images[0]} alt="" className="h-10 w-8 object-cover" loading="lazy" />
                         <span className="flex-1 text-[12px]">{p.name}</span>
-                        <button className="text-neutral-400 hover:text-[#9e4b3c]" aria-label="حذف">
+                        <button className="text-neutral-400 hover:text-[var(--kv-danger)]" aria-label="حذف">
                           <Icon name="close" className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -447,8 +448,8 @@ function ProductsPanel() {
   const remove=(product:AdminProductRecord)=>{const next=items.filter(x=>x.id!==product.id);const nextTrash=[product,...trash];commit(next);saveProductTrash(nextTrash);setTrash(nextTrash);setNotice("محصول به سطل زباله منتقل شد.");};
   const restore=(product:AdminProductRecord)=>{const next=[product,...items];const nextTrash=trash.filter(x=>x.id!==product.id);commit(next);saveProductTrash(nextTrash);setTrash(nextTrash);setNotice("محصول بازیابی شد.");};
   const duplicate=(product:AdminProductRecord)=>{const copy={...structuredClone(product),id:`copy-${Date.now()}`,name:`کپی ${product.name}`,specs:{...product.specs,code:`${product.specs.code}-COPY`},createdAt:Date.now(),sold:0,admin:{...structuredClone(product.admin),status:"draft" as const,versions:[]}};commit([copy,...items]);setEditing(copy);};
-  const exportCsv=()=>{const rows=[["name","latin","price","code","category","status"],...items.map(x=>[x.name,x.latin,String(x.price),x.specs.code,x.category,x.admin.status])];const csv="\uFEFF"+rows.map(row=>row.map(value=>`"${String(value).replace(/"/g,'""')}"`).join(",")).join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download="kolbe-products.csv";anchor.click();URL.revokeObjectURL(url);setNotice("خروجی CSV ساخته شد.");};
-  const importCsv=(file:File|null)=>{if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const lines=String(reader.result).replace(/^\uFEFF/,"").split(/\r?\n/).filter(Boolean);if(lines.length<2)throw new Error();const added=lines.slice(1).map((line,index)=>{const columns=line.match(/("(?:[^"]|"")*"|[^,]+)/g)?.map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"'))??[];const product=createAdminProduct();return {...product,id:`csv-${Date.now()}-${index}`,name:columns[0]??"",latin:columns[1]??"",price:Number(columns[2])||0,category:columns[4]||product.category,categoryLabel:categories.find(c=>c.slug===(columns[4]||product.category))?.label??product.categoryLabel,specs:{...product.specs,code:columns[3]||product.specs.code},admin:{...product.admin,status:(columns[5]==="published"?"published":"draft") as "published"|"draft"}}});commit([...added,...items]);setNotice(`${fa(added.length)} محصول از CSV وارد شد.`);}catch{setNotice("ساختار فایل CSV معتبر نیست.");}};reader.readAsText(file);};
+  const exportCsv=()=>{const rows=[["name","latin","price","code","category","status"],...items.map(x=>[x.name,x.latin,String(x.price),x.specs.code,x.category,x.admin.status])];const csv="\uFEFF"+rows.map(row=>row.map(value=>`"${String(value).replace(/"/g,'""')}"`).join(",")).join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download="kolbe-products.csv";anchor.click();URL.revokeObjectURL(url);setNotice("خروجی داده ساخته شد.");};
+  const importCsv=(file:File|null)=>{if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const lines=String(reader.result).replace(/^\uFEFF/,"").split(/\r?\n/).filter(Boolean);if(lines.length<2)throw new Error();const added=lines.slice(1).map((line,index)=>{const columns=line.match(/("(?:[^"]|"")*"|[^,]+)/g)?.map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"'))??[];const product=createAdminProduct();return {...product,id:`csv-${Date.now()}-${index}`,name:columns[0]??"",latin:columns[1]??"",price:Number(columns[2])||0,category:columns[4]||product.category,categoryLabel:categories.find(c=>c.slug===(columns[4]||product.category))?.label??product.categoryLabel,specs:{...product.specs,code:columns[3]||product.specs.code},admin:{...product.admin,status:(columns[5]==="published"?"published":"draft") as "published"|"draft"}}});commit([...added,...items]);setNotice(`${fa(added.length)} محصول از فایل داده وارد شد.`);}catch{setNotice("ساختار فایل داده معتبر نیست.");}};reader.readAsText(file);};
 
   if (editing) return <AdminProductEditor initial={editing} onBack={() => setEditing(null)} onSave={saveProduct} />;
 
@@ -467,9 +468,9 @@ function ProductsPanel() {
           className={input + " max-w-[220px]"}
         />
         <select aria-label="فیلتر وضعیت محصول" value={status} onChange={e=>setStatus(e.target.value)} className={input+" max-w-40"}><option value="all">همه وضعیت‌ها</option><option value="draft">پیش‌نویس</option><option value="review">در انتظار بررسی</option><option value="published">منتشرشده</option></select>
-        <div className="mr-auto flex flex-wrap gap-2"><button onClick={()=>setTaxonomyOpen(value=>!value)} className="border border-neutral-300 px-3 py-2 text-[10px]">تعریف دسته / فصل / استایل</button><button onClick={()=>setView(view==="active"?"trash":"active")} className="border border-neutral-300 px-3 py-2 text-[10px]">{view==="active"?`سطل زباله (${fa(trash.length)})`:"بازگشت به محصولات"}</button><button onClick={exportCsv} className="border border-neutral-300 px-3 py-2 text-[10px]">خروجی CSV</button><label className="cursor-pointer border border-neutral-300 px-3 py-2 text-[10px]">ورود CSV<input aria-label="ورود CSV محصولات" type="file" accept=".csv,text/csv" className="sr-only" onChange={e=>importCsv(e.target.files?.[0]??null)}/></label>{view==="active"&&<button onClick={createProduct} className="rounded-[3px] bg-[#011c3a] px-5 py-2 text-[12px] font-medium text-white">+ ایجاد محصول</button>}</div>
+        <div className="mr-auto flex flex-wrap gap-2"><button onClick={()=>setTaxonomyOpen(value=>!value)} className="border border-neutral-300 px-3 py-2 text-[10px]">تعریف دسته / فصل / استایل</button><button onClick={()=>setView(view==="active"?"trash":"active")} className="border border-neutral-300 px-3 py-2 text-[10px]">{view==="active"?`سطل زباله (${fa(trash.length)})`:"بازگشت به محصولات"}</button><button onClick={exportCsv} className="border border-neutral-300 px-3 py-2 text-[10px]">خروجی داده</button><label className="cursor-pointer border border-neutral-300 px-3 py-2 text-[10px]">ورود داده<input aria-label="ورود دادهٔ محصولات" type="file" accept=".csv,text/csv" className="sr-only" onChange={e=>importCsv(e.target.files?.[0]??null)}/></label>{view==="active"&&<button onClick={createProduct} className="rounded-[3px] bg-[var(--kv-primary)] px-5 py-2 text-[12px] font-medium text-white">+ ایجاد محصول</button>}</div>
       </div>
-      {notice&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}
+      {notice&&<p role="status" className="mb-4 border border-[var(--kv-border-strong)] bg-[var(--kv-surface-muted)] px-3 py-2 text-[10px] text-[var(--kv-accent)]">{notice}</p>}
       {taxonomyOpen&&<CatalogTaxonomyManager onClose={()=>setTaxonomyOpen(false)}/>}
 
       {view==="active"&&(
@@ -480,7 +481,7 @@ function ProductsPanel() {
             <option value="amount">مبلغ (تومان+/−)</option>
           </select>
           <input aria-label="مقدار" value={bulkValue} onChange={e=>setBulkValue(e.target.value)} placeholder="مثلاً 10 یا -5" className={input+" max-w-36"} dir="ltr" />
-          <button onClick={applyBulkPrice} disabled={selectedIds.size===0||!bulkValue} className="h-9 rounded-[3px] bg-[#011c3a] px-4 text-[11px] font-medium text-white disabled:opacity-40">اعمال روی انتخاب‌شده‌ها</button>
+          <button onClick={applyBulkPrice} disabled={selectedIds.size===0||!bulkValue} className="h-9 rounded-[3px] bg-[var(--kv-primary)] px-4 text-[11px] font-medium text-white disabled:opacity-40">اعمال روی انتخاب‌شده‌ها</button>
           <button onClick={()=>setSelectedIds(new Set(items.map(i=>i.id)))} className="h-9 rounded-[3px] border border-neutral-300 px-3 text-[10.5px]">انتخاب همه</button>
           <button onClick={()=>setSelectedIds(new Set())} className="h-9 rounded-[3px] border border-neutral-300 px-3 text-[10.5px]">پاک‌سازی</button>
         </div>
@@ -507,7 +508,7 @@ function ProductsPanel() {
               return (
                 <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                   <td className="p-3">
-                    <input type="checkbox" aria-label={`انتخاب ${p.name}`} checked={selectedIds.has(p.id)} onChange={()=>toggleSelect(p.id)} disabled={view!=="active"} className="accent-[#011c3a]" />
+                    <input type="checkbox" aria-label={`انتخاب ${p.name}`} checked={selectedIds.has(p.id)} onChange={()=>toggleSelect(p.id)} disabled={view!=="active"} className="accent-[var(--kv-primary)]" />
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2.5">
@@ -518,18 +519,18 @@ function ProductsPanel() {
                       </div>
                     </div>
                   </td>
-                  <td className="p-3 text-neutral-500">{p.specs.code}</td>
+                  <td className="p-3 text-neutral-500 num-fa">{codeLabel(p.specs.code) ?? "—"}</td>
                   <td className="p-3">{p.categoryLabel}</td>
                   <td className="p-3 num-fa">{toman(p.price)}</td>
                   <td className="p-3">
-                    <span className={"rounded-[3px] px-2 py-1 text-[10.5px] " + (inStock > 3 ? "bg-[#eef4ee] text-[#3d5c3a]" : "bg-[#f7f4ea] text-[#7a6320]")}>
+                    <span className={"rounded-[3px] px-2 py-1 text-[10.5px] " + (inStock > 3 ? "bg-[var(--kv-surface-muted)] text-[var(--kv-accent)]" : "bg-[var(--kv-surface)] text-[var(--kv-warning)]")}>
                       {fa(inStock)} سایز موجود
                     </span>
                   </td>
                   <td className="p-3 num-fa">{fa(p.sold)}</td>
                   <td className="p-3"><span className="bg-neutral-100 px-2 py-1 text-[9.5px]">{p.admin.status==="published"?"منتشرشده":p.admin.status==="review"?"در انتظار بررسی":"پیش‌نویس"}</span></td>
                   <td className="p-3">
-                    <div className="flex gap-2 text-[10px]">{view==="active"?<><button onClick={() => setEditing(p)} className="underline hover:text-[#011c3a]">ویرایش</button><button onClick={()=>duplicate(p)} className="underline">کپی</button><button onClick={()=>remove(p)} className="text-red-700 underline">حذف</button></>:<><button onClick={()=>restore(p)} className="underline">بازیابی</button><button onClick={()=>{const next=trash.filter(x=>x.id!==p.id);saveProductTrash(next);setTrash(next);setNotice("محصول برای همیشه حذف شد.")}} className="text-red-700 underline">حذف دائمی</button></>}</div>
+                    <div className="flex gap-2 text-[10px]">{view==="active"?<><button onClick={() => setEditing(p)} className="underline hover:text-[var(--kv-primary)]">ویرایش</button><button onClick={()=>duplicate(p)} className="underline">کپی</button><button onClick={()=>remove(p)} className="text-red-700 underline">حذف</button></>:<><button onClick={()=>restore(p)} className="underline">بازیابی</button><button onClick={()=>{const next=trash.filter(x=>x.id!==p.id);saveProductTrash(next);setTrash(next);setNotice("محصول برای همیشه حذف شد.")}} className="text-red-700 underline">حذف دائمی</button></>}</div>
                   </td>
                 </tr>
               );
@@ -562,7 +563,7 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[9px] tracking-[.22em] text-neutral-400">صندوق سفارش‌ها</p><h2 className="mt-2 text-[18px] font-medium">اینباکس سفارش‌ها</h2><p className="mt-1 text-[10px] text-neutral-500">دریافت، بررسی، آماده‌سازی، ارسال و خدمات پس از فروش در یک جریان.</p></div><div className="flex border border-neutral-300 bg-white">{([["new","جدید"],["processing","در جریان"],["all","همه"]] as const).map(([id,label])=><button key={id} onClick={()=>setInbox(id)} className={`h-10 px-4 text-[10.5px] ${inbox===id?'bg-[#011c3a] text-white':''}`}>{label}</button>)}</div></div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[9px] tracking-[.22em] text-neutral-400">صندوق سفارش‌ها</p><h2 className="mt-2 text-[18px] font-medium">اینباکس سفارش‌ها</h2><p className="mt-1 text-[10px] text-neutral-500">دریافت، بررسی، آماده‌سازی، ارسال و خدمات پس از فروش در یک جریان.</p></div><div className="flex border border-neutral-300 bg-white">{([["new","جدید"],["processing","در جریان"],["all","همه"]] as const).map(([id,label])=><button key={id} onClick={()=>setInbox(id)} className={`h-10 px-4 text-[10.5px] ${inbox===id?'bg-[var(--kv-primary)] text-white':''}`}>{label}</button>)}</div></div>
       <div className="mb-4 flex flex-wrap gap-2">
         {statuses.map((s) => (
           <button
@@ -570,7 +571,7 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
             onClick={() => setFilter(s)}
             className={
               "rounded-[3px] px-3 py-1.5 text-[11.5px] transition " +
-              (filter === s ? "bg-[#011c3a] text-white" : "border border-neutral-300 hover:border-[#011c3a]")
+              (filter === s ? "bg-[var(--kv-primary)] text-white" : "border border-neutral-300 hover:border-[var(--kv-primary)]")
             }
           >
             {s}
@@ -594,13 +595,13 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
           <tbody>
             {list.map((o) => (
               <tr key={o.code} className="border-b border-neutral-100 hover:bg-neutral-50">
-                <td className="p-3 num-fa">{o.code}</td>
+                <td className="p-3 num-fa">{codeLabel(o.code) ?? "—"}</td>
                 <td className="p-3">{o.customer}</td>
                 <td className="p-3 text-neutral-500">{o.date}</td>
                 <td className="p-3 num-fa">{fa(o.items)}</td>
                 <td className="p-3 num-fa">{toman(o.total)}</td>
                 <td className="p-3">
-                  <select aria-label={`وضعیت سفارش ${o.code}`} value={o.status} onChange={event=>updateStatus(o.code,event.target.value)} className="rounded-[3px] border border-neutral-300 px-2 py-1 text-[11px] outline-none">
+                  <select aria-label={`وضعیت سفارش ${codeLabel(o.code) ?? "بدون کد"}`} value={o.status} onChange={event=>updateStatus(o.code,event.target.value)} className="rounded-[3px] border border-neutral-300 px-2 py-1 text-[11px] outline-none">
                     {statuses.slice(1).map((s) => (
                       <option key={s}>{s}</option>
                     ))}
@@ -609,7 +610,7 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
                 <td className="p-3">
                   <div className="flex gap-2 text-[11px]">
                     <button onClick={()=>setSelected(o)} className="underline">جزئیات</button>
-                    <button onClick={()=>printInvoice(o)} className="underline">فاکتور PDF</button>
+                    <button onClick={()=>printInvoice(o)} className="underline">فاکتور چاپی</button>
                   </div>
                 </td>
               </tr>
@@ -617,7 +618,7 @@ function OrdersPanel({onOpenCustomer}:{onOpenCustomer?:(name:string)=>void}) {
           </tbody>
         </table>
       </div>
-      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">جزئیات سفارش</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3><button onClick={()=>onOpenCustomer?.(selected.customer)} className="mt-2 text-[10px] text-[#011c3a] underline underline-offset-4">مشاهده پروفایل ۳۶۰ {selected.customer}</button></div><div className="flex gap-2"><button onClick={()=>printInvoice(selected)} className="h-9 border border-[#011c3a] px-3 text-[10px]">فاکتور PDF</button><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین · تأیید شده"],["روش ارسال","پست پیشتاز"],["کد پیگیری",selected.status==="در حال ارسال"?"۷۸۴۵۱۲۳۹۰۱":"در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[#f6f6f4] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl><div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]"><div><h4 className="text-[11px] font-medium">تایم‌لاین پردازش</h4><div className="mt-3 grid gap-2 sm:grid-cols-4">{["پرداخت تأیید شد","بررسی سفارش","آماده‌سازی انبار","تحویل به حمل"].map((step,index)=><div key={step} className={`border-t-2 pt-2 text-[9px] ${index<(["پرداخت شده","در حال پردازش","در حال ارسال","تحویل شده"].indexOf(selected.status)+1)?'border-[#36563a] text-[#36563a]':'border-neutral-200 text-neutral-400'}`}>{step}</div>)}</div></div><aside className="border border-neutral-200 p-3"><p className="text-[9px] text-neutral-400">نشانی و تحویل</p><p className="mt-2 text-[10px] leading-5">تهران، خیابان ولیعصر، کوچه سرو، پلاک ۲۴</p><p className="mt-2 text-[9px] text-neutral-500">بازه تحویل: ۱۴ تا ۱۸ · تماس قبل از تحویل</p></aside></div></section>}
+      {selected && <section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات سفارش"><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">جزئیات سفارش</p><h3 className="mt-2 text-[15px] font-medium num-fa">سفارش {selected.code}</h3><button onClick={()=>onOpenCustomer?.(selected.customer)} className="mt-2 text-[10px] text-[var(--kv-primary)] underline underline-offset-4">مشاهده پروفایل ۳۶۰ {selected.customer}</button></div><div className="flex gap-2"><button onClick={()=>printInvoice(selected)} className="h-9 border border-[var(--kv-primary)] px-3 text-[10px]">فاکتور چاپی</button><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div></div><dl className="mt-5 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["مشتری",selected.customer],["تاریخ",selected.date],["تعداد اقلام",fa(selected.items)],["مبلغ",toman(selected.total)],["وضعیت",selected.status],["روش پرداخت","درگاه آنلاین · تأیید شده"],["روش ارسال","پست پیشتاز"],["کد پیگیری",selected.status==="در حال ارسال"?"۷۸۴۵۱۲۳۹۰۱":"در انتظار تخصیص"]].map(([term,value])=><div key={term} className="bg-[var(--kv-canvas)] p-3"><dt className="text-neutral-400">{term}</dt><dd className="mt-1 font-medium num-fa">{value}</dd></div>)}</dl><div className="mt-5 grid gap-4 lg:grid-cols-[1fr_340px]"><div><h4 className="text-[11px] font-medium">تایم‌لاین پردازش</h4><div className="mt-3 grid gap-2 sm:grid-cols-4">{["پرداخت تأیید شد","بررسی سفارش","آماده‌سازی انبار","تحویل به حمل"].map((step,index)=><div key={step} className={`border-t-2 pt-2 text-[9px] ${index<(["پرداخت شده","در حال پردازش","در حال ارسال","تحویل شده"].indexOf(selected.status)+1)?'border-[var(--kv-accent)] text-[var(--kv-accent)]':'border-neutral-200 text-neutral-400'}`}>{step}</div>)}</div></div><aside className="border border-neutral-200 p-3"><p className="text-[9px] text-neutral-400">نشانی و تحویل</p><p className="mt-2 text-[10px] leading-5">تهران، خیابان ولیعصر، کوچه سرو، پلاک ۲۴</p><p className="mt-2 text-[9px] text-neutral-500">بازه تحویل: ۱۴ تا ۱۸ · تماس قبل از تحویل</p></aside></div></section>}
     </div>
   );
 }
@@ -674,23 +675,23 @@ function CustomersPanel() {
                 <td className="p-3">
                   {c.block ? (
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="rounded-full bg-[#fbeaea] px-2 py-0.5 text-[9.5px] text-[#9e4b3c]">{c.block.type === "temp" ? "مسدود موقت" : "مسدود دائم"}</span>
+                      <span className="rounded-full bg-[var(--kv-surface-muted)] px-2 py-0.5 text-[9.5px] text-[var(--kv-danger)]">{c.block.type === "temp" ? "مسدود موقت" : "مسدود دائم"}</span>
                       <button onClick={() => unblock(c.phone)} className="text-[10px] underline">رفع</button>
                     </span>
                   ) : (
-                    <span className="rounded-full bg-[#edf3ee] px-2 py-0.5 text-[9.5px] text-[#3d5c3a]">فعال</span>
+                    <span className="rounded-full bg-[var(--kv-surface-muted)] px-2 py-0.5 text-[9.5px] text-[var(--kv-accent)]">فعال</span>
                   )}
                 </td>
                 <td className="p-3">
                   <button onClick={()=>setSelected(c)} className="text-[11.5px] underline">پروفایل</button>
-                  <button onClick={()=>{setBlocking(c);setBlockForm({type:"temp",reason:""});}} className="mr-2 text-[11.5px] text-[#9e4b3c] underline">مسدودسازی</button>
+                  <button onClick={()=>{setBlocking(c);setBlockForm({type:"temp",reason:""});}} className="mr-2 text-[11.5px] text-[var(--kv-danger)] underline">مسدودسازی</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {notice&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10px] text-[#36563a]">{notice}</p>}
+      {notice&&<p role="status" className="mb-4 border border-[var(--kv-border-strong)] bg-[var(--kv-surface-muted)] px-3 py-2 text-[10px] text-[var(--kv-accent)]">{notice}</p>}
       {blocking&&(
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 px-4" role="dialog" aria-label="مسدودسازی مشتری">
           <div className="w-full max-w-sm rounded-[4px] bg-white p-5">
@@ -698,7 +699,7 @@ function CustomersPanel() {
             <div className="mt-4 space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 {([["temp","موقت"],["permanent","دائم"]] as const).map(([id,name])=>(
-                  <button key={id} onClick={()=>setBlockForm(f=>({...f,type:id}))} className={(blockForm.type===id?"bg-[#011c3a] text-white":"border border-neutral-300")+" h-9 rounded-[3px] text-[11px] transition"}>{name}</button>
+                  <button key={id} onClick={()=>setBlockForm(f=>({...f,type:id}))} className={(blockForm.type===id?"bg-[var(--kv-primary)] text-white":"border border-neutral-300")+" h-9 rounded-[3px] text-[11px] transition"}>{name}</button>
                 ))}
               </div>
               <label className="block text-[10.5px] text-neutral-500">دلیل مسدودسازی (الزامی)
@@ -706,13 +707,13 @@ function CustomersPanel() {
               </label>
             </div>
             <div className="mt-4 flex gap-2">
-              <button onClick={applyBlock} disabled={!blockForm.reason.trim()} className="h-10 flex-1 rounded-[3px] bg-[#9e4b3c] text-[11.5px] font-medium text-white disabled:opacity-40">ثبت مسدودسازی</button>
+              <button onClick={applyBlock} disabled={!blockForm.reason.trim()} className="h-10 flex-1 rounded-[3px] bg-[var(--kv-danger)] text-[11.5px] font-medium text-white disabled:opacity-40">ثبت مسدودسازی</button>
               <button onClick={()=>setBlocking(null)} className="h-10 rounded-[3px] border border-neutral-300 px-4 text-[11.5px]">انصراف</button>
             </div>
           </div>
         </div>
       )}
-      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">نمای ۳۶۰ درجهٔ مشتری</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[#011c3a] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول و اعتبار</p><p className="mt-3 text-[10px] leading-6 text-white/70">کیف پول کلبه هنوز راه‌اندازی نشده است. موجودی و تراکنش‌های مالی پس از ساخته شدن ماژول «کیف پول و دفتر کل» (فاز ۵) و به‌صورت فقط‌افزودنی (append-only) نمایش داده می‌شوند؛ تا آن زمان هیچ عددی در پنل به‌عنوان موجودی مالی قابل ویرایش نیست.</p></aside></section>}
+      {selected&&<section className="mt-4 grid gap-4 border border-neutral-200 bg-white p-5 lg:grid-cols-[1fr_300px]" aria-label="پروفایل مشتری"><div><div className="flex items-start justify-between"><div><p className="text-[9px] text-neutral-400">نمای ۳۶۰ درجهٔ مشتری</p><h3 className="mt-2 text-[16px] font-medium">{selected.name}</h3><p className="mt-1 text-[10px] text-neutral-500 num-fa">{selected.phone} · {selected.city}</p></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["تعداد سفارش",fa(selected.orders)],["ارزش خرید",toman(selected.total)],["امتیاز وفاداری",fa(Math.round(selected.total/100000))],["برچسب","مشتری فعال"]].map(([a,b])=><div key={a} className="bg-[var(--kv-canvas)] p-3"><p className="text-[9px] text-neutral-400">{a}</p><p className="mt-1 text-[10.5px] font-medium num-fa">{b}</p></div>)}</div></div><aside className="bg-[var(--kv-primary)] p-4 text-white"><p className="text-[10px] text-white/55">کیف پول و اعتبار</p><p className="mt-3 text-[10px] leading-6 text-white/70">کیف پول کلبه هنوز راه‌اندازی نشده است. موجودی و تراکنش‌های مالی پس از ساخته شدن ماژول «کیف پول و دفتر کل» (فاز ۵) و به‌صورت فقط‌افزودنی (append-only) نمایش داده می‌شوند؛ تا آن زمان هیچ عددی در پنل به‌عنوان موجودی مالی قابل ویرایش نیست.</p></aside></section>}
     </div>
   );
 }
@@ -734,7 +735,7 @@ function ContentPanel() {
   return (
     <div>
       <h2 className="mb-5 text-[16px] font-medium">محتوا و صفحات</h2>
-      {saved&&<p role="status" className="mb-4 border border-[#b9cfbc] bg-[#edf3ee] px-3 py-2 text-[10.5px] text-[#36563a]">محتوا ذخیره شد.</p>}
+      {saved&&<p role="status" className="mb-4 border border-[var(--kv-border-strong)] bg-[var(--kv-surface-muted)] px-3 py-2 text-[10.5px] text-[var(--kv-accent)]">محتوا ذخیره شد.</p>}
       <div className="mb-5 flex flex-wrap gap-2">
         {tabs.map((t) => (
           <button
@@ -742,7 +743,7 @@ function ContentPanel() {
             onClick={() => setTab(t.id)}
             className={
               "rounded-[3px] px-3 py-1.5 text-[11.5px] transition " +
-              (tab === t.id ? "bg-[#011c3a] text-white" : "border border-neutral-300 hover:border-[#011c3a]")
+              (tab === t.id ? "bg-[var(--kv-primary)] text-white" : "border border-neutral-300 hover:border-[var(--kv-primary)]")
             }
           >
             {t.label}
@@ -753,15 +754,15 @@ function ContentPanel() {
       <div className="rounded-[3px] border border-neutral-200 bg-white p-5">
         {tab === "articles" && (
           <div className="space-y-2">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><button onClick={()=>persistArticles([{...articles[0],slug:`draft-${Date.now()}`,title:"مقاله جدید",date:new Intl.DateTimeFormat("fa-IR").format(new Date())},...articleItems])} className="rounded-[3px] bg-[#011c3a] px-4 py-2 text-[11.5px] text-white">+ مقاله جدید</button><p className="text-[10.5px] text-neutral-500 num-fa">{fa(homepagePins.length)} مقاله در صفحه اصلی پین شده</p></div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><button onClick={()=>persistArticles([{...articles[0],slug:`draft-${Date.now()}`,title:"مقاله جدید",date:new Intl.DateTimeFormat("fa-IR").format(new Date())},...articleItems])} className="rounded-[3px] bg-[var(--kv-primary)] px-4 py-2 text-[11.5px] text-white">+ مقاله جدید</button><p className="text-[10.5px] text-neutral-500 num-fa">{fa(homepagePins.length)} مقاله در صفحه اصلی پین شده</p></div>
             {articleItems.map((a,index) => (
               <div key={a.slug} className="flex items-center gap-3 border-b border-neutral-100 py-2.5">
                 <img src={a.img} alt="" className="h-10 w-14 object-cover" loading="lazy" />
                 <div className="min-w-0 flex-1">
-                  <input aria-label={`عنوان ${a.slug}`} value={a.title} onChange={e=>persistArticles(articleItems.map((item,i)=>i===index?{...item,title:e.target.value}:item))} className="h-8 w-full border-b border-transparent bg-transparent text-[12px] outline-none focus:border-[#011c3a]"/>
+                  <input aria-label={`عنوان مقالهٔ ${fa(a.title.length)} نویسه‌ای`} value={a.title} onChange={e=>persistArticles(articleItems.map((item,i)=>i===index?{...item,title:e.target.value}:item))} className="h-8 w-full border-b border-transparent bg-transparent text-[12px] outline-none focus:border-[var(--kv-primary)]"/>
                   <p className="mt-0.5 text-[10.5px] text-neutral-500">{a.category} — {a.date}</p>
                 </div>
-                <button type="button" onClick={()=>toggleHomepagePin(a.slug)} aria-pressed={homepagePins.includes(a.slug)} aria-label={`${homepagePins.includes(a.slug)?"برداشتن از":"پین در"} صفحه اصلی: ${a.title}`} className={(homepagePins.includes(a.slug)?"border-[#011c3a] bg-[#011c3a] text-white":"border-neutral-300 text-neutral-500 hover:border-[#011c3a]")+" flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"}><Icon name="pushPin" className="h-4 w-4" /></button>
+                <button type="button" onClick={()=>toggleHomepagePin(a.slug)} aria-pressed={homepagePins.includes(a.slug)} aria-label={`${homepagePins.includes(a.slug)?"برداشتن از":"پین در"} صفحه اصلی: ${a.title}`} className={(homepagePins.includes(a.slug)?"border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white":"border-neutral-300 text-neutral-500 hover:border-[var(--kv-primary)]")+" flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition"}><Icon name="pushPin" className="h-4 w-4" /></button>
                 <button onClick={()=>persistArticles(articleItems.filter((_,i)=>i!==index))} className="text-[11px] text-red-700 underline">حذف</button>
               </div>
             ))}
@@ -784,12 +785,12 @@ function ContentPanel() {
             <section className="border border-neutral-200 p-4">
               <div className="mb-4 flex items-center justify-between gap-3"><div><h3 className="text-[13px] font-medium">هیرو صفحه اصلی</h3><p className="mt-1 text-[10.5px] text-neutral-500">قالب، تصاویر، متن و دکمه‌ها را تغییر دهید.</p></div><Link to="/" className="text-[11px] underline">پیش‌نمایش سایت</Link></div>
               <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                {([{id:"cover",label:"تمام تصویر"},{id:"split",label:"تصویر راست"},{id:"mosaic",label:"موزاییک"},{id:"duo",label:"دو تصویر"},{id:"minimal",label:"مینیمال"}] as {id:HeroTemplate;label:string}[]).map(template=><button key={template.id} type="button" onClick={()=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,template:template.id}})} className={(siteSettings.hero.template===template.id?"border-[#011c3a] bg-[#011c3a] text-white":"border-neutral-300 hover:border-[#011c3a]")+" min-h-16 border px-2 text-[10.5px]"}>{template.label}</button>)}
+                {([{id:"cover",label:"تمام تصویر"},{id:"split",label:"تصویر راست"},{id:"mosaic",label:"موزاییک"},{id:"duo",label:"دو تصویر"},{id:"minimal",label:"مینیمال"}] as {id:HeroTemplate;label:string}[]).map(template=><button key={template.id} type="button" onClick={()=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,template:template.id}})} className={(siteSettings.hero.template===template.id?"border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white":"border-neutral-300 hover:border-[var(--kv-primary)]")+" min-h-16 border px-2 text-[10.5px]"}>{template.label}</button>)}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-[10.5px] text-neutral-500">بالانویس<input className={input+" mt-1.5"} value={siteSettings.hero.eyebrow} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,eyebrow:e.target.value}})}/></label>
                 <label className="text-[10.5px] text-neutral-500">عنوان<input className={input+" mt-1.5"} value={siteSettings.hero.title} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,title:e.target.value}})}/></label>
-                <label className="text-[10.5px] text-neutral-500 sm:col-span-2">توضیح<textarea className="mt-1.5 min-h-20 w-full border border-neutral-300 p-3 text-[12px] outline-none focus:border-[#011c3a]" value={siteSettings.hero.description} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,description:e.target.value}})}/></label>
+                <label className="text-[10.5px] text-neutral-500 sm:col-span-2">توضیح<textarea className="mt-1.5 min-h-20 w-full border border-neutral-300 p-3 text-[12px] outline-none focus:border-[var(--kv-primary)]" value={siteSettings.hero.description} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,description:e.target.value}})}/></label>
                 <label className="text-[10.5px] text-neutral-500">متن دکمه اصلی<input className={input+" mt-1.5"} value={siteSettings.hero.primaryLabel} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,primaryLabel:e.target.value}})}/></label>
                 <label className="text-[10.5px] text-neutral-500">لینک دکمه اصلی<input dir="ltr" className={input+" mt-1.5 text-left"} value={siteSettings.hero.primaryTo} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,primaryTo:e.target.value}})}/></label>
                 <label className="text-[10.5px] text-neutral-500">متن دکمه دوم<input className={input+" mt-1.5"} value={siteSettings.hero.secondaryLabel} onChange={e=>persistSiteSettings({...siteSettings,hero:{...siteSettings.hero,secondaryLabel:e.target.value}})}/></label>
@@ -819,7 +820,7 @@ function ContentPanel() {
                 <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-2 border-b border-neutral-100 py-2">
                   <input aria-label={`عنوان منو ${index+1}`} className={input} value={item.label} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.map((navItem,i)=>i===index?{...navItem,label:e.target.value}:navItem)}})}/>
                   <input aria-label={`لینک منو ${index+1}`} dir="ltr" className={input+" text-left"} value={item.to} onChange={e=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.map((navItem,i)=>i===index?{...navItem,to:e.target.value}:navItem)}})}/>
-                  <button onClick={()=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.filter((_,i)=>i!==index)}})} className="text-neutral-400 hover:text-[#9e4b3c]" aria-label="حذف"><Icon name="trash" className="h-3.5 w-3.5" /></button>
+                  <button onClick={()=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:siteSettings.header.nav.filter((_,i)=>i!==index)}})} className="text-neutral-400 hover:text-[var(--kv-danger)]" aria-label="حذف"><Icon name="trash" className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
               <button onClick={()=>persistSiteSettings({...siteSettings,header:{...siteSettings.header,nav:[...siteSettings.header.nav,{label:"آیتم جدید",to:"/"}]}})} className="mt-2 h-9 w-full rounded-[3px] border border-dashed border-neutral-300 text-[11.5px] text-neutral-500">
@@ -881,7 +882,7 @@ function WholesalePanel() {
           </tbody>
         </table>
       </div>
-      {selected&&<section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات درخواست عمده"><div className="flex justify-between"><div><p className="text-[9px] text-neutral-400">سرنخ عمده</p><h3 className="mt-2 text-[15px] font-medium">{selected.store}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-4 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["متقاضی",selected.name],["شهر",selected.city],["تماس",selected.phone],["پلن",selected.plan],["وضعیت",selected.status]].map(([a,b])=><div key={a} className="bg-[#f6f6f4] p-3"><p className="text-neutral-400">{a}</p><p className="mt-1 font-medium num-fa">{b}</p></div>)}</div></section>}
+      {selected&&<section className="mt-4 border border-neutral-200 bg-white p-5" aria-label="جزئیات درخواست عمده"><div className="flex justify-between"><div><p className="text-[9px] text-neutral-400">سرنخ عمده</p><h3 className="mt-2 text-[15px] font-medium">{selected.store}</h3></div><button onClick={()=>setSelected(null)} className="text-[10px] underline">بستن</button></div><div className="mt-4 grid gap-3 text-[10.5px] sm:grid-cols-2 lg:grid-cols-4">{[["متقاضی",selected.name],["شهر",selected.city],["تماس",selected.phone],["پلن",selected.plan],["وضعیت",selected.status]].map(([a,b])=><div key={a} className="bg-[var(--kv-canvas)] p-3"><p className="text-neutral-400">{a}</p><p className="mt-1 font-medium num-fa">{b}</p></div>)}</div></section>}
     </div>
   );
 }
@@ -940,10 +941,10 @@ function ReportsPanel() {
           <div className="border-b p-4"><h3 className="text-[12px] font-medium">محصولات پربازدید و کم‌خرید</h3><p className="mt-1 text-[9px] text-neutral-400">نرخ اقدام = افزودن به سبد ÷ بازدید محصول</p></div>
           <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-right text-[10px]"><thead className="bg-neutral-50 text-neutral-500"><tr><th className="p-3 font-medium">محصول</th><th className="p-3 font-medium">بازدید</th><th className="p-3 font-medium">سبد</th><th className="p-3 font-medium">نرخ اقدام</th><th className="p-3 font-medium">تشخیص</th></tr></thead><tbody>{productSignals.slice(0, 6).map(({ product, views, carts, rate }) => <tr key={product.id} className="border-t"><td className="p-3 font-medium">{product.name}</td><td className="p-3 num-fa">{fa(views)}</td><td className="p-3 num-fa">{fa(carts)}</td><td className="p-3 num-fa">{rate.toLocaleString("fa-IR", { maximumFractionDigits: 1 })}٪</td><td className="p-3"><span className={views >= 3 && !carts ? "bg-red-50 px-2 py-1 text-red-700" : views === 0 ? "bg-neutral-100 px-2 py-1 text-neutral-500" : "bg-emerald-50 px-2 py-1 text-emerald-700"}>{views >= 3 && !carts ? "اصطکاک خرید" : views === 0 ? "محصول مرده" : "در جریان"}</span></td></tr>)}</tbody></table></div>
         </section>
-        <section className="border border-neutral-200 bg-white p-4"><h3 className="text-[12px] font-medium">منبع بازدید</h3>{sources.length ? <div className="mt-4 space-y-3">{sources.map(([source, value]) => <div key={source}><div className="flex justify-between text-[9.5px]"><span>{source}</span><span className="num-fa">{fa(value)}</span></div><div className="mt-1 h-1.5 bg-neutral-100"><span className="block h-full bg-[#011c3a]" style={{ width: `${Math.max(4, value / Math.max(...sources.map((item) => item[1])) * 100)}%` }} /></div></div>)}</div> : <div className="py-12 text-center text-[10px] text-neutral-400">با ورود بازدیدهای جدید، منبع ترافیک اینجا نمایش داده می‌شود.</div>}</section>
+        <section className="border border-neutral-200 bg-white p-4"><h3 className="text-[12px] font-medium">منبع بازدید</h3>{sources.length ? <div className="mt-4 space-y-3">{sources.map(([source, value]) => <div key={source}><div className="flex justify-between text-[9.5px]"><span>{source}</span><span className="num-fa">{fa(value)}</span></div><div className="mt-1 h-1.5 bg-neutral-100"><span className="block h-full bg-[var(--kv-primary)]" style={{ width: `${Math.max(4, value / Math.max(...sources.map((item) => item[1])) * 100)}%` }} /></div></div>)}</div> : <div className="py-12 text-center text-[10px] text-neutral-400">با ورود بازدیدهای جدید، منبع ترافیک اینجا نمایش داده می‌شود.</div>}</section>
       </div>
 
-      <section className="border border-neutral-200 bg-white p-5"><h3 className="text-[13px] font-medium">قیف و دلایل احتمالی ریزش</h3><div className="mt-4 grid gap-2 sm:grid-cols-4">{[["بازدید", pageViews], ["افزودن به سبد", count("add_to_cart")], ["شروع پرداخت", checkouts], ["خرید", purchases.length]].map(([label, value], index) => <div key={String(label)} className="border-t-2 border-[#011c3a] bg-neutral-50 p-3"><p className="text-[9px] text-neutral-400">مرحله {fa(index + 1)}</p><p className="mt-2 text-[10.5px]">{label}</p><strong className="mt-1 block text-[18px] num-fa">{fa(Number(value))}</strong></div>)}</div><div className="mt-4 grid gap-3 sm:grid-cols-3">{[["محصول دیده شد اما وارد سبد نشد","قیمت، سایز یا اعتماد به اطلاعات محصول را بررسی کنید",productSignals.filter(item=>item.views>0&&!item.carts).length],["سبد حذف شد","هزینه ارسال یا مقایسه با محصول دیگر محتمل است",count("remove_from_cart")],["پرداخت شروع و کامل نشد","خطای درگاه، روش پرداخت یا فرم آدرس را بررسی کنید",Math.max(0,checkouts-purchases.length)]].map(([title,text,value])=><article key={String(title)} className="border border-neutral-200 p-3"><div className="flex items-start justify-between gap-3"><h4 className="text-[10.5px] font-medium">{title}</h4><span className="text-[15px] num-fa">{fa(Number(value))}</span></div><p className="mt-2 text-[9px] leading-5 text-neutral-500">{text}</p></article>)}</div></section>
+      <section className="border border-neutral-200 bg-white p-5"><h3 className="text-[13px] font-medium">قیف و دلایل احتمالی ریزش</h3><div className="mt-4 grid gap-2 sm:grid-cols-4">{[["بازدید", pageViews], ["افزودن به سبد", count("add_to_cart")], ["شروع پرداخت", checkouts], ["خرید", purchases.length]].map(([label, value], index) => <div key={String(label)} className="border-t-2 border-[var(--kv-primary)] bg-neutral-50 p-3"><p className="text-[9px] text-neutral-400">مرحله {fa(index + 1)}</p><p className="mt-2 text-[10.5px]">{label}</p><strong className="mt-1 block text-[18px] num-fa">{fa(Number(value))}</strong></div>)}</div><div className="mt-4 grid gap-3 sm:grid-cols-3">{[["محصول دیده شد اما وارد سبد نشد","قیمت، سایز یا اعتماد به اطلاعات محصول را بررسی کنید",productSignals.filter(item=>item.views>0&&!item.carts).length],["سبد حذف شد","هزینه ارسال یا مقایسه با محصول دیگر محتمل است",count("remove_from_cart")],["پرداخت شروع و کامل نشد","خطای درگاه، روش پرداخت یا فرم آدرس را بررسی کنید",Math.max(0,checkouts-purchases.length)]].map(([title,text,value])=><article key={String(title)} className="border border-neutral-200 p-3"><div className="flex items-start justify-between gap-3"><h4 className="text-[10.5px] font-medium">{title}</h4><span className="text-[15px] num-fa">{fa(Number(value))}</span></div><p className="mt-2 text-[9px] leading-5 text-neutral-500">{text}</p></article>)}</div></section>
 
       <div className="rounded-[3px] border border-neutral-200 bg-white p-5">
         <h3 className="mb-4 text-[13px] font-medium">هشدار موجودی انبار</h3>
@@ -952,7 +953,7 @@ function ReportsPanel() {
             <div key={p.id} className="flex items-center gap-3 border-b border-neutral-100 py-2 last:border-0">
               <img src={p.images[0]} alt="" className="h-10 w-8 object-cover" loading="lazy" />
               <span className="flex-1 text-[12px]">{p.name}</span>
-              <span className="rounded-[3px] bg-[#f7f4ea] px-2 py-1 text-[10.5px] text-[#7a6320] num-fa">
+              <span className="rounded-[3px] bg-[var(--kv-surface)] px-2 py-1 text-[10.5px] text-[var(--kv-warning)] num-fa">
                 فقط {fa(p.sizes.filter((s) => s.inStock).length)} سایز موجود
               </span>
             </div>
@@ -965,12 +966,36 @@ function ReportsPanel() {
 
 /* --------------------------------- پنل اصلی -------------------------------- */
 
+const SIDEBAR_COLLAPSED_KEY = "kolbe-admin-sidebar-collapsed-v1";
+
 export default function Admin({ embedded = false }: { embedded?: boolean }) {
   const [page, setPage] = useState("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
+  /** سایدبار قابل جمع‌شدن به آیکون (پاسخ ۷۷ کاربر)؛ انتخاب در مرورگر ذخیره می‌شود. */
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  /** جدول‌های پنل روی موبایل به کارت تبدیل می‌شوند (پاسخ ۴۷ کاربر). */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useResponsiveTables(rootRef);
+  const toggleSidebar = () => {
+    setCollapsed((value) => {
+      const next = !value;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // بدون storage هم انتخاب همین نشست معتبر می‌ماند.
+      }
+      return next;
+    });
+  };
 
   return (
-    <div className={embedded ? "min-h-[calc(100vh-73px)] bg-[#f6f6f4]" : "min-h-screen bg-[#f6f6f4]"}>
+    <div ref={rootRef} className={embedded ? "min-h-[calc(100vh-73px)] bg-[var(--kv-canvas)]" : "min-h-screen bg-[var(--kv-canvas)]"}>
       {!embedded && <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white">
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <div className="flex items-center gap-4">
@@ -984,15 +1009,36 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
           </div>
           <div className="flex items-center gap-4">
             <Link to="/" className="text-[11.5px] text-neutral-500 hover:underline">مشاهده سایت</Link>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#011c3a] text-[11px] text-white">م</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--kv-primary)] text-[11px] text-white">م</span>
           </div>
         </div>
       </header>}
 
-      {embedded && <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-2.5 lg:hidden"><button type="button" onClick={() => setMenuOpen(!menuOpen)} aria-label="منوی مدیریت" className="flex h-10 items-center gap-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a]"><Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />منوی مدیریت</button><Link to="/" className="text-[10.5px] text-neutral-500 underline underline-offset-4">مشاهده سایت</Link></div>}
+      {embedded && <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-2.5 lg:hidden"><button type="button" onClick={() => setMenuOpen(!menuOpen)} aria-label="منوی مدیریت" className="flex h-10 items-center gap-2 text-[11.5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)]"><Icon name={menuOpen ? "close" : "menu"} className="h-5 w-5" />منوی مدیریت</button><Link to="/" className="text-[10.5px] text-neutral-500 underline underline-offset-4">مشاهده سایت</Link></div>}
       <div className="flex">
-        <aside className={(embedded ? "fixed bottom-0 right-0 top-[73px] lg:sticky lg:top-[73px] lg:h-[calc(100vh-73px)] " : "fixed inset-y-0 right-0 pt-20 lg:sticky lg:top-[57px] lg:h-[calc(100vh-57px)] lg:pt-0 ") + "z-30 w-64 overflow-y-auto border-l border-neutral-200 bg-white lg:block lg:w-60 " + (menuOpen ? "block" : "hidden")}>
-          <div className="border-b border-neutral-100 px-5 py-4"><p className="text-[9px] text-neutral-400">فضای مدیریت</p><p className="mt-1 text-[11.5px] font-medium">فروشگاه کلبه وینتیج</p></div>
+        <aside
+          data-collapsed={collapsed ? "true" : "false"}
+          className={(embedded ? "fixed bottom-0 right-0 top-[73px] lg:sticky lg:top-[73px] lg:h-[calc(100vh-73px)] " : "fixed inset-y-0 right-0 pt-20 lg:sticky lg:top-[57px] lg:h-[calc(100vh-57px)] lg:pt-0 ") +
+            "z-30 w-64 overflow-y-auto border-l border-[var(--kv-border)] bg-[var(--kv-surface)] lg:block " +
+            (collapsed ? "lg:w-[74px] " : "lg:w-64 ") +
+            (menuOpen ? "block" : "hidden")}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-[var(--kv-border)] px-3 py-3">
+            <div className={collapsed ? "lg:hidden" : ""}>
+              <p className="kv-label text-[var(--kv-text-muted)]">فضای مدیریت</p>
+              <p className="mt-1 text-[12px] font-medium">فروشگاه کلبه وینتیج</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-pressed={collapsed}
+              aria-label={collapsed ? "باز کردن منوی کنار" : "جمع کردن منو به آیکون‌ها"}
+              title={collapsed ? "باز کردن منو" : "جمع کردن منو"}
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-[var(--kv-radius-control)] border border-[var(--kv-border)] text-[var(--kv-text-muted)] transition hover:bg-[var(--kv-surface-muted)] hover:text-[var(--kv-text)] lg:flex"
+            >
+              <Icon name={collapsed ? "chevronLeft" : "chevronRight"} className="h-4 w-4" />
+            </button>
+          </div>
           <nav className="space-y-1 p-3 pb-8">
             {nav.map((n) => (
               <button
@@ -1001,13 +1047,19 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
                   setPage(n.id);
                   setMenuOpen(false);
                 }}
+                aria-current={page === n.id ? "page" : undefined}
+                aria-label={n.label}
+                title={collapsed ? n.label : undefined}
                 className={
-                  "flex w-full items-center gap-2.5 rounded-[3px] px-3 py-2.5 text-right text-[12.5px] transition " +
-                  (page === n.id ? "bg-[#011c3a] text-white" : "hover:bg-neutral-100")
+                  "flex w-full items-center gap-2.5 rounded-[var(--kv-radius-control)] px-3 py-2.5 text-right text-[12.5px] transition " +
+                  (collapsed ? "lg:justify-center lg:px-0 " : "") +
+                  (page === n.id
+                    ? "bg-[var(--kv-primary)] text-[var(--kv-on-primary)]"
+                    : "text-[var(--kv-text-muted)] hover:bg-[var(--kv-surface-muted)] hover:text-[var(--kv-text)]")
                 }
               >
                 <Icon name={n.icon} className="h-4 w-4 shrink-0" />
-                {n.label}
+                <span className={collapsed ? "lg:hidden" : ""}>{n.label}</span>
               </button>
             ))}
           </nav>

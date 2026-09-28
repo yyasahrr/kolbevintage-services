@@ -10,7 +10,7 @@ import { loadWholesaleMembership } from "../wholesaleMembership";
 import { restoreSiteCustomer, signInSiteCustomer, signOutSiteCustomer, signUpSiteCustomer } from "../lib/siteAuthApi";
 
 const input =
-  "h-10 w-full rounded-[3px] border border-neutral-300 px-3 text-[12.5px] outline-none transition focus:border-[#011c3a]";
+  "h-10 w-full rounded-[3px] border border-neutral-300 px-3 text-[12.5px] outline-none transition focus:border-[var(--kv-primary)]";
 
 /* -------------------------------- درباره ما -------------------------------- */
 
@@ -50,7 +50,7 @@ export function About() {
         </p>
       </section>
 
-      <section className="bg-[#f6f6f4] py-14 lg:py-20">
+      <section className="bg-[var(--kv-canvas)] py-14 lg:py-20">
         <div className="mx-auto w-full max-w-3xl px-4">
           <h2 className="mb-10 text-center text-[20px] font-medium">مسیر ما</h2>
           <div className="space-y-8">
@@ -87,7 +87,7 @@ export function About() {
             ۴۲ نفر در کارگاه، ۸ نفر در پشتیبانی و ۳ استایلیست. همه ما یک هدف داریم: اینکه لباسی که می‌خرید، ده سال دیگر
             هم بپوشید.
           </p>
-          <Link to="/contact" className="mt-6 inline-block rounded-[3px] bg-[#011c3a] px-8 py-3 text-[12.5px] text-white">
+          <Link to="/contact" className="mt-6 inline-block rounded-[3px] bg-[var(--kv-primary)] px-8 py-3 text-[12.5px] text-white">
             با ما در تماس باشید
           </Link>
         </div>
@@ -120,7 +120,7 @@ export function Contact() {
         <div>
           <h2 className="text-[16px] font-medium">فرم تماس</h2>
           {sent ? (
-            <div className="mt-5 rounded-[3px] border border-neutral-200 bg-[#f7f6f3] p-6 text-center">
+            <div className="mt-5 rounded-[3px] border border-neutral-200 bg-[var(--kv-canvas)] p-6 text-center">
               <Icon name="check" className="mx-auto h-6 w-6" strokeWidth={2.5} />
               <p className="mt-3 text-[13px] font-medium">پیام شما ارسال شد</p>
               <p className="mt-1.5 text-[12px] text-neutral-500">حداکثر تا یک روز کاری پاسخ می‌دهیم.</p>
@@ -147,10 +147,10 @@ export function Contact() {
               <textarea
                 required
                 rows={5}
-                className="w-full rounded-[3px] border border-neutral-300 p-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+                className="w-full rounded-[3px] border border-neutral-300 p-3 text-[12.5px] outline-none focus:border-[var(--kv-primary)]"
                 placeholder="پیام شما"
               />
-              <button className="mt-1 h-11 rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white">
+              <button className="mt-1 h-11 rounded-[3px] bg-[var(--kv-primary)] text-[13px] font-medium text-white">
                 ارسال پیام
               </button>
             </form>
@@ -163,14 +163,14 @@ export function Contact() {
             {[
               { icon: "pin", label: "نشانی", value: `تهران، خیابان ولیعصر، پلاک ${fa("۱۲۴۰")}، طبقه دوم` },
               { icon: "phone", label: "تلفن", value: fa("۰۲۱-۹۱۰۰۲۲۳۳") },
-              { icon: "mail", label: "ایمیل", value: "hi@kolbevintage.ir" },
+              { icon: "mail", label: "رایانامه", value: "رایانامهٔ پشتیبانی", href: "mailto:hi@kolbevintage.ir" },
               { icon: "clock", label: "ساعات کاری", value: `شنبه تا پنجشنبه، ${fa("۱۰")} تا ${fa("۱۹")}` },
             ].map((c) => (
               <li key={c.label} className="flex gap-3">
                 <Icon name={c.icon} className="mt-0.5 h-4 w-4 shrink-0 text-neutral-500" />
                 <div>
                   <p className="text-[11px] text-neutral-500">{c.label}</p>
-                  <p className="mt-0.5">{c.value}</p>
+                  <p className="mt-0.5">{c.href ? <a href={c.href} className="underline decoration-[var(--kv-border-strong)] underline-offset-4">{c.value}</a> : c.value}</p>
                 </div>
               </li>
             ))}
@@ -210,7 +210,7 @@ export function Wishlist() {
         <div className="flex flex-col items-center gap-5 py-24 text-center">
           <Icon name="heart" className="h-11 w-11 text-neutral-300" />
           <p className="text-[13px] text-neutral-500">هنوز محصولی به علاقه‌مندی‌ها اضافه نکرده‌اید.</p>
-          <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-8 py-3 text-[12.5px] text-white">
+          <Link to="/shop" className="rounded-[3px] bg-[var(--kv-primary)] px-8 py-3 text-[12.5px] text-white">
             مشاهده محصولات
           </Link>
         </div>
@@ -234,7 +234,7 @@ export function Compare() {
       <main className="mx-auto flex w-full flex-col items-center gap-5 px-4 py-24 text-center">
         <h1 className="text-[20px] font-medium">لیست مقایسه خالی است</h1>
         <p className="text-[12.5px] text-neutral-500">از صفحه محصولات، گزینه «مقایسه» را بزنید.</p>
-        <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-8 py-3 text-[12.5px] text-white">
+        <Link to="/shop" className="rounded-[3px] bg-[var(--kv-primary)] px-8 py-3 text-[12.5px] text-white">
           مشاهده محصولات
         </Link>
       </main>
@@ -277,7 +277,7 @@ export function Compare() {
           </thead>
           <tbody>
             {specOrder.map((key, i) => (
-              <tr key={key} className={i % 2 ? "bg-[#f7f6f3]" : ""}>
+              <tr key={key} className={i % 2 ? "bg-[var(--kv-canvas)]" : ""}>
                 <td className="p-3 font-medium text-neutral-500">{specLabels[key]}</td>
                 {items.map((p) => p && (
                   <td key={p.id} className="p-3 align-top leading-relaxed">
@@ -294,7 +294,7 @@ export function Compare() {
                 </td>
               ))}
             </tr>
-            <tr className="bg-[#f7f6f3]">
+            <tr className="bg-[var(--kv-canvas)]">
               <td className="p-3 font-medium text-neutral-500">سایزهای موجود</td>
               {items.map((p) => p && (
                 <td key={p.id} className="p-3">
@@ -345,7 +345,7 @@ export function Account() {
             <p className="text-[9px] tracking-[0.25em] text-neutral-400">یک حساب واحد</p>
             <h1 className="mt-2 text-[25px] font-medium">ورود یا ساخت حساب</h1>
             <p className="mt-2 max-w-md text-[11.5px] leading-[1.9] text-neutral-500">سفارش‌ها، سایزهای ذخیره‌شده، آدرس‌ها و تصویرهای Try On Me را در یک حساب نگه دارید.</p>
-            <div className="mt-5 grid grid-cols-2 border border-neutral-200 p-1"><button type="button" onClick={()=>setAuthMode("login")} className={(authMode==="login"?"bg-[#011c3a] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ورود</button><button type="button" onClick={()=>setAuthMode("register")} className={(authMode==="register"?"bg-[#011c3a] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ساخت حساب</button></div>
+            <div className="mt-5 grid grid-cols-2 border border-neutral-200 p-1"><button type="button" onClick={()=>setAuthMode("login")} className={(authMode==="login"?"bg-[var(--kv-primary)] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ورود</button><button type="button" onClick={()=>setAuthMode("register")} className={(authMode==="register"?"bg-[var(--kv-primary)] text-white":"text-neutral-500")+" h-9 text-[10.5px]"}>ساخت حساب</button></div>
             <form onSubmit={submitAuth} className="mt-4 grid gap-3">
               {authMode === "register" && <><label className="block text-[10px] text-neutral-500">نام و نام خانوادگی<input name="name" autoComplete="name" value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} className={input + " mt-1.5"} required /></label><label className="block text-[10px] text-neutral-500">شماره موبایل<input name="phone" type="tel" inputMode="tel" autoComplete="tel" value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} className={input + " mt-1.5"} minLength={10} required /></label></>}
               <label className="block text-[10px] text-neutral-500">ایمیل<input name="email" type="email" autoComplete="email" spellCheck={false} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} className={input + " mt-1.5"} required /></label>
@@ -368,7 +368,7 @@ export function Account() {
       <div className="grid gap-8 lg:grid-cols-[200px_1fr] lg:gap-12">
         <aside>
           <div className="mb-5 rounded-[3px] border border-neutral-200 p-4">
-            <div className="flex items-start justify-between gap-2"><p className="text-[13px] font-medium">{customer.name}</p>{membership?.customerId === customer.id && <span className="bg-[#011c3a] px-1.5 py-0.5 text-[8px] text-white">VIP</span>}</div>
+            <div className="flex items-start justify-between gap-2"><p className="text-[13px] font-medium">{customer.name}</p>{membership?.customerId === customer.id && <span className="bg-[var(--kv-primary)] px-1.5 py-0.5 text-[8px] text-white">ویژه</span>}</div>
             <p className="mt-1 text-[11.5px] text-neutral-500 num-fa">{fa(customer.phone)}</p>
           </div>
           <nav className="space-y-1">
@@ -378,7 +378,7 @@ export function Account() {
                 onClick={() => setTab(t.id)}
                 className={
                   "block w-full rounded-[3px] px-3 py-2.5 text-right text-[12.5px] transition " +
-                  (tab === t.id ? "bg-[#011c3a] text-white" : "hover:bg-neutral-100")
+                  (tab === t.id ? "bg-[var(--kv-primary)] text-white" : "hover:bg-neutral-100")
                 }
               >
                 {t.label}
@@ -408,7 +408,7 @@ export function Account() {
                     <span
                       className={
                         "rounded-[3px] px-2.5 py-1 text-[10.5px] " +
-                        (o.status === "تحویل شده" ? "bg-[#f0f5f0] text-[#3d5c3a]" : "bg-[#f7f6f3] text-neutral-600")
+                        (o.status === "تحویل شده" ? "bg-[var(--kv-surface-muted)] text-[var(--kv-accent)]" : "bg-[var(--kv-canvas)] text-neutral-600")
                       }
                     >
                       {o.status}
@@ -436,7 +436,7 @@ export function Account() {
                   <button className="shrink-0 text-[11.5px] underline">ویرایش</button>
                 </div>
               </div>
-              <button className="h-10 w-full rounded-[3px] border border-dashed border-neutral-300 text-[12.5px] text-neutral-500 hover:border-[#011c3a]">
+              <button className="h-10 w-full rounded-[3px] border border-dashed border-neutral-300 text-[12.5px] text-neutral-500 hover:border-[var(--kv-primary)]">
                 + افزودن آدرس جدید
               </button>
             </div>
@@ -447,7 +447,7 @@ export function Account() {
               <input className={input} value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} placeholder="نام و نام خانوادگی" />
               <input className={input} value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} placeholder="موبایل" />
               <input className={input} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} placeholder="ایمیل" />
-              <button onClick={() => { const updated = { ...customer, name: authForm.name, phone: authForm.phone, email: authForm.email || undefined }; saveCustomer(updated); setCustomer(updated); }} className="mt-2 h-10 rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white">
+              <button onClick={() => { const updated = { ...customer, name: authForm.name, phone: authForm.phone, email: authForm.email || undefined }; saveCustomer(updated); setCustomer(updated); }} className="mt-2 h-10 rounded-[3px] bg-[var(--kv-primary)] text-[12.5px] font-medium text-white">
                 ذخیره تغییرات
               </button>
             </div>
@@ -462,9 +462,9 @@ export function Account() {
 
 export function NotFound() {
   return (
-    <main className="bg-[#f2f0ea] px-4 pb-16 pt-10 lg:px-8 lg:pt-16">
-      <section className="relative mx-auto grid min-h-[480px] max-w-[1360px] overflow-hidden bg-[#011c3a] px-6 py-12 text-white lg:grid-cols-[1fr_.8fr] lg:px-14 lg:py-16">
-        <div className="relative z-10 flex flex-col justify-between"><div><p className="text-[10px] tracking-[.3em] text-white/45">صفحه پیدا نشد</p><p className="mt-6 font-serif text-[92px] font-light leading-none tracking-[-.08em] sm:text-[150px] num-fa">۴۰۴</p><h1 className="mt-4 text-[24px] font-medium sm:text-[34px]">این مسیر به کلبه نمی‌رسد.</h1><p className="mt-4 max-w-md text-[12.5px] leading-7 text-white/65">ممکن است صفحه جابه‌جا شده باشد یا آدرس را اشتباه نوشته باشید. از فروشگاه، کالکشن‌ها یا جست‌وجو مسیر تازه‌ای پیدا کنید.</p></div><div className="mt-8 flex flex-wrap gap-3"><Link to="/shop" className="bg-white px-6 py-3 text-[11.5px] text-[#011c3a]">رفتن به فروشگاه</Link><Link to="/" className="border border-white/35 px-6 py-3 text-[11.5px] transition hover:border-white">صفحه اصلی</Link></div></div>
+    <main className="bg-[var(--kv-canvas)] px-4 pb-16 pt-10 lg:px-8 lg:pt-16">
+      <section className="relative mx-auto grid min-h-[480px] max-w-[1360px] overflow-hidden bg-[var(--kv-primary)] px-6 py-12 text-white lg:grid-cols-[1fr_.8fr] lg:px-14 lg:py-16">
+        <div className="relative z-10 flex flex-col justify-between"><div><p className="text-[10px] tracking-[.3em] text-white/45">صفحه پیدا نشد</p><p className="mt-6 font-serif text-[92px] font-light leading-none tracking-[-.08em] sm:text-[150px] num-fa">۴۰۴</p><h1 className="mt-4 text-[24px] font-medium sm:text-[34px]">این مسیر به کلبه نمی‌رسد.</h1><p className="mt-4 max-w-md text-[12.5px] leading-7 text-white/65">ممکن است صفحه جابه‌جا شده باشد یا آدرس را اشتباه نوشته باشید. از فروشگاه، کالکشن‌ها یا جست‌وجو مسیر تازه‌ای پیدا کنید.</p></div><div className="mt-8 flex flex-wrap gap-3"><Link to="/shop" className="bg-white px-6 py-3 text-[11.5px] text-[var(--kv-primary)]">رفتن به فروشگاه</Link><Link to="/" className="border border-white/35 px-6 py-3 text-[11.5px] transition hover:border-white">صفحه اصلی</Link></div></div>
         <div aria-hidden="true" className="relative mt-12 hidden lg:block"><span className="absolute left-[14%] top-[6%] h-56 w-40 rotate-6 border border-white/20"/><span className="absolute left-[36%] top-[22%] h-56 w-40 -rotate-6 border border-white/40 bg-white/[.04]"/><span className="absolute bottom-[2%] left-[4%] font-serif text-[180px] leading-none text-white/[.035]">K</span><p className="absolute bottom-3 left-3 max-w-[220px] text-[10px] leading-6 text-white/35">گاهی بهترین پیداها از یک مسیر اشتباه شروع می‌شوند.</p></div>
       </section>
       <div className="mx-auto mt-12 w-full max-w-[1360px]">

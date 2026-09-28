@@ -37,7 +37,7 @@ export default function Collection() {
         </div>
       </section>
 
-      <section className="bg-[#f6f6f4] py-14 lg:py-20">
+      <section className="bg-[var(--kv-canvas)] py-14 lg:py-20">
         <div className="mx-auto w-full px-4 lg:px-8">
           <h2 className="mb-8 text-center text-[20px] font-medium">ست‌های این کالکشن</h2>
           <div className="grid gap-4 sm:grid-cols-3">

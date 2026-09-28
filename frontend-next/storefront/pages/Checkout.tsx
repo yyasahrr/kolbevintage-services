@@ -53,7 +53,7 @@ function Step({
         <span
           className={
             "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] " +
-            (done || open ? "bg-[#011c3a] text-white" : "bg-neutral-200 text-neutral-500")
+            (done || open ? "bg-[var(--kv-primary)] text-white" : "bg-neutral-200 text-neutral-500")
           }
         >
           {done ? <Icon name="check" className="h-3 w-3" strokeWidth={3} /> : fa(n)}
@@ -67,7 +67,7 @@ function Step({
 }
 
 const input =
-  "h-10 w-full rounded-[3px] border border-neutral-300 px-3 text-[12.5px] outline-none transition focus:border-[#011c3a]";
+  "h-10 w-full rounded-[3px] border border-neutral-300 px-3 text-[12.5px] outline-none transition focus:border-[var(--kv-primary)]";
 
 export default function Checkout() {
   const { lines, cartTotal, clearCart } = useStore();
@@ -94,7 +94,7 @@ export default function Checkout() {
   if (done) {
     return (
       <main className="mx-auto flex w-full max-w-lg flex-col items-center gap-5 px-4 py-24 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#011c3a] text-white">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--kv-primary)] text-white">
           <Icon name="check" className="h-7 w-7" strokeWidth={2.5} />
         </div>
         <h1 className="text-[22px] font-medium">سفارش شما ثبت شد</h1>
@@ -108,7 +108,7 @@ export default function Checkout() {
             {orderNote}
           </p>
         ) : null}
-        <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-8 py-3 text-[13px] font-medium text-white">
+        <Link to="/shop" className="rounded-[3px] bg-[var(--kv-primary)] px-8 py-3 text-[13px] font-medium text-white">
           ادامه خرید
         </Link>
       </main>
@@ -119,7 +119,7 @@ export default function Checkout() {
     return (
       <main className="mx-auto flex w-full max-w-lg flex-col items-center gap-5 px-4 py-24 text-center">
         <h1 className="text-[20px] font-medium">سبد خرید خالی است</h1>
-        <Link to="/shop" className="rounded-[3px] bg-[#011c3a] px-8 py-3 text-[13px] text-white">
+        <Link to="/shop" className="rounded-[3px] bg-[var(--kv-primary)] px-8 py-3 text-[13px] text-white">
           مشاهده محصولات
         </Link>
       </main>
@@ -144,7 +144,7 @@ export default function Checkout() {
             </div>
             <button
               onClick={() => setStep(2)}
-              className="mt-4 h-10 rounded-[3px] bg-[#011c3a] px-8 text-[12.5px] font-medium text-white"
+              className="mt-4 h-10 rounded-[3px] bg-[var(--kv-primary)] px-8 text-[12.5px] font-medium text-white"
             >
               ادامه
             </button>
@@ -164,7 +164,7 @@ export default function Checkout() {
               <input className={input} placeholder="کد پستی (۱۰ رقم)" inputMode="numeric" value={form.postal} onChange={(e) => set("postal", e.target.value.replace(/\D/g, "").slice(0, 10))} />
               <input className={input} placeholder="توضیحات تحویل (اختیاری)" value={form.note} onChange={(e) => set("note", e.target.value)} />
             </div>
-            <button onClick={() => setStep(3)} className="mt-4 h-10 rounded-[3px] bg-[#011c3a] px-8 text-[12.5px] font-medium text-white">
+            <button onClick={() => setStep(3)} className="mt-4 h-10 rounded-[3px] bg-[var(--kv-primary)] px-8 text-[12.5px] font-medium text-white">
               ادامه
             </button>
           </Step>
@@ -177,10 +177,10 @@ export default function Checkout() {
                   onClick={() => setShip(m.id)}
                   className={
                     "flex w-full items-center gap-3 rounded-[3px] border p-3 text-right transition " +
-                    (ship === m.id ? "border-[#011c3a] bg-[#f7f6f3]" : "border-neutral-300 hover:border-neutral-400")
+                    (ship === m.id ? "border-[var(--kv-primary)] bg-[var(--kv-canvas)]" : "border-neutral-300 hover:border-neutral-400")
                   }
                 >
-                  <span className={"h-4 w-4 shrink-0 rounded-full border-4 " + (ship === m.id ? "border-[#011c3a]" : "border-neutral-300")} />
+                  <span className={"h-4 w-4 shrink-0 rounded-full border-4 " + (ship === m.id ? "border-[var(--kv-primary)]" : "border-neutral-300")} />
                   <span className="flex-1">
                     <span className="block text-[12.5px] font-medium">{m.label}</span>
                     <span className="block text-[11px] text-neutral-500">{m.time}</span>
@@ -189,7 +189,7 @@ export default function Checkout() {
                 </button>
               ))}
             </div>
-            <button onClick={() => setStep(4)} className="mt-4 h-10 rounded-[3px] bg-[#011c3a] px-8 text-[12.5px] font-medium text-white">
+            <button onClick={() => setStep(4)} className="mt-4 h-10 rounded-[3px] bg-[var(--kv-primary)] px-8 text-[12.5px] font-medium text-white">
               ادامه
             </button>
           </Step>
@@ -202,7 +202,7 @@ export default function Checkout() {
                   onClick={() => setPay(m.id)}
                   className={
                     "rounded-[3px] border p-3 text-right transition " +
-                    (pay === m.id ? "border-[#011c3a] bg-[#f7f6f3]" : "border-neutral-300 hover:border-neutral-400")
+                    (pay === m.id ? "border-[var(--kv-primary)] bg-[var(--kv-canvas)]" : "border-neutral-300 hover:border-neutral-400")
                   }
                 >
                   <span className="block text-[12.5px] font-medium">{m.label}</span>
@@ -274,7 +274,7 @@ export default function Checkout() {
                 }
               }}
               disabled={submitting}
-              className="mt-5 h-11 w-full rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-5 h-11 w-full rounded-[3px] bg-[var(--kv-primary)] text-[13px] font-medium text-white transition hover:bg-[var(--kv-primary)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "در حال ثبت سفارش…" : "پرداخت و ثبت نهایی سفارش"}
             </button>

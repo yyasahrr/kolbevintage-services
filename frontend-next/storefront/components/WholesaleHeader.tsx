@@ -16,7 +16,7 @@ export default function WholesaleHeader({
         <Link
           to={backTo}
           aria-label={backLabel}
-          className="inline-flex min-h-10 items-center gap-2 px-1 text-[11.5px] text-neutral-600 transition hover:text-[#011c3a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-2"
+          className="inline-flex min-h-10 items-center gap-2 px-1 text-[11.5px] text-neutral-600 transition hover:text-[var(--kv-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)] focus-visible:ring-offset-2"
         >
           <Icon name="arrowLeft" className="h-4 w-4 rotate-180" />
           <span>{backLabel}</span>
@@ -25,7 +25,7 @@ export default function WholesaleHeader({
         <Link
           to="/"
           aria-label="صفحه اصلی کلبه وینتیج"
-          className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#011c3a] focus-visible:ring-offset-4"
+          className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--kv-primary)] focus-visible:ring-offset-4"
         >
           <span className="whitespace-nowrap text-[17px] font-semibold tracking-[0.14em] sm:text-[19px]">
             کلبه وینتیج

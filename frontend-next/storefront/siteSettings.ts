@@ -305,7 +305,7 @@ export const defaultSiteBuilder: SiteBuilder = {
     enabled: true,
     username: "kolbe.vintage",
     cards: [
-      { id: "i1", icon: "star", title: "امتحان مجازی", text: "پرو هوشمند با KOLBE AI" },
+      { id: "i1", icon: "star", title: "امتحان مجازی", text: "پرو هوشمند با هوش مصنوعی کلبه" },
       { id: "i2", icon: "needle", title: "دوخت دست", text: "تولید محدود در کارگاه کلبه" },
       { id: "i3", icon: "truck", title: "ارسال سریع", text: "به سراسر ایران" },
     ],
@@ -444,7 +444,7 @@ export const defaultSiteSettings: SiteSettings = {
     description: "پارچه‌های نجیب، برش‌های کلاسیک و دوخت دست؛ قطعاتی که یک عمر همراه شما می‌مانند.",
     primaryLabel: "مشاهده کالکشن",
     primaryTo: "/collection",
-    secondaryLabel: "پرو هوشمند با KOLBE AI",
+    secondaryLabel: "پرو هوشمند با هوش مصنوعی کلبه",
     secondaryTo: "/try-on",
     images: ["/images/model-front.jpg", "/images/model-teal.jpg", "/images/detail-collar.jpg", "/images/model-full.jpg"],
   },

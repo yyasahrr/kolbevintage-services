@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { sizeLabel } from "../utils/format";
 
 import type { Product } from "../data/catalog";
 import Icon from "./Icon";
@@ -108,7 +109,7 @@ export default function SizeAdvisor({
             value={height}
             onChange={(e) => setHeight(e.target.value.replace(/\D/g, ""))}
             placeholder="۱۷۸"
-            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[var(--kv-primary)]"
           />
         </label>
         <label className="block">
@@ -118,7 +119,7 @@ export default function SizeAdvisor({
             value={weight}
             onChange={(e) => setWeight(e.target.value.replace(/\D/g, ""))}
             placeholder="۷۵"
-            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[var(--kv-primary)]"
           />
         </label>
         <label className="block">
@@ -128,7 +129,7 @@ export default function SizeAdvisor({
             value={age}
             onChange={(e) => setAge(e.target.value.replace(/\D/g, ""))}
             placeholder="۳۲"
-            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-3 text-[12.5px] outline-none focus:border-[var(--kv-primary)]"
           />
         </label>
         <label className="block">
@@ -136,7 +137,7 @@ export default function SizeAdvisor({
           <select
             value={usual}
             onChange={(e) => setUsual(e.target.value)}
-            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-2 text-[12.5px] outline-none focus:border-[#011c3a]"
+            className="advisor-input h-10 w-full rounded-xl border border-neutral-300 px-2 text-[12.5px] outline-none focus:border-[var(--kv-primary)]"
           >
             <option value="">نمی‌دانم</option>
             {scale.map((s) => (
@@ -194,7 +195,7 @@ export default function SizeAdvisor({
                   className="storefront-secondary-action rounded-xl border border-neutral-300 p-3 text-center transition disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="block text-[10.5px] text-neutral-500">{r.label}</span>
-                  <span className="mt-1 block text-[18px] font-medium">{r.size}</span>
+                  <span className="mt-1 block text-[15px] font-medium">{sizeLabel(r.size)}</span>
                   <span className="mt-1 block text-[10px] text-neutral-400">
                     {available ? "انتخاب کن" : "ناموجود"}
                   </span>

@@ -63,11 +63,11 @@ function Routes() {
   if (path === "/wholesale" || path === "/wholesale/join")
     return <PortalErrorBoundary title="پورتال عمده"><Wholesale /></PortalErrorBoundary>;
   if (path === "/wholesale-dashboard")
-    return <PortalErrorBoundary title="میزکار VIP"><VIPPortal /></PortalErrorBoundary>;
+    return <PortalErrorBoundary title="میزکار ویژه"><VIPPortal /></PortalErrorBoundary>;
   if (path === "/vip" || path.startsWith("/vip/"))
-    return <PortalErrorBoundary title="میزکار VIP"><VIPPortal /></PortalErrorBoundary>;
+    return <PortalErrorBoundary title="میزکار ویژه"><VIPPortal /></PortalErrorBoundary>;
   if (path.startsWith("/product/") && query.get("wholesale") === "1")
-    return <PortalErrorBoundary title="میزکار VIP"><VIPPortal /></PortalErrorBoundary>;
+    return <PortalErrorBoundary title="میزکار ویژه"><VIPPortal /></PortalErrorBoundary>;
   if (path === "/admin")
     return <PortalErrorBoundary title="پنل مدیریت"><AdminPortal /></PortalErrorBoundary>;
 

@@ -70,11 +70,11 @@ export async function signInWholesaleVip(email: string, password: string) {
   if (!account) {
     const membership = await loadWholesaleMembership();
     try { await api("/store/kolbe/auth/logout", { method: "POST" }); } catch { /* ignore */ }
-    if (membership?.status === "pending") throw new Error("درخواست عضویت VIP شما در انتظار تأیید کارشناسان کلبه است.");
+    if (membership?.status === "pending") throw new Error("درخواست عضویت ویژهٔ شما در انتظار تأیید کارشناسان کلبه است.");
     if (membership?.status === "rejected" || membership?.status === "suspended") {
-      throw new Error("عضویت VIP این حساب تأیید نشده یا معلق شده است.");
+      throw new Error("عضویت ویژهٔ این حساب تأیید نشده یا معلق شده است.");
     }
-    throw new Error("عضویت VIP این حساب فعال نیست یا اعتبار آن تمام شده است.");
+    throw new Error("عضویت ویژهٔ این حساب فعال نیست یا اعتبار آن تمام شده است.");
   }
   return account;
 }
@@ -132,7 +132,7 @@ export async function submitWholesaleCustomerOrder(
   } catch (error) {
     const code = error instanceof ApiError ? error.code : "";
     if (code === "INSUFFICIENT_STOCK") throw new Error("موجودی یکی از واریانت‌ها برای این تعداد کافی نیست.");
-    if (code === "VIP_ACCOUNT_INACTIVE") throw new Error("عضویت VIP فعال نیست.");
+    if (code === "VIP_ACCOUNT_INACTIVE") throw new Error("عضویت ویژه فعال نیست.");
     if (code === "BELOW_MIN_UNITS") throw new Error("حداقل تعداد هر سفارش عمده ۱۲ عدد است.");
     if (code === "NETWORK") throw new Error("اتصال به سرور برقرار نشد؛ دوباره تلاش کنید.");
     throw new Error("ثبت سفارش انجام نشد؛ دوباره تلاش کنید.");

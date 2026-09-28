@@ -11,10 +11,10 @@
 
 @theme {
   --font-sans: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
-  --color-navy: #011c3a;
-  --color-marvis: #011c3a;
-  --color-sand: #f6f6f4;
-  --color-parchment: #f7f6f3;
+  --color-navy: #1a1714;
+  --color-marvis: #5f7355;
+  --color-sand: #faf7f1;
+  --color-parchment: #f2ebdf;
 }
 
 html {
@@ -24,26 +24,13 @@ html {
 body {
   font-family: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  color: #011c3a;
+  color: var(--kv-text);
 }
 
-:root {
-  --kv-ink: #071c31;
-  --kv-ink-soft: #17354d;
-  --kv-canvas: #f7f5f0;
-  --kv-surface: #fcfbf8;
-  --kv-surface-muted: #efede7;
-  --kv-border: rgba(7, 28, 49, 0.14);
-  --kv-muted: #66727d;
-  --kv-accent: #c9654d;
-  --kv-success: #477154;
-  --kv-warning: #93691f;
-  --kv-danger: #a4463d;
-  --kv-radius-control: 0.625rem;
-  --kv-radius-surface: 1rem;
-  --kv-focus: #6f91aa;
-  --kv-shadow-overlay: 0 18px 50px rgba(7, 28, 49, 0.14);
-}
+/*
+ * ⚠️ پالت رسمی در «لایهٔ قفل سبک» پایینِ همین فایل اعلام می‌شود (کرِم و بلوط، روشن + تاریک).
+ * بلوک قدیمی این‌جا حذف شد تا هیچ رنگ سرخابی/سرمه‌ای قدیمی به‌عنوان مقدار پایه باقی نماند.
+ */
 
 /* Shared product language for admin, VIP and wholesale workspaces. */
 :where(.admin-system, .vip-portal-shell, .wholesale-system) {
@@ -65,7 +52,7 @@ body {
 /* تایپوگرافی فروشگاه: شکستن خطوط سرصفحهها و پاراگرافها بهینه میشود. */
 .storefront-shell :where(h1, h2, h3) { text-wrap: balance; }
 .storefront-shell p { text-wrap: pretty; }
-:where(.admin-system, .vip-portal-shell, .wholesale-system) :where(button, a)[class*="bg-[#011c3a]"] {
+:where(.admin-system, .vip-portal-shell, .wholesale-system) :where(button, a)[class*="bg-[var(--kv-primary)]"] {
   border-radius: var(--kv-radius-control);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
 }
@@ -237,7 +224,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(247, 245, 240, 0.48)),
     rgba(250, 248, 243, 0.62);
   box-shadow:
-    0 18px 54px rgba(7, 28, 49, 0.075),
+    0 18px 54px rgba(26, 23, 20, 0.075),
     inset 0 1px 0 rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(16px) saturate(122%);
   -webkit-backdrop-filter: blur(16px) saturate(122%);
@@ -264,7 +251,7 @@ textarea {
 }
 
 [data-theme="liquid"] .site-announcement {
-  background-color: rgba(7, 28, 49, 0.96);
+  background-color: rgba(26, 23, 20, 0.96);
 }
 
 [data-theme="liquid"] :where(.site-utility, .site-primary) {
@@ -281,7 +268,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(238, 232, 222, 0.3)),
     rgba(250, 248, 243, 0.76);
   box-shadow:
-    0 16px 40px rgba(7, 28, 49, 0.085),
+    0 16px 40px rgba(26, 23, 20, 0.085),
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     inset 0 -1px 0 rgba(116, 93, 77, 0.08);
   backdrop-filter: blur(18px) saturate(125%);
@@ -312,7 +299,7 @@ textarea {
 [data-theme="liquid"] .theme-toggle-orb {
   border-color: rgba(255, 255, 255, 0.75);
   background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(201,101,77,0.28));
-  box-shadow: 0 2px 7px rgba(7, 28, 49, 0.16), inset 0 1px 2px rgba(255,255,255,0.95);
+  box-shadow: 0 2px 7px rgba(26, 23, 20, 0.16), inset 0 1px 2px rgba(255,255,255,0.95);
 }
 
 [data-theme="liquid"] .theme-toggle-orb > span {
@@ -325,7 +312,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.66), rgba(238, 232, 222, 0.34)),
     rgba(250, 248, 243, 0.68);
   box-shadow:
-    0 22px 58px rgba(7, 28, 49, 0.12),
+    0 22px 58px rgba(26, 23, 20, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     inset 0 -1px 0 rgba(116, 93, 77, 0.08);
   backdrop-filter: blur(24px) saturate(132%);
@@ -373,8 +360,8 @@ textarea {
 
 .tryon-menu-link {
   color: #f6f1e9;
-  background: linear-gradient(135deg, rgba(7, 28, 49, 0.96), rgba(27, 61, 81, 0.92));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 10px 28px rgba(7, 28, 49, 0.18);
+  background: linear-gradient(135deg, rgba(26, 23, 20, 0.96), rgba(27, 61, 81, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), 0 10px 28px rgba(26, 23, 20, 0.18);
 }
 
 [data-theme="liquid"] .mobile-navigation {
@@ -401,7 +388,7 @@ textarea {
 [data-theme="liquid"] .storefront-toast {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 0.85rem;
-  background: rgba(7, 28, 49, 0.82);
+  background: rgba(26, 23, 20, 0.82);
   color: white;
 }
 
@@ -416,7 +403,7 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.54);
   border-radius: 2rem;
   box-shadow:
-    0 24px 70px rgba(7, 28, 49, 0.14),
+    0 24px 70px rgba(26, 23, 20, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
@@ -425,7 +412,7 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.68);
   border-radius: 999px;
   box-shadow:
-    0 12px 32px rgba(7, 28, 49, 0.14),
+    0 12px 32px rgba(26, 23, 20, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(16px) saturate(126%);
   -webkit-backdrop-filter: blur(16px) saturate(126%);
@@ -476,7 +463,7 @@ textarea {
 [data-theme="liquid"] .style-tile {
   border: 1px solid rgba(255, 255, 255, 0.58);
   border-radius: 1.4rem;
-  box-shadow: 0 16px 42px rgba(7, 28, 49, 0.09);
+  box-shadow: 0 16px 42px rgba(26, 23, 20, 0.09);
 }
 
 [data-theme="liquid"] .product-card {
@@ -488,7 +475,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(239, 233, 223, 0.36)),
     rgba(250, 248, 243, 0.58);
   box-shadow:
-    0 16px 44px rgba(7, 28, 49, 0.075),
+    0 16px 44px rgba(26, 23, 20, 0.075),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(16px) saturate(124%);
   -webkit-backdrop-filter: blur(16px) saturate(124%);
@@ -499,7 +486,7 @@ textarea {
   transform: translateY(-4px);
   border-color: rgba(255, 255, 255, 0.9);
   box-shadow:
-    0 24px 60px rgba(7, 28, 49, 0.12),
+    0 24px 60px rgba(26, 23, 20, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
@@ -516,7 +503,7 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.72);
   background: rgba(252, 251, 248, 0.58);
   box-shadow:
-    0 8px 24px rgba(7, 28, 49, 0.12),
+    0 8px 24px rgba(26, 23, 20, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(14px) saturate(126%);
   -webkit-backdrop-filter: blur(14px) saturate(126%);
@@ -531,7 +518,7 @@ textarea {
       linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(239, 233, 223, 0.34)),
       rgba(250, 248, 243, 0.62);
     box-shadow:
-      0 22px 62px rgba(7, 28, 49, 0.1),
+      0 22px 62px rgba(26, 23, 20, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(20px) saturate(126%);
     -webkit-backdrop-filter: blur(20px) saturate(126%);
@@ -556,7 +543,7 @@ textarea {
   max-width: 1500px;
 }
 
-[data-theme="liquid"] .storefront-shell main > :where(section, div)[class*="bg-[#f6f6f4]"] {
+[data-theme="liquid"] .storefront-shell main > :where(section, div)[class*="bg-[#faf7f1]"] {
   width: auto;
   margin-inline: 0.85rem;
   border: 1px solid rgba(255, 255, 255, 0.68);
@@ -565,7 +552,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(234, 228, 218, 0.3)),
     rgba(247, 245, 240, 0.56);
   box-shadow:
-    0 22px 64px rgba(7, 28, 49, 0.075),
+    0 22px 64px rgba(26, 23, 20, 0.075),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
@@ -575,7 +562,7 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.58);
   border-radius: 2rem;
   box-shadow:
-    0 26px 74px rgba(7, 28, 49, 0.15),
+    0 26px 74px rgba(26, 23, 20, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.38);
 }
 
@@ -593,7 +580,7 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 1.5rem;
   box-shadow:
-    0 18px 48px rgba(7, 28, 49, 0.1),
+    0 18px 48px rgba(26, 23, 20, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.42);
   transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 420ms ease;
 }
@@ -602,7 +589,7 @@ textarea {
 [data-theme="liquid"] .storefront-shell main a[class*="group"][class*="overflow-hidden"][class*="bg-neutral"]:hover {
   transform: translateY(-4px);
   box-shadow:
-    0 28px 70px rgba(7, 28, 49, 0.15),
+    0 28px 70px rgba(26, 23, 20, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
@@ -614,7 +601,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(238, 232, 222, 0.34)),
     rgba(250, 248, 243, 0.65);
   box-shadow:
-    0 20px 58px rgba(7, 28, 49, 0.095),
+    0 20px 58px rgba(26, 23, 20, 0.095),
     inset 0 1px 0 rgba(255, 255, 255, 0.94),
     inset 0 -1px 0 rgba(116, 93, 77, 0.07);
   backdrop-filter: blur(20px) saturate(126%);
@@ -635,7 +622,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(238, 232, 222, 0.28)),
     rgba(250, 248, 243, 0.66);
   box-shadow:
-    0 14px 42px rgba(7, 28, 49, 0.08),
+    0 14px 42px rgba(26, 23, 20, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(18px) saturate(124%);
   -webkit-backdrop-filter: blur(18px) saturate(124%);
@@ -679,13 +666,13 @@ textarea {
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-[data-theme="liquid"] .storefront-shell main :where(.bg-neutral-50, .bg-neutral-100, [class*="bg-[#f7f6f3]"]) {
+[data-theme="liquid"] .storefront-shell main :where(.bg-neutral-50, .bg-neutral-100, [class*="bg-[var(--kv-surface)]"]) {
   background-color: rgba(247, 245, 240, 0.66);
 }
 
-[data-theme="liquid"] .storefront-shell main :where([class*="bg-[#011c3a]"]) {
+[data-theme="liquid"] .storefront-shell main :where([class*="bg-[var(--kv-primary)]"]) {
   box-shadow:
-    0 10px 28px rgba(7, 28, 49, 0.16),
+    0 10px 28px rgba(26, 23, 20, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.13);
 }
 
@@ -701,7 +688,7 @@ textarea {
 [data-theme="liquid"] .site-footer__muted,
 [data-theme="liquid"] .site-footer__link,
 [data-theme="liquid"] .site-footer__legal {
-  color: rgba(7, 28, 49, 0.66);
+  color: rgba(26, 23, 20, 0.66);
 }
 
 [data-theme="liquid"] .site-footer__divider {
@@ -719,7 +706,7 @@ textarea {
 }
 
 [data-theme="liquid"] .site-footer__input::placeholder {
-  color: rgba(7, 28, 49, 0.42);
+  color: rgba(26, 23, 20, 0.42);
 }
 
 [data-theme="liquid"] .site-footer__submit {
@@ -760,9 +747,9 @@ textarea {
 
 .shop-nav-link {
   color: #fff;
-  border: 1px solid rgba(7, 28, 49, 0.84);
+  border: 1px solid rgba(26, 23, 20, 0.84);
   background: #071c31;
-  box-shadow: 0 7px 18px rgba(7, 28, 49, 0.14);
+  box-shadow: 0 7px 18px rgba(26, 23, 20, 0.14);
 }
 
 .shop-nav-link:hover {
@@ -798,7 +785,7 @@ textarea {
 
 .hero-light-copy .hero-eyebrow,
 .hero-light-copy .hero-description {
-  color: rgba(7, 28, 49, 0.64);
+  color: rgba(26, 23, 20, 0.64);
 }
 
 .hero-cover .hero-eyebrow,
@@ -815,7 +802,7 @@ textarea {
 
 .hero-light-copy .hero-cta-secondary {
   color: #071c31;
-  border: 1px solid rgba(7, 28, 49, 0.22);
+  border: 1px solid rgba(26, 23, 20, 0.22);
   background: transparent;
 }
 
@@ -887,7 +874,7 @@ textarea {
 [data-theme="liquid"] .theme-menu {
   border-color: rgba(255, 255, 255, 0.72);
   background: rgba(250, 248, 243, 0.78);
-  box-shadow: 0 22px 56px rgba(7, 28, 49, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  box-shadow: 0 22px 56px rgba(26, 23, 20, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
 [data-theme="liquid"] .theme-option.is-active {
@@ -938,7 +925,7 @@ textarea {
 }
 
 [data-theme="dark"] .storefront-shell .text-neutral-700,
-[data-theme="dark"] .storefront-shell .text-\[\#011c3a\] {
+[data-theme="dark"] .storefront-shell .text-\[var\(--kv-primary\)\] {
   color: #e8eef1;
 }
 
@@ -1124,7 +1111,7 @@ textarea {
   -webkit-backdrop-filter: blur(15px) saturate(128%);
 }
 
-[data-theme="dark"] .product-glass-control svg[fill="#011c3a"] {
+[data-theme="dark"] .product-glass-control svg[fill="var(--kv-primary)"] {
   fill: #e7ded2;
 }
 
@@ -1220,7 +1207,7 @@ textarea {
   box-shadow: 0 34px 82px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-[data-theme="dark"] .storefront-shell main > :where(section, div)[class*="bg-[#f6f6f4]"] {
+[data-theme="dark"] .storefront-shell main > :where(section, div)[class*="bg-[#faf7f1]"] {
   width: auto;
   margin-inline: 0.85rem;
   color: var(--dark-ink);
@@ -1246,13 +1233,13 @@ textarea {
   border-color: var(--dark-line);
 }
 
-[data-theme="dark"] .storefront-shell main [class*="bg-[#011c3a]"] {
+[data-theme="dark"] .storefront-shell main [class*="bg-[var(--kv-primary)]"] {
   color: #07131f;
   background-color: #e7ded2;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.62);
 }
 
-[data-theme="dark"] .storefront-shell main [class*="bg-[#011c3a]"] :where(svg, span) {
+[data-theme="dark"] .storefront-shell main [class*="bg-[var(--kv-primary)]"] :where(svg, span) {
   color: inherit;
 }
 
@@ -1447,7 +1434,7 @@ textarea {
 [data-theme="liquid"] .wholesale-presentation {
   color: #f7f3eb;
   background: linear-gradient(145deg, #102f45, #061b2d) !important;
-  box-shadow: 0 24px 70px rgba(7, 28, 49, 0.16);
+  box-shadow: 0 24px 70px rgba(26, 23, 20, 0.16);
 }
 
 [data-theme="liquid"] .wholesale-stats,
@@ -1456,7 +1443,7 @@ textarea {
 [data-theme="liquid"] .wholesale-signup-form {
   border-color: rgba(116, 93, 77, 0.16);
   background: rgba(252, 251, 248, 0.68);
-  box-shadow: 0 16px 44px rgba(7, 28, 49, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  box-shadow: 0 16px 44px rgba(26, 23, 20, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.88);
 }
 
 [data-theme="dark"] .wholesale-presentation {
@@ -1552,7 +1539,7 @@ textarea {
   color: #46535b;
 }
 
-.vip-portal-shell :where(button, a)[class*="bg-[#011c3a]"] {
+.vip-portal-shell :where(button, a)[class*="bg-[var(--kv-primary)]"] {
   color: #fff;
 }
 
@@ -1858,7 +1845,7 @@ textarea {
     border-radius: 1.5rem;
   }
 
-  [data-theme="liquid"] .storefront-shell main > :where(section, div)[class*="bg-[#f6f6f4]"] {
+  [data-theme="liquid"] .storefront-shell main > :where(section, div)[class*="bg-[#faf7f1]"] {
     margin-inline: 0.5rem;
     border-radius: 1.5rem;
   }
@@ -1898,7 +1885,7 @@ textarea {
     border-radius: 1.5rem;
   }
 
-  [data-theme="dark"] .storefront-shell main > :where(section, div)[class*="bg-[#f6f6f4]"] {
+  [data-theme="dark"] .storefront-shell main > :where(section, div)[class*="bg-[#faf7f1]"] {
     margin-inline: 0.5rem;
     border-radius: 1.5rem;
   }
@@ -1943,9 +1930,9 @@ textarea {
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
 }
 .product-card-action:hover:not(:disabled) {
-  background: var(--card-hover-bg, #011c3a) !important;
+  background: var(--card-hover-bg, var(--kv-primary)) !important;
   color: var(--card-hover-text, #ffffff) !important;
-  border-color: var(--card-hover-bg, #011c3a) !important;
+  border-color: var(--card-hover-bg, var(--kv-primary)) !important;
 }
 
 /* سایتساز: هاور دکمه هیرو */
@@ -1957,7 +1944,7 @@ textarea {
 
 /* سایتساز: هاور دکمه بنر */
 .banner-cta:hover {
-  background: var(--banner-hover-bg, #011c3a) !important;
+  background: var(--banner-hover-bg, var(--kv-primary)) !important;
   color: var(--banner-hover-text, #ffffff) !important;
 }
 
@@ -2070,7 +2057,7 @@ textarea {
 }
 
 /* دارک مود: دکمههای مودال پلن */
-[data-theme="dark"] .storefront-shell .fixed.inset-0 button[class*="bg-\[#011c3a\]"] {
+[data-theme="dark"] .storefront-shell .fixed.inset-0 button[class*="bg-\[var\(--kv-primary\)\]"] {
   background: #c9654d !important;
   color: #fff !important;
 }
@@ -2209,7 +2196,7 @@ textarea {
   background-color: #162030 !important;
 }
 
-[data-theme="dark"] .bg-\[\#f6f6f4\] {
+[data-theme="dark"] .bg-\[\#faf7f1\] {
   background-color: #1c2a3a !important;
 }
 
@@ -2249,7 +2236,7 @@ textarea {
 
 .pdp-thumb.is-active {
   opacity: 1;
-  border-color: #011c3a;
+  border-color: var(--kv-primary);
 }
 
 [data-theme="dark"] .pdp-thumb.is-active {
@@ -2286,8 +2273,8 @@ textarea {
 
 .pdp-size-pill.is-selected {
   color: #fff;
-  border-color: #011c3a;
-  background: #011c3a;
+  border-color: var(--kv-primary);
+  background: var(--kv-primary);
   box-shadow: 0 10px 24px rgba(1, 28, 58, 0.24);
 }
 
@@ -2346,8 +2333,8 @@ textarea {
 }
 
 .pdp-swatch.is-selected {
-  border-color: #011c3a;
-  box-shadow: 0 0 0 2px #011c3a;
+  border-color: var(--kv-primary);
+  box-shadow: 0 0 0 2px var(--kv-primary);
 }
 
 [data-theme="dark"] .pdp-swatch {
@@ -2439,13 +2426,13 @@ textarea {
 }
 
 .pdp-subnav-link:hover {
-  color: #011c3a;
+  color: var(--kv-text);
   border-color: rgba(1, 28, 58, 0.3);
 }
 
 .pdp-subnav-link.is-active {
-  color: #011c3a;
-  border-color: #011c3a;
+  color: var(--kv-text);
+  border-color: var(--kv-primary);
   font-weight: 500;
 }
 
@@ -2478,7 +2465,7 @@ textarea {
     linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(238, 232, 222, 0.12)),
     rgba(250, 248, 243, 0.3);
   box-shadow:
-    0 12px 32px rgba(7, 28, 49, 0.06),
+    0 12px 32px rgba(26, 23, 20, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
@@ -2524,7 +2511,7 @@ textarea {
   --site-surface-muted: #efede7;
   --site-text: #071c31;
   --site-muted: #66727d;
-  --site-primary: #0b2a46;
+  --site-primary: #1a1714;
   --site-primary-text: #ffffff;
   --site-accent: #c9654d;
   --site-border: #d8d3ca;
@@ -2570,16 +2557,16 @@ body,
   border-color: var(--site-border) !important;
 }
 
-.storefront-shell :where(.bg-\[\#011c3a\], .bg-\[\#0a2c55\]),
-.vip-portal-shell :where(.bg-\[\#011c3a\], .bg-\[\#0a2c55\]),
-.wholesale-system :where(.bg-\[\#011c3a\], .bg-\[\#0a2c55\]) {
+.storefront-shell :where(.bg-\[\var(--kv-primary)\], .bg-\[\#0a2c55\]),
+.vip-portal-shell :where(.bg-\[\var(--kv-primary)\], .bg-\[\#0a2c55\]),
+.wholesale-system :where(.bg-\[\var(--kv-primary)\], .bg-\[\#0a2c55\]) {
   background-color: var(--site-primary) !important;
   color: var(--site-primary-text);
 }
 
-.storefront-shell :where(.text-\[\#011c3a\], .text-\[\#0a2c55\]),
-.vip-portal-shell :where(.text-\[\#011c3a\], .text-\[\#0a2c55\]),
-.wholesale-system :where(.text-\[\#011c3a\], .text-\[\#0a2c55\]) {
+.storefront-shell :where(.text-\[var\(--kv-primary\)\], .text-\[\#0a2c55\]),
+.vip-portal-shell :where(.text-\[var\(--kv-primary\)\], .text-\[\#0a2c55\]),
+.wholesale-system :where(.text-\[var\(--kv-primary\)\], .text-\[\#0a2c55\]) {
   color: var(--site-primary) !important;
 }
 
@@ -3094,7 +3081,7 @@ body,
 
 .site-footer.site-footer--custom {
   background: var(--footer-background, #f2f0eb) !important;
-  color: var(--footer-text, #011c3a) !important;
+  color: var(--footer-text, var(--kv-primary)) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -3247,15 +3234,15 @@ body {
 .kv-measure { max-width: 68ch; }
 
 /* ── پل سازگاری: hexهای قدیمی → توکن‌های قفل‌شده ───────────────────────── */
-[class*="bg-[#011c3a]"] { background-color: var(--kv-primary); }
+[class*="bg-[var(--kv-primary)]"] { background-color: var(--kv-primary); }
 [class*="bg-[#0a2c55]"] { background-color: var(--kv-accent); }
 [class*="hover:bg-[#0a2c55]"]:hover { background-color: var(--kv-accent); }
-[class*="hover:bg-[#011c3a]"]:hover { background-color: var(--kv-primary); }
-[class*="text-[#011c3a]"] { color: var(--kv-text); }
-[class*="border-[#011c3a]"] { border-color: var(--kv-border-strong); }
-[class*="ring-[#011c3a]"] { --tw-ring-color: var(--kv-focus); }
-[class*="divide-[#011c3a]"] { border-color: var(--kv-border); }
-[class*="bg-[#011c3a]"][class*="text-white"] { color: var(--kv-on-primary); }
+[class*="hover:bg-[var(--kv-primary)]"]:hover { background-color: var(--kv-primary); }
+[class*="text-[var(--kv-primary)]"] { color: var(--kv-text); }
+[class*="border-[var(--kv-primary)]"] { border-color: var(--kv-border-strong); }
+[class*="ring-[var(--kv-primary)]"] { --tw-ring-color: var(--kv-focus); }
+[class*="divide-[var(--kv-primary)]"] { border-color: var(--kv-border); }
+[class*="bg-[var(--kv-primary)]"][class*="text-white"] { color: var(--kv-on-primary); }
 [class*="bg-[#0a2c55]"][class*="text-white"] { color: var(--kv-on-accent); }
 [class*="hover:bg-[#0a2c55]"][class*="text-white"]:hover { color: var(--kv-on-accent); }
 
@@ -3265,8 +3252,8 @@ body {
 [class*="border-[#c9654d]"] { border-color: var(--kv-accent); }
 
 [class*="bg-[#f7f5f0]"],
-[class*="bg-[#f7f6f3]"],
-[class*="bg-[#f6f6f4]"],
+[class*="bg-[var(--kv-surface)]"],
+[class*="bg-[#faf7f1]"],
 [class*="bg-[#fbf7ef]"],
 [class*="bg-[#faf7f1]"] { background-color: var(--kv-canvas); }
 [class*="bg-[#f3f5f7]"],
@@ -3478,4 +3465,101 @@ html[data-theme="dark"] .site-header.is-scrolled {
 @keyframes kv-tweaks-in {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: none; }
+}
+
+/* ── لایهٔ پنل‌های کاری: چگالی ۶، سطوح یکدست، جدول→کارت در موبایل ──────── */
+:where(.admin-system, .vip-portal-shell, .wholesale-system) {
+  --kv-panel-gap: 16px;
+}
+
+/* سطوح: کارت‌ها و بخش‌ها یک زبان واحد داشته باشند (بدون اختراع شعاع/سایه) */
+:where(.admin-system, .vip-portal-shell, .wholesale-system) :where(section, aside, article)[class*="border"] {
+  border-color: var(--kv-border);
+}
+:where(.admin-system, .vip-portal-shell, .wholesale-system) :where(section, article)[class*="bg-white"] {
+  border-radius: var(--kv-radius-surface);
+  box-shadow: none;
+}
+
+/* جدول‌ها: سرِ چسبان، خطوط نازک، اعداد هم‌عرض، ارتفاع راحت (چگالی ۶) */
+.kv-table-wrap :where(table) {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.kv-table-wrap :where(thead th) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--kv-surface);
+  color: var(--kv-text-muted);
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+.kv-table-wrap :where(tbody td) {
+  border-top: 1px solid color-mix(in srgb, var(--kv-border) 70%, transparent);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.kv-table-wrap :where(tbody tr:hover) {
+  background: color-mix(in srgb, var(--kv-surface-muted) 55%, transparent);
+}
+/* راهنمای اسکرول افقی برای جدول‌های عریض روی دسکتاپ/تبلت باریک */
+.kv-table-wrap[data-kv-responsive="usable"] {
+  scrollbar-width: thin;
+}
+
+/* موبایل: هر سطر = یک کارت با جفت «برچسب / مقدار» */
+@media (max-width: 767px) {
+  .kv-table-wrap[data-kv-responsive] {
+    overflow: visible !important;
+  }
+  .kv-table-wrap[data-kv-responsive] :where(table) {
+    min-width: 0 !important;
+  }
+  .kv-table-wrap[data-kv-responsive] :where(thead) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .kv-table-wrap[data-kv-responsive] :where(tbody tr) {
+    display: block;
+    margin-bottom: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--kv-border);
+    border-radius: var(--kv-radius-surface);
+    background: var(--kv-surface);
+  }
+  .kv-table-wrap[data-kv-responsive] :where(tbody td) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    border-top: 0;
+    padding: 5px 0;
+    text-align: left;
+  }
+  .kv-table-wrap[data-kv-responsive] :where(tbody td) + :where(td) {
+    border-top: 1px dashed color-mix(in srgb, var(--kv-border) 65%, transparent);
+  }
+  .kv-table-wrap[data-kv-responsive] :where(tbody td)[data-label]::before {
+    content: attr(data-label);
+    color: var(--kv-text-muted);
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .kv-table-wrap[data-kv-responsive] :where(tbody td) > * {
+    text-align: left;
+  }
+}
+
+/* هدر پنل: هم‌خانوادهٔ فروشگاه */
+.admin-system > header:not(.site-header) {
+  background: color-mix(in srgb, var(--kv-canvas) 90%, transparent);
+  border-color: var(--kv-border);
+  backdrop-filter: blur(14px) saturate(115%);
 }

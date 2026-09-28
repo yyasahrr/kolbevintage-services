@@ -8,15 +8,15 @@ import { PageCrumbs, SectionHeading, Status } from './components'
 import { createSupplierProduct, loadSupplierOrders, updateSupplierPurchaseOrder } from './api'
 
 /* ================================================================
-   تعریف انواع سری — قیمت بر اساس نوع سری × قیمت هر تیکه
+   تعریف انواع سری — قیمت بر اساس نوع سری × قیمت هر تکه
    ================================================================ */
 
 export type SeriesType = {
   id: string
   label: string
   description: string
-  composition: Record<string, number>  // سایز → تعداد تیکه
-  pieceCount: number                   // مجموع تیکهها
+  composition: Record<string, number>  // سایز → تعداد تکه
+  pieceCount: number                   // مجموع تکهها
 }
 
 export const SERIES_TYPES: SeriesType[] = [
@@ -25,7 +25,7 @@ export const SERIES_TYPES: SeriesType[] = [
     composition: { 'S': 1, 'M': 2, 'L': 2, 'XL': 2, '2XL': 1 }, pieceCount: 8,
   },
   {
-    id: 'half', label: 'نیم‌سری', description: 'M تا 2XL — ۵ تیکه',
+    id: 'half', label: 'نیم‌سری', description: 'متوسط تا خیلی بزرگ — ۵ تکه',
     composition: { 'M': 1, 'L': 1, 'XL': 1, '2XL': 1, 'M/L': 1 }, pieceCount: 5,
   },
   {
@@ -33,7 +33,7 @@ export const SERIES_TYPES: SeriesType[] = [
     composition: { 'M': 2, 'L': 2, 'XL': 1 }, pieceCount: 5,
   },
   {
-    id: 'single_size', label: 'تک‌سایز', description: 'همه تیکهها یک سایز',
+    id: 'single_size', label: 'تک‌سایز', description: 'همه تکهها یک سایز',
     composition: { '—': 6 }, pieceCount: 6,
   },
   {
@@ -59,7 +59,7 @@ function parseNumber(value: string): number {
 export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: string; onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
     name: '', sku: '', category: 'پوشاک', description: '',
-    unitPrice: '',       // قیمت هر تیکه
+    unitPrice: '',       // قیمت هر تکه
     seriesTypeId: 'full', // نوع سری
     seriesCount: '',      // تعداد سری موجود
     color: 'مشکی',
@@ -86,7 +86,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
   const unitPrice = parseNumber(form.unitPrice)
   const seriesCount = parseNumber(form.seriesCount)
   const seriesPrice = unitPrice * pieceCount          // قیمت هر سری
-  const totalPieces = pieceCount * (seriesCount || 0)  // مجموع تیکهها
+  const totalPieces = pieceCount * (seriesCount || 0)  // مجموع تکهها
   const totalValue = seriesPrice * (seriesCount || 0)  // ارزش کل
 
   /* آپلود تصویر به data URL */
@@ -101,15 +101,15 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError('')
-    if (!form.name.trim() || !form.sku.trim() || !form.description.trim()) return showError('نام، SKU و توضیحات محصول الزامی است.')
-    if (!form.unitPrice.trim() || !Number.isInteger(unitPrice) || unitPrice <= 0) return showError('قیمت هر تیکه را به‌صورت عدد صحیح وارد کنید.')
+    if (!form.name.trim() || !form.sku.trim() || !form.description.trim()) return showError('نام، کد کالا و توضیحات محصول الزامی است.')
+    if (!form.unitPrice.trim() || !Number.isInteger(unitPrice) || unitPrice <= 0) return showError('قیمت هر تکه را به‌صورت عدد صحیح وارد کنید.')
     if (!form.seriesCount.trim() || !Number.isInteger(seriesCount) || seriesCount <= 0) return showError('تعداد سری موجود را وارد کنید.')
-    if (pieceCount <= 0) return showError('ترکیب سری باید حداقل یک تیکه داشته باشد.')
+    if (pieceCount <= 0) return showError('ترکیب سری باید حداقل یک تکه داشته باشد.')
     if (!form.color.trim()) return showError('رنگ محصول را وارد کنید.')
 
     setSubmitting(true)
     try {
-      const seriesLabel = `${seriesType.label} (${fa(pieceCount)} تیکه)`
+      const seriesLabel = `${seriesType.label} (${fa(pieceCount)} تکه)`
       await createSupplierProduct({
         supplierId,
         name: form.name,
@@ -146,7 +146,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
         <div className="editor-title">
           <PageCrumbs parent="کاتالوگ" current="محصول جدید (بر اساس سری)"/>
           <h1>ثبت محصول در کاتالوگ عمده</h1>
-          <p>محصول بر اساس نوع سری عرضه می‌شود. قیمت هر سری = قیمت هر تیکه × تعداد تیکه در سری.</p>
+          <p>محصول بر اساس نوع سری عرضه می‌شود. قیمت هر سری = قیمت هر تکه × تعداد تکه در سری.</p>
         </div>
 
         {error ? <div id="product-form-error" role="alert" className="review-policy"><CircleAlert size={18}/><div><b>خطا</b><p>{error}</p></div></div> : null}
@@ -155,7 +155,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
         <EditorSection title="۱. اطلاعات پایه" description="نام و دسته محصول">
           <div className="form-grid">
             <Field label="نام محصول"><input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="مثلاً پیراهن لینن تابستانی"/></Field>
-            <Field label="SKU"><input required dir="ltr" value={form.sku} onChange={e => update('sku', e.target.value)} placeholder="NG-LIN-301"/></Field>
+            <Field label="کد کالا"><input required dir="ltr" value={form.sku} onChange={e => update('sku', e.target.value)} placeholder="کد ۳۰۱"/></Field>
             <Field label="دسته‌بندی">
               <select value={form.category} onChange={e => update('category', e.target.value)}>
                 <option>پوشاک</option><option>کفش</option><option>اکسسوری</option><option>پارچه</option>
@@ -168,7 +168,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
         <EditorSection title="۲. تصویر محصول" description="تصویر را از سیستم خود انتخاب کنید">
           <div className="form-grid">
             <Field label="آپلود تصویر">
-              <div style={{ border: '2px dashed #deddd6', borderRadius: 6, padding: 20, textAlign: 'center', cursor: 'pointer' }}
+              <div style={{ border: '2px dashed var(--kv-border)', borderRadius: 6, padding: 20, textAlign: 'center', cursor: 'pointer' }}
                    onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--kv-primary)' }}
                    onDragLeave={e => e.currentTarget.style.borderColor = 'var(--kv-border)'}
                    onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--kv-border)'; const f = e.dataTransfer.files[0]; if (f) handleImageUpload(f) }}>
@@ -176,14 +176,14 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
                 <label htmlFor="img-upload" style={{ cursor: 'pointer', display: 'block' }}>
                   {form.imageUrl ? (
                     <div>
-                      <img src={form.imageUrl} alt="" style={{ maxHeight: 180, margin: '0 auto 8px', borderRadius: 4, objectFit: 'contain' }} />
-                      <small style={{ color: '#3d5c3a' }}>✓ تصویر بارگذاری شد — برای تغییر کلیک کنید</small>
+                      <img src={form.imageUrl} alt="" style={{ maxHeight: 180, margin: '0 auto 8 px', borderRadius: 4, objectFit: 'contain' }} />
+                      <small style={{ color: 'var(--kv-accent)' }}>✓ تصویر بارگذاری شد — برای تغییر کلیک کنید</small>
                     </div>
                   ) : (
                     <div>
-                      <ImagePlus size={28} style={{ color: '#999', margin: '0 auto 8px' }} />
+                      <ImagePlus size={28} style={{ color: 'var(--kv-text-muted)', margin: '0 auto 8 px' }} />
                       <b style={{ fontSize: 11 }}>تصویر را بکشید و اینجا رها کنید</b>
-                      <p style={{ fontSize: 9, color: '#999', marginTop: 4 }}>یا کلیک کنید — JPG/PNG، حداکثر ۲.۵MB</p>
+                      <p style={{ fontSize: 9, color: 'var(--kv-text-muted)', marginTop: 4 }}>یا کلیک کنید — تصویر، حداکثر ۲.۵ مگابایت</p>
                     </div>
                   )}
                 </label>
@@ -193,29 +193,29 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
         </EditorSection>
 
         {/* === ۳. قیمت و سری === */}
-        <EditorSection title="۳. قیمت و نوع سری" description="قیمت هر تیکه × تعداد تیکه در سری = قیمت هر سری">
+        <EditorSection title="۳. قیمت و نوع سری" description="قیمت هر تکه × تعداد تکه در سری = قیمت هر سری">
           <div className="form-grid">
-            <Field label="قیمت هر تیکه (تومان)" helper="مبنای محاسبه قیمت سری">
+            <Field label="قیمت هر تکه (تومان)" helper="مبنای محاسبه قیمت سری">
               <input required type="text" inputMode="numeric" value={form.unitPrice} onChange={e => update('unitPrice', e.target.value)} placeholder="۱٬۲۵۰٬۰۰۰"/>
             </Field>
             <Field label="نوع سری">
               <select value={form.seriesTypeId} onChange={e => update('seriesTypeId', e.target.value)}>
-                {SERIES_TYPES.map(t => <option key={t.id} value={t.id}>{t.label} — {t.pieceCount > 0 ? `${fa(t.pieceCount)} تیکه` : 'سفارشی'}</option>)}
+                {SERIES_TYPES.map(t => <option key={t.id} value={t.id}>{t.label} — {t.pieceCount > 0 ? `${fa(t.pieceCount)} تکه` : 'سفارشی'}</option>)}
               </select>
             </Field>
           </div>
 
           {/* ترکیب سری */}
-          <div style={{ marginTop: 16, padding: 14, border: '1px solid #e5e5e0', borderRadius: 6 }}>
+          <div style={{ marginTop: 16, padding: 14, border: '1px solid var(--kv-border)', borderRadius: 6 }}>
             <b style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>ترکیب {seriesType.label}:</b>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {Object.entries(composition).map(([size, qty]) => (
-                <span key={size} style={{ fontSize: 10, background: '#f6f6f2', padding: '4px 10px', borderRadius: 4, border: '1px solid #e5e5e0' }}>
+                <span key={size} style={{ fontSize: 10, background: '#f6f6f2', padding: '4px 10 px', borderRadius: 4, border: '1px solid var(--kv-border)' }}>
                   <b>{size}</b> × <span className="num-fa">{fa(qty)}</span>
                 </span>
               ))}
-              <span style={{ fontSize: 10, padding: '4px 10px', background: 'var(--kv-primary)', color: 'var(--kv-surface)', borderRadius: 4 }}>
-                = <span className="num-fa">{fa(pieceCount)}</span> تیکه
+              <span style={{ fontSize: 10, padding: '4px 10 px', background: 'var(--kv-primary)', color: 'var(--kv-surface)', borderRadius: 4 }}>
+                = <span className="num-fa">{fa(pieceCount)}</span> تکه
               </span>
             </div>
 
@@ -227,7 +227,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
                     سایز {size}
                     <input type="number" min={0} max={10} value={customComposition[size] ?? 0}
                       onChange={e => setCustomComposition({ ...customComposition, [size]: Number(e.target.value) })}
-                      style={{ width: '100%', height: 32, border: '1px solid #deddd6', textAlign: 'center', fontSize: 12, marginTop: 4 }} dir="ltr" />
+                      style={{ width: '100%', height: 32, border: '1px solid var(--kv-border)', textAlign: 'center', fontSize: 12, marginTop: 4 }} dir="ltr" />
                   </label>
                 ))}
               </div>
@@ -235,10 +235,10 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
           </div>
 
           {/* خلاصه محاسبه */}
-          <div style={{ marginTop: 16, padding: 16, background: '#fffaf2', border: '1px solid #d9b98f', borderRadius: 6 }}>
+          <div style={{ marginTop: 16, padding: 16, background: '#fffaf2', border: '1px solid var(--kv-border-strong)', borderRadius: 6 }}>
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', fontSize: 11 }}>
-              <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{toman(unitPrice || 0)}</b></div>
-              <div><span style={{ color: '#888' }}>تعداد تیکه در {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{fa(pieceCount)} تیکه</b></div>
+              <div><span style={{ color: '#888' }}>قیمت هر تکه:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{toman(unitPrice || 0)}</b></div>
+              <div><span style={{ color: '#888' }}>تعداد تکه در {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{fa(pieceCount)} تکه</b></div>
               <div><span style={{ color: '#888' }}>قیمت هر {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14, color: 'var(--kv-primary)' }}>{toman(seriesPrice)}</b></div>
             </div>
             <p style={{ fontSize: 9.5, color: '#8a5a20', marginTop: 8 }}>فرمول: {fa(unitPrice || 0)} × {fa(pieceCount)} = <b className="num-fa">{fa(seriesPrice)}</b> تومان</p>
@@ -250,21 +250,21 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
           <div className="form-grid">
             <Field label="رنگ"><input required value={form.color} onChange={e => update('color', e.target.value)} placeholder="مثلاً مشکی"/></Field>
             <Field label="کد رنگ">
-              <input type="color" value={form.colorHex} onChange={e => update('colorHex', e.target.value)} style={{ height: 40, width: '100%', border: '1px solid #deddd6', cursor: 'pointer' }} />
+              <input type="color" value={form.colorHex} onChange={e => update('colorHex', e.target.value)} style={{ height: 40, width: '100%', border: '1px solid var(--kv-border)', cursor: 'pointer' }} />
             </Field>
-            <Field label={`تعداد ${seriesType.label} موجود`} helper={`مثلاً ۴ سری = ${fa(4 * pieceCount)} تیکه`}>
+            <Field label={`تعداد ${seriesType.label} موجود`} helper={`مثلاً ۴ سری = ${fa(4 * pieceCount)} تکه`}>
               <input required type="text" inputMode="numeric" value={form.seriesCount} onChange={e => update('seriesCount', e.target.value)} placeholder="۴"/>
             </Field>
           </div>
 
           {/* پیشنمایش موجودی */}
           {seriesCount > 0 && (
-            <div style={{ marginTop: 12, padding: 14, border: '1px solid #b9cfbc', background: '#edf3ee', borderRadius: 6, fontSize: 11 }}>
+            <div style={{ marginTop: 12, padding: 14, border: '1px solid var(--kv-border-strong)', background: '#edf3ee', borderRadius: 6, fontSize: 11 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 20, height: 20, borderRadius: '50%', background: form.colorHex, border: '2px solid #fff', boxShadow: '0 0 0 1px #ccc' }} />
+                <span style={{ width: 20, height: 20, borderRadius: '50%', background: form.colorHex, border: '2px solid var(--kv-surface)', boxShadow: '0 0 0 1px var(--kv-border)' }} />
                 <b>{form.color || 'بدون رنگ'}</b>
                 <span style={{ color: '#36563a' }} className="num-fa">
-                  {fa(seriesCount)} × {seriesType.label} = {fa(totalPieces)} تیکه
+                  {fa(seriesCount)} × {seriesType.label} = {fa(totalPieces)} تکه
                 </span>
               </div>
               <p style={{ fontSize: 10, color: '#36563a', marginTop: 6 }}>ارزش کل موجودی: <b className="num-fa">{toman(totalValue)}</b></p>
@@ -284,16 +284,16 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
         <div className="review-policy"><ShieldCheck size={18}/><div><b>انتشار بعد از تأیید کلبه</b><p>محصول با وضعیت «در بررسی» برای تیم کاتالوگ کلبه ارسال می‌شود.</p></div></div>
 
         {/* خلاصه نهایی */}
-        <div style={{ padding: 16, border: '1px solid #e5e5e0', borderRadius: 6, background: 'var(--kv-surface)' }}>
+        <div style={{ padding: 16, border: '1px solid var(--kv-border)', borderRadius: 6, background: 'var(--kv-surface)' }}>
           <b style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>خلاصه محصول</b>
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', fontSize: 11 }}>
             <div><span style={{ color: '#888' }}>نام:</span> {form.name || '—'}</div>
             <div><span style={{ color: '#888' }}>رنگ:</span> <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: form.colorHex, marginRight: 4, verticalAlign: 'middle' }} /> {form.color || '—'}</div>
-            <div><span style={{ color: '#888' }}>نوع سری:</span> {seriesType.label} ({fa(pieceCount)} تیکه)</div>
-            <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span> <b className="num-fa">{toman(unitPrice || 0)}</b></div>
+            <div><span style={{ color: '#888' }}>نوع سری:</span> {seriesType.label} ({fa(pieceCount)} تکه)</div>
+            <div><span style={{ color: '#888' }}>قیمت هر تکه:</span> <b className="num-fa">{toman(unitPrice || 0)}</b></div>
             <div><span style={{ color: '#888' }}>قیمت هر سری:</span> <b className="num-fa" style={{ color: 'var(--kv-primary)' }}>{toman(seriesPrice)}</b></div>
             <div><span style={{ color: '#888' }}>تعداد سری:</span> <b className="num-fa">{fa(seriesCount || 0)}</b></div>
-            <div><span style={{ color: '#888' }}>مجموع تیکه:</span> <b className="num-fa">{fa(totalPieces)}</b></div>
+            <div><span style={{ color: '#888' }}>مجموع تکه:</span> <b className="num-fa">{fa(totalPieces)}</b></div>
             <div><span style={{ color: '#888' }}>ارزش کل:</span> <b className="num-fa">{toman(totalValue)}</b></div>
           </div>
         </div>
@@ -349,15 +349,15 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
     catch (e) { setActionResult(e instanceof Error ? e.message : 'خطا در به‌روزرسانی.') }
   }
 
-  if (loading) return <div className="page-head"><h1>سفارشات آماده</h1><p style={{fontSize:11,color:'#999'}}>در حال دریافت…</p></div>
+  if (loading) return <div className="page-head"><h1>سفارشات آماده</h1><p style={{fontSize:11,color:'var(--kv-text-muted)'}}>در حال دریافت…</p></div>
   if (error) return <div className="page-head"><h1>سفارشات آماده</h1><p style={{fontSize:11,color:'#a4463d'}}>{error}</p></div>
 
   return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌های خرید را تأیید، آماده و ارسال کنید.</p></div></div>
-  {actionResult && <div role="status" style={{marginBottom:12,border:'1px solid #b9cfbc',background:'#edf3ee',padding:'8px 12px',fontSize:10,color:'#36563a'}}>{actionResult}</div>}
+  {actionResult && <div role="status" style={{marginBottom:12,border:'1px solid var(--kv-border-strong)',background:'#edf3ee',padding:'8px 12 px',fontSize:10,color:'#36563a'}}>{actionResult}</div>}
   <section className="surface orders-surface" style={{padding:16}}>
     <div className="ledger-table">
       <div className="ledger-row header"><span>کد سفارش</span><span>محصول</span><span>تعداد</span><span>مبلغ</span><span>وضعیت</span><span>اقدام</span></div>
-      {orders.length === 0 && <div style={{padding:20,textAlign:'center',fontSize:11,color:'#999'}}>سفارشی در انتظار اقدام نیست.</div>}
+      {orders.length === 0 && <div style={{padding:20,textAlign:'center',fontSize:11,color:'var(--kv-text-muted)'}}>سفارشی در انتظار اقدام نیست.</div>}
       {(orders as any[]).map(order => (
         <div className="ledger-row" key={order.id}>
           <b>{order.order_code}</b>
@@ -366,10 +366,10 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
           <b className="num-fa">{fa(order.total_amount)} ت</b>
           <Status>{statusLabel[order.status] ?? order.status}</Status>
           <div style={{display:'flex',gap:4}}>
-            {order.status === 'pending' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تأیید</button>}
-            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>شروع</button>}
-            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>ارسال</button>}
-            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8px'}}>تحویل</button>}
+            {order.status === 'pending' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>تأیید</button>}
+            {order.status === 'confirmed' && <button onClick={() => updateStatus(order.id, 'preparing')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>شروع</button>}
+            {order.status === 'preparing' && <button onClick={() => updateStatus(order.id, 'shipped')} className="button primary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>ارسال</button>}
+            {order.status === 'shipped' && <button onClick={() => updateStatus(order.id, 'delivered')} className="button secondary" style={{minHeight:28,fontSize:9,padding:'0 8 px'}}>تحویل</button>}
           </div>
         </div>
       ))}
@@ -379,8 +379,8 @@ export function FulfillmentOrders({ onUpdated }: { onUpdated: () => void }) {
 
 export function ReturnsIssues() {
   const issues = [
-    { id: 'RI-0891', order: 'PO-4813', type: 'کسری کالا', qty: '۲ تکه', status: 'در بررسی', date: '۲۱ مرداد' },
-    { id: 'RI-0887', order: 'PO-4805', type: 'کالای اشتباه', qty: '۱ بسته', status: 'برطرف شد', date: '۱۸ مرداد' },
+    { id: 'RI-0891', order: 'سفارش ۴۸۱۳', type: 'کسری کالا', qty: '۲ تکه', status: 'در بررسی', date: '۲۱ مرداد' },
+    { id: 'RI-0887', order: 'سفارش ۴۸۰۵', type: 'کالای اشتباه', qty: '۱ بسته', status: 'برطرف شد', date: '۱۸ مرداد' },
   ]
   return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="مرجوعی و مسائل"/><h1>مرجوعی و مسائل</h1><p>کسری، کالای اشتباه و آسیب‌دیدگی سفارش‌ها را مدیریت کنید.</p></div><button className="button primary"><Plus size={17}/>ثبت مورد جدید</button></div>
   <section className="surface" style={{padding:16}}>
@@ -393,17 +393,17 @@ export function ReturnsIssues() {
 
 export function Messages() {
   const threads = [
-    { id: 't1', from: 'تیم خرید کلبه', preview: 'PO-4813 — تأخیر در ارسال؟', time: '۱۰:۳۲', unread: true },
+    { id: 't1', from: 'تیم خرید کلبه', preview: 'سفارش ۴۸۱۳ — تأخیر در ارسال؟', time: '۱۰:۳۲', unread: true },
     { id: 't2', from: 'کنترل کیفیت', preview: 'نمونه جدید تأیید شد', time: 'دیروز', unread: false },
     { id: 't3', from: 'مالی کلبه', preview: 'صورت‌حساب مرداد ارسال شد', time: '۲ روز پیش', unread: false },
   ]
   return <><div className="page-head"><div><PageCrumbs parent="ارتباطات" current="پیام‌ها"/><h1>پیام‌ها</h1><p>گفتگو با تیم‌های کلبه — خرید، کیفیت و مالی.</p></div></div>
   <section className="surface" style={{padding:16}}>
     {threads.map(t => (
-      <div key={t.id} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 0',borderBottom:'1px solid #ecebe6'}}>
+      <div key={t.id} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 0',borderBottom:'1px solid var(--kv-border)'}}>
         <span style={{width:36,height:36,borderRadius:'50%',background:'#e7e7e1',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:'#555'}}>{t.from.slice(0,1)}</span>
         <div style={{flex:1,minWidth:0}}><b style={{fontSize:11.5,display:'block'}}>{t.from}{t.unread && <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#ca9130',marginRight:6}} />}</b><span style={{fontSize:10,color:'#888'}}>{t.preview}</span></div>
-        <small style={{fontSize:9,color:'#999'}}>{t.time}</small>
+        <small style={{fontSize:9,color:'var(--kv-text-muted)'}}>{t.time}</small>
       </div>
     ))}
   </section></>
@@ -414,20 +414,20 @@ export function ProductReview() {
   return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="در حال بررسی"/><h1>در حال بررسی کلبه</h1><p>محصولات ارسالی شما که منتظر تأیید تیم کاتالوگ کلبه هستند.</p></div></div>
   <section className="surface" style={{padding:16}}>
     <div className="ledger-table"><div className="ledger-row header"><span>محصول</span><span>کد کالا</span><span>سری</span><span>وضعیت</span></div>
-    <div className="ledger-row"><b>پیراهن لینن</b><span>NG-LIN-301</span><span>سری کامل (۸ تیکه)</span><Status>در بررسی</Status></div>
-    <div className="ledger-row"><b>وست پشمی</b><span>NG-VST-041</span><span>نیم‌سری (۵ تیکه)</span><Status>نیازمند اصلاح</Status></div>
+    <div className="ledger-row"><b>پیراهن لینن</b><span>کد ۳۰۱</span><span>سری کامل (۸ تکه)</span><Status>در بررسی</Status></div>
+    <div className="ledger-row"><b>وست پشمی</b><span>کد ۰۴۱</span><span>نیم‌سری (۵ تکه)</span><Status>نیازمند اصلاح</Status></div>
     </div>
   </section></>
 }
 
 export function QuoteBuilder() {
-  return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="پیشنهاد قیمت"/><h1>ساخت پیشنهاد قیمت</h1><p>برای RFQ-2048 پیشنهاد خود را تنظیم و ارسال کنید.</p></div></div>
+  return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="پیشنهاد قیمت"/><h1>ساخت پیشنهاد قیمت</h1><p>برای درخواست ۲۰۴۸ پیشنهاد خود را تنظیم و ارسال کنید.</p></div></div>
   <section className="surface" style={{padding:20}}>
-    <SectionHeading title="پیشنهاد قیمت برای RFQ-2048" eyebrow="QUOTE BUILDER">پیراهن آکسفورد اختصاصی — گروه هتل‌های هلیا</SectionHeading>
+    <SectionHeading title="پیشنهاد قیمت برای درخواست ۲۰۴۸" eyebrow="سازندهٔ پیش‌فاکتور">پیراهن آکسفورد اختصاصی — گروه هتل‌های هلیا</SectionHeading>
     <div style={{display:'grid',gap:12,gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))'}}>
-      <label style={{fontSize:10}}>قیمت هر تیکه<input type="text" placeholder="۱٬۴۵۰٬۰۰۰" style={{width:'100%',height:36,border:'1px solid #deddd6',padding:'0 10px',fontSize:11,marginTop:4}}/></label>
-      <label style={{fontSize:10}}>زمان تولید (روز)<input type="number" defaultValue={28} style={{width:'100%',height:36,border:'1px solid #deddd6',padding:'0 10px',fontSize:11,marginTop:4}} dir="ltr"/></label>
-      <label style={{fontSize:10}}>تعداد قابل تأمین<input type="number" defaultValue={600} style={{width:'100%',height:36,border:'1px solid #deddd6',padding:'0 10px',fontSize:11,marginTop:4}} dir="ltr"/></label>
+      <label style={{fontSize:10}}>قیمت هر تکه<input type="text" placeholder="۱٬۴۵۰٬۰۰۰" style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10 px',fontSize:11,marginTop:4}}/></label>
+      <label style={{fontSize:10}}>زمان تولید (روز)<input type="number" defaultValue={28} style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10 px',fontSize:11,marginTop:4}} dir="ltr"/></label>
+      <label style={{fontSize:10}}>تعداد قابل تأمین<input type="number" defaultValue={600} style={{width:'100%',height:36,border:'1px solid var(--kv-border)',padding:'0 10 px',fontSize:11,marginTop:4}} dir="ltr"/></label>
     </div>
     <button className="button primary" style={{marginTop:16,minHeight:38}}>ارسال پیشنهاد</button>
   </section></>
@@ -436,11 +436,11 @@ export function QuoteBuilder() {
 export function SamplesWorkspace() {
   return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="نمونه‌ها"/><h1>فضای نمونه‌ها</h1><p>نمونه‌های فیزیکی و دیجیتال را بارگذاری و پیگیری کنید.</p></div><button className="button primary"><Upload size={17}/>بارگذاری نمونه</button></div>
   <section className="surface" style={{padding:16}}>
-    <p style={{fontSize:11,color:'var(--kv-text-muted)'}}>PO-4827 — نمونه فیزیکی تا ۲۳ مرداد باید بارگذاری شود.</p>
-    <div style={{marginTop:12,border:'2px dashed #deddd6',borderRadius:6,padding:24,textAlign:'center'}}>
-      <Upload size={28} style={{color:'#999',margin:'0 auto 8px'}} />
+    <p style={{fontSize:11,color:'var(--kv-text-muted)'}}>سفارش ۴۸۲۷ — نمونه فیزیکی تا ۲۳ مرداد باید بارگذاری شود.</p>
+    <div style={{marginTop:12,border:'2px dashed var(--kv-border)',borderRadius:6,padding:24,textAlign:'center'}}>
+      <Upload size={28} style={{color:'var(--kv-text-muted)',margin:'0 auto 8 px'}} />
       <b style={{fontSize:11}}>عکس‌های نمونه را اینجا رها کنید</b>
-      <p style={{fontSize:9,color:'#999',marginTop:4}}>جلو، پشت و جزئیات پارچه</p>
+      <p style={{fontSize:9,color:'var(--kv-text-muted)',marginTop:4}}>جلو، پشت و جزئیات پارچه</p>
     </div>
   </section></>
 }

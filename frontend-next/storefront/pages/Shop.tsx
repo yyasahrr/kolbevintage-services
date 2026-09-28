@@ -10,7 +10,7 @@ import {
   type Product,
 } from "../data/catalog";
 import { styles } from "../siteData";
-import { fa } from "../utils/format";
+import { fa, sizeLabel } from "../utils/format";
 import ProductCard from "../components/ProductCard";
 import Icon from "../components/Icon";
 import { CatalogNotice, useCatalog } from "../lib/catalogClient";
@@ -83,7 +83,7 @@ function CheckRow({
         onClick={onChange}
         className={
           "flex h-4 w-4 shrink-0 items-center justify-center rounded-[2px] border transition " +
-          (checked ? "border-[#011c3a] bg-[#011c3a]" : "border-neutral-300")
+          (checked ? "border-[var(--kv-primary)] bg-[var(--kv-primary)]" : "border-neutral-300")
         }
       >
         {checked && <Icon name="check" className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
@@ -118,7 +118,7 @@ function FilterPanel({
     <div>
       <div className="flex items-center justify-between border-b border-neutral-200 pb-3">
         <span className="text-[12.5px] font-medium">فیلترها</span>
-        <button onClick={reset} className="text-[11.5px] text-neutral-500 underline hover:text-[#011c3a]">
+        <button onClick={reset} className="text-[11.5px] text-neutral-500 underline hover:text-[var(--kv-primary)]">
           پاک کردن همه
         </button>
       </div>
@@ -148,17 +148,17 @@ function FilterPanel({
       </Section>
 
       <Section title="سایز">
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
           {allSizes.map((s) => (
             <button
               key={s}
               onClick={() => toggle("sizes", s)}
               className={
                 "h-8 rounded-[3px] border text-[11.5px] transition " +
-                (f.sizes.includes(s) ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300 hover:border-[#011c3a]")
+                (f.sizes.includes(s) ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300 hover:border-[var(--kv-primary)]")
               }
             >
-              {s}
+              {sizeLabel(s)}
             </button>
           ))}
         </div>
@@ -174,7 +174,7 @@ function FilterPanel({
               aria-label={c.name}
               className={
                 "h-7 w-7 rounded-full border-2 transition " +
-                (f.colours.includes(c.name) ? "border-[#011c3a]" : "border-neutral-200 hover:border-neutral-400")
+                (f.colours.includes(c.name) ? "border-[var(--kv-primary)]" : "border-neutral-200 hover:border-neutral-400")
               }
               style={{ background: c.hex }}
             />
@@ -189,7 +189,7 @@ function FilterPanel({
             value={f.min}
             onChange={(e) => set({ min: e.target.value.replace(/\D/g, "") })}
             placeholder="از"
-            className="h-9 w-full rounded-[3px] border border-neutral-300 px-2.5 text-[12px] outline-none focus:border-[#011c3a]"
+            className="h-9 w-full rounded-[3px] border border-neutral-300 px-2.5 text-[12px] outline-none focus:border-[var(--kv-primary)]"
           />
           <span className="text-neutral-400">—</span>
           <input
@@ -197,7 +197,7 @@ function FilterPanel({
             value={f.max}
             onChange={(e) => set({ max: e.target.value.replace(/\D/g, "") })}
             placeholder="تا"
-            className="h-9 w-full rounded-[3px] border border-neutral-300 px-2.5 text-[12px] outline-none focus:border-[#011c3a]"
+            className="h-9 w-full rounded-[3px] border border-neutral-300 px-2.5 text-[12px] outline-none focus:border-[var(--kv-primary)]"
           />
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -209,7 +209,7 @@ function FilterPanel({
             <button
               key={r.l}
               onClick={() => set({ min: r.min, max: r.max })}
-              className="rounded-[3px] border border-neutral-300 px-2.5 py-1 text-[10.5px] hover:border-[#011c3a]"
+              className="rounded-[3px] border border-neutral-300 px-2.5 py-1 text-[10.5px] hover:border-[var(--kv-primary)]"
             >
               {r.l}
             </button>
@@ -323,7 +323,7 @@ export default function Shop() {
       <nav className="mb-4 flex items-center gap-1.5 text-[11px] text-neutral-500">
         <a href="#/" className="hover:underline">خانه</a>
         <span>›</span>
-        <span className="text-[#011c3a]">فروشگاه</span>
+        <span className="text-[var(--kv-primary)]">فروشگاه</span>
       </nav>
 
       <div className="mb-6">
@@ -339,7 +339,7 @@ export default function Shop() {
           <FilterPanel f={draft} set={set} reset={resetAll} results={filtered.length} items={catalogItems} />
           <button
             onClick={applyDraft}
-            className="mt-4 h-10 w-full rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white transition hover:bg-[#0a2c55]"
+            className="mt-4 h-10 w-full rounded-[3px] bg-[var(--kv-primary)] text-[12.5px] font-medium text-white transition hover:bg-[var(--kv-primary)]"
           >
             اعمال فیلتر
           </button>
@@ -354,7 +354,7 @@ export default function Shop() {
             >
               فیلترها
               {activeCount > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white num-fa">
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--kv-primary)] px-1 text-[9px] text-white num-fa">
                   {fa(activeCount)}
                 </span>
               )}
@@ -374,7 +374,7 @@ export default function Shop() {
                     aria-label={`${c} ستون`}
                     className={
                       "flex h-7 w-7 items-center justify-center rounded-[3px] border text-[10px] transition " +
-                      (cols === c ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300")
+                      (cols === c ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300")
                     }
                   >
                     {fa(c)}
@@ -389,7 +389,7 @@ export default function Shop() {
                     aria-label={`${c} ستون`}
                     className={
                       "flex h-7 w-7 items-center justify-center rounded-[3px] border text-[10px] transition " +
-                      (mobileCols === c ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-300")
+                      (mobileCols === c ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-300")
                     }
                   >
                     {fa(c)}
@@ -400,7 +400,7 @@ export default function Shop() {
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value)}
-                className="h-9 rounded-[3px] border border-neutral-300 bg-white px-2.5 text-[12px] outline-none focus:border-[#011c3a]"
+                className="h-9 rounded-[3px] border border-neutral-300 bg-white px-2.5 text-[12px] outline-none focus:border-[var(--kv-primary)]"
               >
                 {sortOptions.map((o) => (
                   <option key={o.id} value={o.id}>
@@ -423,7 +423,7 @@ export default function Shop() {
               ]
                 .filter(Boolean)
                 .map((label) => (
-                  <span key={label as string} className="rounded-[3px] bg-[#f6f6f4] px-2.5 py-1 text-[11px]">
+                  <span key={label as string} className="rounded-[3px] bg-[var(--kv-canvas)] px-2.5 py-1 text-[11px]">
                     {label}
                   </span>
                 ))}
@@ -440,7 +440,7 @@ export default function Shop() {
               <p className="text-[13px] text-[var(--kv-text-muted)]">
                 {catalog.state === "loading" ? "در حال دریافت کالاها…" : "محصولی با این فیلترها پیدا نشد."}
               </p>
-              <button onClick={resetAll} className="mt-4 rounded-[3px] bg-[#011c3a] px-6 py-2.5 text-[12.5px] text-white">
+              <button onClick={resetAll} className="mt-4 rounded-[3px] bg-[var(--kv-primary)] px-6 py-2.5 text-[12.5px] text-white">
                 پاک کردن فیلترها
               </button>
             </div>
@@ -456,7 +456,7 @@ export default function Shop() {
                 <div className="mt-12 text-center">
                   <button
                     onClick={() => setShown((s) => s + 9)}
-                    className="rounded-[3px] border border-[#011c3a] px-10 py-3 text-[12.5px] font-medium transition hover:bg-[#011c3a] hover:text-white"
+                    className="rounded-[3px] border border-[var(--kv-primary)] px-10 py-3 text-[12.5px] font-medium transition hover:bg-[var(--kv-primary)] hover:text-white"
                   >
                     نمایش بیشتر ({fa(filtered.length - shown)} محصول دیگر)
                   </button>
@@ -484,7 +484,7 @@ export default function Shop() {
             <div className="border-t border-neutral-200 p-4">
               <button
                 onClick={applyDraft}
-                className="h-11 w-full rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white"
+                className="h-11 w-full rounded-[3px] bg-[var(--kv-primary)] text-[13px] font-medium text-white"
               >
                 نمایش نتایج
               </button>

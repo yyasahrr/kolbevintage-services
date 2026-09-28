@@ -42,7 +42,7 @@ export function VisualHotspotCanvas({
       <div>
         <div
           ref={canvasRef}
-          className={"relative select-none overflow-hidden border-2 border-dashed bg-neutral-100 " + (dragOver ? "border-[#011c3a]" : "border-neutral-300") + " " + shapeCls}
+          className={"relative select-none overflow-hidden border-2 border-dashed bg-neutral-100 " + (dragOver ? "border-[var(--kv-primary)]" : "border-neutral-300") + " " + shapeCls}
           onMouseMove={(e) => { if (dragIdRef.current) moveHotspot(dragIdRef.current, e.clientX, e.clientY); }}
           onMouseUp={() => { dragIdRef.current = null; }}
           onMouseLeave={() => { dragIdRef.current = null; }}
@@ -90,7 +90,7 @@ export function VisualHotspotCanvas({
           <p className="text-[11px] font-medium text-neutral-500">هاش‌اسپات‌ها ({hotspots.length})</p>
           <div className="mt-2 space-y-1">
             {hotspots.map((h) => (
-              <button key={h.id} onClick={() => setSelected(h.id)} className={(selected === h.id ? "border-[#011c3a] bg-[#011c3a] text-white" : "border-neutral-200 hover:border-[#011c3a]") + " flex w-full items-center gap-2 rounded-[3px] border px-2.5 py-1.5 text-right text-[11px] transition"}>
+              <button key={h.id} onClick={() => setSelected(h.id)} className={(selected === h.id ? "border-[var(--kv-primary)] bg-[var(--kv-primary)] text-white" : "border-neutral-200 hover:border-[var(--kv-primary)]") + " flex w-full items-center gap-2 rounded-[3px] border px-2.5 py-1.5 text-right text-[11px] transition"}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: h.color }} />
                 <span className="min-w-0 flex-1 truncate">{h.label}</span>
                 <span className={"shrink-0 text-[9px] " + (selected === h.id ? "text-white/60" : "text-neutral-400")}>{h.visible ? "" : "مخفی"}</span>
@@ -99,7 +99,7 @@ export function VisualHotspotCanvas({
           </div>
           <button
             onClick={() => onChange([...hotspots, { id: `h-${Date.now()}`, x: 50, y: 50, label: "قطعه جدید", color: "var(--kv-accent)", visible: true }])}
-            className="mt-2 h-8 w-full rounded-[3px] bg-[#011c3a] text-[10.5px] font-medium text-white transition hover:bg-[#0a2c55]"
+            className="mt-2 h-8 w-full rounded-[3px] bg-[var(--kv-primary)] text-[10.5px] font-medium text-white transition hover:bg-[var(--kv-primary)]"
           >
             + هات‌اسپات جدید
           </button>
@@ -112,7 +112,7 @@ export function VisualHotspotCanvas({
             <div className="grid grid-cols-2 gap-2">
               <label className="text-[10px] text-neutral-500">رنگ<span><input type="color" value={selectedHotspot.color} onChange={(e) => onChange(hotspots.map((h) => (h.id === selectedHotspot.id ? { ...h, color: e.target.value } : h)))} className="mt-1 h-9 w-full cursor-pointer rounded-[3px] border border-neutral-300" /></span></label>
               <label className="flex items-end gap-2 pb-1 text-[10.5px]">
-                <input type="checkbox" checked={selectedHotspot.visible} onChange={(e) => onChange(hotspots.map((h) => (h.id === selectedHotspot.id ? { ...h, visible: e.target.checked } : h)))} className="accent-[#011c3a]" />
+                <input type="checkbox" checked={selectedHotspot.visible} onChange={(e) => onChange(hotspots.map((h) => (h.id === selectedHotspot.id ? { ...h, visible: e.target.checked } : h)))} className="accent-[var(--kv-primary)]" />
                 نمایش داده شود
               </label>
             </div>
@@ -153,7 +153,7 @@ export function ImageDropField({ value, onChange, compact = false }: { value: st
           try { onChange(await fileToOptimizedDataUrl(file)); } finally { setBusy(false); }
         }
       }}
-      className={"rounded-[4px] border-2 border-dashed p-2 text-center transition " + (dragOver ? "border-[#011c3a] bg-[#011c3a]/5" : "border-neutral-300")}
+      className={"rounded-[4px] border-2 border-dashed p-2 text-center transition " + (dragOver ? "border-[var(--kv-primary)] bg-[var(--kv-primary)]/5" : "border-neutral-300")}
     >
       <input ref={ref} type="file" accept="image/*" className="hidden" onChange={async (e) => {
         const file = e.target.files?.[0];
@@ -170,7 +170,7 @@ export function ImageDropField({ value, onChange, compact = false }: { value: st
         <p className="py-3 text-[10.5px] text-neutral-400">تصویر را اینجا رها کن</p>
       )}
       <div className="mt-1.5 flex items-center justify-center gap-2">
-        <button type="button" onClick={() => ref.current?.click()} className="h-7 rounded-[3px] border border-neutral-300 px-3 text-[10px] transition hover:border-[#011c3a]">{busy ? "…" : "انتخاب فایل"}</button>
+        <button type="button" onClick={() => ref.current?.click()} className="h-7 rounded-[3px] border border-neutral-300 px-3 text-[10px] transition hover:border-[var(--kv-primary)]">{busy ? "…" : "انتخاب فایل"}</button>
         {value ? <button type="button" onClick={() => onChange("")} className="h-7 rounded-[3px] border border-neutral-300 px-3 text-[10px] transition hover:border-red-300 hover:text-red-600">حذف</button> : null}
       </div>
     </div>
@@ -233,11 +233,11 @@ export function MediaDropField({
       {value ? kind === "video"
         ? <video src={value} poster={poster || undefined} muted loop controls playsInline className="aspect-video w-full bg-black object-contain" />
         : <img src={value} alt="پیش‌نمایش رسانه" className="max-h-52 w-full object-contain" />
-        : <button type="button" onClick={() => fileRef.current?.click()} className="flex min-h-32 w-full flex-col items-center justify-center px-4 text-[10.5px] text-neutral-500"><span className="text-[13px] font-medium text-[#011c3a]">فایل را اینجا رها کنید</span><span className="mt-1">یا برای انتخاب از سیستم کلیک کنید</span></button>}
+        : <button type="button" onClick={() => fileRef.current?.click()} className="flex min-h-32 w-full flex-col items-center justify-center px-4 text-[10.5px] text-neutral-500"><span className="text-[13px] font-medium text-[var(--kv-primary)]">فایل را اینجا رها کنید</span><span className="mt-1">یا برای انتخاب از سیستم کلیک کنید</span></button>}
     </div>
     <input ref={fileRef} type="file" accept={accept} className="sr-only" onChange={(event) => void read(event.target.files?.[0])} />
     <div className="flex flex-wrap gap-2">
-      <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-3 text-[10.5px] hover:border-[#011c3a] disabled:opacity-50">{busy ? "در حال پردازش…" : "آپلود از سیستم"}</button>
+      <button type="button" disabled={busy} onClick={() => fileRef.current?.click()} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-3 text-[10.5px] hover:border-[var(--kv-primary)] disabled:opacity-50">{busy ? "در حال پردازش…" : "آپلود از سیستم"}</button>
       {value ? <button type="button" onClick={() => onChange("")} className="h-9 rounded-[3px] border border-neutral-300 px-3 text-[10.5px] text-red-700">حذف</button> : null}
     </div>
     <label className="block text-[9.5px] text-neutral-500">آدرس مستقیم یا CDN
@@ -283,7 +283,7 @@ export function SortableList<T extends { id: string }>({
           onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
           onDragOver={(e) => { e.preventDefault(); setOverIndex(index); }}
           onDrop={(e) => { e.preventDefault(); drop(index); }}
-          className={"rounded-[4px] transition " + (dragIndex === index ? "opacity-40" : "") + (overIndex === index && dragIndex !== null && dragIndex !== index ? " ring-2 ring-[#011c3a] ring-offset-1" : "")}
+          className={"rounded-[4px] transition " + (dragIndex === index ? "opacity-40" : "") + (overIndex === index && dragIndex !== null && dragIndex !== index ? " ring-2 ring-[var(--kv-primary)] ring-offset-1" : "")}
         >
           {renderItem(item, index)}
         </div>

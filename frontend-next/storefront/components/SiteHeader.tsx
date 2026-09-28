@@ -105,13 +105,13 @@ export default function SiteHeader() {
             {settings.header.showSearch && <button aria-label="جستجو" className="hover:opacity-60" onClick={() => setSearchOpen(!searchOpen)}>
               <Icon name="search" />
             </button>}
-            {settings.header.showAccount && <Link to="/account" aria-label="حساب کاربری" className="hidden items-center gap-1.5 text-[11.5px] font-medium text-neutral-700 transition hover:text-[#011c3a] sm:flex">
+            {settings.header.showAccount && <Link to="/account" aria-label="حساب کاربری" className="hidden items-center gap-1.5 text-[11.5px] font-medium text-neutral-700 transition hover:text-[var(--kv-primary)] sm:flex">
               {path === "/wholesale" ? "ورود / ثبت‌نام" : "ورود"}
             </Link>}
             {settings.header.showWishlist && <Link to="/wishlist" aria-label="علاقه‌مندی‌ها" className="relative hidden hover:opacity-60 sm:block">
               <Icon name="heart" />
               {wishlist.length > 0 && (
-                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
+                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--kv-primary)] px-1 text-[9px] text-white">
                   {fa(wishlist.length)}
                 </span>
               )}
@@ -119,7 +119,7 @@ export default function SiteHeader() {
             <button aria-label="سبد خرید" className="relative hover:opacity-60" onClick={() => setCartOpen(true)}>
               <Icon name="bag" />
               {cartCount > 0 && (
-                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#011c3a] px-1 text-[9px] text-white">
+                <span className="absolute -left-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--kv-primary)] px-1 text-[9px] text-white">
                   {fa(cartCount)}
                 </span>
               )}
@@ -181,7 +181,7 @@ export default function SiteHeader() {
                           { label: "اکسسوری", to: "/shop?cat=accessory" },
                           { label: "شال و گردن", to: "/shop?cat=scarf" },
                         ].map(item => (
-                          <Link key={item.label} to={item.to} role="menuitem" className="rounded-lg px-3 py-2 text-[11.5px] text-neutral-700 transition hover:bg-neutral-100 hover:text-[#011c3a]">
+                          <Link key={item.label} to={item.to} role="menuitem" className="rounded-lg px-3 py-2 text-[11.5px] text-neutral-700 transition hover:bg-neutral-100 hover:text-[var(--kv-primary)]">
                             {item.label}
                           </Link>
                         ))}
@@ -200,7 +200,7 @@ export default function SiteHeader() {
                           { label: "کلاسیک", to: "/styles?s=classic" },
                           { label: "نئو کلاسیک", to: "/styles?s=neo-classic" },
                         ].map(item => (
-                          <Link key={item.label} to={item.to} role="menuitem" className="rounded-lg px-3 py-2 text-[11.5px] text-neutral-700 transition hover:bg-neutral-100 hover:text-[#011c3a]">
+                          <Link key={item.label} to={item.to} role="menuitem" className="rounded-lg px-3 py-2 text-[11.5px] text-neutral-700 transition hover:bg-neutral-100 hover:text-[var(--kv-primary)]">
                             {item.label}
                           </Link>
                         ))}
@@ -259,7 +259,7 @@ export default function SiteHeader() {
                 <Link
                   key={s.slug}
                   to={`/styles?s=${s.slug}`}
-                  className="search-chip rounded-full border border-neutral-300 px-3 py-1.5 hover:border-[#011c3a]"
+                  className="search-chip rounded-full border border-neutral-300 px-3 py-1.5 hover:border-[var(--kv-primary)]"
                 >
                   {s.name}
                 </Link>

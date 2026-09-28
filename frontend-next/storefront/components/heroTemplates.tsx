@@ -81,10 +81,10 @@ export function HeroTemplate2({ config }: TemplateProps) {
     config.imageShape === "rounded" ? "rounded-[2rem] p-3 lg:p-5" : "";
   const imgWrap = "relative overflow-hidden " + (config.imageShape === "circle" ? "aspect-square rounded-full" : config.imageShape === "rounded" ? "rounded-[2rem]" : "");
   return (
-    <section className={"grid overflow-hidden lg:grid-cols-[1.05fr_1fr] " + (dark ? "bg-[#0a1622] text-white" : "bg-[#f7f5f0] text-[#011c3a]")}>
+    <section className={"grid overflow-hidden lg:grid-cols-[1.05fr_1fr] " + (dark ? "bg-[var(--kv-ink)] text-white" : "bg-[var(--kv-canvas)] text-[var(--kv-primary)]")}>
       <div className="flex items-center px-6 py-14 sm:px-12 lg:px-16">
         <div className="max-w-xl">
-          {config.eyebrow ? <p className="text-[11px] tracking-[0.32em] text-[#c9654d]">{config.eyebrow}</p> : null}
+          {config.eyebrow ? <p className="text-[11px] tracking-[0.32em] text-[var(--kv-danger)]">{config.eyebrow}</p> : null}
           <h1 className="fade-up mt-4 text-[28px] font-medium leading-[1.45] sm:text-[36px] lg:text-[44px]" style={config.titleColor ? { color: config.titleColor } : undefined}>{config.title}</h1>
           {config.subtitle ? <p className={"mt-4 text-[13px] leading-[2] " + (dark ? "text-white/70" : "text-neutral-600")} style={config.subtitleColor ? { color: config.subtitleColor } : undefined}>{config.subtitle}</p> : null}
           <div className="mt-8"><Cta config={config} /></div>

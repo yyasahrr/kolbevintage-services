@@ -24,7 +24,7 @@ export default function CompareBar() {
                 <button
                   onClick={() => toggleCompare(id)}
                   aria-label="حذف"
-                  className="absolute -left-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#011c3a] text-white"
+                  className="absolute -left-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--kv-primary)] text-white"
                 >
                   <Icon name="close" className="h-2.5 w-2.5" strokeWidth={2.5} />
                 </button>
@@ -37,7 +37,7 @@ export default function CompareBar() {
         </button>
         <Link
           to="/compare"
-          className="shrink-0 rounded-[3px] bg-[#011c3a] px-4 py-2 text-[12px] font-medium text-white"
+          className="shrink-0 rounded-[3px] bg-[var(--kv-primary)] px-4 py-2 text-[12px] font-medium text-white"
         >
           مقایسه کن
         </Link>
