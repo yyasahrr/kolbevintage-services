@@ -11,6 +11,7 @@ import { loadHomepageArticles, subscribeToJournalSettings } from "../journalSett
 import HomepageHero from "../components/HomepageHero";
 import FestivalCountdownOverlay from "../components/FestivalCountdown";
 import { useSiteSettings } from "../siteSettings";
+import { CatalogNotice, useCatalog } from "../lib/catalogClient";
 import Reveal from "../lib/reveal";
 import { useHomeVariant } from "../homeVariant";
 import HomeTweaks from "../components/HomeTweaks";
@@ -21,7 +22,10 @@ import HomeTweaks from "../components/HomeTweaks";
 
 function NewArrivals() {
   const variant = useHomeVariant();
-  const items = [...products].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
+  const catalog = useCatalog();
+  const items = [...catalog.items]
+    .sort((a, b) => (b.origin === "api" ? 1 : 0) - (a.origin === "api" ? 1 : 0) || b.createdAt - a.createdAt)
+    .slice(0, 5);
 
   return (
     <Reveal id="home-new" as="section" className={`mx-auto w-full ${variant.width} px-4 ${variant.rhythm} lg:px-8`}>
@@ -34,6 +38,8 @@ function NewArrivals() {
           مشاهده همه
         </Link>
       </div>
+
+      <CatalogNotice state={catalog.state} source={catalog.source} onRetry={catalog.retry} className="mb-6" />
 
       <div className={variant.productGrid}>
         {items.map((p) => (
@@ -172,7 +178,10 @@ function ShopByStyle() {
 
 function BestSellers() {
   const variant = useHomeVariant();
-  const items = [...products].sort((a, b) => b.sold - a.sold).slice(0, 5);
+  const catalog = useCatalog();
+  const items = [...catalog.items]
+    .sort((a, b) => (b.origin === "api" ? 1 : 0) - (a.origin === "api" ? 1 : 0) || b.sold - a.sold)
+    .slice(0, 5);
 
   return (
     <Reveal id="home-best" as="section" className={`best-sellers-section mx-auto w-full ${variant.width} px-4 ${variant.rhythm} lg:px-8`}>

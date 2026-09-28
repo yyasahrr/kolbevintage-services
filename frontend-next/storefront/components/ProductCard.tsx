@@ -21,7 +21,7 @@ export default function ProductCard({
   compact = false,
   channel = "retail",
 }: {
-  product: Product;
+  product: Product & { pricePending?: boolean; imagePending?: boolean };
   compact?: boolean;
   channel?: PurchaseChannel;
 }) {
@@ -72,23 +72,33 @@ export default function ProductCard({
   return (
     <article className="product-card group relative flex h-full flex-col">
       <Link to={`/product/${product.id}`} className="block">
-        <div className={`product-card-media relative overflow-hidden bg-neutral-100 ${mediaRadius}`}>
-          <img
-            src={shown}
-            alt={product.name}
-            loading="lazy"
-            decoding="async"
-            className={`${mediaRatio} w-full object-cover transition-opacity duration-300`}
-          />
+        <div className={`product-card-media relative overflow-hidden ${mediaRadius}`}>
+          {product.imagePending ? (
+            /* تصویر رسمی کالا موجود نیست؛ عکس کالای دیگر قرض گرفته نمی‌شود. */
+            <div className={`${mediaRatio} flex w-full flex-col items-center justify-center gap-2 bg-[var(--kv-surface-muted)] text-center`}>
+              <Icon name="needle" className="h-6 w-6 text-[var(--kv-text-muted)]" strokeWidth={1.2} />
+              <span className="kv-label text-[var(--kv-text-muted)]">تصویر به‌زودی</span>
+            </div>
+          ) : (
+            <>
+              <img
+                src={shown}
+                alt={product.name}
+                loading="lazy"
+                decoding="async"
+                className={`${mediaRatio} w-full object-cover transition-opacity duration-300`}
+              />
 
-          {/* عکس دوم هنگام hover */}
-          <img
-            src={gallery[(idx + 1) % gallery.length]}
-            alt=""
-            loading="lazy"
-            aria-hidden="true"
-            className={`absolute inset-0 ${mediaRatio} w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100`}
-          />
+              {/* عکس دوم هنگام hover */}
+              <img
+                src={gallery[(idx + 1) % gallery.length]}
+                alt=""
+                loading="lazy"
+                aria-hidden="true"
+                className={`absolute inset-0 ${mediaRatio} w-full object-cover opacity-0 transition-opacity duration-300 group-hover:opacity-100`}
+              />
+            </>
+          )}
 
           {/* برچسب‌ها */}
           {product.badges.length > 0 && (
@@ -181,7 +191,11 @@ export default function ProductCard({
             </Link>
             {cardSettings.showSubtitle ? <p className="truncate text-[11.5px] text-neutral-500">{product.subtitle}</p> : null}
           </div>
-          <span className="shrink-0 text-left text-[12.5px] num-fa">{salePrice < product.price ? <><span className="block text-[9px] text-neutral-400 line-through">{toman(product.price)}</span><span className="text-red-700">{toman(salePrice)}</span></> : toman(product.price)}</span>
+          {product.pricePending ? (
+            <span className="shrink-0 text-left kv-label text-[var(--kv-text-muted)]">قیمت به‌زودی</span>
+          ) : (
+            <span className="shrink-0 text-left text-[12.5px] num-fa">{salePrice < product.price ? <><span className="block text-[9px] text-neutral-400 line-through">{toman(product.price)}</span><span className="text-red-700">{toman(salePrice)}</span></> : toman(product.price)}</span>
+          )}
         </div>
 
         {/* سوآچ رنگ‌ها */}
@@ -220,7 +234,7 @@ export default function ProductCard({
           )}
         </div> : null}
 
-        {isInstallmentAvailable(channel) && cardSettings.showInstallment && installment.enabled && installment.showOnCard ? <div className="mt-2 border-r-2 border-[#ffd200] pr-2 text-[9.5px] leading-5 text-neutral-500"><span className="font-medium text-[#011c3a]">{installment.provider === "digipay" ? "دیجی‌پی" : installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : "اسنپ‌پی"}</span> · {installment.installments.toLocaleString("fa-IR")} قسط از {toman(Math.ceil(installmentPrice/installment.installments))}</div> : null}
+        {!product.pricePending && isInstallmentAvailable(channel) && cardSettings.showInstallment && installment.enabled && installment.showOnCard ? <div className="mt-2 border-r-2 border-[#ffd200] pr-2 text-[9.5px] leading-5 text-neutral-500"><span className="font-medium text-[#011c3a]">{installment.provider === "digipay" ? "دیجی‌پی" : installment.provider === "both" ? "اسنپ‌پی / دیجی‌پی" : "اسنپ‌پی"}</span> · {installment.installments.toLocaleString("fa-IR")} قسط از {toman(Math.ceil(installmentPrice/installment.installments))}</div> : null}
 
         {cardSettings.showQuickAdd ? <div className="product-card-purchase mt-auto pt-4">
           {sizeOpen && (
@@ -244,6 +258,7 @@ export default function ProductCard({
 
           <button
             type="button"
+            disabled={product.pricePending || product.sizes.every((size) => !size.inStock)}
             onClick={quickBuy}
             style={{ "--card-hover-bg": builder.productCard.hoverBg, "--card-hover-text": builder.productCard.hoverText } as React.CSSProperties}
             className={
@@ -253,8 +268,11 @@ export default function ProductCard({
                 : "storefront-secondary-action")
             }
           >
-            {selectedSize && <Icon name="bag" className="h-3.5 w-3.5" />}
-            {selectedSize ? `خرید سریع · سایز ${selectedSize}` : "انتخاب سایز"}
+            {product.pricePending
+              ? "قیمت به‌زودی"
+              : !product.sizes.some((size) => size.inStock)
+                ? "ناموجود"
+                : <>{selectedSize && <Icon name="bag" className="h-3.5 w-3.5" />}{selectedSize ? `خرید سریع · سایز ${selectedSize}` : "انتخاب سایز"}</>}
           </button>
         </div> : null}
       </div>

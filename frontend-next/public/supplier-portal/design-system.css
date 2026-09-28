@@ -33,3 +33,112 @@
   .surface { border-radius: 12px; }
   .page-content { padding-inline: 14px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STYLE LOCK — پورتال تأمین‌کننده روی توکن‌های مشترک «کرِم و بلوط»
+   این لایه آخرین لایهٔ CSS پنل است و رنگ‌های سخت‌کد قدیمی را به توکن‌های
+   app/globals.css نگاشت می‌کند (پاسخ ۷۵ و ۷۸: توکن مشترک، چگالی بالاتر).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@font-face {
+  font-family: "Estedad";
+  src: url("/fonts/Estedad-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:where(.app-shell, .auth-shell) {
+  font-family: var(--kv-font-body);
+  color: var(--kv-text);
+  background: var(--kv-canvas);
+}
+
+:where(.app-shell, .auth-shell) :where(h1, h2, h3, .brand strong, .section-heading h2, .page-head h1) {
+  font-family: var(--kv-font-display);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* هیچ فونت لاتین/سریف تزئینی در پنل نمی‌ماند */
+:where(.app-shell, .auth-shell) :where(.brand strong, .brand-seal, .factory-logo, .auth-brand strong, .auth-intro-copy h1 em) {
+  font-family: var(--kv-font-display);
+}
+
+:where(.app-shell, .auth-shell) :where(button, a, input, select, textarea) {
+  border-radius: var(--kv-radius-control);
+  transition: color var(--kv-dur-fast) ease, background-color var(--kv-dur-fast) ease,
+    border-color var(--kv-dur-fast) ease, transform var(--kv-dur-fast) ease;
+}
+
+/* سایدبار: هم‌خانوادهٔ فروشگاه (کرم گرم با متن تیره) */
+.sidebar {
+  background: var(--kv-surface);
+  color: var(--kv-text);
+  border-inline-end: 1px solid var(--kv-border);
+}
+.nav-group > p { color: var(--kv-text-muted); }
+.nav-link { color: var(--kv-text-muted); border-radius: var(--kv-radius-control); }
+.nav-link:hover { background: var(--kv-surface-muted); color: var(--kv-text); }
+.nav-link.active { background: var(--kv-primary); color: var(--kv-on-primary); }
+.nav-link.active em { background: color-mix(in srgb, var(--kv-on-primary) 22%, transparent); color: var(--kv-on-primary); }
+.nav-link em { background: var(--kv-surface-muted); color: var(--kv-text-muted); }
+.brand-seal { background: var(--kv-primary); color: var(--kv-on-primary); border-radius: var(--kv-radius-control); }
+.supplier-switch { border-color: var(--kv-border); background: var(--kv-surface-muted); }
+
+/* نوار بالا و سطوح */
+.topbar {
+  background: color-mix(in srgb, var(--kv-canvas) 88%, transparent);
+  border-color: var(--kv-border);
+  backdrop-filter: blur(14px) saturate(115%);
+}
+.global-search, .search-field, .kpi-grid, .today-panel, .stock-watch, .surface,
+.inventory-summary article, .balance-grid article, .settings-list button, .profile-section {
+  border-color: var(--kv-border);
+  background: var(--kv-surface);
+}
+.surface, .today-panel, .stock-watch, .inventory-summary article, .balance-grid article, .kpi-grid {
+  border-radius: var(--kv-radius-surface);
+  box-shadow: none;
+}
+kbd { background: var(--kv-surface-muted); color: var(--kv-text-muted); }
+
+/* دکمه‌ها */
+.button.primary { background: var(--kv-primary); border-color: var(--kv-primary); color: var(--kv-on-primary); }
+.button.primary:hover { background: color-mix(in srgb, var(--kv-primary) 88%, var(--kv-accent)); }
+.button.secondary { background: var(--kv-surface); border-color: var(--kv-border); color: var(--kv-text); }
+.button.secondary:hover { background: var(--kv-surface-muted); border-color: var(--kv-border-strong); }
+.text-button { color: var(--kv-accent); }
+.text-button:hover { color: var(--kv-text); }
+
+/* کارت تیرهٔ مرکز اقدام: گرم و هم‌خانواده (نه سیاه سرد) */
+.action-center, .series-hero, .request-banner { background: var(--kv-primary); color: var(--kv-on-primary); border-radius: var(--kv-radius-surface); }
+.action-center .eyebrow, .action-center .heading-copy, .action-item p { color: color-mix(in srgb, var(--kv-on-primary) 72%, transparent); }
+.action-item { border-top-color: color-mix(in srgb, var(--kv-on-primary) 16%, transparent); }
+.action-center .text-button, .action-item > button { color: color-mix(in srgb, var(--kv-on-primary) 88%, transparent); }
+.action-count, .action-item h3 { color: var(--kv-on-primary); }
+
+/* وضعیت‌ها با رنگ‌های قفل‌شده */
+.status.green { color: var(--kv-success); background: color-mix(in srgb, var(--kv-success) 14%, transparent); }
+.status.green i { background: var(--kv-success); }
+.status.amber { color: var(--kv-warning); background: color-mix(in srgb, var(--kv-warning) 14%, transparent); }
+.status.amber i { background: var(--kv-warning); }
+.status.blue { color: var(--kv-info); background: color-mix(in srgb, var(--kv-info) 14%, transparent); }
+.status.blue i { background: var(--kv-info); }
+.status.gray { color: var(--kv-text-muted); background: var(--kv-surface-muted); }
+.status.gray i { background: var(--kv-text-muted); }
+
+/* نمودارها و نوارهای موجودی */
+.stock-bar div { background: var(--kv-surface-muted); }
+.stock-bar i { background: var(--kv-accent); }
+.notification-panel, .command-menu { border-color: var(--kv-border); box-shadow: var(--kv-shadow-overlay); border-radius: var(--kv-radius-sheet); }
+.notification-item:hover, .icon-button:hover, .icon-button.selected { background: var(--kv-surface-muted); color: var(--kv-text); }
+.mini-order img { border-radius: var(--kv-radius-control); }
+
+/* شِل ورود: کاغذ گرم، بدون سیاه سرد */
+.auth-intro { background: var(--kv-primary); color: var(--kv-on-primary); }
+.auth-intro-copy > p:last-child, .auth-assurance small, .auth-copyright { color: color-mix(in srgb, var(--kv-on-primary) 68%, transparent); }
+.auth-assurance { border-color: color-mix(in srgb, var(--kv-on-primary) 20%, transparent); }
+.auth-intro::before, .auth-intro::after { border-color: color-mix(in srgb, var(--kv-on-primary) 16%, transparent); }
+.auth-intro-copy h1 em { color: color-mix(in srgb, var(--kv-accent) 75%, var(--kv-on-primary)); }
+.assurance-icon { background: color-mix(in srgb, var(--kv-on-primary) 12%, transparent); color: var(--kv-on-primary); border-radius: var(--kv-radius-control); }

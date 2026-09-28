@@ -537,6 +537,44 @@ async function catalog(where = "", values: unknown[] = []) {
   }));
 }
 
+/**
+ * پروجکشن **عمومی** کاتالوگ — تنها شکل مجاز نمایش کاتالوگ به کاربر ناشناس.
+ *
+ * قاعدهٔ امنیت/مالی: قیمت عمدهٔ فروشنده (\`seller_offer.wholesale_price\`) هرگز از این
+ * مسیر بیرون نمی‌رود؛ افشای آن به خریدار خرده، سود فروشنده را لو می‌دهد. قیمت خرده
+ * تنها وقتی منتشر می‌شود که منبع رسمی‌اش (\`retail_price\`) موجود باشد؛ در نبود آن
+ * \`retail_price: null\` و \`price_source: "PENDING_RETAIL_PRICING"\` برمی‌گردد تا UI
+ * صادقانه «قیمت به‌زودی» نشان دهد، نه عدد حدسی.
+ */
+async function publicCatalogProducts() {
+  const items = await catalog("WHERE p.status='published'");
+  return items.map((product: any) => {
+    const variants = (product.product_variants ?? []).map((variant: any) => {
+      const onHand = Number(variant.inventory?.on_hand ?? 0);
+      const reserved = Number(variant.inventory?.reserved ?? 0);
+      return {
+        id: variant.id,
+        sku: variant.sku,
+        color: variant.color,
+        size: variant.size,
+        available: Math.max(0, onHand - reserved),
+      };
+    });
+    return {
+      id: product.id,
+      slug: product.slug,
+      name: product.name,
+      description: product.description,
+      category: product.category,
+      updated_at: product.updated_at,
+      variants,
+      available_total: variants.reduce((sum: number, variant: any) => sum + variant.available, 0),
+      retail_price: null,
+      price_source: "PENDING_RETAIL_PRICING" as const,
+    };
+  });
+}
+
 async function purchaseOrders(supplierId?: string, wholesaleOrderId?: string) {
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -1175,6 +1213,20 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
     return handleClientLog(req);
   }
   await database();
+  /**
+   * کاتالوگ عمومی فروشگاه — خواندن بدون نشست (کاربر ناشناس).
+   * فقط محصولات \`published\` و بدون هیچ فیلد عمده/مالی داخلی.
+   */
+  if (path === "catalog/products" && req.method === "GET") {
+    return response(req, { products: await publicCatalogProducts() });
+  }
+  const publicProductMatch = path.match(/^catalog\/products\/([^/]+)$/);
+  if (publicProductMatch && req.method === "GET") {
+    const wanted = decodeURIComponent(publicProductMatch[1]);
+    const product = (await publicCatalogProducts()).find((item: any) => item.slug === wanted || item.id === wanted);
+    if (!product) throw new HttpError(404, "PRODUCT_NOT_FOUND");
+    return response(req, { product });
+  }
   if ((path === "site/hero-video" || path === "site/banner-video") && req.method === "GET") {
     const isBanner = path === "site/banner-video";
     const settingKey = isBanner ? BANNER_VIDEO_SETTING_KEY : HERO_VIDEO_SETTING_KEY;

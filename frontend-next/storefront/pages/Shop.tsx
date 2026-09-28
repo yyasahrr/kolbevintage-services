@@ -13,6 +13,7 @@ import { styles } from "../siteData";
 import { fa } from "../utils/format";
 import ProductCard from "../components/ProductCard";
 import Icon from "../components/Icon";
+import { CatalogNotice, useCatalog } from "../lib/catalogClient";
 
 type Filters = {
   cats: string[];
@@ -97,19 +98,21 @@ function FilterPanel({
   f,
   set,
   reset,
+  items: catalogItems,
   results,
 }: {
   f: Filters;
   set: (patch: Partial<Filters>) => void;
   reset: () => void;
   results: number;
+  items: Product[];
 }) {
   const toggle = (key: keyof Filters, value: string) => {
     const arr = f[key] as string[];
     set({ [key]: arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value] } as Partial<Filters>);
   };
 
-  const countBy = (fn: (p: Product) => boolean) => products.filter(fn).length;
+  const countBy = (fn: (p: Product) => boolean) => catalogItems.filter(fn).length;
 
   return (
     <div>
@@ -238,6 +241,9 @@ function FilterPanel({
 }
 
 export default function Shop() {
+  // کاتالوگ واقعی از API؛ در نبود آن (فقط توسعه) فهرست نمایشی با برچسب صریح.
+  const catalog = useCatalog();
+  const catalogItems = catalog.items;
   const { query } = useRouter();
   const [f, setF] = useState<Filters>(emptyFilters);
   const [draft, setDraft] = useState<Filters>(emptyFilters);
@@ -260,7 +266,7 @@ export default function Shop() {
   const set = (patch: Partial<Filters>) => setDraft((d) => ({ ...d, ...patch }));
 
   const filtered = useMemo(() => {
-    let out = products.filter((p) => {
+    let out = catalogItems.filter((p) => {
       if (f.cats.length && !f.cats.includes(p.category)) return false;
       if (f.styles.length && !f.styles.includes(p.style)) return false;
       if (f.seasons.length && !f.seasons.includes(p.season)) return false;
@@ -290,7 +296,7 @@ export default function Shop() {
     };
     out = [...out].sort(by[sort] ?? by.new);
     return out;
-  }, [f, sort]);
+  }, [catalogItems, f, sort]);
 
   const activeCount =
     f.cats.length + f.styles.length + f.sizes.length + f.colours.length + f.seasons.length + f.fabrics.length + (f.min ? 1 : 0) + (f.max ? 1 : 0);
@@ -330,7 +336,7 @@ export default function Shop() {
       <div className="grid gap-8 lg:grid-cols-[248px_1fr] lg:gap-10">
         {/* فیلتر دسکتاپ */}
         <aside className="liquid-panel hidden self-start lg:sticky lg:top-[82px] lg:block">
-          <FilterPanel f={draft} set={set} reset={resetAll} results={filtered.length} />
+          <FilterPanel f={draft} set={set} reset={resetAll} results={filtered.length} items={catalogItems} />
           <button
             onClick={applyDraft}
             className="mt-4 h-10 w-full rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white transition hover:bg-[#0a2c55]"
@@ -427,9 +433,13 @@ export default function Shop() {
             </div>
           )}
 
+          <CatalogNotice state={catalog.state} source={catalog.source} onRetry={catalog.retry} className="mb-5" />
+
           {filtered.length === 0 ? (
             <div className="py-24 text-center">
-              <p className="text-[13px] text-neutral-500">محصولی با این فیلترها پیدا نشد.</p>
+              <p className="text-[13px] text-[var(--kv-text-muted)]">
+                {catalog.state === "loading" ? "در حال دریافت کالاها…" : "محصولی با این فیلترها پیدا نشد."}
+              </p>
               <button onClick={resetAll} className="mt-4 rounded-[3px] bg-[#011c3a] px-6 py-2.5 text-[12.5px] text-white">
                 پاک کردن فیلترها
               </button>
@@ -469,7 +479,7 @@ export default function Shop() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-2">
-              <FilterPanel f={draft} set={set} reset={resetAll} results={filtered.length} />
+              <FilterPanel f={draft} set={set} reset={resetAll} results={filtered.length} items={catalogItems} />
             </div>
             <div className="border-t border-neutral-200 p-4">
               <button
