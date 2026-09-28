@@ -1,38 +1,48 @@
 {
   "name": "kolbevintage-platform",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
   "workspaces": [
-    "apps/supplier"
+    "apps/*",
+    "packages/*",
+    "frontend-kolbe",
+    "frontend-supplier",
+    "frontend-next"
   ],
   "scripts": {
-    "dev": "vite",
-    "dev:storefront": "vite --host 127.0.0.1 --port 5173",
-    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal -- --host 127.0.0.1 --port 5174",
+    "dev": "node scripts/dev-all.mjs",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "vite build",
-    "build:storefront": "vite build",
+    "dev:next": "npm run dev --workspace kolbe-next",
+    "dev:kolbe": "npm run dev --workspace kolbe-storefront",
+    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal",
+    "pg": "node scripts/pg.mjs",
+    "build": "npm run build --workspace kolbe-next",
+    "build:legacy": "npm run build --workspace kolbe-storefront",
     "build:supplier": "npm run build --workspace kolbe-supplier-portal",
-    "build:all": "npm run build:storefront && npm run build:supplier",
-    "preview": "vite preview"
+    "preview": "npm run preview --workspace kolbe-storefront",
+    "test": "npm run test --workspace kolbe-next",
+    "typecheck": "npm run typecheck --workspace kolbe-next",
+    "typecheck:all": "npm run build:packages && npm run typecheck --workspace @kolbe/shared && npm run typecheck --workspace @kolbe/database && npm run typecheck --workspace @kolbe/api && npm run typecheck --workspace kolbe-next",
+    "test:all": "npm run build:packages && npm test --workspace @kolbe/shared && npm test --workspace @kolbe/database && npm test --workspace @kolbe/api && npm test --workspace kolbe-next",
+    "build:packages": "npm run build --workspace @kolbe/shared && npm run build --workspace @kolbe/database",
+    "build:api": "npm run build --workspace @kolbe/api",
+    "dev:api": "npm run build:packages && npm run build:api && node apps/api/dist/main.js",
+    "db:migrate": "npm run build:packages && node packages/database/migrate.mjs",
+    "infra:dev": "docker compose -f infra/compose/docker-compose.dev.yml up -d",
+    "infra:verify": "node scripts/verify-infra.mjs",
+    "preflight:check": "node scripts/migration-preflight.mjs",
+    "db:backup": "node scripts/backup-db.mjs",
+    "db:restore": "node scripts/restore-db.mjs",
+    "db:migrate:status": "npm run build:packages && node packages/database/migrate.mjs --status",
+    "db:migrate:verify": "npm run build:packages && node packages/database/migrate.mjs --verify-only",
+    "db:adopt-legacy": "npm run build:packages && node packages/database/migrate.mjs --adopt-legacy",
+    "infra:verify:deployment": "node scripts/verify-deployment.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
-    "clsx": "2.1.1",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "tailwind-merge": "3.4.0"
+    "pg": "8.23.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.1.17",
-    "@types/node": "22.19.17",
-    "@types/react": "19.2.7",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "5.1.1",
-    "tailwindcss": "4.1.17",
-    "typescript": "5.9.3",
-    "vite": "7.3.2",
-    "vite-plugin-singlefile": "2.3.0"
+    "embedded-postgres": "17.5.0-beta.15",
+    "js-yaml": "^4.3.2"
   }
 }

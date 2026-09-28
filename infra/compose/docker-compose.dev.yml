@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# محیط توسعهٔ کلبه — سرویس‌های زیرساختی.
+#
+# هدف: توسعه‌دهنده فقط `docker compose -f infra/compose/docker-compose.dev.yml up -d`
+# را اجرا کند و PostgreSQL/Redis/MinIO آماده داشته باشد؛ خود اپلیکیشن‌ها همچنان با
+# `npm run dev` (سریع‌تر، با HMR) روی میزبان اجرا می‌شوند.
+#
+# ⚠️ پورت‌ها با اسکریپت توسعهٔ فعلی (`scripts/pg.mjs` روی 55432) تعارض ندارند:
+# پستگرس کانتینری روی 55433 منتشر می‌شود.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: kolbe-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kolbe-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kolbe
+    ports:
+      - "55433:5432"
+    volumes:
+      - kolbe-postgres-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kolbe"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: kolbe-redis-dev
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - kolbe-redis-dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # جایگزین توسعهٔ ParsPack Object Storage (هر دو S3-compatible هستند).
+  # فاز ۱.۳: healthcheck قبلی از `mc` استفاده می‌کرد که در image رسمی minio وجود ندارد؛
+  # با `curl` به endpoint سلامت جایگزین شد (در صورت نبود curl، wget).
+  minio:
+    image: minio/minio:latest
+    container_name: kolbe-minio-dev
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: kolbe
+      MINIO_ROOT_PASSWORD: kolbe-dev-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - kolbe-minio-dev:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || wget -qO- http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  kolbe-postgres-dev:
+  kolbe-redis-dev:
+  kolbe-minio-dev:
