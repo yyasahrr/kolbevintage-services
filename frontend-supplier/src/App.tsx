@@ -1,0 +1,399 @@
+import React, { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  Activity, Archive, Bell, Boxes, BriefcaseBusiness, CalendarDays, Check, ChevronDown, CircleHelp,
+  ClipboardCheck, Command, CreditCard, FileCheck2, FileText, FolderKanban, LayoutDashboard, Menu,
+  MessageSquareText, MoreHorizontal, Package, PanelRight, Plus, Search, Settings, ShieldCheck, SlidersHorizontal,
+  Sparkles, Store, TrendingUp, TrendingDown, Truck, Upload, UsersRound, X, Zap, ArrowLeft, Eye, EyeOff, Factory,
+} from 'lucide-react'
+import { products, orderRows, rfqs, milestones } from './data'
+import { EmptyState, PageCrumbs, RowMenu, SectionHeading, Status, TextButton } from './components'
+import { CommandPalette } from './command-palette'
+import { ChangeRequests, FulfillmentOrders, Messages, ProductEditor, ProductReview, QuoteBuilder, ReturnsIssues, SamplesWorkspace } from './workflows'
+class PortalErrorBoundary extends React.Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) return <div style={{padding:40,textAlign:'center',fontSize:12}}>
+      <p style={{fontSize:16,fontWeight:'bold',color:'#a4463d',marginBottom:8}}>خطا در بارگذاری پنل</p>
+      <p style={{fontSize:11,color:'#666',marginBottom:16}}>{this.state.error.message}</p>
+      <button onClick={() => { this.setState({ error: null }); window.location.reload() }} style={{padding:'10px 20px',background:'#011c3a',color:'#fff',border:0,borderRadius:4,fontSize:11,cursor:'pointer'}}>بارگذاری مجدد</button>
+    </div>
+    return this.props.children
+  }
+}
+
+import { backendHealth, loadSupplierOrders, loadSupplierProducts, loadSupplierRfqs, restoreSupplierSession, signInSupplier, submitSupplierApplication, updateSupplierPurchaseOrder, type SupplierContext } from './api'
+import { ApprovalWorkflow, CampaignBuilder, CSVInventoryImport, DiscrepancyManager, DisputeCenter, ImageQualityChecker, NotificationPreferences, OrderSLA, PriceHistoryTable, QualityDocuments, RoleManager, SettlementSettings, ShippingLabel, TaxIntegration } from './features'
+
+type Page = 'dashboard' | 'products' | 'product-editor' | 'review' | 'inventory' | 'series' | 'orders' | 'returns' | 'rfqs' | 'quote' | 'production' | 'samples' | 'changes' | 'quality' | 'finance' | 'analytics' | 'messages' | 'profile' | 'settings' | 'campaigns' | 'disputes' | 'quality-docs'
+type AccessView = 'login' | 'register' | 'portal'
+type NavGroup = { label?: string; links: { page: Page; label: string; icon: typeof LayoutDashboard; count?: number }[] }
+
+const navGroups: NavGroup[] = [
+  { links: [{ page: 'dashboard', label: 'داشبورد', icon: LayoutDashboard }] },
+  { label: 'کاتالوگ', links: [{ page: 'products', label: 'محصولات', icon: Package }, { page: 'product-editor', label: 'پیش‌نویس‌ها', icon: FileText, count: 4 }, { page: 'review', label: 'در حال بررسی', icon: ShieldCheck, count: 2 }] },
+  { label: 'موجودی', links: [{ page: 'inventory', label: 'موجودی آماده', icon: Boxes }, { page: 'inventory', label: 'کم‌موجود', icon: Activity, count: 4 }, { page: 'series', label: 'سری و پک‌ها', icon: Archive }] },
+  { label: 'عملیات آماده', links: [{ page: 'orders', label: 'سفارشات آماده', icon: Truck, count: 5 }, { page: 'returns', label: 'مرجوعی و مسائل', icon: CircleHelp, count: 1 }] },
+  { label: 'تولید سفارشی', links: [{ page: 'rfqs', label: 'صندوق RFQ', icon: MessageSquareText, count: 3 }, { page: 'quote', label: 'پیشنهادها', icon: FileCheck2 }, { page: 'production', label: 'تولید فعال', icon: FolderKanban, count: 6 }, { page: 'samples', label: 'نمونه‌ها', icon: Upload, count: 1 }, { page: 'changes', label: 'درخواست تغییر', icon: Activity, count: 2 }] },
+  { links: [{ page: 'quality', label: 'کنترل کیفیت', icon: ClipboardCheck, count: 2 }, { page: 'quality-docs', label: 'اسناد کیفیت و فراخوان', icon: ShieldCheck }, { page: 'finance', label: 'مالی و تسویه', icon: CreditCard }, { page: 'disputes', label: 'اعتراض مالی', icon: CircleHelp, count: 1 }, { page: 'campaigns', label: 'کمپین‌ها', icon: TrendingDown }, { page: 'analytics', label: 'عملکرد', icon: TrendingUp }, { page: 'messages', label: 'پیام‌ها', icon: MessageSquareText, count: 4 }, { page: 'profile', label: 'پروفایل کارخانه', icon: Store }] },
+]
+
+const normalizedDigits = (value: string) => value.replace(/[۰-۹]/g, digit => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit))).replace(/\D/g, '')
+
+function App() {
+  const [page, setPage] = useState<Page>('dashboard')
+  const [accessView, setAccessView] = useState<AccessView>('login')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [noticeOpen, setNoticeOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [supplier, setSupplier] = useState<SupplierContext | null>(null)
+  const [dataRefresh, setDataRefresh] = useState(0)
+  const [, setDataVersion] = useState(0)
+  const [sessionNotice, setSessionNotice] = useState('')
+  const [backendOnline, setBackendOnline] = useState(true)
+  const [dataSyncFailed, setDataSyncFailed] = useState(false)
+
+  useEffect(() => { backendHealth().then(setBackendOnline) }, [])
+  useEffect(() => { setSessionNotice(''); restoreSupplierSession().then(context => { if (context) { setSupplier(context); setAccessView('portal') } }).catch(() => setSessionNotice('بازیابی نشست قبلی انجام نشد؛ لطفاً دوباره وارد شوید.')) }, [])
+  useEffect(() => {
+    if (!supplier) return
+    if (supplier.supplierId === 'demo') return // حالت نمایشی: بدون API
+    Promise.all([loadSupplierProducts(supplier.supplierId), loadSupplierOrders(supplier.supplierId), loadSupplierRfqs(supplier.supplierId)]).then(([remoteProducts, remoteOrders, remoteRfqs]) => {
+      const number = new Intl.NumberFormat('fa-IR')
+      products.splice(0, products.length, ...remoteProducts.map(product => {
+        const variants = product.product_variants ?? []
+        const stock = variants.reduce((sum: number, variant: { inventory: Array<{ on_hand: number }> | { on_hand: number } | null }) => { const inventory = Array.isArray(variant.inventory) ? variant.inventory[0] : variant.inventory; return sum + (inventory?.on_hand ?? 0) }, 0)
+        return { id: product.id, name: product.name, sku: product.sku, image: product.image_url || '/placeholder-product.svg', category: product.category, series: variants.length, stock, price: number.format(product.wholesale_price), status: product.status === 'approved' ? 'فعال' as const : product.status === 'changes_requested' || product.status === 'rejected' ? 'نیازمند اصلاح' as const : product.status === 'submitted' ? 'در بررسی' as const : 'پیش‌نویس' as const, updated: new Intl.DateTimeFormat('fa-IR').format(new Date(product.updated_at)) }
+      }))
+      orderRows.splice(0, orderRows.length, ...remoteOrders.map(order => ({ databaseId: order.id, trackingCode: order.tracking_code, id: order.order_code, customer: 'کلبه وینتیج', product: order.purchase_order_items?.[0]?.product_name || 'سفارش چندمحصولی', pack: `${order.purchase_order_items?.length ?? 0} ردیف`, quantity: `${number.format(order.purchase_order_items?.length ?? 0)} ردیف`, pieces: `${number.format((order.purchase_order_items ?? []).reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0))} تکه`, value: `${number.format(order.total_amount)} تومان`, date: new Intl.DateTimeFormat('fa-IR').format(new Date(order.created_at)), due: order.due_date ? new Intl.DateTimeFormat('fa-IR').format(new Date(order.due_date)) : '—', status: order.status === 'pending' ? 'نیازمند تأیید' : order.status === 'confirmed' ? 'جدید' : order.status === 'preparing' ? 'در حال آماده‌سازی' : order.status === 'shipped' ? 'آماده ارسال' : order.status === 'delivered' ? 'تحویل شده' : 'لغو شده' })))
+      rfqs.splice(0, rfqs.length, ...remoteRfqs.map(item => ({ id: item.reference_code, title: item.title, customer: item.customer_name, quantity: `${number.format(item.quantity)} تکه`, deadline: item.requested_delivery_date ? new Intl.DateTimeFormat('fa-IR').format(new Date(item.requested_delivery_date)) : 'تعیین نشده', fabric: String((item.specifications as Record<string, unknown>)?.fabric ?? 'طبق فایل مشخصات'), status: item.status === 'open' ? 'نیازمند قیمت‌گذاری' : item.status === 'quoted' ? 'پیشنهاد ارسال شد' : item.status, avatar: item.customer_name.slice(0, 1) })))
+      setDataVersion(version => version + 1)
+      setDataSyncFailed(false)
+    }).catch(() => setDataSyncFailed(true))
+  }, [supplier, dataRefresh])
+
+  useEffect(() => {
+    const handleKeys = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen(true) }
+      if (event.key === 'Escape') { setCommandOpen(false); setNoticeOpen(false); setSidebarOpen(false) }
+    }
+    window.addEventListener('keydown', handleKeys)
+    return () => window.removeEventListener('keydown', handleKeys)
+  }, [])
+
+  const go = (target: Page) => { setPage(target); setSidebarOpen(false) }
+
+  if (accessView !== 'portal') return <AuthShell view={accessView} notice={sessionNotice} backendOnline={backendOnline} onChange={setAccessView} onAuthenticated={context => { setSupplier(context); setAccessView('portal') }} />
+  if (page === 'product-editor' && supplier) return <ProductEditor supplierId={supplier.supplierId} onClose={() => setPage('products')} onCreated={() => { setDataRefresh(version => version + 1); setPage('products') }} />
+
+  return <PortalErrorBoundary><div className="app-shell">
+    <Sidebar page={page} onNavigate={go} open={sidebarOpen} onClose={() => setSidebarOpen(false)} supplierName={supplier?.displayName} />
+    <div className="content-shell">
+      <Topbar onMenu={() => setSidebarOpen(true)} onCommand={() => setCommandOpen(true)} onNotices={() => setNoticeOpen(!noticeOpen)} noticeOpen={noticeOpen} />
+      {dataSyncFailed && supplier?.supplierId !== 'demo' ? (
+        <div className="sync-banner" role="alert">
+          <span>بارگذاری داده‌ها ناتمام ماند؛ اطلاعات نمایش‌داده‌شده ممکن است به‌روز نباشد.</span>
+          <button type="button" onClick={() => { setDataSyncFailed(false); setDataRefresh(version => version + 1) }}>تلاش دوباره</button>
+        </div>
+      ) : null}
+      <main className="page-content">
+        {page === 'dashboard' ? <Dashboard onNavigate={go} /> : null}
+        {page === 'products' ? <Products onNavigate={go} query={query} setQuery={setQuery} /> : null}
+        {page === 'review' ? <ProductReview /> : null}
+        {page === 'inventory' ? <Inventory /> : null}
+        {page === 'series' ? <SeriesBuilder /> : null}
+        {page === 'orders' ? <FulfillmentOrders onUpdated={() => setDataRefresh(version => version + 1)} /> : null}
+        {page === 'returns' ? <ReturnsIssues /> : null}
+        {page === 'rfqs' ? <RFQInbox onNavigate={go} /> : null}
+        {page === 'quote' ? <QuoteBuilder /> : null}
+        {page === 'production' ? <Production /> : null}
+        {page === 'samples' ? <SamplesWorkspace /> : null}
+        {page === 'changes' ? <ChangeRequests /> : null}
+        {page === 'quality' ? <Quality /> : null}
+        {page === 'finance' ? <Finance /> : null}
+        {page === 'analytics' ? <Analytics /> : null}
+        {page === 'messages' ? <Messages /> : null}
+        {page === 'profile' ? <Profile /> : null}
+        {page === 'settings' ? <SettingsPage /> : null}
+        {page === 'campaigns' ? <><div className="page-head"><div><PageCrumbs parent="بازاریابی" current="کمپین‌ها"/><h1>کمپین‌های پیشنهادی</h1><p>کمپین تخفیف پیشنهاد دهید — با تأیید کلبه فعال می‌شود.</p></div></div><CampaignBuilder /></> : null}
+        {page === 'disputes' ? <><div className="page-head"><div><PageCrumbs parent="مالی" current="اعتراض"/><h1>مرکز اعتراض مالی</h1><p>اعتراض به کسورات، جریمه و تسویه — با گردش کامل بررسی.</p></div></div><DisputeCenter /></> : null}
+        {page === 'quality-docs' ? <><div className="page-head"><div><PageCrumbs parent="کیفیت" current="اسناد"/><h1>اسناد کیفیت و فراخوان</h1><p>گواهی‌ها، سری ساخت و فراخوان محصول.</p></div></div><QualityDocuments /></> : null}
+      </main>
+    </div>
+    {commandOpen ? <CommandPalette onClose={() => setCommandOpen(false)} onNavigate={go} /> : null}
+  </div></PortalErrorBoundary>
+}
+
+function AuthShell({ view, notice, backendOnline, onChange, onAuthenticated }: { view: Exclude<AccessView, 'portal'>; notice?: string; backendOnline: boolean; onChange: (view: AccessView) => void; onAuthenticated: (context: SupplierContext) => void }) {
+  return <main className="auth-shell">
+    <section className="auth-intro">
+      <div className="auth-brand"><div className="brand-seal">K</div><div><strong>KOLBE</strong><span>Vintage · Supplier</span></div></div>
+      <div className="auth-intro-copy"><p className="eyebrow">SUPPLIER OPERATIONS</p><h1>عملیات عمده‌فروشی<br/>شما، <em>دقیق و یکپارچه.</em></h1><p>کولبه وینتیج، مسیر فروش، تولید و تسویهٔ تأمین‌کنندگان منتخب را در یک فضای عملیاتی شفاف مدیریت می‌کند.</p></div>
+      <div className="auth-assurance"><div><span className="assurance-icon"><ShieldCheck size={18}/></span><p><b>حساب‌های تأییدشده</b><small>دسترسی فقط برای تیم‌های تأمین‌کنندهٔ فعال کولبه</small></p></div><div><span className="assurance-icon"><Factory size={18}/></span><p><b>شبکهٔ تولید منتخب</b><small>بیش از ۴۸ کارخانه در دسته‌های پوشاک و اکسسوری</small></p></div></div>
+      <p className="auth-copyright">© ۱۴۰۴ Kolbe Vintage. همهٔ حقوق محفوظ است.</p>
+    </section>
+    <section className="auth-form-pane">{notice ? <p className="auth-error" role="alert">{notice}</p> : null}{view === 'login' ? <LoginForm backendOnline={backendOnline} onRegister={() => onChange('register')} onSuccess={onAuthenticated} /> : <RegistrationForm backendOnline={backendOnline} onBack={() => onChange('login')} />}</section>
+  </main>
+}
+
+function LoginForm({ backendOnline, onRegister, onSuccess }: { backendOnline: boolean; onRegister: () => void; onSuccess: (context: SupplierContext) => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (!email.includes('@') || password.length < 8) { setError('ایمیل و رمز عبور حداقل ۸ کاراکتری را وارد کنید.'); return }; setSubmitting(true); setError(''); try { onSuccess(await signInSupplier(email, password)) } catch (reason) { setError(reason instanceof Error ? reason.message : 'ورود انجام نشد.') } finally { setSubmitting(false) } }
+  return <div className="auth-form-wrap"><div className="auth-form-heading"><p className="eyebrow">ورود تأمین‌کننده</p><h2>به فضای کاری خود وارد شوید</h2><p>برای ادامه، اطلاعات حساب تأمین‌کنندهٔ تأییدشده را وارد کنید.</p></div>{!backendOnline ? <p className="auth-error" role="alert">اتصال بک‌اند برقرار نیست؛ برای بازبینی ظاهر از نسخه نمایشی استفاده کنید.</p> : null}<form onSubmit={submit} noValidate><label className="auth-label">ایمیل سازمانی<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" aria-invalid={Boolean(error)} placeholder="name@factory.ir"/></label><label className="auth-label">رمز عبور<div className="password-input"><input type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" aria-invalid={Boolean(error)} placeholder="رمز عبور شما"/><button type="button" onClick={() => setShowPassword(current => !current)} aria-label={showPassword ? 'پنهان کردن رمز عبور' : 'نمایش رمز عبور'}>{showPassword ? <EyeOff size={17}/> : <Eye size={17}/>}</button></div></label><div className="auth-options"><label className="remember"><input type="checkbox" defaultChecked/>مرا به خاطر بسپار</label><button type="button" className="auth-link">رمز عبور را فراموش کرده‌اید؟</button></div>{error ? <p className="auth-error" role="alert">{error}</p> : null}<button type="submit" disabled={submitting || !backendOnline} className="auth-submit">{submitting ? 'در حال بررسی…' : 'ورود به پنل'} <ArrowLeft size={17}/></button></form>{!backendOnline ? <button type="button" className="button secondary" style={{width:'100%',marginTop:'10px'}} onClick={() => onSuccess({ supplierId: 'demo', displayName: 'نساجی نیلگون', legalName: 'نساجی و پوشاک نیلگون' })}>مشاهده نسخه نمایشی</button> : null}<div className="auth-divider"><span>یا</span></div><div className="auth-register-prompt"><p>هنوز حساب تأمین‌کننده ندارید؟<span>فرآیند بررسی عضویت معمولاً ۱ تا ۲ روز کاری طول می‌کشد.</span></p><button className="button secondary" onClick={onRegister}>درخواست عضویت</button></div><p className="auth-help">نیاز به راهنمایی دارید؟ <button>ارتباط با تیم تأمین</button></p></div>
+}
+
+function RegistrationForm({ backendOnline, onBack }: { backendOnline: boolean; onBack: () => void }) {
+  const [sent, setSent] = useState(false)
+  const [company, setCompany] = useState('')
+  const [representative, setRepresentative] = useState('')
+  const [mobile, setMobile] = useState('')
+  const [category, setCategory] = useState('')
+  const [capacity, setCapacity] = useState('')
+  const [reference, setReference] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (company.trim().length < 3 || representative.trim().length < 3 || normalizedDigits(mobile).length < 10 || !category) { setError('نام کارخانه، نماینده، شماره همراه و دسته تولید را کامل کنید.'); return }; setSubmitting(true); setError(''); try { const id = await submitSupplierApplication({ companyName: company, representativeName: representative, phone: mobile, category, monthlyCapacity: capacity ? Number(normalizedDigits(capacity)) : null }); setReference(`SUP-${id.slice(0, 8).toUpperCase()}`); setSent(true) } catch (reason) { setError(reason instanceof Error ? reason.message : 'ثبت درخواست انجام نشد.') } finally { setSubmitting(false) } }
+  if (sent) return <div className="auth-form-wrap request-complete"><span className="request-success"><Check size={23}/></span><p className="eyebrow">درخواست ثبت شد</p><h2>در صف بررسی هستید.</h2><p>کارشناسان تأمین کولبه حداکثر تا دو روز کاری آینده با <b>{mobile}</b> تماس می‌گیرند تا مرحلهٔ ارزیابی ظرفیت و نمونه‌ها را هماهنگ کنند.</p><div className="request-reference"><span>شناسه پیگیری</span><strong>{reference}</strong></div><button className="button primary" onClick={onBack}>بازگشت به ورود</button></div>
+  return <div className="auth-form-wrap"><button className="back-to-login" onClick={onBack}><ArrowLeft size={16}/>بازگشت به ورود</button><div className="auth-form-heading"><p className="eyebrow">درخواست عضویت</p><h2>کارخانه‌تان را به کولبه معرفی کنید</h2><p>این اطلاعات برای بررسی اولیهٔ ظرفیت و دستهٔ تولید شما استفاده می‌شود.</p></div>{!backendOnline ? <p className="auth-error" role="alert">اتصال بک‌اند برقرار نیست؛ کمی بعد تلاش کنید.</p> : null}<form onSubmit={submit} noValidate><label className="auth-label">نام کارخانه یا شرکت<input value={company} onChange={event => setCompany(event.target.value)} aria-invalid={Boolean(error)} placeholder="مثال: پوشاک نیلگون" autoFocus/></label><label className="auth-label">نام و نام خانوادگی نماینده<input value={representative} onChange={event => setRepresentative(event.target.value)} placeholder="مثال: نرگس آذر"/></label><div className="auth-form-grid"><label className="auth-label">شمارهٔ همراه<input value={mobile} onChange={event => setMobile(event.target.value)} inputMode="tel" placeholder="۰۹۱۲ ۱۲۳ ۴۵۶۷"/></label><label className="auth-label">دستهٔ اصلی تولید<select value={category} onChange={event => setCategory(event.target.value)}><option value="" disabled>انتخاب کنید</option><option>پوشاک مردانه</option><option>پوشاک زنانه</option><option>کفش و اکسسوری</option></select></label></div><label className="auth-label">ظرفیت تولید ماهانه <span>اختیاری</span><input value={capacity} onChange={event => setCapacity(event.target.value)} inputMode="numeric" placeholder="مثال: ۵٬۰۰۰ تکه"/></label>{error ? <p className="auth-error" role="alert">{error}</p> : null}<button type="submit" disabled={submitting || !backendOnline} className="auth-submit">{submitting ? 'در حال ثبت…' : 'ارسال درخواست عضویت'} <ArrowLeft size={17}/></button></form><p className="auth-disclaimer">با ارسال درخواست، با بررسی اطلاعات کارخانه طبق سیاست حریم خصوصی کولبه موافقت می‌کنید.</p></div>
+}
+
+function Sidebar({ page, onNavigate, open, onClose, supplierName }: { page: Page; onNavigate: (page: Page) => void; open: boolean; onClose: () => void; supplierName?: string }) {
+  return <aside className={`sidebar ${open ? 'open' : ''}`}>
+    <div className="brand"><div className="brand-seal">K</div><div><strong>KOLBE</strong><span>Vintage · Supplier</span></div><button className="close-sidebar" aria-label="بستن منو" onClick={onClose}><X size={18}/></button></div>
+    <div className="supplier-switch"><div className="mini-avatar">{supplierName?.slice(0, 1) || 'ن'}</div><div><b>{supplierName || 'تأمین‌کننده'}</b><span>تأمین‌کننده تأییدشده</span></div><ChevronDown size={16}/></div>
+    <nav>{navGroups.map((group, index) => <div className="nav-group" key={index}>{group.label ? <p>{group.label}</p> : null}{group.links.map(({ page: target, label, icon: Icon, count }) => <button key={label} className={page === target ? 'nav-link active' : 'nav-link'} onClick={() => onNavigate(target)}><Icon size={17}/><span>{label}</span>{count ? <em>{count}</em> : null}</button>)}</div>)}</nav>
+    <div className="sidebar-footer"><button className="nav-link" onClick={() => onNavigate('settings')}><Settings size={17}/><span>تنظیمات</span></button><div className="profile-mini"><div className="avatar">ن</div><div><b>نرگس آذر</b><span>مدیر فروش</span></div><ChevronDown size={15}/></div></div>
+  </aside>
+}
+
+function Topbar({ onMenu, onCommand, onNotices, noticeOpen }: { onMenu: () => void; onCommand: () => void; onNotices: () => void; noticeOpen: boolean }) {
+  return <header className="topbar"><button className="mobile-menu icon-button" aria-label="باز کردن منو" onClick={onMenu}><Menu size={20}/></button><button className="global-search" onClick={onCommand}><Search size={17}/><span>جست‌وجو در محصولات، سفارشات، RFQها...</span><kbd>⌘ K</kbd></button><div className="top-actions"><button className="help icon-button" aria-label="راهنما"><CircleHelp size={19}/></button><div className="notification-wrap"><button className={`icon-button notification ${noticeOpen ? 'selected' : ''}`} aria-label="اعلان‌ها" onClick={onNotices}><Bell size={19}/><i /></button>{noticeOpen ? <div className="notification-panel"><div className="panel-title"><b>اعلان‌ها</b><button>خواندن همه</button></div><Notification text="مهلت تأیید سفارش KV-82941 امروز است." time="۸ دقیقه پیش" urgent/><Notification text="بازخورد نمونه برای PO-4827 ثبت شد." time="۴۰ دقیقه پیش"/><Notification text="تسویه شماره ST-1103 انجام شد." time="دیروز"/></div> : null}</div><div className="top-avatar">ن</div></div></header>
+}
+
+function Notification({ text, time, urgent = false }: { text: string; time: string; urgent?: boolean }) { return <div className="notification-item"><span className={urgent ? 'notice-dot urgent' : 'notice-dot'}></span><div><b>{text}</b><small>{time}</small></div></div> }
+
+function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
+  const kpis = [{ label: 'سفارش امروز', value: '۱۲', delta: '+۳ از دیروز', icon: Truck }, { label: 'نیازمند تأیید', value: '۵', delta: 'تا ۱۴:۳۰ امروز', icon: Zap, alert: true }, { label: 'تولید فعال', value: '۶', delta: '۱ مورد نزدیک موعد', icon: FolderKanban }, { label: 'سری قابل فروش', value: '۳۲۸', delta: 'در ۴۲ محصول', icon: Archive }, { label: 'تسویه در انتظار', value: '۴۸٫۶M', delta: 'تومان · ۲۴ مرداد', icon: CreditCard }, { label: 'RFQ بدون پاسخ', value: '۳', delta: '۱ مورد فوری', icon: MessageSquareText, alert: true }]
+  return <>
+    <div className="page-head dashboard-head"><div><p className="eyebrow">سه‌شنبه، ۲۱ مرداد ۱۴۰۴</p><h1>صبح بخیر، نیلگون <span>✦</span></h1><p>در یک نگاه ببینید چه چیزی امروز به تصمیم شما نیاز دارد.</p></div><button className="button primary" onClick={() => onNavigate('products')}><Plus size={17}/>افزودن محصول</button></div>
+    <section className="kpi-grid">{kpis.map(({ label, value, delta, icon: Icon, alert }) => <article className={`kpi ${alert ? 'attention' : ''}`} key={label}><div className="kpi-icon"><Icon size={18}/></div><p>{label}</p><strong>{value}</strong><span>{delta}</span></article>)}</section>
+    <section className="dashboard-grid"><div className="action-center"><SectionHeading eyebrow="صف اقدام تأمین‌کننده" title="کارهایی که منتظر شما هستند" action={<TextButton onClick={() => onNavigate('orders')}>مشاهده همه</TextButton>}>برای حفظ SLA و جریان سفارش، این موارد را به‌ترتیب انجام دهید.</SectionHeading><div className="action-list"><ActionItem count="۵" title="سفارش برای تأیید دارید" note="قدیمی‌ترین سفارش ۲ ساعت تا پایان مهلت دارد." icon={<Truck size={19}/>} tone="warm" action="بررسی سفارشات" onClick={() => onNavigate('orders')} /><ActionItem count="۳" title="RFQ نیازمند قیمت‌گذاری است" note="یک درخواست، موعد تحویل نزدیک دارد." icon={<MessageSquareText size={19}/>} tone="blue" action="باز کردن RFQها" onClick={() => onNavigate('rfqs')} /><ActionItem count="۲" title="محصول به اصلاح نیاز دارد" note="اطلاعات پارچه و گالری تصاویر کامل نیست." icon={<FileCheck2 size={19}/>} tone="rose" action="رفع اصلاحات" onClick={() => onNavigate('products')} /><ActionItem count="۱" title="نمونه منتظر بارگذاری است" note="برای سفارش تولید PO-4827" icon={<Upload size={19}/>} tone="ink" action="بارگذاری نمونه" onClick={() => onNavigate('production')} /></div></div>
+      <div className="side-stack"><section className="today-panel"><SectionHeading title="امروز در عملیات" action={<button className="icon-button"><PanelRight size={17}/></button>}/><div className="mini-order"><img src={products[0].image} alt="پیراهن آکسفورد"/><div><b>KV-82941</b><span>۵ سری · پیراهن آکسفورد</span></div><Status>نیازمند تأیید</Status></div><div className="mini-order"><span className="rfq-avatar">ه</span><div><b>RFQ-2048</b><span>۶۰۰ تکه · پیراهن اختصاصی</span></div><Status>نیازمند قیمت‌گذاری</Status></div><div className="mini-order"><span className="production-mark"><FactoryIcon/></span><div><b>PO-4827</b><span>تولید نمونه · ۴ روز تأخیر</span></div><Status>پیگیری فوری</Status></div></section><section className="stock-watch"><div><div><p className="eyebrow">پایش موجودی</p><h3>۴ محصول کم‌موجود</h3><span>پایین‌تر از حداقل سری قابل فروش</span></div><Activity size={21}/></div><div className="stock-bars"><StockBar name="کت کتان دو دکمه" value={14}/><StockBar name="دامن پلیسه کمربندی" value={22}/><StockBar name="پیراهن لینن کوتاه" value={30}/></div><TextButton onClick={() => onNavigate('inventory')}>مدیریت موجودی</TextButton></section></div>
+    </section>
+    <section className="dashboard-bottom"><section className="surface order-preview"><SectionHeading title="آخرین سفارشات آماده" action={<TextButton onClick={() => onNavigate('orders')}>همه سفارشات</TextButton>}/><div className="compact-table">{orderRows.slice(0, 3).map(row => <div className="compact-row" key={row.id}><b>{row.id}</b><span>{row.customer}</span><span>{row.value}</span><Status>{row.status}</Status><RowMenu/></div>)}</div></section><section className="surface review-panel"><SectionHeading title="وضعیت تأیید کاتالوگ"/><div className="review-stat"><strong>۳۷</strong><span>محصول فعال در کولبه</span><div className="stacked-line"><i/><i/><i/></div></div><div className="review-notes"><span><i className="green-dot"/>۳۷ تأیید شده</span><span><i className="amber-dot"/>۲ نیازمند اصلاح</span></div><TextButton onClick={() => onNavigate('products')}>مشاهده محصولات</TextButton></section></section>
+  </>
+}
+
+function ActionItem({ count, title, note, icon, tone, action, onClick }: { count: string; title: string; note: string; icon: ReactNode; tone: string; action: string; onClick: () => void }) { return <div className="action-item"><span className={`action-icon ${tone}`}>{icon}</span><b className="action-count">{count}</b><div><h3>{title}</h3><p>{note}</p></div><button onClick={onClick}>{action}<ChevronDown size={16}/></button></div> }
+function StockBar({ name, value }: { name: string; value: number }) { return <div className="stock-bar"><span>{name}</span><div><i style={{ width: `${value}%` }}/></div><b>{value}%</b></div> }
+function FactoryIcon() { return <BriefcaseBusiness size={17}/> }
+
+function Products({ onNavigate, query, setQuery }: { onNavigate: (page: Page) => void; query: string; setQuery: (value: string) => void }) {
+
+  const [tab, setTab] = useState('همه محصولات')
+  const filtered = products.filter(item => item.name.includes(query) || item.sku.toLowerCase().includes(query.toLowerCase()))
+  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="محصولات"/><h1>محصولات</h1><p>کاتالوگ، تأیید کولبه و قابلیت فروش سری‌های خود را مدیریت کنید.</p></div><button className="button primary" onClick={() => onNavigate('product-editor')}><Plus size={17}/>محصول جدید</button></div><section className="surface table-surface"><div className="tabs">{['همه محصولات', 'فعال', 'در بررسی', 'نیازمند اصلاح', 'پیش‌نویس'].map(item => <button onClick={() => setTab(item)} className={tab === item ? 'active' : ''} key={item}>{item}{item === 'نیازمند اصلاح' ? <em>۲</em> : null}</button>)}</div><div className="table-toolbar"><label className="search-field"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="جست‌وجو با نام یا SKU"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلترها</button><button className="button secondary hide-mobile"><CalendarDays size={16}/>به‌روزرسانی اخیر</button><button className="icon-button"><MoreHorizontal/></button></div></div><div className="desktop-table"><div className="table-row table-header"><span>محصول</span><span>وضعیت</span><span>سری قابل فروش</span><span>موجودی فیزیکی</span><span>قیمت عمده</span><span>آخرین تغییر</span><span></span></div>{filtered.map(product => <div className="table-row product-row" key={product.id}><div className="product-cell"><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.category}</span></div></div><Status>{product.status}</Status><span className={product.series === 0 ? 'zero-number' : 'number'}>{product.series} سری</span><span className={product.stock < 10 ? 'low-number' : 'number'}>{product.stock} تکه</span><b>{product.price}</b><span className="muted">{product.updated}</span><RowMenu/></div>)}</div><div className="mobile-product-list">{filtered.map(product => <article key={product.id}><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.series} سری قابل فروش</span><Status>{product.status}</Status></div><RowMenu/></article>)}</div><footer className="table-footer"><span>نمایش {filtered.length} از ۴۳ محصول</span><div><button className="icon-button">‹</button><b>۱</b><button className="icon-button">›</button></div></footer></section></>
+}
+
+function Inventory() { return <><div className="page-head"><div><PageCrumbs parent="موجودی" current="موجودی آماده"/><h1>موجودی آماده</h1><p>موجودی فیزیکی و تعداد سری قابل فروش به‌صورت زنده محاسبه می‌شود.</p></div><button className="button primary"><Upload size={17}/>ورودی CSV</button></div><div style={{marginBottom:16}}><CSVInventoryImport onImport={() => undefined} /></div>
+<DiscrepancyManager />
+<section className="inventory-summary"><article><p>موجودی فیزیکی</p><strong>۴٬۸۹۲</strong><span>تکه در ۴۲ محصول</span></article><article><p>سری قابل فروش</p><strong>۳۲۸</strong><span>مبنای پیشنهادهای فعال</span></article><article className="warn"><p>ریسک اتمام موجودی</p><strong>۴</strong><span>محصول زیر حد تعیین‌شده</span></article></section><section className="surface inventory-table"><SectionHeading title="موجودی بر اساس SKU"><button className="button secondary">ویرایش گروهی</button></SectionHeading><div className="inventory-grid"><div className="table-row table-header"><span>محصول / واریانت</span><span>فیزیکی</span><span>رزرو شده</span><span>قابل فروش</span><span>سری پشتیبان</span><span>به‌روزرسانی</span></div>{['مشکی / M', 'مشکی / L', 'مشکی / XL', 'مشکی / 2XL', 'سفید / M'].map((variant, i) => <div className="table-row" key={variant}><div><b>پیراهن آکسفورد</b><span>{variant} · KH-OXF-241-{i + 1}</span></div><b>{[46, 38, 35, 15, 12][i]}</b><span>{[10, 5, 0, 0, 0][i]}</span><b className={i === 3 || i === 4 ? 'low-number' : ''}>{[36, 33, 35, 15, 12][i]}</b><span>{i < 4 ? 'پرفروش، فول‌سری' : 'نیم‌سری'}</span><span className="muted">امروز، ۱۰:۲۲</span></div>)}</div></section>
+<PriceHistoryTable productId="oxf-241" />
+<section className="surface" style={{padding:20,marginTop:16}}>
+  <SectionHeading title="کنترل کیفیت تصاویر" eyebrow="IMAGE QUALITY CHECK (11-d)">تصویر محصول را قبل از ارسال برای تأیید کلبه بررسی کنید.</SectionHeading>
+  <ImageQualityChecker onResult={() => undefined} />
+</section>
+</> }
+
+function SeriesBuilder() { const [sizes, setSizes] = useState([1, 2, 2, 1]); const total = sizes.reduce((a,b) => a + b, 0); return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ / پیراهن آکسفورد" current="سری‌ها و پک‌ها"/><h1>سری محصول</h1><p>ترکیب و قیمت‌گذاری بسته‌های عمده برای رنگ مشکی.</p></div><button className="button secondary">مشاهده موجودی SKU</button></div><section className="builder-layout"><div className="surface series-form"><SectionHeading eyebrow="SERIES BUILDER" title="سری پرفروش" action={<Status>فعال</Status>}>ترکیب بر مبنای واریانت‌های فعال محصول</SectionHeading><div className="series-options"><button className="selected">پرفروش</button><button>نیم‌سری</button><button>فول‌سری</button><button>سفارشی</button></div><div className="composition"><div className="composition-head"><b>سایز</b><b>تعداد در هر سری</b><b>موجودی فیزیکی</b></div>{['M', 'L', 'XL', '2XL'].map((size, index) => <div className="composition-row" key={size}><b>{size}</b><div className="stepper"><button onClick={() => setSizes(current => current.map((n, i) => i === index ? Math.max(0, n - 1) : n))}>−</button><strong>{sizes[index]}</strong><button onClick={() => setSizes(current => current.map((n, i) => i === index ? n + 1 : n))}>+</button></div><span>{[46, 38, 35, 15][index]} تکه</span></div>)}</div><div className="price-row"><label>قیمت عمده هر سری<input defaultValue="۱٬۸۹۰٬۰۰۰"/></label><label>زمان آماده‌سازی<select defaultValue="۲ روز"><option>۲ روز کاری</option><option>۳ روز کاری</option></select></label></div><div className="form-actions"><button className="button ghost">انصراف</button><button className="button primary">ذخیره سری</button></div></div><aside className="series-preview"><div className="series-hero"><p>پیش‌نمایش عرضه</p><strong>{total}<span>تکه</span></strong><small>در هر سری پرفروش</small></div><div className="series-stats"><div><span>سری قابل فروش</span><b>۷ سری</b><small>محدودشده توسط سایز 2XL</small></div><div><span>قابل رزرو</span><b>۷ سری</b><small>بدون سفارش فعال</small></div></div><div className="formula"><p>فرمول سری</p>{['M × ۱', 'L × ۲', 'XL × ۲', '2XL × ۱'].map(x => <span key={x}>{x}</span>)}</div><div className="notice"><Sparkles size={17}/><p>با ثبت این سری، پیشنهاد به‌طور خودکار براساس موجودی واریانت‌ها فعال یا غیرفعال می‌شود.</p></div></aside></section></> }
+
+function Orders() { const [selected, setSelected] = useState('KV-82941'); return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌ها را به‌موقع تأیید و برای ارسال آماده کنید.</p></div><button className="button secondary"><FileText size={16}/>خروجی سفارشات</button></div><section className="surface orders-surface"><div className="table-toolbar"><label className="search-field"><Search size={17}/><input placeholder="شناسه سفارش، مشتری یا محصول"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلتر</button><button className="button secondary">نمای ذخیره‌شده <ChevronDown size={15}/></button></div></div><div style={{marginBottom:16}}><OrderSLA orderId={selected} slaHours={24} /></div>
+<div style={{marginBottom:16}}><ShippingLabel orderId={selected} items={[{ name: 'پیراهن آکسفورد', qty: 30 }]} /></div>
+<div className="orders-layout"><div className="orders-list"><div className="order-head-row"><span>سفارش</span><span>محصول و سری</span><span>مبلغ</span><span>مهلت ارسال</span><span>وضعیت</span></div>{orderRows.map(order => <button onClick={() => setSelected(order.id)} className={`order-list-row ${selected === order.id ? 'selected' : ''}`} key={order.id}><div><b>{order.id}</b><span>{order.customer}</span></div><div><b>{order.product}</b><span>{order.pack} · {order.quantity}</span></div><b>{order.value}</b><span>{order.due}</span><Status>{order.status}</Status></button>)}</div><OrderInspector id={selected}/></div></section></> }
+
+function OrderInspector({ id }: { id: string }) { return <aside className="order-inspector"><div className="inspector-head"><div><p className="eyebrow">جزئیات سفارش</p><h2>{id}</h2></div><RowMenu/></div><Status>نیازمند تأیید</Status><div className="inspector-product"><img src={products[0].image} alt=""/><div><b>پیراهن آکسفورد یقه‌دار</b><span>پرفروش · مشکی · ۵ سری</span></div></div><dl><div><dt>تعداد کل</dt><dd>۳۰ تکه</dd></div><div><dt>ارزش سفارش</dt><dd>۹٬۴۵۰٬۰۰۰ تومان</dd></div><div><dt>تاریخ ارسال</dt><dd className="low-number">فردا، ۲۲ مرداد</dd></div></dl><div className="reservation"><div><b>رزرو موجودی</b><span>با تأیید شما اعمال خواهد شد.</span></div><strong>۵ سری</strong></div><div className="inspector-actions"><button className="button primary"><Check size={16}/>تأیید سفارش</button><button className="button secondary">گزارش مغایرت</button><button className="link-danger">رد با ذکر دلیل</button></div></aside> }
+
+function RFQInbox({ onNavigate }: { onNavigate: (page: Page) => void }) { const [selected, setSelected] = useState(rfqs[0].id); const current = rfqs.find(x => x.id === selected) ?? rfqs[0]; return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="صندوق RFQ"/><h1>درخواست‌های تولید</h1><p>درخواست‌های واجد ظرفیت کارخانه را بررسی و برای آن‌ها پیشنهاد ارسال کنید.</p></div><button className="button secondary"><SlidersHorizontal size={16}/>فیلترهای هوشمند</button></div><section className="rfq-layout"><div className="surface rfq-list"><div className="list-tabs"><button className="active">همه <em>۸</em></button><button>نیازمند پاسخ <em>۳</em></button><button>پیشنهادها</button></div>{rfqs.map(rfq => <button key={rfq.id} onClick={() => setSelected(rfq.id)} className={`rfq-row ${selected === rfq.id ? 'selected' : ''}`}><span className="rfq-avatar">{rfq.avatar}</span><div><div><b>{rfq.title}</b><Status>{rfq.status}</Status></div><span>{rfq.customer} · {rfq.quantity}</span><small>{rfq.id} · موعد پاسخ: {rfq.deadline}</small></div></button>)}</div><RFQDetail rfq={current} onQuote={() => onNavigate('quote')}/></section></> }
+
+function RFQDetail({ rfq, onQuote }: { rfq: typeof rfqs[number]; onQuote: () => void }) { return <section className="surface rfq-detail"><div className="rfq-detail-head"><div><p className="eyebrow">{rfq.id} · درخواست جدید</p><h2>{rfq.title}</h2><p>{rfq.customer}</p></div><Status>{rfq.status}</Status></div><div className="request-banner"><div><p>فرصت برآورد</p><strong>{rfq.quantity}</strong><span>حداقل سفارش درخواست‌شده</span></div><div><p>تاریخ تحویل</p><strong>{rfq.deadline}</strong><span>تحویل در انبار کولبه</span></div><div><p>پارچه پیشنهادی</p><strong>{rfq.fabric}</strong><span>نمونه پارچه پیوست شده است</span></div></div><div className="spec-columns"><div><h3>مشخصات درخواست</h3><Spec label="رنگ‌ها" value="مشکی، سفید، سرمه‌ای"/><Spec label="سایزبندی" value="M تا 2XL · نسبت ۱:۲:۲:۱"/><Spec label="برند اختصاصی" value="لیبل گردن و بسته‌بندی اختصاصی"/><Spec label="تک‌پک" value="بله، Polybag مات"/></div><div><h3>فایل‌های پیوست</h3><File name="Tech-pack_oxford_v3.pdf" info="۲.۸ MB · PDF"/><File name="reference-front.jpg" info="۱.۲ MB · تصویر مرجع"/><File name="logo-helya.ai" info="۸۴۰ KB · لوگو"/></div></div><div className="quote-compare"><div><p>درخواست مشتری</p><b>۵۰۰ تکه · ۲۰ روز</b><span>Oxford Cotton 150gr</span></div><div className="arrow-circle">←</div><div className="supplier-offer"><p>پیشنهاد کارخانه</p><b>۶۰۰ تکه · ۲۸ روز</b><span>حداقل قابل تولید شما</span></div></div><div className="detail-actions"><button className="button secondary">رد درخواست</button><button className="button secondary">درخواست اطلاعات</button><button className="button primary" onClick={onQuote}><FileCheck2 size={16}/>ساخت پیشنهاد قیمت</button></div></section> }
+function Spec({ label, value }: { label: string; value: string }) { return <div className="spec"><span>{label}</span><b>{value}</b></div> }
+function File({ name, info }: { name: string; info: string }) { return <div className="file"><FileText size={18}/><div><b>{name}</b><span>{info}</span></div><button aria-label="دانلود فایل">↓</button></div> }
+
+function Production() { return <><div className="page-head"><div><PageCrumbs parent="تولید سفارشی" current="تولید فعال"/><h1>فضای کاری تولید</h1><p>PO-4827 · پیراهن آکسفورد اختصاصی برای گروه هتل‌های هلیا</p></div><button className="button secondary"><MessageSquareText size={16}/>یادداشت داخلی</button></div><section className="production-layout"><div><section className="surface production-summary"><div className="po-title"><div><span className="rfq-avatar">ه</span><div><h2>PO-4827</h2><p>۶۰۰ تکه · تحویل تا ۲۸ شهریور</p></div></div><Status>تولید نمونه</Status></div><div className="progress-bar"><i style={{width: '42%'}}/></div><div className="progress-labels"><span>شروع تولید <b>۱۲ مرداد</b></span><span>پیشرفت زمان‌بندی <b>۴۲٪</b></span><span className="low-number">۴ روز تا تأخیر</span></div></section><section className="surface timeline"><SectionHeading title="خط زمان تولید" action={<button className="button secondary"><Plus size={15}/>به‌روزرسانی مرحله</button>}/><div className="timeline-row">{milestones.map(m => <div className={`milestone ${m.state}`} key={m.title}><i>{m.state === 'done' ? <Check size={13}/> : null}</i><b>{m.title}</b><span>{m.date}</span></div>)}</div><div className="timeline-note"><div className="timeline-note-icon"><Upload size={18}/></div><div><b>نمونه فیزیکی را تا ۲۳ مرداد بارگذاری کنید</b><p>تأیید نمونه برای شروع تولید انبوه الزامی است. عکس‌های جلو، پشت و جزئیات پارچه را اضافه کنید.</p></div><button className="button primary">بارگذاری نمونه</button></div></section></div><aside className="production-side"><section className="surface"><SectionHeading title="افراد مسئول"/><div className="person"><span className="avatar">م</span><div><b>مریم امینی</b><span>مدیر تولید</span></div><button className="icon-button"><MessageSquareText size={16}/></button></div><div className="person"><span className="avatar dark">ک</span><div><b>کامران شفیعی</b><span>مسئول QC</span></div><button className="icon-button"><MessageSquareText size={16}/></button></div></section><section className="surface qc-callout"><ShieldCheck size={21}/><h3>کنترل کیفیت</h3><p>قبل از بسته‌بندی، گزارش QC برای این سفارش لازم است.</p><TextButton>مشاهده چک‌لیست</TextButton></section></aside></section></> }
+
+function Quality() { return <><div className="page-head"><div><PageCrumbs parent="کیفیت" current="وظایف QC"/><h1>کنترل کیفیت</h1><p>آزمون‌ها و مستندات کیفی سفارش‌های آماده‌ی بازرسی را ثبت کنید.</p></div><button className="button primary"><Plus size={17}/>گزارش QC جدید</button></div><section className="quality-board"><article className="surface qc-card urgent"><div><Status>نیازمند اقدام</Status><span>مهلت: امروز</span></div><h3>PO-4813 · تی‌شرت گلدوزی</h3><p>بررسی چاپ، دوخت و درصد عیب پیش از بسته‌بندی</p><div className="qc-meta"><span>۱٬۲۰۰ تکه</span><span>۲۴ مرداد</span></div><button className="button primary">شروع بازرسی</button></article><article className="surface qc-card"><div><Status>در حال بررسی</Status><span>مهلت: ۲۶ مرداد</span></div><h3>PO-4818 · بارانی کوتاه</h3><p>اندازه‌گیری نمونه، رنگ و آب‌گریزی پارچه</p><div className="qc-meta"><span>۳۵۰ تکه</span><span>۲۶ مرداد</span></div><button className="button secondary">ادامه گزارش</button></article><section className="surface qc-history"><SectionHeading title="گزارش‌های اخیر"/><div><span><i className="green-dot"/>QC-1128</span><b>پیراهن آکسفورد · قبول شد</b><small>دیروز</small></div><div><span><i className="amber-dot"/>QC-1121</span><b>شلوار راسته · قبول با شرط</b><small>۱۹ مرداد</small></div><TextButton>همه گزارش‌ها</TextButton></section></section></> }
+
+function Finance() {
+  /* نیازسنجی 33-d: ریز کامل کسورات */
+  const ledger = [
+    ['۲۱ مرداد','ST-1103','تسویه سفارشات ۱۲ تا ۱۸ مرداد','+ ۳۲٬۴۰۰٬۰۰۰','واریز شد','کمیسیون ۵٪ · مالیات ۹٪ · ارسال ۲٪'],
+    ['۲۰ مرداد','ADJ-083','تعدیل هزینه بسته‌بندی','− ۴۸۰٬۰۰۰','ثبت شد','هزینه بسته‌بندی PO-4813'],
+    ['۱۹ مرداد','KV-82839','فروش سفارش آماده','+ ۷٬۲۰۰٬۰۰۰','در انتظار','کمیسیون ۵٪ = ۳۶۰٬۰۰۰'],
+  ];
+  return <><div className="page-head"><div><PageCrumbs parent="مالی" current="مالی و تسویه"/><h1>مالی و تسویه</h1><p>شفافیت کامل گردش مالی با ریز کسورات، کمیسیون، مالیات و هزینه‌ها.</p></div><button className="button secondary"><FileText size={16}/>دریافت صورت‌حساب</button></div>
+
+  <section className="balance-grid"><article className="balance-main"><p>موجودی قابل تسویه</p><strong>۳۲٬۴۰۰٬۰۰۰ <span>تومان</span></strong><div><span>پرداخت برنامه‌ریزی‌شده</span><b>۲۴ مرداد ۱۴۰۴</b></div></article><article><p>در انتظار تسویه</p><strong>۴۸٬۶۰۰٬۰۰۰</strong><span>شامل ۱۴ سفارش تحویل‌شده</span></article><article><p>درآمد این ماه</p><strong>۱۵۸٬۹۰۰٬۰۰۰</strong><span className="green-text">↑ ۱۲٪ نسبت به ماه گذشته</span></article></section>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="ریز کسورات این ماه" eyebrow="DETAILED DEDUCTIONS">تفکیک کامل هزینه‌ها و کسورات از درآمد ناخالص</SectionHeading>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
+      {[['درآمد ناخالص','۱۶۷٬۲۰۰٬۰۰۰','green-text'],['کمیسیون کلبه (۵٪)','− ۸٬۳۶۰٬۰۰۰','low-number'],['مالیات (۹٪)','− ۱۵٬۰۴۸٬۰۰۰','low-number'],['هزینه ارسال (۲٪)','− ۳٬۳۴۴٬۰۰۰','low-number'],['سود خالص','۱۴۰٬۴۴۸٬۰۰۰','green-text']].map(([label, value, tone]) => (
+        <div key={label} style={{border:'1px solid #e5e5e0',padding:12}}>
+          <p style={{fontSize:9,color:'#999'}}>{label}</p>
+          <b style={{display:'block',marginTop:4,fontSize:13}} className={`num-fa ${tone}`}>{value}</b>
+          <small style={{fontSize:8,color:'#999'}}>تومان</small>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section className="surface ledger"><SectionHeading title="گردش حساب" action={<button className="button secondary"><SlidersHorizontal size={15}/>فیلتر تاریخ</button>}/><div className="ledger-table"><div className="ledger-row header"><span>تاریخ</span><span>شناسه</span><span>شرح</span><span>مبلغ</span><span>وضعیت</span><span>ریز کسورات</span></div>{ledger.map(row => <div className="ledger-row" key={row[1]}><span>{row[0]}</span><b>{row[1]}</b><span>{row[2]}</span><b className={row[3].startsWith('+') ? 'green-text' : 'low-number'}>{row[3]} تومان</b><Status>{row[4]}</Status><small style={{fontSize:8.5,color:'#999'}}>{row[5]}</small></div>)}</div></section></>;
+}
+
+function Analytics() {
+  /* نیازسنجی: 37-d بازه دلخواه + 38-d همه موارد + 39-d قیف فروش + 40/41-d امتیاز با جزئیات */
+  const [range, setRange] = useState('month');
+  const rangeLabel = range === 'today' ? 'امروز' : range === 'week' ? 'این هفته' : range === 'month' ? 'این ماه' : 'کل دوره';
+  const rangeData: Record<string, { orders: string; revenue: string; cancelled: string; returned: string }> = {
+    today: { orders: '۴', revenue: '۱۲٬۴۰۰٬۰۰۰', cancelled: '۰', returned: '۰' },
+    week: { orders: '۳۱', revenue: '۸۹٬۲۰۰٬۰۰۰', cancelled: '۲', returned: '۱' },
+    month: { orders: '۱۲۸', revenue: '۳۴۱٬۵۰۰٬۰۰۰', cancelled: '۷', returned: '۳' },
+    custom: { orders: '۴۱۲', revenue: '۱٬۱۲۰٬۰۰۰٬۰۰۰', cancelled: '۲۱', returned: '۹' },
+  };
+  const data = rangeData[range];
+  const stats = [
+    ['نرخ تأیید سفارش', '۹۸٪', 'هدف: ۹۵٪', 98],
+    ['ارسال به‌موقع', '۹۶٪', 'هدف: ۹۵٪', 96],
+    ['دقت موجودی', '۹۷٫۸٪', 'هدف: ۹۸٪', 97.8],
+    ['میانگین پاسخ RFQ', '۳٫۴ ساعت', 'هدف: کمتر از ۸ ساعت', 72],
+    ['نرخ تبدیل RFQ', '۴۲٪', 'هدف: ۳۵٪', 84],
+    ['نرخ نقص QC', '۱٫۱٪', 'هدف: کمتر از ۲٪', 89],
+  ];
+  const funnel = [
+    { label: 'بازدید محصول', value: 12400, pct: 100 },
+    { label: 'افزودن به پیش‌فاکتور', value: 1840, pct: 15 },
+    { label: 'ثبت RFQ', value: 420, pct: 23 },
+    { label: 'پیشنهاد ارسال‌شده', value: 384, pct: 91 },
+    { label: 'سفارش نهایی', value: 128, pct: 33 },
+  ];
+  const score = { total: 'A−', numeric: 92, metrics: [
+    { label: 'سرعت ارسال', value: 96, target: '≥ ۹۵٪', tip: 'عالی — حفظ روند' },
+    { label: 'نرخ لغو', value: 94, target: '≤ ۵٪', tip: '۲ لغو در ۳۰ روز' },
+    { label: 'کیفیت QC', value: 98, target: '≥ ۹۷٪', tip: 'نقص ۱٫۱٪' },
+    { label: 'پاسخ‌گویی RFQ', value: 88, target: '≤ ۸ ساعت', tip: 'میانگین ۳٫۴ ساعت' },
+    { label: 'دقت موجودی', value: 97, target: '≥ ۹۸٪', tip: 'نزدیک هدف' },
+  ]};
+  const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
+
+  return <><div className="page-head"><div><PageCrumbs parent="تحلیل" current="عملکرد تأمین‌کننده"/><h1>عملکرد تأمین‌کننده</h1><p>شاخص‌ها، قیف فروش و امتیاز کل با جزئیات و راهکار بهبود — {rangeLabel}.</p></div>
+    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+      {[['today','روزانه'],['week','هفتگی'],['month','ماهانه'],['custom','بازه دلخواه']].map(([id, name]) => (
+        <button key={id} onClick={() => setRange(id)} className={range === id ? 'button primary' : 'button secondary'}>{name}</button>
+      ))}
+    </div>
+  </div>
+
+  <div style={{marginBottom:16}}><CSVInventoryImport onImport={() => undefined} /></div>
+<DiscrepancyManager />
+<section className="inventory-summary">
+    <article><p>سفارش‌ها</p><strong>{data.orders}</strong><span>در {rangeLabel}</span></article>
+    <article><p>درآمد</p><strong>{data.revenue}</strong><span>تومان</span></article>
+    <article className="warn"><p>لغو شده</p><strong>{data.cancelled}</strong><span>سفارش</span></article>
+    <article className="warn"><p>مرجوعی</p><strong>{data.returned}</strong><span>سفارش</span></article>
+  </section>
+
+  <section className="performance-grid">{stats.map(([label, value, target, pct], i) => <article className="surface" key={label}><span className="metric-index">۰{i + 1}</span><p>{label}</p><strong>{value}</strong><small>{target}</small><div className="metric-track"><i style={{width: `${pct}%`}}/></div></article>)}</section>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="قیف فروش" eyebrow="SALES FUNNEL">از بازدید محصول تا سفارش نهایی</SectionHeading>
+    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+      {funnel.map((stage, i) => (
+        <div key={stage.label} style={{display:'flex',alignItems:'center',gap:12}}>
+          <span style={{width:120,flexShrink:0,textAlign:'left',fontSize:10,color:'#888'}}>{stage.label}</span>
+          <div style={{flex:1,height:30,background:'#f0f0ee',borderRadius:4,overflow:'hidden'}}>
+            <div style={{height:'100%',borderRadius:4,transition:'width .5s',width:`${stage.pct}%`,background:`hsl(${200 - i * 30}, 45%, ${35 + i * 8}%)`}} />
+          </div>
+          <b style={{width:64,textAlign:'right',fontSize:11}} className="num-fa">{fa(stage.value)}</b>
+          <span style={{width:40,fontSize:9,color:'#999'}} className="num-fa">{fa(stage.pct)}٪</span>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="امتیاز عملکرد کل" eyebrow="PERFORMANCE SCORE">ترکیب همه شاخص‌ها با جزئیات و راهکار بهبود</SectionHeading>
+    <div style={{display:'flex',alignItems:'center',gap:24,marginBottom:20,flexWrap:'wrap'}}>
+      <div style={{width:96,height:96,flexShrink:0,borderRadius:'50%',border:'4px solid #3d5c3a',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{textAlign:'center'}}><strong style={{display:'block',fontSize:24}}>{score.total}</strong><small style={{fontSize:9,color:'#999'}} className="num-fa">{fa(score.numeric)}/۱۰۰</small></div>
+      </div>
+      <div style={{flex:1,minWidth:280,display:'flex',flexDirection:'column',gap:8}}>
+        {score.metrics.map(metric => (
+          <div key={metric.label} style={{display:'flex',alignItems:'center',gap:10,fontSize:10}}>
+            <span style={{width:90,flexShrink:0,color:'#666'}}>{metric.label}</span>
+            <div style={{flex:1,height:7,background:'#f0f0ee',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',borderRadius:4,width:`${metric.value}%`,background:metric.value >= 95 ? '#3d5c3a' : metric.value >= 85 ? '#ca9130' : '#a65d41'}} /></div>
+            <b style={{width:28}} className="num-fa">{fa(metric.value)}</b>
+            <small style={{width:70,color:'#999'}}>{metric.target}</small>
+            <small style={{flex:1,color:'#aaa'}}>{metric.tip}</small>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div style={{borderTop:'1px solid #e5e5e0',paddingTop:12,display:'flex',alignItems:'flex-start',gap:12}}>
+      <Sparkles size={18} style={{flexShrink:0,marginTop:2}}/>
+      <div><b style={{fontSize:11}}>راهکار بهبود</b><p style={{marginTop:4,fontSize:10,lineHeight:1.8,color:'#666'}}>دقت موجودی شما ۹۷٪ است (هدف ۹۸٪). با به‌روزرسانی موجودی پس از هر بسته‌بندی به‌جای پایان روز، این شاخص به هدف می‌رسد و امتیاز کل به A ارتقا می‌یابد.</p></div>
+    </div>
+  </section>
+
+  <section className="surface insight"><Sparkles size={20}/><div><b>بینش عملیاتی</b><p>نرخ پاسخ‌دهی RFQ شما ۲.۱ ساعت سریع‌تر از میانگین دسته «پیراهن مردانه» است؛ حفظ این روند می‌تواند ظرفیت دریافت درخواست‌های VIP را افزایش دهد.</p></div></section></>;
+}
+
+function Profile() { const capabilities = ['پیراهن مردانه و زنانه', 'شلوار و لباس کار', 'پارچه‌های لینن و پنبه', 'گلدوزی', 'لیبل‌گذاری اختصاصی', 'بسته‌بندی سفارشی']; return <><div className="page-head"><div><PageCrumbs parent="تأمین‌کننده" current="پروفایل کارخانه"/><h1>پروفایل و ظرفیت</h1><p>اطلاعاتی که کولبه برای مسیر‌دهی درخواست‌های تولید از آن استفاده می‌کند.</p></div><button className="button primary">ویرایش پروفایل</button></div><section className="profile-grid"><section className="surface factory-profile"><div className="factory-logo">N</div><div><h2>نساجی و پوشاک نیلگون</h2><p>تهران، شهرک صنعتی پرند · از ۱۳۹۴</p><Status>تأییدشده توسط کولبه</Status></div><div className="capacity"><span>ظرفیت ماهانه</span><b>۱۲٬۰۰۰ <small>تکه</small></b></div></section><section className="surface profile-section"><SectionHeading title="توانمندی‌های تولید" action={<TextButton>ویرایش</TextButton>}/><div className="chip-list">{capabilities.map(x => <span key={x}>{x}</span>)}</div></section><section className="surface profile-section"><SectionHeading title="عملیات و MOQ"/><div className="profile-details"><Spec label="حداقل سفارش استاندارد" value="۳۰۰ تکه"/><Spec label="زمان نمونه‌سازی" value="۷ تا ۱۰ روز کاری"/><Spec label="زمان تولید انبوه" value="۲۱ تا ۳۰ روز کاری"/><Spec label="سایزهای پشتیبانی‌شده" value="XS تا 4XL"/></div></section></section></> }
+
+function SettingsPage() {
+  /* نیازسنجی 30-b: ثبت روزهای تعطیل */
+  const [holidays, setHolidays] = useState<Array<{ id: string; date: string; label: string }>>(() => {
+    try { const raw = localStorage.getItem('kv_supplier_holidays'); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  });
+  const [newDate, setNewDate] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const save = (next: typeof holidays) => { setHolidays(next); try { localStorage.setItem('kv_supplier_holidays', JSON.stringify(next)); } catch { /* ignore */ } };
+  const add = () => { if (!newDate || !newLabel.trim()) return; save([...holidays, { id: `hd-${Date.now()}`, date: newDate, label: newLabel.trim() }]); setNewDate(''); setNewLabel(''); };
+  const remove = (id: string) => save(holidays.filter(h => h.id !== id));
+
+  return <><div className="page-head"><div><PageCrumbs parent="حساب کاربری" current="تنظیمات"/><h1>تنظیمات</h1><p>تعطیلات کارخانه، کاربران تیم و یکپارچه‌سازی‌ها را مدیریت کنید.</p></div></div>
+
+  <section className="surface" style={{padding:20,marginBottom:16}}>
+    <SectionHeading title="تعطیلات و روزهای عدم تأمین" eyebrow="FACTORY CLOSURES">روزهایی که کارخانه تولید یا ارسال ندارد؛ کلبه مهلت‌ها را به‌طور خودکار تنظیم می‌کند.</SectionHeading>
+    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:12}}>
+      <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} style={{height:36,border:'1px solid #deddd6',background:'#fff',padding:'0 8px',fontSize:10.5}} dir="ltr" aria-label="تاریخ تعطیلی" />
+      <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="علت (مثلاً تعطیل رسمی)" style={{height:36,flex:1,minWidth:160,border:'1px solid #deddd6',background:'#fff',padding:'0 8px',fontSize:10.5}} />
+      <button onClick={add} disabled={!newDate || !newLabel.trim()} className="button primary disabled:opacity-40">+ ثبت تعطیلی</button>
+    </div>
+    {holidays.length > 0 ? <div style={{display:'flex',flexDirection:'column',gap:6}}>{holidays.map(h => (
+      <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,border:'1px solid #e5e5e0',padding:10}}>
+        <div><b style={{fontSize:10.5}} className="num-fa">{h.date}</b><span style={{marginRight:8,fontSize:9.5,color:'#666'}}>{h.label}</span></div>
+        <button onClick={() => remove(h.id)} style={{fontSize:9,color:'#a4463d',textDecoration:'underline',background:'none',border:0,cursor:'pointer'}}>حذف</button>
+      </div>
+    ))}</div> : <p style={{fontSize:10,color:'#999'}}>تعطیلی ثبت نشده است.</p>}
+  </section>
+
+  {/* 31-d/32-d/36-d: تنظیمات تسویه */}
+  <SettlementSettings />
+  {/* 20-d: ترجیحات اعلان */}
+  <NotificationPreferences />
+  {/* 34-d: اتصال مالیاتی */}
+  <TaxIntegration />
+  {/* 6-d: نقش سفارشی */}
+  <RoleManager />
+  {/* 4-d: گردش تأیید */}
+  <ApprovalWorkflow type="manufacturer" />
+  <section className="settings-list surface"><button><Bell size={18}/><div><b>اعلان‌ها</b><span>قوانین دریافت هشدارهای عملیاتی و مالی</span></div><ChevronDown size={17}/></button><button><UsersRound size={18}/><div><b>کاربران و دسترسی‌ها</b><span>۵ عضو فعال (نامحدود — نیازسنجی 5-c)</span></div><ChevronDown size={17}/></button><button><ShieldCheck size={18}/><div><b>امنیت و ورود</b><span>تأیید دو مرحله‌ای و نشست‌های فعال</span></div><ChevronDown size={17}/></button></section></>;
+}
+
+
+export default App

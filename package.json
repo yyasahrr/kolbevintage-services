@@ -1,38 +1,28 @@
 {
   "name": "kolbevintage-platform",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
   "workspaces": [
-    "apps/supplier"
+    "frontend-kolbe",
+    "frontend-supplier",
+    "frontend-next"
   ],
   "scripts": {
-    "dev": "vite",
-    "dev:storefront": "vite --host 127.0.0.1 --port 5173",
-    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal -- --host 127.0.0.1 --port 5174",
+    "dev": "node scripts/dev-all.mjs",
     "dev:all": "node scripts/dev-all.mjs",
-    "build": "vite build",
-    "build:storefront": "vite build",
+    "dev:next": "npm run dev --workspace kolbe-next",
+    "dev:kolbe": "npm run dev --workspace kolbe-storefront",
+    "dev:supplier": "npm run dev --workspace kolbe-supplier-portal",
+    "pg": "node scripts/pg.mjs",
+    "build": "npm run build --workspace kolbe-next",
+    "build:legacy": "npm run build --workspace kolbe-storefront",
     "build:supplier": "npm run build --workspace kolbe-supplier-portal",
-    "build:all": "npm run build:storefront && npm run build:supplier",
-    "preview": "vite preview"
+    "preview": "npm run preview --workspace kolbe-storefront"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
-    "clsx": "2.1.1",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "tailwind-merge": "3.4.0"
+    "pg": "8.23.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.1.17",
-    "@types/node": "22.19.17",
-    "@types/react": "19.2.7",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "5.1.1",
-    "tailwindcss": "4.1.17",
-    "typescript": "5.9.3",
-    "vite": "7.3.2",
-    "vite-plugin-singlefile": "2.3.0"
+    "embedded-postgres": "17.5.0-beta.15"
   }
 }
