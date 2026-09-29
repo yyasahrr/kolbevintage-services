@@ -1,15 +1,21 @@
+import { useEffect, useState } from "react";
 import { Link } from "../router";
 import { useStore, lineKey } from "../store";
-import { products } from "../data/catalog";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
-import ProductCard from "../components/ProductCard";
-
-const FREE = 3_000_000;
+import RecommendationSlot from "../components/RecommendationSlot";
+import { api } from "../lib/api";
 
 export default function Cart() {
   const { lines, cartTotal, removeLine, setLineQty } = useStore();
-  const shipping = cartTotal >= FREE || cartTotal === 0 ? 0 : 89_000;
+  const [shipping, setShipping] = useState<number | null>(null);
+  useEffect(() => {
+    if (!lines.length) return;
+    api<{ amount: number }>("/store/kolbe/shipping/quote", {
+      method: "POST",
+      body: { method: "pishtaz", payMethod: "gateway", orderValue: cartTotal, lines: lines.map((line) => ({ id: line.id, qty: line.qty, colour: line.colour, size: line.size })) },
+    }).then((result) => setShipping(result.amount)).catch(() => setShipping(null));
+  }, [lines, cartTotal]);
 
   if (lines.length === 0) {
     return (
@@ -81,12 +87,12 @@ export default function Cart() {
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-600">هزینه ارسال</span>
-                <span className="num-fa">{shipping === 0 ? "رایگان" : toman(shipping)}</span>
+                <span className="num-fa">{shipping == null ? "در حال محاسبه" : shipping === 0 ? "رایگان" : toman(shipping)}</span>
               </div>
             </div>
             <div className="flex justify-between pt-4 text-[14px] font-medium">
               <span>مبلغ قابل پرداخت</span>
-              <span className="num-fa">{toman(cartTotal + shipping)}</span>
+              <span className="num-fa">{toman(cartTotal + (shipping ?? 0))}</span>
             </div>
 
             <Link
@@ -111,14 +117,7 @@ export default function Cart() {
         </aside>
       </div>
 
-      <section className="mt-16">
-        <h2 className="mb-5 text-[17px] font-medium">شاید این‌ها را هم بخواهید</h2>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-8 lg:grid-cols-4">
-          {products.slice(0, 4).map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
-      </section>
+      <RecommendationSlot slot="cart.you_may_like" title="شاید این‌ها را هم بخواهید" />
     </main>
   );
 }

@@ -6,6 +6,7 @@ import { productById, products, type Product } from "../data/catalog";
 import { useStore } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
+import RecommendationSlot from "../components/RecommendationSlot";
 import Lightbox from "../components/Lightbox";
 import SizeAdvisor from "../components/SizeAdvisor";
 import ProductCard from "../components/ProductCard";
@@ -13,6 +14,7 @@ import type { AdminProductRecord } from "../adminProducts";
 import { recommendStyleProducts } from "../lib/styleIntelligence";
 import { readCommerceEvents } from "../lib/analytics";
 import { getProductTypeDefinition } from "../productSchemas";
+import { api } from "../lib/api";
 
 /*
  * چیدمان صفحه جزیات محصول — بر اساس الگوی استاندارد PDP (آمازون / دیجی‌کالا / زالاندو)
@@ -533,54 +535,59 @@ function WholesaleOrderPanel({
   );
 }
 
+function LiveSpecifications({ productId }: { productId: string }) {
+  const [groups, setGroups] = useState<Array<{ name: string; attributes: Array<{ code: string; label: string; value: unknown; unit?: string }> }>>([]);
+  const [empty, setEmpty] = useState(false);
+  useEffect(() => {
+    api<{ groups: Array<{ name: string; attributes: Array<{ code: string; label: string; value: unknown; unit?: string }> }> }>(`/store/kolbe/products/${productId}/specifications`)
+      .then((result) => { setGroups(result.groups ?? []); setEmpty(!(result.groups ?? []).length); })
+      .catch(() => setEmpty(true));
+  }, [productId]);
+  if (empty) return <tr><td className="px-4 py-3 text-[12px] text-neutral-500">مشخصات این محصول از قالب نوع محصول ثبت نشده است.</td></tr>;
+  return <>{groups.flatMap((group) => group.attributes).map((item, index) => (
+    <tr key={item.code} className={"product-spec-row grid grid-cols-[38%_62%] gap-x-4 px-4 py-3 " + (index % 2 === 0 ? "" : "is-alt")}>
+      <th className="text-right font-medium text-neutral-500">{item.label}</th>
+      <td className="text-right">{String(item.value)}{item.unit ? ` ${item.unit}` : ""}</td>
+    </tr>
+  ))}</>;
+}
+
 /* ------------------------------ راهنمای سایز ------------------------------- */
 
 function SizeGuide({ product, mode }: { product: Product; mode: "chart" | "how" }) {
-  const definition = getProductTypeDefinition((product as AdminProductRecord).admin?.productTypeId ?? (product as AdminProductRecord).admin?.specTemplate ?? "clothing");
-  const guidance = definition.id === "shoe" ? ["طول پا را از پشت پاشنه تا نوک بلندترین انگشت اندازه بگیرید.", "هر دو پا را اندازه بگیرید و عدد پای بزرگ‌تر را مبنا قرار دهید.", "اگر بین دو سایز هستید، عرض قالب محصول را هم بررسی کنید."] : definition.id === "hat" ? ["متر را یک سانتی‌متر بالاتر از ابرو و دور پهن‌ترین بخش سر بگیرید.", "متر باید بدون فشار و موازی زمین باشد."] : definition.id === "bag" || definition.id === "accessory" ? ["ابعاد درج‌شده مربوط به خود محصول و بدون بسته‌بندی است.", "برای بند یا قطعه قابل تنظیم، کمینه و بیشینه اندازه را بررسی کنید."] : ["دور سینه را از پرترین قسمت و بدون فشار اندازه بگیرید.", "عرض شانه را از انتهای استخوان یک شانه تا شانه دیگر بگیرید.", "قد لباس را از بالای سرشانه تا پایین‌ترین نقطه اندازه بگیرید.", "قد آستین را با آرنج کمی خم اندازه بگیرید."];
+  const [guide, setGuide] = useState<any>(null);
+  const [missing, setMissing] = useState(false);
+  useEffect(() => {
+    api<{ guide: any }>(`/store/kolbe/products/${product.id}/size-guide`).then((result) => {
+      setGuide(result.guide);
+      setMissing(!result.guide);
+    }).catch(() => setMissing(true));
+  }, [product.id]);
   return (
     <div className="fade-up mt-3 rounded-2xl border border-neutral-200 bg-white p-4">
       <h3 className="mb-4 text-[13px] font-medium">{mode === "chart" ? "جدول سایز محصول" : "راهنمای اندازه‌گیری"}</h3>
-      {mode === "chart" ? (
+      {missing || !guide ? <p className="text-[12px] text-neutral-500">راهنمای سایز این محصول هنوز از کتابخانه ساختار محصولات وصل نشده است.</p> : mode === "chart" ? (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-[11.5px]">
               <thead>
-                <tr className="border-b border-neutral-300 text-right">{definition.sizeColumns.map((column) => <th key={column.id} className="py-2 font-medium">{column.label}{column.unit ? ` (${column.unit})` : ""}</th>)}</tr>
+                <tr className="border-b border-neutral-300 text-right">{(guide.columns ?? []).map((column: any) => <th key={column.code} className="py-2 font-medium">{column.label}{column.unit ? ` (${column.unit})` : ""}</th>)}</tr>
               </thead>
               <tbody>
-                {product.sizeChart.map((r, i) => (
-                  <tr key={r.size} className={i % 2 ? "bg-[#f6f6f4]" : ""}>
-                    {definition.sizeColumns.map((column) => <td key={column.id} className={column.id === "size" ? "py-2 font-medium" : "py-2 num-fa"}>{fa(r[column.id])}</td>)}
+                {(guide.rows ?? []).map((row: Record<string, unknown>, i: number) => (
+                  <tr key={i} className={i % 2 ? "bg-[#f6f6f4]" : ""}>
+                    {(guide.columns ?? []).map((column: any) => <td key={column.code} className="py-2">{String(row[column.code] ?? "")}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
-            اندازه‌ها مربوط به {definition.label} هستند. {product.sizeAdvice}
-          </p>
+          {guide.text ? <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">{guide.text}</p> : null}
         </>
       ) : (
         <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
-          <button onClick={() => window.open("https://www.aparat.com/", "_blank")} className="group relative overflow-hidden rounded-xl bg-neutral-900">
-            <img src="/images/flat.jpg" alt="ویدئوی اندازه‌گیری" loading="lazy" className="aspect-[4/3] w-full object-cover opacity-70" />
-            <span className="absolute inset-0 flex items-center justify-center text-white">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70">
-                <Icon name="play" className="mr-0.5 h-4 w-4" fill="currentColor" strokeWidth={0} />
-              </span>
-            </span>
-          </button>
-          <ol className="space-y-2.5 text-[11.5px] leading-relaxed text-neutral-600">
-            {guidance.map((t, i) => (
-              <li key={i} className="flex gap-2">
-                <span className="mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#011c3a] text-[9px] text-white">
-                  {fa(i + 1)}
-                </span>
-                {t}
-              </li>
-            ))}
-          </ol>
+          {guide.media?.find((item: any) => item.kind === "video" || item.kind === "gif")?.url ? <video className="aspect-[4/3] w-full bg-neutral-900" controls src={guide.media.find((item: any) => item.kind === "video" || item.kind === "gif").url} /> : <div className="grid place-items-center bg-neutral-100 text-[11px] text-neutral-500">رسانه‌ای ثبت نشده</div>}
+          <p className="text-[12px] leading-7 text-neutral-600">{guide.text || "متن راهنما در نسخه منتشرشده ثبت نشده است."}</p>
         </div>
       )}
     </div>
@@ -1163,12 +1170,7 @@ export default function ProductPage({ id }: { id: string }) {
                 <div className="product-specs-table mt-3 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
                   <table className="w-full text-[12.5px]">
                     <tbody>
-                      {visibleSpecifications.map((item, i) => (
-                        <tr key={`${item.label}-${i}`} className={"product-spec-row grid grid-cols-[38%_62%] gap-x-4 px-4 py-3 " + (i % 2 === 0 ? "" : "is-alt")}>
-                          <th className="text-right font-medium text-neutral-500">{item.label}</th>
-                          <td className="text-right">{item.value}{item.unit ? ` ${item.unit}` : ""}</td>
-                        </tr>
-                      ))}
+                      <LiveSpecifications productId={product.id} />
                     </tbody>
                   </table>
                 </div>
@@ -1424,6 +1426,10 @@ export default function ProductPage({ id }: { id: string }) {
       {lightbox !== null && (
         <Lightbox images={product.images} start={lightbox} onClose={() => setLightbox(null)} />
       )}
+      <div className="mx-auto w-full px-4 lg:px-8">
+        <RecommendationSlot slot="product.similar" productId={id} title="کالاهای مشابه" />
+        <RecommendationSlot slot="product.complete_the_look" productId={id} title="تکمیل استایل" />
+      </div>
     </>
   );
 }

@@ -8,18 +8,22 @@ export type CallResult = { status: number; data: any; headers: Headers };
 export async function call(
   method: string,
   path: string,
-  opts: { body?: unknown; token?: string | null; idem?: string; cookie?: string } = {},
+  opts: { body?: unknown; token?: string | null; idem?: string; cookie?: string; headers?: Record<string, string> } = {},
 ): Promise<CallResult> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
+  const headers: Record<string, string> = { "content-type": "application/json", ...opts.headers };
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;
   if (opts.idem) headers["idempotency-key"] = opts.idem;
   if (opts.cookie) headers.cookie = opts.cookie;
-  const req = new Request(`http://localhost:3000/store/kolbe/${path}`, {
+  const queryAt = path.indexOf("?");
+  const pathname = queryAt === -1 ? path : path.slice(0, queryAt);
+  const search = queryAt === -1 ? "" : path.slice(queryAt);
+  const parts = pathname.split("/").filter(Boolean);
+  const req = new Request(`http://localhost:3000/store/kolbe/${pathname}${search}`, {
     method,
     headers,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   }) as unknown as NextRequest;
-  const res = await handleKolbeRequest(req, path.split("/"));
+  const res = await handleKolbeRequest(req, parts);
   const data = await res.json().catch(() => ({}));
   return { status: res.status, data, headers: res.headers };
 }

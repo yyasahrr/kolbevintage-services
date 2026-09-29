@@ -9,6 +9,13 @@ export type Product = {
   price: string
   status: 'فعال' | 'نیازمند اصلاح' | 'در بررسی' | 'پیش‌نویس'
   updated: string
+  rawStatus?: string
+  description?: string
+  wholesalePrice?: number
+  rejectionReason?: string | null
+  rejectionNote?: string | null
+  reviewedAt?: string | null
+  resubmittedAt?: string | null
 }
 
 export const products: Product[] = [

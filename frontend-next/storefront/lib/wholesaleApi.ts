@@ -27,23 +27,92 @@ export type AdminSupplierProduct = {
   name: string;
   sku: string;
   category: string;
+  description?: string;
   wholesalePrice: number;
   imageUrl: string | null;
   status: "draft" | "submitted" | "approved" | "changes_requested" | "rejected";
   supplierName: string;
   stock: number;
+  rejectionReasonCode: string | null;
+  rejectionReason: string | null;
+  rejectionNote: string | null;
+  reviewedAt: string | null;
+  resubmittedAt: string | null;
+  productTypeId: string | null;
 };
 
 export type AdminWholesaleOrder = {
   id: string;
   orderCode: string;
   status: string;
+  paymentStatus: string;
+  fulfillmentStatus: string;
+  operationalPriority: number;
   totalAmount: number;
   totalUnits: number;
   createdAt: string;
+  updatedAt: string;
+  shippedAt: string | null;
   storeName: string;
-  items: Array<{ productName: string; sku: string; quantity: number }>;
-  purchaseOrders: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null }>;
+  memberName: string;
+  buyerPhone: string;
+  buyerCity: string;
+  supplierNames: string;
+  suppliers: string[];
+  items: Array<{ productName: string; sku: string; quantity: number; unitPrice: number; size: string | null; color: string | null; supplierName: string | null }>;
+  purchaseOrders: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null; shippedAt: string | null; totalAmount: number }>;
+};
+
+export type WholesaleOrderQuery = {
+  sort?: string;
+  q?: string;
+  status?: string;
+  payment?: string;
+  fulfillment?: string;
+};
+
+export const WHOLESALE_ORDER_SORTS = [
+  { id: "newest", label: "جدیدترین سفارش" },
+  { id: "oldest", label: "قدیمی‌ترین سفارش" },
+  { id: "status", label: "وضعیت سفارش" },
+  { id: "amount", label: "مبلغ سفارش" },
+  { id: "buyer", label: "خریدار" },
+  { id: "supplier", label: "تأمین‌کننده" },
+  { id: "payment", label: "وضعیت پرداخت" },
+  { id: "fulfillment", label: "وضعیت آماده‌سازی / ارسال" },
+] as const;
+
+export const OPERATIONS_SORTS = [
+  { id: "newest", label: "جدیدترین" },
+  { id: "oldest", label: "قدیمی‌ترین" },
+  { id: "status", label: "وضعیت" },
+  { id: "amount", label: "مبلغ" },
+  { id: "updated", label: "زمان آخرین تغییر" },
+  { id: "shipped", label: "زمان ارسال" },
+  { id: "priority", label: "اولویت عملیاتی" },
+] as const;
+
+export const ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: "در انتظار تأیید",
+  approved: "تأیید شده",
+  fulfilled: "تحویل شده",
+  cancelled: "لغو شده",
+};
+export const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  unpaid: "پرداخت‌نشده",
+  pending: "در انتظار پرداخت",
+  partial: "پرداخت جزئی",
+  paid: "پرداخت‌شده",
+  refunded: "بازگشت وجه",
+};
+export const FULFILLMENT_STATUS_LABEL: Record<string, string> = {
+  pending: "در انتظار تأمین",
+  preparing: "در حال آماده‌سازی",
+  ready: "آماده ارسال",
+  shipped: "ارسال شده",
+  delivered: "تحویل شده",
+  cancelled: "لغو ارسال",
+  issue: "مانع عملیاتی",
 };
 
 function adminToken(): string | null {
@@ -118,16 +187,37 @@ export async function listSupplierCatalogProducts(): Promise<AdminSupplierProduc
   if (!token) return [];
   const data = await api<{ products: Array<any> }>("/store/kolbe/admin/catalog", { token });
   return (data.products ?? []).map((item) => ({
-    id: item.id, name: item.name, sku: item.sku, category: item.category,
+    id: item.id, name: item.name, sku: item.sku, category: item.category, description: item.description,
     wholesalePrice: item.wholesale_price, imageUrl: item.image_url, status: item.status,
     supplierName: item.supplier_name, stock: item.stock,
+    rejectionReasonCode: item.rejection_reason_code ?? null,
+    rejectionReason: item.rejection_reason ?? null,
+    rejectionNote: item.rejection_note ?? null,
+    reviewedAt: item.reviewed_at ?? null,
+    resubmittedAt: item.resubmitted_at ?? null,
+    productTypeId: item.product_type_id ?? null,
   }));
 }
 
-export async function updateSupplierProductStatus(id: string, status: AdminSupplierProduct["status"]) {
+export async function listRejectionReasons() {
+  const token = adminToken();
+  if (!token) return [];
+  const data = await api<{ reasons: Array<{ code: string; label: string }> }>("/store/kolbe/admin/catalog/rejection-reasons", { token });
+  return data.reasons ?? [];
+}
+
+export async function updateSupplierProductStatus(
+  id: string,
+  status: AdminSupplierProduct["status"],
+  review?: { reasonCode?: string; reasonText?: string; note?: string },
+) {
   const token = adminToken();
   if (!token) return;
-  await api(`/admin/kolbe/catalog/${id}/status`, { method: "POST", token, body: { status } });
+  await api(`/store/kolbe/admin/catalog/${id}/status`, {
+    method: "POST",
+    token,
+    body: { status, reasonCode: review?.reasonCode, reasonText: review?.reasonText, note: review?.note },
+  });
 }
 
 export async function listPurchaseOrders() {
@@ -143,20 +233,59 @@ export async function updatePurchaseOrder(id: string, status: string) {
   await api(`/admin/kolbe/purchase-orders/${id}/status`, { method: "POST", token, body: { status } });
 }
 
-export async function listWholesaleFulfillmentOrders(): Promise<AdminWholesaleOrder[]> {
-  const token = adminToken();
-  if (!token) return [];
-  const data = await api<{ orders: Array<any> }>("/store/kolbe/admin/orders", { token });
-  return (data.orders ?? []).map((order) => ({
-    id: order.id, orderCode: order.order_code, status: order.status, totalAmount: order.total_amount,
-    totalUnits: order.total_units, createdAt: order.created_at, storeName: order.store_name,
+function mapWholesaleOrder(order: any): AdminWholesaleOrder {
+  return {
+    id: order.id,
+    orderCode: order.order_code,
+    status: order.status,
+    paymentStatus: order.payment_status ?? "unpaid",
+    fulfillmentStatus: order.fulfillment_status ?? "pending",
+    operationalPriority: Number(order.operational_priority ?? 0),
+    totalAmount: order.total_amount,
+    totalUnits: order.total_units,
+    createdAt: order.created_at,
+    updatedAt: order.updated_at ?? order.created_at,
+    shippedAt: order.shipped_at ?? null,
+    storeName: order.store_name,
+    memberName: order.member_name ?? "",
+    buyerPhone: order.buyer_phone ?? "",
+    buyerCity: order.buyer_city ?? "",
+    supplierNames: order.supplier_names ?? "",
+    suppliers: order.suppliers ?? [],
     items: (order.wholesale_order_items ?? []).map((item: any) => ({
       productName: item.product_name, sku: item.sku, quantity: item.quantity,
+      unitPrice: Number(item.unit_price ?? 0), size: item.size ?? null, color: item.color ?? null,
+      supplierName: item.supplier_name ?? null,
     })),
     purchaseOrders: (order.purchase_orders ?? []).map((po: any) => ({
-      id: po.id, orderCode: po.order_code, status: po.status, supplierName: po.supplier_name, trackingCode: po.tracking_code,
+      id: po.id, orderCode: po.order_code, status: po.status, supplierName: po.supplier_name,
+      trackingCode: po.tracking_code, shippedAt: po.shipped_at ?? null, totalAmount: Number(po.total_amount ?? 0),
     })),
-  }));
+  };
+}
+
+export async function listWholesaleFulfillmentOrders(query: WholesaleOrderQuery = {}): Promise<AdminWholesaleOrder[]> {
+  const token = adminToken();
+  if (!token) return [];
+  const params = new URLSearchParams();
+  if (query.sort) params.set("sort", query.sort);
+  if (query.q) params.set("q", query.q);
+  if (query.status && query.status !== "all") params.set("status", query.status);
+  if (query.payment && query.payment !== "all") params.set("payment", query.payment);
+  if (query.fulfillment && query.fulfillment !== "all") params.set("fulfillment", query.fulfillment);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const data = await api<{ orders: Array<any> }>(`/store/kolbe/admin/orders${suffix}`, { token });
+  return (data.orders ?? []).map(mapWholesaleOrder);
+}
+
+export async function updateOrderOperations(id: string, body: {
+  paymentStatus?: string;
+  fulfillmentStatus?: string;
+  operationalPriority?: number;
+}) {
+  const token = adminToken();
+  if (!token) throw new Error("ورود ادمین انجام نشده است.");
+  return api(`/store/kolbe/admin/orders/${id}/operations`, { method: "POST", token, body });
 }
 
 export async function approveWholesaleOrder(id: string, dueDate?: string) {

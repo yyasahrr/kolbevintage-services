@@ -5,7 +5,7 @@ import {
   Sparkles, Upload, Video, X, ShieldCheck,
 } from 'lucide-react'
 import { PageCrumbs, SectionHeading, Status } from './components'
-import { createSupplierProduct, loadSupplierOrders, updateSupplierPurchaseOrder } from './api'
+import { createSupplierProduct, loadProductTypes, loadSupplierOrders, loadSupplierProducts, resubmitSupplierProduct, updateSupplierPurchaseOrder, type CatalogProductType } from './api'
 
 /* ================================================================
    تعریف انواع سری — قیمت بر اساس نوع سری × قیمت هر تیکه
@@ -57,18 +57,28 @@ function parseNumber(value: string): number {
    ================================================================ */
 
 export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: string; onClose: () => void; onCreated: () => void }) {
+  const [productTypes, setProductTypes] = useState<CatalogProductType[]>([])
+  const [typesError, setTypesError] = useState('')
   const [form, setForm] = useState({
-    name: '', sku: '', category: 'پوشاک', description: '',
-    unitPrice: '',       // قیمت هر تیکه
-    seriesTypeId: 'full', // نوع سری
-    seriesCount: '',      // تعداد سری موجود
+    name: '', sku: '', productTypeId: '', description: '',
+    unitPrice: '',
+    seriesTemplateId: 'custom',
+    seriesCount: '',
     color: 'مشکی',
     colorHex: '#1a1a1a',
-    imageUrl: '',         // data URL از آپلود
+    imageUrl: '',
   })
-  const [customComposition, setCustomComposition] = useState<Record<string, number>>({ S: 1, M: 1, L: 1, XL: 1 })
+  const [customComposition, setCustomComposition] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => {
+    loadProductTypes()
+      .then((types) => {
+        setProductTypes(types)
+        setForm(current => ({ ...current, productTypeId: current.productTypeId || types[0]?.id || '' }))
+      })
+      .catch(() => setTypesError('نوع محصول و سایزها از سرور دریافت نشد. تا دریافت فهرست، سایز ثابتی نمایش داده نمی‌شود.'))
+  }, [])
 
   const update = (field: keyof typeof form, value: string) => setForm(current => ({ ...current, [field]: value }))
   const showError = (message: string) => {
@@ -76,12 +86,15 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
     requestAnimationFrame(() => document.getElementById('product-form-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }
 
-  const seriesType = SERIES_TYPES.find(t => t.id === form.seriesTypeId) ?? SERIES_TYPES[0]
-  const isCustom = seriesType.id === 'custom'
-  const composition = isCustom ? customComposition : seriesType.composition
+  const productType = productTypes.find(type => type.id === form.productTypeId) ?? null
+  const seriesTemplate = productType?.templates.find(template => template.id === form.seriesTemplateId) ?? null
+  const isCustom = !seriesTemplate
+  const composition = isCustom
+    ? Object.fromEntries((productType?.sizes ?? []).map(size => [size.label, customComposition[size.id] ?? 0]))
+    : Object.fromEntries(seriesTemplate.lines.map(line => [line.label, line.quantity]))
   const pieceCount = isCustom
-    ? Object.values(customComposition).reduce((a, b) => a + b, 0)
-    : seriesType.pieceCount
+    ? Object.values(customComposition).reduce((sum, qty) => sum + qty, 0)
+    : seriesTemplate.lines.reduce((sum, line) => sum + line.quantity, 0)
 
   const unitPrice = parseNumber(form.unitPrice)
   const seriesCount = parseNumber(form.seriesCount)
@@ -101,6 +114,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError('')
+    if (!productType) return showError(typesError || 'ابتدا نوع محصول را از فهرست سرور انتخاب کنید.')
     if (!form.name.trim() || !form.sku.trim() || !form.description.trim()) return showError('نام، SKU و توضیحات محصول الزامی است.')
     if (!form.unitPrice.trim() || !Number.isInteger(unitPrice) || unitPrice <= 0) return showError('قیمت هر تیکه را به‌صورت عدد صحیح وارد کنید.')
     if (!form.seriesCount.trim() || !Number.isInteger(seriesCount) || seriesCount <= 0) return showError('تعداد سری موجود را وارد کنید.')
@@ -109,19 +123,24 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
 
     setSubmitting(true)
     try {
-      const seriesLabel = `${seriesType.label} (${fa(pieceCount)} تیکه)`
+      const seriesLabel = `${seriesTemplate?.name ?? 'سری سفارشی'} (${fa(pieceCount)} تیکه)`
       await createSupplierProduct({
         supplierId,
         name: form.name,
         sku: form.sku,
-        category: form.category,
-        description: `${form.description}\n\nسری: ${seriesLabel}\nرنگ: ${form.color}\nترکیب: ${Object.entries(composition).map(([s, q]) => `${s}×${fa(q)}`).join(' · ')}`,
+        category: productType.name,
+        description: `${form.description}\n\nنوع محصول: ${productType.name}\nسری: ${seriesLabel}\nرنگ: ${form.color}`,
         wholesalePrice: unitPrice,
         imageUrl: form.imageUrl,
         color: form.color,
-        
         size: seriesLabel,
         stock: totalPieces,
+        productTypeId: productType.id,
+        seriesTemplateId: seriesTemplate?.id ?? null,
+        seriesCount,
+        composition: productType.sizes
+          .map(size => ({ sizeId: size.id, quantity: isCustom ? (customComposition[size.id] ?? 0) : (seriesTemplate?.lines.find(line => line.sizeId === size.id)?.quantity ?? 0) }))
+          .filter(line => line.quantity > 0),
       })
       onCreated()
     } catch (reason) {
@@ -156,10 +175,11 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
           <div className="form-grid">
             <Field label="نام محصول"><input required value={form.name} onChange={e => update('name', e.target.value)} placeholder="مثلاً پیراهن لینن تابستانی"/></Field>
             <Field label="SKU"><input required dir="ltr" value={form.sku} onChange={e => update('sku', e.target.value)} placeholder="NG-LIN-301"/></Field>
-            <Field label="دسته‌بندی">
-              <select value={form.category} onChange={e => update('category', e.target.value)}>
-                <option>پوشاک</option><option>کفش</option><option>اکسسوری</option><option>پارچه</option>
+            <Field label="نوع محصول">
+              <select aria-label="نوع محصول" value={form.productTypeId} onChange={e => update('productTypeId', e.target.value)}>
+                {productTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
               </select>
+              {typesError ? <small style={{ color: '#a4463d' }}>{typesError}</small> : <small>سایزها و قالب‌ها از نوع محصول انتخاب‌شده بارگذاری می‌شوند.</small>}
             </Field>
           </div>
         </EditorSection>
@@ -198,16 +218,17 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
             <Field label="قیمت هر تیکه (تومان)" helper="مبنای محاسبه قیمت سری">
               <input required type="text" inputMode="numeric" value={form.unitPrice} onChange={e => update('unitPrice', e.target.value)} placeholder="۱٬۲۵۰٬۰۰۰"/>
             </Field>
-            <Field label="نوع سری">
-              <select value={form.seriesTypeId} onChange={e => update('seriesTypeId', e.target.value)}>
-                {SERIES_TYPES.map(t => <option key={t.id} value={t.id}>{t.label} — {t.pieceCount > 0 ? `${fa(t.pieceCount)} تیکه` : 'سفارشی'}</option>)}
+            <Field label="قالب سری">
+              <select aria-label="قالب سری" value={form.seriesTemplateId} onChange={e => update('seriesTemplateId', e.target.value)}>
+                <option value="custom">سری سفارشی</option>
+                {(productType?.templates ?? []).map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
               </select>
             </Field>
           </div>
 
           {/* ترکیب سری */}
           <div style={{ marginTop: 16, padding: 14, border: '1px solid #e5e5e0', borderRadius: 6 }}>
-            <b style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>ترکیب {seriesType.label}:</b>
+            <b style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>ترکیب {seriesTemplate?.name ?? 'سری سفارشی'}:</b>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {Object.entries(composition).map(([size, qty]) => (
                 <span key={size} style={{ fontSize: 10, background: '#f6f6f2', padding: '4px 10px', borderRadius: 4, border: '1px solid #e5e5e0' }}>
@@ -222,11 +243,11 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
             {/* سری سفارشی: تنظیم تعداد هر سایز */}
             {isCustom && (
               <div style={{ marginTop: 12, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
-                {['S', 'M', 'L', 'XL', '2XL'].map(size => (
-                  <label key={size} style={{ fontSize: 10 }}>
-                    سایز {size}
-                    <input type="number" min={0} max={10} value={customComposition[size] ?? 0}
-                      onChange={e => setCustomComposition({ ...customComposition, [size]: Number(e.target.value) })}
+                {(productType?.sizes ?? []).map(size => (
+                  <label key={size.id} style={{ fontSize: 10 }}>
+                    سایز {size.label}
+                    <input aria-label={`تعداد سایز ${size.label}`} type="number" min={0} max={50} value={customComposition[size.id] ?? 0}
+                      onChange={e => setCustomComposition({ ...customComposition, [size.id]: Number(e.target.value) })}
                       style={{ width: '100%', height: 32, border: '1px solid #deddd6', textAlign: 'center', fontSize: 12, marginTop: 4 }} dir="ltr" />
                   </label>
                 ))}
@@ -238,8 +259,8 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
           <div style={{ marginTop: 16, padding: 16, background: '#fffaf2', border: '1px solid #d9b98f', borderRadius: 6 }}>
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', fontSize: 11 }}>
               <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{toman(unitPrice || 0)}</b></div>
-              <div><span style={{ color: '#888' }}>تعداد تیکه در {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{fa(pieceCount)} تیکه</b></div>
-              <div><span style={{ color: '#888' }}>قیمت هر {seriesType.label}:</span><br/><b className="num-fa" style={{ fontSize: 14, color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
+              <div><span style={{ color: '#888' }}>تعداد تیکه در {seriesTemplate?.name ?? 'سری سفارشی'}:</span><br/><b className="num-fa" style={{ fontSize: 14 }}>{fa(pieceCount)} تیکه</b></div>
+              <div><span style={{ color: '#888' }}>قیمت هر سری:</span><br/><b className="num-fa" style={{ fontSize: 14, color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
             </div>
             <p style={{ fontSize: 9.5, color: '#8a5a20', marginTop: 8 }}>فرمول: {fa(unitPrice || 0)} × {fa(pieceCount)} = <b className="num-fa">{fa(seriesPrice)}</b> تومان</p>
           </div>
@@ -252,7 +273,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
             <Field label="کد رنگ">
               <input type="color" value={form.colorHex} onChange={e => update('colorHex', e.target.value)} style={{ height: 40, width: '100%', border: '1px solid #deddd6', cursor: 'pointer' }} />
             </Field>
-            <Field label={`تعداد ${seriesType.label} موجود`} helper={`مثلاً ۴ سری = ${fa(4 * pieceCount)} تیکه`}>
+            <Field label={`تعداد ${seriesTemplate?.name ?? 'سری'} موجود`} helper={`مثلاً ۴ سری = ${fa(4 * pieceCount)} تیکه`}>
               <input required type="text" inputMode="numeric" value={form.seriesCount} onChange={e => update('seriesCount', e.target.value)} placeholder="۴"/>
             </Field>
           </div>
@@ -264,7 +285,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
                 <span style={{ width: 20, height: 20, borderRadius: '50%', background: form.colorHex, border: '2px solid #fff', boxShadow: '0 0 0 1px #ccc' }} />
                 <b>{form.color || 'بدون رنگ'}</b>
                 <span style={{ color: '#36563a' }} className="num-fa">
-                  {fa(seriesCount)} × {seriesType.label} = {fa(totalPieces)} تیکه
+                  {fa(seriesCount)} × {seriesTemplate?.name ?? 'سری سفارشی'} = {fa(totalPieces)} تیکه
                 </span>
               </div>
               <p style={{ fontSize: 10, color: '#36563a', marginTop: 6 }}>ارزش کل موجودی: <b className="num-fa">{toman(totalValue)}</b></p>
@@ -289,7 +310,7 @@ export function ProductEditor({ supplierId, onClose, onCreated }: { supplierId: 
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', fontSize: 11 }}>
             <div><span style={{ color: '#888' }}>نام:</span> {form.name || '—'}</div>
             <div><span style={{ color: '#888' }}>رنگ:</span> <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: '50%', background: form.colorHex, marginRight: 4, verticalAlign: 'middle' }} /> {form.color || '—'}</div>
-            <div><span style={{ color: '#888' }}>نوع سری:</span> {seriesType.label} ({fa(pieceCount)} تیکه)</div>
+            <div><span style={{ color: '#888' }}>نوع سری:</span> {seriesTemplate?.name ?? 'سری سفارشی'} ({fa(pieceCount)} تیکه)</div>
             <div><span style={{ color: '#888' }}>قیمت هر تیکه:</span> <b className="num-fa">{toman(unitPrice || 0)}</b></div>
             <div><span style={{ color: '#888' }}>قیمت هر سری:</span> <b className="num-fa" style={{ color: '#011c3a' }}>{toman(seriesPrice)}</b></div>
             <div><span style={{ color: '#888' }}>تعداد سری:</span> <b className="num-fa">{fa(seriesCount || 0)}</b></div>
@@ -411,12 +432,41 @@ export function Messages() {
 
 
 export function ProductReview() {
-  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="در حال بررسی"/><h1>در حال بررسی کلبه</h1><p>محصولات ارسالی شما که منتظر تأیید تیم کاتالوگ کلبه هستند.</p></div></div>
-  <section className="surface" style={{padding:16}}>
-    <div className="ledger-table"><div className="ledger-row header"><span>محصول</span><span>SKU</span><span>سری</span><span>وضعیت</span></div>
-    <div className="ledger-row"><b>پیراهن لینن</b><span>NG-LIN-301</span><span>سری کامل (۸ تیکه)</span><Status>در بررسی</Status></div>
-    <div className="ledger-row"><b>وست پشمی</b><span>NG-VST-041</span><span>نیم‌سری (۵ تیکه)</span><Status>نیازمند اصلاح</Status></div>
-    </div>
+  const [items, setItems] = useState<Array<any>>([])
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [busyId, setBusyId] = useState('')
+  const load = () => loadSupplierProducts('').then(data => setItems((Array.isArray(data) ? data : []).filter((item: any) => ['submitted', 'rejected', 'changes_requested'].includes(item.status)))).catch(() => setError('وضعیت بررسی محصولات خوانده نشد.'))
+  useEffect(() => { load() }, [])
+  const label: Record<string, string> = { submitted: 'در بررسی', rejected: 'رد شده', changes_requested: 'نیازمند اصلاح' }
+  const resubmit = async (item: any) => {
+    setBusyId(item.id)
+    setError('')
+    try {
+      await resubmitSupplierProduct(item.id, { description: item.description, wholesalePrice: Number(item.wholesale_price) })
+      setNotice('محصول دوباره برای بررسی ارسال شد.')
+      await load()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'ارسال مجدد انجام نشد.')
+    } finally { setBusyId('') }
+  }
+  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="در حال بررسی"/><h1>بررسی کلبه</h1><p>وضعیت رد یا اصلاح، دلیل، توضیح مدیر و تاریخ بررسی از سرور می‌آید. پس از اصلاح می‌توانید دوباره ارسال کنید.</p></div></div>
+  {error && <p role="alert" style={{ color: '#a4463d', fontSize: 11 }}>{error}</p>}
+  {notice && <p role="status" style={{ color: '#36563a', fontSize: 11 }}>{notice}</p>}
+  <section className="surface" style={{ padding: 16 }}>
+    {!items.length && <p style={{ fontSize: 11, color: '#888' }}>محصولی در صف بررسی یا ردشده نیست.</p>}
+    {items.map(item => <article key={item.id} style={{ borderBottom: '1px solid #ecebe6', padding: '14px 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <div><b>{item.name}</b><p style={{ fontSize: 10, color: '#777', marginTop: 4 }}>{item.sku}</p></div>
+        <Status>{label[item.status] ?? item.status}</Status>
+      </div>
+      <dl style={{ display: 'grid', gap: 6, marginTop: 10, fontSize: 11 }}>
+        <div>دلیل رد: {item.rejection_reason || '—'}</div>
+        <div>توضیح مدیر: {item.rejection_note || '—'}</div>
+        <div>تاریخ بررسی: {item.reviewed_at ? new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.reviewed_at)) : '—'}</div>
+      </dl>
+      {(item.status === 'rejected' || item.status === 'changes_requested') && <button type="button" className="button primary" disabled={busyId === item.id} onClick={() => resubmit(item)} style={{ marginTop: 10 }}>{busyId === item.id ? 'در حال ارسال…' : 'اصلاح شد؛ ارسال دوباره'}</button>}
+    </article>)}
   </section></>
 }
 

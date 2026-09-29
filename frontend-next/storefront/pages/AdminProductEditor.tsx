@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useCatalogProductTypes } from "../lib/productTypesApi";
 import { products, specLabels, specOrder } from "../data/catalog";
 import { type AdminProductRecord, type AdminVariant, type AdminLookHotspot, type ProductStatus } from "../adminProducts";
 import { fileToOptimizedDataUrl } from "../lib/imageUpload";
@@ -17,6 +18,7 @@ const statusLabel:Record<ProductStatus,string>={draft:"پیش‌نویس",review
 
 export default function AdminProductEditor({ initial, onBack, onSave }: { initial:AdminProductRecord; onBack:()=>void; onSave:(record:AdminProductRecord)=>string|null }) {
   const taxonomy=useCatalogTaxonomy();
+  const catalog=useCatalogProductTypes();
   const [draft,setDraft]=useState<AdminProductRecord>(()=>structuredClone(initial)); const [tab,setTab]=useState<string>("basic");
   const [message,setMessage]=useState<{type:"success"|"error";text:string}|null>(null); const [tag,setTag]=useState(""); const [collection,setCollection]=useState(""); const [dragIndex,setDragIndex]=useState<number|null>(null); const [mediaUrl,setMediaUrl]=useState(""); const [selectedVersion,setSelectedVersion]=useState<string|null>(null);
   const errors=useMemo(()=>{const list:string[]=[];if(!draft.name.trim())list.push("نام محصول الزامی است");if(!draft.specs.code.trim())list.push("کد محصول الزامی است");if(draft.price<0)list.push("قیمت معتبر نیست");if(draft.admin.status==="published"&&!draft.images.length)list.push("محصول منتشرشده حداقل یک تصویر لازم دارد");if(draft.admin.status==="published"&&!draft.admin.variants.length)list.push("محصول منتشرشده حداقل یک تنوع لازم دارد");return list;},[draft]);
@@ -38,6 +40,9 @@ export default function AdminProductEditor({ initial, onBack, onSave }: { initia
         <VariantsSection
           draft={draft}
           warehouses={warehouses}
+          catalogTypes={catalog.types}
+          catalogError={catalog.error}
+          onSelectType={(id)=>{const next=catalog.types.find(type=>type.id===id);updateAdmin("catalogTypeId",id);if(next)update("specs",{...draft.specs,productType:next.name});}}
           onPatchVariant={patchVariant}
           onSetVariants={syncProductOptions}
           onAddVariant={addVariant}
@@ -60,7 +65,7 @@ export default function AdminProductEditor({ initial, onBack, onSave }: { initia
       {tab==="size"&&<section><div className="flex justify-between"><div><h2 className="text-[13px] font-medium">جدول سایز اختصاصی</h2><p className="mt-1 text-[9.5px] text-neutral-500">اعداد بر حسب سانتی‌متر هستند.</p></div><button onClick={()=>update("sizeChart",[...draft.sizeChart,{size:"M",chest:"",shoulder:"",length:"",sleeve:""}])} className={secondary}>افزودن ردیف</button></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[660px] text-right text-[10px]"><thead><tr>{["سایز","دور سینه","عرض شانه","قد","آستین",""] .map(x=><th key={x} className="border-b p-2 font-medium">{x}</th>)}</tr></thead><tbody>{draft.sizeChart.map((row,index)=><tr key={`${row.size}-${index}`} className="border-b">{(["size","chest","shoulder","length","sleeve"] as const).map(key=><td key={key} className="p-1"><input aria-label={`${key} ${index}`} value={row[key]} onChange={e=>update("sizeChart",draft.sizeChart.map((x,i)=>i===index?{...x,[key]:e.target.value}:x))} className="h-9 w-full border px-2"/></td>)}<td><button onClick={()=>update("sizeChart",draft.sizeChart.filter((_,i)=>i!==index))} className="text-red-700 underline">حذف</button></td></tr>)}</tbody></table></div><Field label="راهنمای انتخاب سایز" wide><textarea aria-label="راهنمای انتخاب سایز" rows={4} value={draft.sizeAdvice} onChange={e=>update("sizeAdvice",e.target.value)} className="mt-4 w-full border p-3 text-[11px]"/></Field></section>}
       {tab==="media"&&<section className="mt-5 border-t border-neutral-200 pt-5"><h2 className="text-[12px] font-medium">آپلود حرفه‌ای ویدیو و پوستر</h2><p className="mt-1 text-[9.5px] text-neutral-500">ویدیو را مانند یک پست اینستاگرام رها کنید یا لینک CDN بدهید؛ پوستر را هم جدا آپلود کنید.</p><div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]"><MediaDropField kind="video" value={draft.video?.url??""} poster={draft.video?.poster??draft.images[0]??""} onChange={url=>update("video",{url,title:draft.video?.title??"",poster:draft.video?.poster??draft.images[0]??""})} onPosterChange={poster=>update("video",{url:draft.video?.url??"",title:draft.video?.title??"",poster})}/><Field label="عنوان ویدئو"><input aria-label="عنوان ویدئو جدید" value={draft.video?.title??""} onChange={e=>update("video",{url:draft.video?.url??"",title:e.target.value,poster:draft.video?.poster??draft.images[0]??""})} className={input}/></Field></div></section>}
       {tab==="specs"&&<section className="mt-6 border-t border-neutral-200 pt-5"><h2 className="text-[12px] font-medium">تمپلیت آماده مشخصات</h2><p className="mt-1 text-[9.5px] text-neutral-500">فیلدهای نامرتبط حذف و مشخصات لازم نوع محصول ساخته می‌شود.</p><div className="mt-3 grid gap-2 sm:grid-cols-4">{([['clothing','لباس',['فرم تن‌خور','نوع دوخت','جزئیات پارچه']],['shoe','کفش',['جنس رویه','جنس زیره','ارتفاع پاشنه','نوع پنجه']],['hat','کلاه',['دور سر','ارتفاع تاج','عرض لبه']],['accessory','اکسسوری',['ابعاد','جنس یراق','نوع بسته‌شدن']]] as const).map(([id,name,fields])=><button key={id} onClick={()=>{updateAdmin('specTemplate',id);updateAdmin('customSpecs',fields.map((field,index)=>({id:`${id}-${index}`,label:field,value:''})))}} className={`border p-3 text-[10.5px] ${(draft.admin.specTemplate??'clothing')===id?'border-[#011c3a] bg-[#f3f5f7]':'border-neutral-200'}`}>{name}</button>)}</div></section>}
-      {tab==="size"&&<section className="mt-6 border-t border-neutral-200 pt-5"><h2 className="text-[12px] font-medium">تمپلیت جدول سایز</h2><div className="mt-3 flex flex-wrap gap-2"><button onClick={()=>{updateAdmin('specTemplate','clothing');update('sizeChart',['S','M','L','XL'].map(size=>({size,chest:'',shoulder:'',length:'',sleeve:''})))}} className={secondary}>لباس</button><button onClick={()=>{updateAdmin('specTemplate','shoe');update('sizeChart',['۳۸','۳۹','۴۰','۴۱','۴۲','۴۳'].map((size,index)=>({size,chest:String(24+index*.7),shoulder:'—',length:'—',sleeve:'—'})))}} className={secondary}>کفش (طول پا)</button><button onClick={()=>{updateAdmin('specTemplate','hat');update('sizeChart',['S','M','L'].map((size,index)=>({size,chest:String(54+index*2),shoulder:'—',length:'—',sleeve:'—'})))}} className={secondary}>کلاه (دور سر)</button><button onClick={()=>{updateAdmin('specTemplate','accessory');update('sizeChart',[{size:'تک‌سایز',chest:'—',shoulder:'—',length:'—',sleeve:'—'}])}} className={secondary}>اکسسوری</button></div></section>}
+      {tab==="size"&&<section className="mt-6 border-t border-neutral-200 pt-5"><h2 className="text-[12px] font-medium">سایزهای نوع محصول</h2><p className="mt-1 text-[9.5px] text-neutral-500">ردیف‌ها از سایزهای فعال همان نوع در پایگاه‌داده ساخته می‌شوند.</p><div className="mt-3 flex flex-wrap gap-2">{catalog.types.map(type=><button key={type.id} onClick={()=>{updateAdmin("catalogTypeId",type.id);update("sizeChart",type.sizes.filter(size=>size.active).map(size=>({size:size.label,chest:"",shoulder:"",length:"",sleeve:""})))}} className={secondary}>{type.name}</button>)}{catalog.error&&<span className="text-[10px] text-red-700">{catalog.error}</span>}</div></section>}
       {tab==="relations"&&(
         <RelationsSection
           draft={draft}
@@ -79,17 +84,20 @@ function TokenEditor({label,value,onChange,items,onAdd,onRemove}:{label:string;v
 function Empty({title,action}:{title:string;action?:ReactNode}){return <div className="py-12 text-center"><p className="text-[11px] text-neutral-400">{title}</p>{action&&<div className="mt-3">{action}</div>}</div>}
 const faNumber=(value:number)=>new Intl.NumberFormat("fa-IR").format(value);
 
-function VariantTemplate({onBuild}:{onBuild:(colour:string,hex:string,sizes:string[])=>void}){const [colour,setColour]=useState("سرمه‌ای");const [hex,setHex]=useState("#17253b");const [sizes,setSizes]=useState(["S","M","L","XL"]);const palette=[["مشکی","#111111"],["سفید","#f4f1e9"],["سرمه‌ای","#17253b"],["قرمز","#a52b2b"],["سبز","#3f5f48"],["کرم","#c8af86"],["قهوه‌ای","#704735"],["طوسی","#777b80"]];return <div className="mt-5 border border-neutral-200 bg-[#f8f8f6] p-4"><div className="flex flex-wrap items-end gap-3"><Field label="نام رنگ"><input aria-label="نام رنگ قالب" value={colour} onChange={e=>setColour(e.target.value)} className={input}/></Field><Field label="کد رنگ"><input aria-label="کد رنگ قالب" type="color" value={hex} onChange={e=>setHex(e.target.value)} className="h-10 w-20 border border-neutral-300"/></Field><fieldset><legend className="mb-1.5 text-[10px] text-neutral-500">پالت سریع</legend><div className="flex h-10 items-center gap-1.5">{palette.map(([name,value])=><button key={value} type="button" aria-label={`رنگ ${name}`} title={name} onClick={()=>{setColour(name);setHex(value)}} className={`h-7 w-7 rounded-full border ${hex===value?'ring-2 ring-[#011c3a] ring-offset-2':'border-black/15'}`} style={{background:value}}/>)}</div></fieldset><fieldset><legend className="mb-1.5 text-[10px] text-neutral-500">سایزها</legend><div className="flex flex-wrap gap-2">{["XS","S","M","L","XL","XXL","3XL"].map(size=><label key={size} className="flex h-10 items-center gap-1 border border-neutral-300 bg-white px-2 text-[9.5px]"><input type="checkbox" checked={sizes.includes(size)} onChange={()=>setSizes(current=>current.includes(size)?current.filter(x=>x!==size):[...current,size])}/>{size}</label>)}</div></fieldset><button disabled={!colour.trim()||!sizes.length} onClick={()=>onBuild(colour,hex,sizes)} className="h-10 bg-[#011c3a] px-4 text-[10px] text-white disabled:bg-neutral-300">ساخت ماتریس رنگ و سایز</button></div></div>}
+function VariantTemplate({sizeOptions,onBuild}:{sizeOptions:string[];onBuild:(colour:string,hex:string,sizes:string[])=>void}){const [colour,setColour]=useState("سرمه‌ای");const [hex,setHex]=useState("#17253b");const [sizes,setSizes]=useState<string[]>([]);const palette=[["مشکی","#111111"],["سفید","#f4f1e9"],["سرمه‌ای","#17253b"],["قرمز","#a52b2b"],["سبز","#3f5f48"],["کرم","#c8af86"],["قهوه‌ای","#704735"],["طوسی","#777b80"]];return <div className="mt-5 border border-neutral-200 bg-[#f8f8f6] p-4"><div className="flex flex-wrap items-end gap-3"><Field label="نام رنگ"><input aria-label="نام رنگ قالب" value={colour} onChange={e=>setColour(e.target.value)} className={input}/></Field><Field label="کد رنگ"><input aria-label="کد رنگ قالب" type="color" value={hex} onChange={e=>setHex(e.target.value)} className="h-10 w-20 border border-neutral-300"/></Field><fieldset><legend className="mb-1.5 text-[10px] text-neutral-500">پالت سریع</legend><div className="flex h-10 items-center gap-1.5">{palette.map(([name,value])=><button key={value} type="button" aria-label={`رنگ ${name}`} title={name} onClick={()=>{setColour(name);setHex(value)}} className={`h-7 w-7 rounded-full border ${hex===value?'ring-2 ring-[#011c3a] ring-offset-2':'border-black/15'}`} style={{background:value}}/>)}</div></fieldset><fieldset><legend className="mb-1.5 text-[10px] text-neutral-500">سایزهای نوع محصول</legend><div className="flex flex-wrap gap-2">{sizeOptions.map(size=><label key={size} className="flex h-10 items-center gap-1 border border-neutral-300 bg-white px-2 text-[9.5px]"><input type="checkbox" checked={sizes.includes(size)} onChange={()=>setSizes(current=>current.includes(size)?current.filter(x=>x!==size):[...current,size])}/>{size}</label>)}{!sizeOptions.length&&<span className="text-[9.5px] text-neutral-400">سایزی از سرور دریافت نشده است.</span>}</div></fieldset><button disabled={!colour.trim()||!sizes.length} onClick={()=>onBuild(colour,hex,sizes)} className="h-10 bg-[#011c3a] px-4 text-[10px] text-white disabled:bg-neutral-300">ساخت ماتریس رنگ و سایز</button></div></div>}
 
 function VersionInspector({current,versionId,onClose,onRestore}:{current:AdminProductRecord;versionId:string;onClose:()=>void;onRestore:(id:string)=>void}){const version=current.admin.versions.find(v=>v.id===versionId);let old:AdminProductRecord|null=null;try{old=version?.snapshot?JSON.parse(version.snapshot) as AdminProductRecord:null}catch{old=null}const changes=old?[["نام",old.name,current.name],["قیمت",String(old.price),String(current.price)],["وضعیت",statusLabel[old.admin.status],statusLabel[current.admin.status]],["تصاویر",String(old.images.length),String(current.images.length)],["تنوع‌ها",String(old.admin.variants.length),String(current.admin.variants.length)],["توضیحات",old.description,current.description]].filter(([,a,b])=>a!==b):[];return <aside className="mt-4 border border-[#011c3a] p-4" aria-label="مقایسه نسخه"><div className="flex justify-between"><div><p className="text-[9px] text-neutral-400">VERSION COMPARISON</p><h3 className="mt-1 text-[11.5px] font-medium">مقایسه با {version?.at}</h3></div><button onClick={onClose} className="text-[10px] underline">بستن</button></div>{old?<div className="mt-4">{changes.length?changes.map(([label,before,after])=><div key={label} className="grid gap-2 border-t py-3 text-[9.5px] sm:grid-cols-[90px_1fr_1fr]"><strong>{label}</strong><span className="text-red-700 line-through">{before}</span><span className="text-[#36563a]">{after}</span></div>):<p className="py-5 text-center text-[10px] text-neutral-400">تفاوتی با وضعیت فعلی پیدا نشد.</p>}<button onClick={()=>onRestore(versionId)} className="mt-3 h-9 border border-[#011c3a] px-4 text-[10px]">بازیابی این نسخه</button></div>:<p className="mt-4 text-[10px] text-neutral-500">داده مقایسه برای این نسخه قدیمی موجود نیست.</p>}</aside>}
 
 /* ═══════════════ تب تنوع و موجودی — گروهی بر اساس رنگ (آکاردئونی) ═══════════════ */
 
 function VariantsSection({
-  draft, warehouses, onPatchVariant, onSetVariants, onAddVariant, onBuildTemplate, onApplyBasePrice,
+  draft, warehouses, catalogTypes, catalogError, onSelectType, onPatchVariant, onSetVariants, onAddVariant, onBuildTemplate, onApplyBasePrice,
 }: {
   draft: AdminProductRecord;
   warehouses: string[];
+  catalogTypes: Array<{ id: string; name: string; sizes: Array<{ id: string; label: string; active: boolean }> }>;
+  catalogError: string;
+  onSelectType: (id: string) => void;
   onPatchVariant: (id: string, patch: Partial<AdminVariant>) => void;
   onSetVariants: (variants: AdminVariant[]) => void;
   onAddVariant: () => void;
@@ -97,7 +105,9 @@ function VariantsSection({
   onApplyBasePrice: () => void;
 }) {
   const [openGroups, setOpenGroups] = useState<string[]>([]);
-  const [newSize, setNewSize] = useState("M");
+  const selectedType = catalogTypes.find((type) => type.id === draft.admin.catalogTypeId) ?? catalogTypes[0] ?? null;
+  const sizeOptions = (selectedType?.sizes ?? []).filter((size) => size.active).map((size) => size.label);
+  const [newSize, setNewSize] = useState("");
   const [restockId, setRestockId] = useState(draft.admin.variants[0]?.id || "");
   const [restockQty, setRestockQty] = useState(1);
   const [restockWarehouse, setRestockWarehouse] = useState(warehouses[0]);
@@ -127,13 +137,15 @@ function VariantsSection({
   const totalStock = draft.admin.variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
   const outOfStock = draft.admin.variants.filter((v) => !Number(v.stock)).length;
 
+  const chosenSize = sizeOptions.includes(newSize) ? newSize : (sizeOptions[0] ?? "");
   const addSizeToColour = (colour: string, hex: string) => {
-    const exists = draft.admin.variants.some((v) => v.colour === colour && v.size === newSize);
+    if (!chosenSize) return;
+    const exists = draft.admin.variants.some((v) => v.colour === colour && v.size === chosenSize);
     if (exists) return;
     onSetVariants([...draft.admin.variants, {
       id: `variant-${Date.now()}`,
-      colour, hex, size: newSize,
-      sku: `${draft.specs.code || "SKU"}-${colour.slice(0, 2)}-${newSize}`.replace(/\s/g, ""),
+      colour, hex, size: chosenSize,
+      sku: `${draft.specs.code || "SKU"}-${colour.slice(0, 2)}-${chosenSize}`.replace(/\s/g, ""),
       barcode: `626${String(Date.now()).slice(-10)}`,
       price: draft.price, stock: 0, warehouse: warehouses[0],
     }]);
@@ -155,7 +167,14 @@ function VariantsSection({
       </div>
 
       {/* ساخت سریع ماتریس رنگ × سایز */}
-      <VariantTemplate onBuild={onBuildTemplate} />
+      <label className="mt-4 block max-w-sm text-[10px] text-neutral-500">نوع محصول و سایزهای سرور
+        <select aria-label="نوع محصول ویرایشگر" value={selectedType?.id ?? ""} onChange={(event) => onSelectType(event.target.value)} className={input + " mt-1"}>
+          {catalogTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+        </select>
+        {catalogError && <span className="mt-1 block text-red-700">{catalogError}</span>}
+        <span className="mt-1 block text-neutral-400">{sizeOptions.length ? sizeOptions.join(" · ") : "سایز فعالی برای این نوع نیست."}</span>
+      </label>
+      <VariantTemplate sizeOptions={sizeOptions} onBuild={onBuildTemplate} />
 
       <div className="mt-4 border border-[#b9cfbc] bg-[#f4f8f4] p-4"><div className="flex flex-wrap items-end gap-3"><div className="min-w-[210px] flex-1"><label className="text-[9.5px] text-neutral-500">شارژ مجدد محصول یکسان<select value={restockId} onChange={e=>setRestockId(e.target.value)} className={cell+" mt-1"}><option value="">انتخاب رنگ و سایز</option>{draft.admin.variants.map(variant=><option key={variant.id} value={variant.id}>{variant.colour} · {variant.size} · {variant.sku}</option>)}</select></label></div><label className="text-[9.5px] text-neutral-500">انبار مقصد<select value={restockWarehouse} onChange={e=>setRestockWarehouse(e.target.value)} className={cell+" mt-1 w-40"}>{warehouses.map(warehouse=><option key={warehouse}>{warehouse}</option>)}</select></label><label className="text-[9.5px] text-neutral-500">تعداد ورودی<input type="number" min="1" value={restockQty} onChange={e=>setRestockQty(Math.max(1,Number(e.target.value)))} className={cell+" mt-1 w-24"}/></label><button disabled={!restockId} onClick={()=>{const variant=draft.admin.variants.find(item=>item.id===restockId);if(variant)onPatchVariant(restockId,{stock:Number(variant.stock)+restockQty,warehouse:restockWarehouse})}} className="h-9 bg-[#36563a] px-4 text-[10px] text-white disabled:opacity-35">ثبت شارژ انبار</button></div><p className="mt-2 text-[8.5px] text-neutral-500">برای محصول تکراری، محصول جدید نسازید؛ موجودی همان SKU در انبار مقصد افزایش پیدا می‌کند.</p></div>
 
@@ -237,8 +256,8 @@ function VariantsSection({
                         <td colSpan={7} className="p-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-[9.5px] text-neutral-500">افزودن سایز به «{group.colour}»:</span>
-                            <select value={newSize} onChange={(e) => setNewSize(e.target.value)} className={cell + " w-20"}>
-                              {["XS", "S", "M", "L", "XL", "XXL", "3XL"].map((s) => <option key={s}>{s}</option>)}
+                            <select aria-label={`افزودن سایز به ${group.colour}`} value={chosenSize} onChange={(e) => setNewSize(e.target.value)} className={cell + " w-24"}>
+                              {sizeOptions.map((s) => <option key={s}>{s}</option>)}
                             </select>
                             <button onClick={() => addSizeToColour(group.colour, group.hex)} className="h-9 bg-[#011c3a] px-3 text-[9.5px] text-white">افزودن</button>
                             <button onClick={() => onSetVariants(draft.admin.variants.filter((x) => x.colour !== group.colour))} className="mr-auto h-9 border border-red-200 px-3 text-[9.5px] text-red-700">حذف کل رنگ «{group.colour}»</button>

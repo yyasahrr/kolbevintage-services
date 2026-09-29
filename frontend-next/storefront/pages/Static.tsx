@@ -3,6 +3,8 @@ import { Link } from "../router";
 import { useStore } from "../store";
 import { products, productById, specLabels, specOrder } from "../data/catalog";
 import { fa, toman } from "../utils/format";
+import { AccountAddresses, AccountOrders, AccountProfile, AccountSecurity } from "../components/AccountSelfService";
+import RecommendationSlot from "../components/RecommendationSlot";
 import Icon from "../components/Icon";
 import ProductCard from "../components/ProductCard";
 import { createCustomer, loadCustomer, saveCustomer } from "../customerIdentity";
@@ -324,12 +326,7 @@ export function Account() {
     { id: "orders", label: "سفارش‌های من" },
     { id: "addresses", label: "آدرس‌ها" },
     { id: "profile", label: "اطلاعات حساب" },
-  ];
-
-  const orders = [
-    { code: "KV-482910", date: "۱۲ مرداد ۱۴۰۵", status: "تحویل شده", total: 4_850_000, items: 1 },
-    { code: "KV-471203", date: "۲۸ تیر ۱۴۰۵", status: "در حال ارسال", total: 3_170_000, items: 2 },
-    { code: "KV-460055", date: "۱۰ تیر ۱۴۰۵", status: "تحویل شده", total: 980_000, items: 1 },
+    { id: "security", label: "امنیت" },
   ];
 
   useEffect(() => { restoreSiteCustomer().then((identity) => { if (identity) { setCustomer(identity); setAuthForm((form) => ({ ...form, name: identity.name, phone: identity.phone, email: identity.email ?? "" })); } }).finally(() => setAuthLoading(false)); }, []);
@@ -394,64 +391,10 @@ export function Account() {
         </aside>
 
         <div>
-          {tab === "orders" && (
-            <div className="space-y-3">
-              {orders.map((o) => (
-                <div key={o.code} className="rounded-[3px] border border-neutral-200 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[12.5px] font-medium num-fa">سفارش {o.code}</p>
-                      <p className="mt-1 text-[11.5px] text-neutral-500">
-                        {o.date} — {fa(o.items)} کالا
-                      </p>
-                    </div>
-                    <span
-                      className={
-                        "rounded-[3px] px-2.5 py-1 text-[10.5px] " +
-                        (o.status === "تحویل شده" ? "bg-[#f0f5f0] text-[#3d5c3a]" : "bg-[#f7f6f3] text-neutral-600")
-                      }
-                    >
-                      {o.status}
-                    </span>
-                    <span className="text-[12.5px] num-fa">{toman(o.total)}</span>
-                    <button className="text-[11.5px] underline">جزئیات</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab === "addresses" && (
-            <div className="space-y-3">
-              <div className="rounded-[3px] border border-neutral-200 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[12.5px] font-medium">خانه</p>
-                    <p className="mt-1.5 text-[12px] leading-relaxed text-neutral-600">
-                      تهران، سعادت‌آباد، خیابان علامه شمالی، پلاک {fa("۲۴")}، واحد {fa("۵")}
-                      <br />
-                      کد پستی: <span className="num-fa">{fa("۱۹۹۷۸۴۵۱۲۳")}</span>
-                    </p>
-                  </div>
-                  <button className="shrink-0 text-[11.5px] underline">ویرایش</button>
-                </div>
-              </div>
-              <button className="h-10 w-full rounded-[3px] border border-dashed border-neutral-300 text-[12.5px] text-neutral-500 hover:border-[#011c3a]">
-                + افزودن آدرس جدید
-              </button>
-            </div>
-          )}
-
-          {tab === "profile" && (
-            <div className="grid max-w-lg gap-2.5">
-              <input className={input} value={authForm.name} onChange={(e) => setAuthForm((form) => ({ ...form, name: e.target.value }))} placeholder="نام و نام خانوادگی" />
-              <input className={input} value={authForm.phone} onChange={(e) => setAuthForm((form) => ({ ...form, phone: e.target.value }))} placeholder="موبایل" />
-              <input className={input} value={authForm.email} onChange={(e) => setAuthForm((form) => ({ ...form, email: e.target.value }))} placeholder="ایمیل" />
-              <button onClick={() => { const updated = { ...customer, name: authForm.name, phone: authForm.phone, email: authForm.email || undefined }; saveCustomer(updated); setCustomer(updated); }} className="mt-2 h-10 rounded-[3px] bg-[#011c3a] text-[12.5px] font-medium text-white">
-                ذخیره تغییرات
-              </button>
-            </div>
-          )}
+          {tab === "orders" && <><AccountOrders /><RecommendationSlot slot="account.for_you" title="برای شما" /></>}
+          {tab === "addresses" && <AccountAddresses />}
+          {tab === "profile" && <AccountProfile />}
+          {tab === "security" && <AccountSecurity />}
         </div>
       </div>
     </main>
@@ -469,11 +412,7 @@ export function NotFound() {
       </section>
       <div className="mx-auto mt-12 w-full max-w-[1360px]">
         <div className="mb-5 flex items-end justify-between"><div><p className="text-[9px] tracking-[.2em] text-neutral-400">CURATED FOR YOU</p><h2 className="mt-1 text-[16px] font-medium">شاید این‌ها را بخواهید</h2></div><Link to="/shop" className="text-[10.5px] underline">همه محصولات</Link></div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-8 lg:grid-cols-4">
-          {products.slice(0, 4).map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
+        <RecommendationSlot slot="home.for_you" title="برای شما" />
       </div>
     </main>
   );

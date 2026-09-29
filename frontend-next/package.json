@@ -12,15 +12,21 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "arabic-persian-reshaper": "^1.0.1",
+    "bidi-js": "^1.1.0",
     "lucide-react": "^0.545.0",
     "next": "15.5.25",
+    "pdfkit": "^0.20.2",
     "pg": "8.23.0",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "sharp": "^0.35.5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
     "@types/node": "^22.19.17",
+    "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.15.5",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

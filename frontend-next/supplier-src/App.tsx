@@ -22,7 +22,7 @@ class PortalErrorBoundary extends React.Component<{ children: ReactNode }, { err
   }
 }
 
-import { backendHealth, loadSupplierOrders, loadSupplierProducts, loadSupplierRfqs, restoreSupplierSession, signInSupplier, submitSupplierApplication, updateSupplierPurchaseOrder, type SupplierContext } from './api'
+import { backendHealth, loadProductTypes, loadSupplierNotifications, loadSupplierOrders, loadSupplierProducts, loadSupplierRfqs, markSupplierNotificationsRead, resubmitSupplierProduct, restoreSupplierSession, signInSupplier, submitSupplierApplication, updateSupplierPurchaseOrder, type CatalogProductType, type SupplierContext, type SupplierNotification } from './api'
 import { ApprovalWorkflow, CampaignBuilder, CSVInventoryImport, DiscrepancyManager, DisputeCenter, ImageQualityChecker, NotificationPreferences, OrderSLA, PriceHistoryTable, QualityDocuments, RoleManager, SettlementSettings, ShippingLabel, TaxIntegration } from './features'
 
 type Page = 'dashboard' | 'products' | 'product-editor' | 'review' | 'inventory' | 'series' | 'orders' | 'returns' | 'rfqs' | 'quote' | 'production' | 'samples' | 'changes' | 'quality' | 'finance' | 'analytics' | 'messages' | 'profile' | 'settings' | 'campaigns' | 'disputes' | 'quality-docs'
@@ -64,7 +64,7 @@ function App() {
       products.splice(0, products.length, ...remoteProducts.map(product => {
         const variants = product.product_variants ?? []
         const stock = variants.reduce((sum: number, variant: { inventory: Array<{ on_hand: number }> | { on_hand: number } | null }) => { const inventory = Array.isArray(variant.inventory) ? variant.inventory[0] : variant.inventory; return sum + (inventory?.on_hand ?? 0) }, 0)
-        return { id: product.id, name: product.name, sku: product.sku, image: product.image_url || '/placeholder-product.svg', category: product.category, series: variants.length, stock, price: number.format(product.wholesale_price), status: product.status === 'approved' ? 'فعال' as const : product.status === 'changes_requested' || product.status === 'rejected' ? 'نیازمند اصلاح' as const : product.status === 'submitted' ? 'در بررسی' as const : 'پیش‌نویس' as const, updated: new Intl.DateTimeFormat('fa-IR').format(new Date(product.updated_at)) }
+        return { id: product.id, name: product.name, sku: product.sku, image: product.image_url || '/placeholder-product.svg', category: product.category, series: variants.length, stock, price: number.format(product.wholesale_price), status: product.status === 'approved' ? 'فعال' as const : product.status === 'changes_requested' || product.status === 'rejected' ? 'نیازمند اصلاح' as const : product.status === 'submitted' ? 'در بررسی' as const : 'پیش‌نویس' as const, updated: new Intl.DateTimeFormat('fa-IR').format(new Date(product.updated_at)), rawStatus: product.status, description: product.description, wholesalePrice: Number(product.wholesale_price), rejectionReason: product.rejection_reason ?? null, rejectionNote: product.rejection_note ?? null, reviewedAt: product.reviewed_at ?? null, resubmittedAt: product.resubmitted_at ?? null }
       }))
       orderRows.splice(0, orderRows.length, ...remoteOrders.map(order => ({ databaseId: order.id, trackingCode: order.tracking_code, id: order.order_code, customer: 'کلبه وینتیج', product: order.purchase_order_items?.[0]?.product_name || 'سفارش چندمحصولی', pack: `${order.purchase_order_items?.length ?? 0} ردیف`, quantity: `${number.format(order.purchase_order_items?.length ?? 0)} ردیف`, pieces: `${number.format((order.purchase_order_items ?? []).reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0))} تکه`, value: `${number.format(order.total_amount)} تومان`, date: new Intl.DateTimeFormat('fa-IR').format(new Date(order.created_at)), due: order.due_date ? new Intl.DateTimeFormat('fa-IR').format(new Date(order.due_date)) : '—', status: order.status === 'pending' ? 'نیازمند تأیید' : order.status === 'confirmed' ? 'جدید' : order.status === 'preparing' ? 'در حال آماده‌سازی' : order.status === 'shipped' ? 'آماده ارسال' : order.status === 'delivered' ? 'تحویل شده' : 'لغو شده' })))
       rfqs.splice(0, rfqs.length, ...remoteRfqs.map(item => ({ id: item.reference_code, title: item.title, customer: item.customer_name, quantity: `${number.format(item.quantity)} تکه`, deadline: item.requested_delivery_date ? new Intl.DateTimeFormat('fa-IR').format(new Date(item.requested_delivery_date)) : 'تعیین نشده', fabric: String((item.specifications as Record<string, unknown>)?.fabric ?? 'طبق فایل مشخصات'), status: item.status === 'open' ? 'نیازمند قیمت‌گذاری' : item.status === 'quoted' ? 'پیشنهاد ارسال شد' : item.status, avatar: item.customer_name.slice(0, 1) })))
@@ -172,7 +172,12 @@ function Sidebar({ page, onNavigate, open, onClose, supplierName }: { page: Page
 }
 
 function Topbar({ onMenu, onCommand, onNotices, noticeOpen }: { onMenu: () => void; onCommand: () => void; onNotices: () => void; noticeOpen: boolean }) {
-  return <header className="topbar"><button className="mobile-menu icon-button" aria-label="باز کردن منو" onClick={onMenu}><Menu size={20}/></button><button className="global-search" onClick={onCommand}><Search size={17}/><span>جست‌وجو در محصولات، سفارشات، RFQها...</span><kbd>⌘ K</kbd></button><div className="top-actions"><button className="help icon-button" aria-label="راهنما"><CircleHelp size={19}/></button><div className="notification-wrap"><button className={`icon-button notification ${noticeOpen ? 'selected' : ''}`} aria-label="اعلان‌ها" onClick={onNotices}><Bell size={19}/><i /></button>{noticeOpen ? <div className="notification-panel"><div className="panel-title"><b>اعلان‌ها</b><button>خواندن همه</button></div><Notification text="مهلت تأیید سفارش KV-82941 امروز است." time="۸ دقیقه پیش" urgent/><Notification text="بازخورد نمونه برای PO-4827 ثبت شد." time="۴۰ دقیقه پیش"/><Notification text="تسویه شماره ST-1103 انجام شد." time="دیروز"/></div> : null}</div><div className="top-avatar">ن</div></div></header>
+  const [items, setItems] = useState<SupplierNotification[]>([])
+  const [unread, setUnread] = useState(0)
+  const refresh = () => { loadSupplierNotifications().then((data) => { setItems(data.notifications); setUnread(data.unread) }).catch(() => undefined) }
+  useEffect(() => { refresh() }, [noticeOpen])
+  const markAll = () => { markSupplierNotificationsRead().then(refresh).catch(() => undefined) }
+  return <header className="topbar"><button className="mobile-menu icon-button" aria-label="باز کردن منو" onClick={onMenu}><Menu size={20}/></button><button className="global-search" onClick={onCommand}><Search size={17}/><span>جست‌وجو در محصولات، سفارشات، RFQها...</span><kbd>⌘ K</kbd></button><div className="top-actions"><button className="help icon-button" aria-label="راهنما"><CircleHelp size={19}/></button><div className="notification-wrap"><button className={`icon-button notification ${noticeOpen ? 'selected' : ''}`} aria-label="اعلان‌ها" onClick={onNotices}><Bell size={19}/>{unread > 0 ? <i /> : null}</button>{noticeOpen ? <div className="notification-panel"><div className="panel-title"><b>اعلان‌ها</b><button type="button" onClick={markAll}>خواندن همه</button></div>{items.length ? items.map((item) => <Notification key={item.id} text={`${item.title} — ${item.body}`} time={new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.createdAt))} urgent={!item.readAt && item.kind === 'product_rejected'} />) : <Notification text="اعلان جدیدی نیست." time="" />}</div> : null}</div><div className="top-avatar">ن</div></div></header>
 }
 
 function Notification({ text, time, urgent = false }: { text: string; time: string; urgent?: boolean }) { return <div className="notification-item"><span className={urgent ? 'notice-dot urgent' : 'notice-dot'}></span><div><b>{text}</b><small>{time}</small></div></div> }
@@ -196,8 +201,53 @@ function FactoryIcon() { return <BriefcaseBusiness size={17}/> }
 function Products({ onNavigate, query, setQuery }: { onNavigate: (page: Page) => void; query: string; setQuery: (value: string) => void }) {
 
   const [tab, setTab] = useState('همه محصولات')
-  const filtered = products.filter(item => item.name.includes(query) || item.sku.toLowerCase().includes(query.toLowerCase()))
-  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="محصولات"/><h1>محصولات</h1><p>کاتالوگ، تأیید کولبه و قابلیت فروش سری‌های خود را مدیریت کنید.</p></div><button className="button primary" onClick={() => onNavigate('product-editor')}><Plus size={17}/>محصول جدید</button></div><section className="surface table-surface"><div className="tabs">{['همه محصولات', 'فعال', 'در بررسی', 'نیازمند اصلاح', 'پیش‌نویس'].map(item => <button onClick={() => setTab(item)} className={tab === item ? 'active' : ''} key={item}>{item}{item === 'نیازمند اصلاح' ? <em>۲</em> : null}</button>)}</div><div className="table-toolbar"><label className="search-field"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="جست‌وجو با نام یا SKU"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلترها</button><button className="button secondary hide-mobile"><CalendarDays size={16}/>به‌روزرسانی اخیر</button><button className="icon-button"><MoreHorizontal/></button></div></div><div className="desktop-table"><div className="table-row table-header"><span>محصول</span><span>وضعیت</span><span>سری قابل فروش</span><span>موجودی فیزیکی</span><span>قیمت عمده</span><span>آخرین تغییر</span><span></span></div>{filtered.map(product => <div className="table-row product-row" key={product.id}><div className="product-cell"><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.category}</span></div></div><Status>{product.status}</Status><span className={product.series === 0 ? 'zero-number' : 'number'}>{product.series} سری</span><span className={product.stock < 10 ? 'low-number' : 'number'}>{product.stock} تکه</span><b>{product.price}</b><span className="muted">{product.updated}</span><RowMenu/></div>)}</div><div className="mobile-product-list">{filtered.map(product => <article key={product.id}><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.series} سری قابل فروش</span><Status>{product.status}</Status></div><RowMenu/></article>)}</div><footer className="table-footer"><span>نمایش {filtered.length} از ۴۳ محصول</span><div><button className="icon-button">‹</button><b>۱</b><button className="icon-button">›</button></div></footer></section></>
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const filtered = products.filter(item => (tab === 'همه محصولات' || item.status === tab) && (item.name.includes(query) || item.sku.toLowerCase().includes(query.toLowerCase())))
+  const selected = products.find(item => item.id === selectedId) ?? null
+  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="محصولات"/><h1>محصولات</h1><p>کاتالوگ، تأیید کولبه و قابلیت فروش سری‌های خود را مدیریت کنید.</p></div><button className="button primary" onClick={() => onNavigate('product-editor')}><Plus size={17}/>محصول جدید</button></div><section className="surface table-surface"><div className="tabs">{['همه محصولات', 'فعال', 'در بررسی', 'نیازمند اصلاح', 'پیش‌نویس'].map(item => <button onClick={() => setTab(item)} className={tab === item ? 'active' : ''} key={item}>{item}{item === 'نیازمند اصلاح' ? <em>۲</em> : null}</button>)}</div><div className="table-toolbar"><label className="search-field"><Search size={17}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="جست‌وجو با نام یا SKU"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلترها</button><button className="button secondary hide-mobile"><CalendarDays size={16}/>به‌روزرسانی اخیر</button><button className="icon-button"><MoreHorizontal/></button></div></div><div className="desktop-table"><div className="table-row table-header"><span>محصول</span><span>وضعیت</span><span>سری قابل فروش</span><span>موجودی فیزیکی</span><span>قیمت عمده</span><span>آخرین تغییر</span><span></span></div>{filtered.map(product => <div className="table-row product-row" key={product.id} onClick={() => setSelectedId(product.id)} style={{cursor:'pointer'}}><div className="product-cell"><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.category}</span></div></div><Status>{product.status}</Status><span className={product.series === 0 ? 'zero-number' : 'number'}>{product.series} سری</span><span className={product.stock < 10 ? 'low-number' : 'number'}>{product.stock} تکه</span><b>{product.price}</b><span className="muted">{product.updated}</span><RowMenu/></div>)}</div><div className="mobile-product-list">{filtered.map(product => <article key={product.id}><img src={product.image} alt=""/><div><b>{product.name}</b><span>{product.sku} · {product.series} سری قابل فروش</span><Status>{product.status}</Status></div><RowMenu/></article>)}</div><footer className="table-footer"><span>نمایش {filtered.length} محصول</span></footer></section>
+  {selected ? <ProductDetail product={selected} onClose={() => setSelectedId(null)} /> : null}
+</>
+}
+
+function ProductDetail({ product, onClose }: { product: (typeof products)[number]; onClose: () => void }) {
+  const [description, setDescription] = useState(product.description ?? '')
+  const [price, setPrice] = useState(String(product.wholesalePrice ?? ''))
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const reviewed = product.reviewedAt ? new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(product.reviewedAt)) : '—'
+  const canResubmit = product.rawStatus === 'rejected' || product.rawStatus === 'changes_requested' || product.rawStatus === 'draft'
+  const submit = async () => {
+    setBusy(true)
+    setMessage('')
+    try {
+      await resubmitSupplierProduct(product.id, { description, wholesalePrice: Number(price) || undefined })
+      setMessage('محصول دوباره برای بررسی کلبه ارسال شد.')
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'ارسال مجدد انجام نشد.')
+    } finally { setBusy(false) }
+  }
+  return <section className="surface" style={{ marginTop: 16, padding: 18 }} aria-label="جزئیات محصول">
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <div><p className="eyebrow">PRODUCT DETAIL</p><h2 style={{ margin: '6px 0' }}>{product.name}</h2><p style={{ fontSize: 11, color: '#777' }}>{product.sku} · {product.category}</p></div>
+      <button type="button" className="button secondary" onClick={onClose}>بستن</button>
+    </div>
+    <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', marginTop: 14 }}>
+      <div><span style={{ fontSize: 9, color: '#888' }}>وضعیت</span><b style={{ display: 'block', marginTop: 4 }}>{product.status}</b></div>
+      <div><span style={{ fontSize: 9, color: '#888' }}>تاریخ بررسی</span><b style={{ display: 'block', marginTop: 4 }}>{reviewed}</b></div>
+      <div><span style={{ fontSize: 9, color: '#888' }}>ارسال مجدد</span><b style={{ display: 'block', marginTop: 4 }}>{product.resubmittedAt ? 'ثبت شده' : '—'}</b></div>
+    </div>
+    {(product.rejectionReason || product.rejectionNote) && <div style={{ marginTop: 14, border: '1px solid #e7c7c2', background: '#fdf4f3', padding: 12, fontSize: 11, lineHeight: 1.8 }}>
+      <b>نتیجه بررسی کلبه</b>
+      {product.rejectionReason && <p>دلیل: {product.rejectionReason}</p>}
+      {product.rejectionNote && <p>توضیح مدیر: {product.rejectionNote}</p>}
+    </div>}
+    {canResubmit && <div style={{ marginTop: 14 }}>
+      <label style={{ display: 'block', fontSize: 10 }}>توضیحات اصلاح‌شده<textarea value={description} onChange={event => setDescription(event.target.value)} rows={4} style={{ width: '100%', marginTop: 6, border: '1px solid #deddd6', padding: 8 }} /></label>
+      <label style={{ display: 'block', fontSize: 10, marginTop: 8 }}>قیمت عمده<input dir="ltr" value={price} onChange={event => setPrice(event.target.value)} style={{ width: 180, height: 36, marginTop: 6, border: '1px solid #deddd6', padding: '0 8px' }} /></label>
+      <button type="button" className="button primary" disabled={busy} onClick={submit} style={{ marginTop: 12 }}>{busy ? 'در حال ارسال…' : 'اصلاح شد؛ ارسال دوباره برای بررسی'}</button>
+    </div>}
+    {message && <p role="status" style={{ marginTop: 10, fontSize: 11 }}>{message}</p>}
+  </section>
 }
 
 function Inventory() { return <><div className="page-head"><div><PageCrumbs parent="موجودی" current="موجودی آماده"/><h1>موجودی آماده</h1><p>موجودی فیزیکی و تعداد سری قابل فروش به‌صورت زنده محاسبه می‌شود.</p></div><button className="button primary"><Upload size={17}/>ورودی CSV</button></div><div style={{marginBottom:16}}><CSVInventoryImport onImport={() => undefined} /></div>
@@ -210,7 +260,32 @@ function Inventory() { return <><div className="page-head"><div><PageCrumbs pare
 </section>
 </> }
 
-function SeriesBuilder() { const [sizes, setSizes] = useState([1, 2, 2, 1]); const total = sizes.reduce((a,b) => a + b, 0); return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ / پیراهن آکسفورد" current="سری‌ها و پک‌ها"/><h1>سری محصول</h1><p>ترکیب و قیمت‌گذاری بسته‌های عمده برای رنگ مشکی.</p></div><button className="button secondary">مشاهده موجودی SKU</button></div><section className="builder-layout"><div className="surface series-form"><SectionHeading eyebrow="SERIES BUILDER" title="سری پرفروش" action={<Status>فعال</Status>}>ترکیب بر مبنای واریانت‌های فعال محصول</SectionHeading><div className="series-options"><button className="selected">پرفروش</button><button>نیم‌سری</button><button>فول‌سری</button><button>سفارشی</button></div><div className="composition"><div className="composition-head"><b>سایز</b><b>تعداد در هر سری</b><b>موجودی فیزیکی</b></div>{['M', 'L', 'XL', '2XL'].map((size, index) => <div className="composition-row" key={size}><b>{size}</b><div className="stepper"><button onClick={() => setSizes(current => current.map((n, i) => i === index ? Math.max(0, n - 1) : n))}>−</button><strong>{sizes[index]}</strong><button onClick={() => setSizes(current => current.map((n, i) => i === index ? n + 1 : n))}>+</button></div><span>{[46, 38, 35, 15][index]} تکه</span></div>)}</div><div className="price-row"><label>قیمت عمده هر سری<input defaultValue="۱٬۸۹۰٬۰۰۰"/></label><label>زمان آماده‌سازی<select defaultValue="۲ روز"><option>۲ روز کاری</option><option>۳ روز کاری</option></select></label></div><div className="form-actions"><button className="button ghost">انصراف</button><button className="button primary">ذخیره سری</button></div></div><aside className="series-preview"><div className="series-hero"><p>پیش‌نمایش عرضه</p><strong>{total}<span>تکه</span></strong><small>در هر سری پرفروش</small></div><div className="series-stats"><div><span>سری قابل فروش</span><b>۷ سری</b><small>محدودشده توسط سایز 2XL</small></div><div><span>قابل رزرو</span><b>۷ سری</b><small>بدون سفارش فعال</small></div></div><div className="formula"><p>فرمول سری</p>{['M × ۱', 'L × ۲', 'XL × ۲', '2XL × ۱'].map(x => <span key={x}>{x}</span>)}</div><div className="notice"><Sparkles size={17}/><p>با ثبت این سری، پیشنهاد به‌طور خودکار براساس موجودی واریانت‌ها فعال یا غیرفعال می‌شود.</p></div></aside></section></> }
+function SeriesBuilder() {
+  const [types, setTypes] = useState<CatalogProductType[]>([])
+  const [typeId, setTypeId] = useState('')
+  const [error, setError] = useState('')
+  useEffect(() => { loadProductTypes().then(next => { setTypes(next); setTypeId(next[0]?.id ?? '') }).catch(() => setError('قالب‌های سری از سرور خوانده نشد. فهرست سایز ثابت استفاده نمی‌شود.')) }, [])
+  const type = types.find(item => item.id === typeId) ?? null
+  return <><div className="page-head"><div><PageCrumbs parent="کاتالوگ" current="سری‌ها و پک‌ها"/><h1>قالب‌های سری</h1><p>سایزها و ترکیب سری از نوع محصول در پایگاه‌داده می‌آیند، نه از فهرست ثابت فرانت.</p></div></div>
+    {error && <p role="alert" style={{ color: '#a4463d', fontSize: 11 }}>{error}</p>}
+    <label style={{ display: 'block', maxWidth: 320, fontSize: 11, marginBottom: 12 }}>نوع محصول
+      <select aria-label="نوع محصول قالب سری" value={typeId} onChange={event => setTypeId(event.target.value)} style={{ width: '100%', height: 38, marginTop: 6 }}>
+        {types.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label>
+    {type && <section className="surface" style={{ padding: 16 }}>
+      <p style={{ fontSize: 11 }}>سایزهای قابل استفاده، به ترتیب تعریف‌شده: {type.sizes.map(size => size.label).join(' · ') || '—'}</p>
+      <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+        {type.templates.map(template => <article key={template.id} style={{ border: '1px solid #e5e5e0', padding: 12 }}>
+          <b>{template.name}</b>
+          <p style={{ fontSize: 10, color: '#777', marginTop: 4 }}>{template.description}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>{template.lines.map(line => <span key={line.sizeId} style={{ border: '1px solid #e5e5e0', padding: '4px 8px', fontSize: 11 }}>{line.label} × {line.quantity}</span>)}</div>
+        </article>)}
+        {!type.templates.length && <p style={{ fontSize: 11, color: '#888' }}>برای این نوع محصول هنوز قالب سری تعریف نشده است. مدیر کلبه می‌تواند آن را در «قالب سایزها» بسازد.</p>}
+      </div>
+    </section>}
+  </>
+}
 
 function Orders() { const [selected, setSelected] = useState('KV-82941'); return <><div className="page-head"><div><PageCrumbs parent="عملیات" current="سفارشات آماده"/><h1>سفارشات آماده</h1><p>سفارش‌ها را به‌موقع تأیید و برای ارسال آماده کنید.</p></div><button className="button secondary"><FileText size={16}/>خروجی سفارشات</button></div><section className="surface orders-surface"><div className="table-toolbar"><label className="search-field"><Search size={17}/><input placeholder="شناسه سفارش، مشتری یا محصول"/></label><div className="tool-actions"><button className="button secondary"><SlidersHorizontal size={16}/>فیلتر</button><button className="button secondary">نمای ذخیره‌شده <ChevronDown size={15}/></button></div></div><div style={{marginBottom:16}}><OrderSLA orderId={selected} slaHours={24} /></div>
 <div style={{marginBottom:16}}><ShippingLabel orderId={selected} items={[{ name: 'پیراهن آکسفورد', qty: 30 }]} /></div>

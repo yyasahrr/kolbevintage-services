@@ -4,7 +4,8 @@ import { products, categories, specLabels, specOrder, type Product } from "../da
 import { styles, articles } from "../siteData";
 import { fa, toman } from "../utils/format";
 import Icon from "../components/Icon";
-import { AccessSecurity, CommerceOperations, IntegrationsAutomation, SystemCenter } from "./AdminOperations";
+import { AccessSecurity, CommerceOperations, SystemCenter } from "./AdminOperations";
+import { CrmStudio, IntegrationCenter, InvoiceCenter } from "./PlatformDesk";
 import AdminProductEditor from "./AdminProductEditor";
 import { createAdminProduct, loadAdminProducts, loadProductTrash, saveAdminProducts, saveProductTrash, type AdminProductRecord } from "../adminProducts";
 import { loadHomepageJournalPins, saveHomepageJournalPins, saveManagedArticles } from "../journalSettings";
@@ -13,6 +14,9 @@ import { loadSiteSettings, saveSiteSettings, type HeroTemplate } from "../siteSe
 import RetailPolicyCenter from "./RetailPolicyCenter";
 import { readCommerceEvents, type CommerceEvent } from "../lib/analytics";
 import CatalogTaxonomyManager from "./CatalogTaxonomyManager";
+import { DiscoveryCenter } from "./DiscoveryDesk";
+import { OperationsCenter } from "./OperationsDesk";
+import { CatalogFinanceDesk } from "./CatalogFinanceDesk";
 
 const AdminLogs = lazy(() => import("./AdminLogs"));
 const SiteDesignCenter = lazy(() => import("./SiteDesignCenter"));
@@ -28,6 +32,8 @@ const nav = [
   { id: "design-center", label: "مرکز طراحی سایت", icon: "star" },
   { id: "dashboard", label: "داشبورد", icon: "shield" },
   { id: "products", label: "محصولات", icon: "bag" },
+  { id: "imports", label: "ورود داده", icon: "plus" },
+  { id: "seo", label: "سئو و کشف", icon: "search" },
   { id: "orders", label: "سفارش‌ها", icon: "truck" },
   { id: "commerce", label: "مرجوعی و ارسال", icon: "return" },
   { id: "customers", label: "CRM مشتریان", icon: "user" },
@@ -39,7 +45,11 @@ const nav = [
   { id: "reports", label: "گزارش‌ها", icon: "clock" },
   { id: "logs", label: "لاگ‌ها و خطاها", icon: "activity" },
   { id: "access", label: "دسترسی و امنیت", icon: "shield" },
+  { id: "crm-rules", label: "قواعد CRM", icon: "activity" },
+  { id: "invoices", label: "اسناد مالی", icon: "check" },
   { id: "integrations", label: "اتصال و اتوماسیون", icon: "plus" },
+  { id: "operations", label: "حمل، رهگیری و پیشنهاد", icon: "truck" },
+  { id: "catalog-finance", label: "ساختار محصولات و مالی", icon: "check" },
   { id: "system", label: "مرکز سیستم", icon: "star" },
 ];
 
@@ -1018,6 +1028,8 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
             </Suspense>
           )}
           {page === "products" && <ProductsPanel />}
+          {page === "imports" && <DiscoveryCenter initial="import" />}
+          {page === "seo" && <DiscoveryCenter initial="seo" />}
           {page === "orders" && <OrdersPanel onOpenCustomer={(name) => { localStorage.setItem("kv_crm_focus_customer", name); setPage("customers"); }} />}
           {page === "commerce" && <CommerceOperations />}
           {page === "customers" && <AdminCRM />}
@@ -1033,7 +1045,11 @@ export default function Admin({ embedded = false }: { embedded?: boolean }) {
             </Suspense>
           )}
           {page === "access" && <AccessSecurity />}
-          {page === "integrations" && <IntegrationsAutomation />}
+          {page === "crm-rules" && <CrmStudio />}
+          {page === "invoices" && <InvoiceCenter />}
+          {page === "integrations" && <IntegrationCenter />}
+          {page === "operations" && <OperationsCenter />}
+          {page === "catalog-finance" && <CatalogFinanceDesk />}
           {page === "system" && <SystemCenter />}
         </main>
       </div>

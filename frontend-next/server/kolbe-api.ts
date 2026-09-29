@@ -3,6 +3,35 @@ import type { NextRequest } from "next/server";
 import type { PoolClient } from "pg";
 import { database, makeId, passwordRecord, rows, transaction } from "./database";
 import { handlePerfectCorpRequest, isPerfectCorpError } from "./perfect-corp";
+import {
+  OpsError,
+  handleAdminExtensions,
+  isAdminExtensionPath,
+  insertTypedProduct,
+  listSupplierNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  queryAdminOrders,
+  resubmitSupplierProduct,
+  reviewSupplierProduct,
+  syncWholesaleFulfillment,
+} from "./wholesale-ops";
+import { assertBuyerAllowed, assertSupplierAllowed, emitEvent, handlePlatformRequest, isPlatformPath, refreshMembershipLifecycle, syncOrderPaid } from "./platform-360";
+import { OpsCenterError, attributeRecommendationPurchase, ensureOperationsSchema, handleOperationsRequest, isOperationsPath, quoteShipping, recordLogin, sessionEpoch, verifyTotp } from "./operations-center";
+import { CatalogFinanceError, consumeCoupon, ensureCatalogFinanceSchema, handleCatalogFinanceRequest, isCatalogFinancePath, priceCoupon } from "./catalog-finance";
+import {
+  consumeWarehouse,
+  decideRetailPrice,
+  DiscoveryError,
+  ensureCommerceSchema,
+  handleDiscoveryRequest,
+  isDiscoveryPath,
+  overlayWarehouseStock,
+  releaseWarehouse,
+  reserveWarehouse,
+  supplierRetailAttempt,
+  warehouseStock,
+} from "./commerce-discovery";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -11,7 +40,7 @@ const CORS_HEADERS = {
   "access-control-max-age": "600",
 };
 
-type Claims = { sub: string; role: string; exp: number };
+type Claims = { sub: string; role: string; exp: number; sv?: number };
 type Json = Record<string, any>;
 
 const HERO_VIDEO_SETTING_KEY = "storefront-hero-video";
@@ -131,14 +160,14 @@ function idempotencyKeyFrom(req: NextRequest): string | null {
   return key && key.length <= 200 ? key : null;
 }
 
-function issueToken(userId: string, role: string) {
-  const payload: Claims = { sub: userId, role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14 };
+function issueToken(userId: string, role: string, sv = 0) {
+  const payload: Claims = { sub: userId, role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 14, sv };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signature = createHmac("sha256", sessionSecret()).update(body).digest("base64url");
   return `${body}.${signature}`;
 }
 
-function claimsFrom(req: NextRequest): Claims | null {
+export function claimsFrom(req: NextRequest): Claims | null {
   const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1] ?? readSessionCookie(req);
   if (!token) return null;
   const [body, signature] = token.split(".");
@@ -183,7 +212,10 @@ async function supplierContext(userId: string) {
   return (await rows<any>(
     `SELECT s.id AS "supplierId", s.display_name AS "displayName", s.legal_name AS "legalName"
      FROM supplier_member m JOIN supplier s ON s.id=m.supplier_id
-     WHERE m.user_id=$1 AND s.status='approved' LIMIT 1`,
+     WHERE m.user_id=$1 AND (
+       (s.status='approved' AND COALESCE(s.cooperation_status,'active') IN ('active','limited'))
+       OR (s.cooperation_until IS NOT NULL AND s.cooperation_until <= now() AND s.cooperation_status IN ('suspended','limited'))
+     ) LIMIT 1`,
     [userId],
   ))[0] ?? null;
 }
@@ -202,24 +234,38 @@ async function catalog(where = "", values: unknown[] = []) {
   );
   if (!products.length) return [];
   const variants = await rows<any>(
-    `SELECT v.*, i.on_hand, i.reserved FROM supplier_variant v
-     LEFT JOIN supplier_inventory i ON i.variant_id=v.id WHERE v.product_id=ANY($1::text[])`,
+    `SELECT v.*, i.on_hand, i.reserved, sz.sort_order AS size_sort_order
+     FROM supplier_variant v
+     LEFT JOIN supplier_inventory i ON i.variant_id=v.id
+     LEFT JOIN product_type_size sz ON sz.id=v.size_id
+     WHERE v.product_id=ANY($1::text[])
+     ORDER BY v.product_id, sz.sort_order NULLS LAST, v.id`,
     [products.map((product) => product.id)],
   );
   const byProduct = new Map<string, any[]>();
   for (const variant of variants) {
     const item = {
       id: variant.id, sku: variant.sku, color: variant.color, color_hex: variant.color_hex,
-      size: variant.size, inventory: { on_hand: variant.on_hand ?? 0, reserved: variant.reserved ?? 0 },
+      size: variant.size, size_id: variant.size_id, size_sort_order: variant.size_sort_order ?? null,
+      inventory: { on_hand: variant.on_hand ?? 0, reserved: variant.reserved ?? 0 },
     };
     byProduct.set(variant.product_id, [...(byProduct.get(variant.product_id) ?? []), item]);
   }
-  return products.map((product) => ({
+  const listed = products.map((product) => ({
     id: product.id, supplier_id: product.supplier_id, name: product.name, sku: product.sku,
     category: product.category, description: product.description, wholesale_price: Number(product.wholesale_price),
     image_url: product.image_url, status: product.status, updated_at: product.updated_at,
+    product_type_id: product.product_type_id, series_template_id: product.series_template_id,
+    rejection_reason_code: product.rejection_reason_code, rejection_reason: product.rejection_reason,
+    rejection_note: product.rejection_note, reviewed_at: product.reviewed_at, reviewed_by: product.reviewed_by,
+    resubmitted_at: product.resubmitted_at,
+    owner_type: product.owner_type ?? "supplier",
+    retail_enabled: Boolean(product.retail_enabled),
+    wholesale_enabled: product.wholesale_enabled !== false,
     product_variants: byProduct.get(product.id) ?? [],
   }));
+  await overlayWarehouseStock(listed.flatMap((product) => product.product_variants));
+  return listed;
 }
 
 async function purchaseOrders(supplierId?: string, wholesaleOrderId?: string) {
@@ -247,7 +293,7 @@ async function purchaseOrders(supplierId?: string, wholesaleOrderId?: string) {
 
 async function wholesaleOrders(accountId?: string) {
   const orders = await rows<any>(
-    `SELECT * FROM wholesale_order ${accountId ? "WHERE account_id=$1" : ""} ORDER BY created_at DESC`,
+    `SELECT * FROM wholesale_order ${accountId ? "WHERE account_id=$1" : ""} ORDER BY created_at DESC, id DESC`,
     accountId ? [accountId] : [],
   );
   const items = orders.length ? await rows<any>(
@@ -281,7 +327,8 @@ async function updatePurchaseOrder(client: PoolClient, id: string, status: strin
   if (status === "delivered") {
     const items = (await client.query<any>("SELECT * FROM purchase_order_item WHERE purchase_order_id=$1", [id])).rows;
     for (const item of items) {
-      if (item.variant_id) await client.query(
+      if (item.variant_id && item.stock_source === "wms") await consumeWarehouse(client, item.variant_id, item.quantity);
+      else if (item.variant_id) await client.query(
         `UPDATE supplier_inventory SET on_hand=GREATEST(0,on_hand-$2), reserved=GREATEST(0,reserved-$2), updated_at=now() WHERE variant_id=$1`,
         [item.variant_id, item.quantity],
       );
@@ -294,6 +341,7 @@ async function updatePurchaseOrder(client: PoolClient, id: string, status: strin
       if (!open.rowCount) await client.query("UPDATE wholesale_order SET status='fulfilled',updated_at=now() WHERE id=$1", [current.wholesale_order_id]);
     }
   }
+  if (current.wholesale_order_id) await syncWholesaleFulfillment(client, current.wholesale_order_id);
 }
 
 function logShape(log: any) {
@@ -309,9 +357,6 @@ function logShape(log: any) {
   };
 }
 
-/** Canonical retail shipping rate card (mirrors the storefront Checkout page). */
-const RETAIL_SHIPPING_RATES: Record<string, number> = { post: 59_000, pishtaz: 89_000, tipax: 145_000 };
-const RETAIL_FREE_SHIPPING_THRESHOLD = 3_000_000;
 const RETAIL_PAY_METHODS = new Set(["gateway", "installment", "cod", "wallet"]);
 const RETAIL_ADDRESS_FIELDS = ["province", "city", "address", "plaque", "unit", "postal", "note"] as const;
 
@@ -333,10 +378,7 @@ async function handleRetailOrders(req: NextRequest, path: string) {
   if (!body.customer?.name?.trim() || !body.customer?.phone?.trim()) throw new HttpError(422, "CUSTOMER_INFO_REQUIRED");
 
   const payMethod = RETAIL_PAY_METHODS.has(body.payMethod) ? body.payMethod : "gateway";
-  const shippingId =
-    typeof body.shipping?.id === "string" && RETAIL_SHIPPING_RATES[body.shipping.id] !== undefined
-      ? body.shipping.id
-      : "post";
+  const shippingId = typeof body.shipping?.id === "string" && body.shipping.id.trim() ? body.shipping.id.trim() : "post";
   const idempotencyKey = idempotencyKeyFrom(req);
   const orderCode = `RT-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
 
@@ -356,37 +398,54 @@ async function handleRetailOrders(req: NextRequest, path: string) {
     for (const line of body.lines) {
       const qty = Number(line?.qty);
       if (!Number.isInteger(qty) || qty <= 0 || qty > 99) throw new HttpError(422, "INVALID_QUANTITY");
-      const product = (await client.query<any>(
-        "SELECT id,name,price FROM retail_product WHERE id=$1 AND active LIMIT 1",
-        [String(line?.id ?? "")],
-      )).rows[0];
-      if (!product) throw new HttpError(422, "UNKNOWN_PRODUCT");
-      const price = Number(product.price);
+      const decision = await decideRetailPrice(client, String(line?.id ?? ""), payMethod);
+      if (!decision.ok) throw new HttpError(decision.status, decision.error);
+      const price = decision.price;
       itemsAmount += price * qty;
       const image = typeof line?.img === "string" && line.img.startsWith("/") && line.img.length <= 500 ? line.img : null;
       lines.push({
-        id: product.id,
-        name: product.name,
+        id: String(line.id),
+        name: decision.name,
         colour: String(line?.colour ?? "").slice(0, 40) || null,
         size: String(line?.size ?? "").slice(0, 20) || null,
         price,
         qty,
         img: image,
+        priceSnapshot: decision.snapshot,
       });
     }
-    const shippingPrice =
-      payMethod === "cod" ? 0 : itemsAmount >= RETAIL_FREE_SHIPPING_THRESHOLD ? 0 : RETAIL_SHIPPING_RATES[shippingId];
-    const totalAmount = itemsAmount + shippingPrice;
+    const quoted = await quoteShipping(client, {
+      method: shippingId,
+      payMethod,
+      orderValue: itemsAmount,
+      city: sanitizeRetailAddress(body.address).city,
+      lines: lines.map((line) => ({ id: String(line.id), qty: Number(line.qty), color: line.colour, size: line.size })),
+    });
+    const shippingPrice = quoted.amount;
+    const resolvedShipping = quoted.method;
+    if (idempotencyKey) {
+      const winner = (await client.query<any>("SELECT order_code FROM retail_order WHERE idempotency_key=$1 LIMIT 1", [idempotencyKey])).rows[0];
+      if (winner) return { orderCode: winner.order_code, replay: true };
+    }
+    const coupon = await priceCoupon(client, {
+      code: body.couponCode,
+      phone: body.customer.phone.trim(),
+      email: body.customer.email?.trim() || null,
+      itemsAmount,
+      lineIds: lines.map((line) => String(line.id)),
+      payMethod,
+    });
+    const totalAmount = itemsAmount + shippingPrice - coupon.discount;
 
     if (idempotencyKey) {
       // Two racing replays: ON CONFLICT DO NOTHING, then read the winner back.
       const inserted = await client.query(
-        `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status,amount_source,idempotency_key)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'server',$13)
+        `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status,amount_source,idempotency_key,shipping_snapshot,shipping_weight_grams)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'server',$13,$14::jsonb,$15)
          ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`,
         [makeId("rord"), orderCode, body.customer.name.trim(), body.customer.phone.trim(), body.customer.email?.trim() || null,
-         JSON.stringify(lines), JSON.stringify(sanitizeRetailAddress(body.address)), shippingId, shippingPrice, payMethod,
-         totalAmount, payMethod === "cod" ? "pending_cod" : "pending_gateway", idempotencyKey],
+         JSON.stringify(lines), JSON.stringify(sanitizeRetailAddress(body.address)), resolvedShipping, shippingPrice, payMethod,
+         totalAmount, payMethod === "cod" ? "pending_cod" : "pending_gateway", idempotencyKey, JSON.stringify(quoted.snapshot), quoted.weightGrams],
       );
       if (!inserted.rowCount) {
         const winner = (await client.query<any>(
@@ -397,16 +456,28 @@ async function handleRetailOrders(req: NextRequest, path: string) {
       }
     } else {
       await client.query(
-        `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status,amount_source)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'server') RETURNING id`,
+        `INSERT INTO retail_order (id,order_code,customer_name,phone,email,lines,address,shipping_method,shipping_price,pay_method,total_amount,payment_status,amount_source,shipping_snapshot,shipping_weight_grams)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'server',$13::jsonb,$14) RETURNING id`,
         [makeId("rord"), orderCode, body.customer.name.trim(), body.customer.phone.trim(), body.customer.email?.trim() || null,
-         JSON.stringify(lines), JSON.stringify(sanitizeRetailAddress(body.address)), shippingId, shippingPrice, payMethod,
-         totalAmount, payMethod === "cod" ? "pending_cod" : "pending_gateway"],
+         JSON.stringify(lines), JSON.stringify(sanitizeRetailAddress(body.address)), resolvedShipping, shippingPrice, payMethod,
+         totalAmount, payMethod === "cod" ? "pending_cod" : "pending_gateway", JSON.stringify(quoted.snapshot), quoted.weightGrams],
       );
     }
-    return { orderCode, replay: false };
+    if (coupon.snapshot) {
+      await client.query(
+        "UPDATE retail_order SET coupon_code=$2, coupon_discount=$3, coupon_snapshot=$4::jsonb WHERE order_code=$1",
+        [orderCode, coupon.snapshot.code, coupon.discount, JSON.stringify(coupon.snapshot)],
+      );
+      await consumeCoupon(client, coupon.snapshot.code, orderCode);
+    }
+    return { orderCode, replay: false, shipping: quoted.snapshot, discount: coupon.discount };
   });
-  return response({ orderCode: result.orderCode, ...(result.replay ? { replay: true } : {}) }, result.replay ? 200 : 201);
+  if (!result.replay) {
+    await emitEvent("order.created", "customer", body.customer.phone.trim(), { orderCode: result.orderCode, shipping: result.shipping });
+    const stored = (await rows<any>("SELECT phone, email, lines FROM retail_order WHERE order_code=$1", [result.orderCode]))[0];
+    if (stored) await attributeRecommendationPurchase(stored.phone, stored.email, Array.isArray(stored.lines) ? stored.lines : []);
+  }
+  return response({ orderCode: result.orderCode, ...(result.replay ? { replay: true } : { shipping: result.shipping, discount: result.discount ?? 0 }) }, result.replay ? 200 : 201);
 }
 
 async function handleAuth(req: NextRequest, path: string) {
@@ -420,6 +491,7 @@ async function handleAuth(req: NextRequest, path: string) {
          VALUES ($1,$2,$3,$4,'customer',$5,$6) RETURNING id,email,role,display_name,phone`,
         [makeId("usr"), String(body.email).trim().toLowerCase(), passwordHash, salt, body.name?.trim() || null, body.phone?.trim() || null],
       );
+      await emitEvent("customer.created", "customer", user.id, { email: user.email });
       return response({ user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone } }, 201);
     } catch (error: any) {
       if (error?.code === "23505") throw new HttpError(409, "EMAIL_EXISTS");
@@ -430,16 +502,31 @@ async function handleAuth(req: NextRequest, path: string) {
     if (!body.email || !body.password) throw new HttpError(422, "INVALID_INPUT");
     const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 LIMIT 1", [String(body.email).trim().toLowerCase()]))[0];
     if (!user || user.status !== "active" || !passwordMatches(String(body.password), user.salt, user.password_hash)) {
+      await recordLogin(user?.id ?? null, String(body.email).trim().toLowerCase(), false, req);
       throw new HttpError(401, "INVALID_CREDENTIALS");
     }
+    if (user.password_reset_required) throw new HttpError(403, "PASSWORD_RESET_REQUIRED");
     if (body.role && body.role !== user.role) throw new HttpError(403, "ROLE_MISMATCH");
-    const token = issueToken(user.id, user.role);
+    const security = (await rows<any>("SELECT totp_enabled FROM user_security WHERE user_id=$1", [user.id]))[0];
+    if (security?.totp_enabled) throw new HttpError(403, "TOTP_REQUIRED");
+    await recordLogin(user.id, user.email, true, req);
+    const token = issueToken(user.id, user.role, await sessionEpoch(user.id));
     return authedResponse(
       { token, user: { id: user.id, email: user.email, role: user.role, name: user.display_name, phone: user.phone } },
       req,
       200,
       token,
     );
+  }
+  if (path === "auth/login/totp") {
+    const user = (await rows<any>("SELECT * FROM account_user WHERE email=$1 LIMIT 1", [String(body.email ?? "").trim().toLowerCase()]))[0];
+    const security = user ? (await rows<any>("SELECT totp_secret, totp_enabled FROM user_security WHERE user_id=$1", [user.id]))[0] : null;
+    if (!user || !security?.totp_enabled || !passwordMatches(String(body.password ?? ""), user.salt, user.password_hash) || !verifyTotp(security.totp_secret, String(body.code ?? ""))) {
+      throw new HttpError(401, "INVALID_CREDENTIALS");
+    }
+    await recordLogin(user.id, user.email, true, req);
+    const token = issueToken(user.id, user.role, await sessionEpoch(user.id));
+    return authedResponse({ token, user: { id: user.id, email: user.email, role: user.role } }, req, 200, token);
   }
   if (path === "auth/logout" && req.method === "POST") {
     // Clears the HttpOnly session cookie; Bearer clients keep clearing their own token.
@@ -471,7 +558,7 @@ async function handleSupplier(req: NextRequest, path: string) {
     if (!user || !passwordMatches(String(body.password ?? ""), user.salt, user.password_hash)) throw new HttpError(401, "INVALID_CREDENTIALS");
     const context = await supplierContext(user.id);
     if (!context) throw new HttpError(403, "SUPPLIER_ACCESS_INACTIVE");
-    const token = issueToken(user.id, user.role);
+    const token = issueToken(user.id, user.role, await sessionEpoch(user.id));
     return authedResponse({ token, supplier: context }, req, 200, token);
   }
 
@@ -482,9 +569,13 @@ async function handleSupplier(req: NextRequest, path: string) {
   if (path === "supplier/products" && method === "GET") return response({ products: await catalog("WHERE supplier_id=$1", [context.supplierId]) });
   if (path === "supplier/products" && method === "POST") {
     const body = await jsonBody(req);
-    if (!body.name?.trim() || !body.sku?.trim() || !body.category?.trim()) throw new HttpError(422, "INVALID_INPUT");
+    if (!body.name?.trim() || !body.sku?.trim() || (!body.category?.trim() && !body.productTypeId)) throw new HttpError(422, "INVALID_INPUT");
+    if (supplierRetailAttempt(body)) throw new HttpError(422, "CHANNEL_FORBIDDEN");
+    await assertSupplierAllowed(context.supplierId, "create_product");
+    await assertSupplierAllowed(context.supplierId, "publish_product");
     try {
       const product = await transaction(async (client) => {
+        if (body.productTypeId) return insertTypedProduct(client, context.supplierId, body);
         const id = makeId("prd");
         const sku = body.sku.trim().toUpperCase();
         const result = await client.query<any>(
@@ -501,11 +592,21 @@ async function handleSupplier(req: NextRequest, path: string) {
         await client.query("INSERT INTO supplier_inventory (id,variant_id,on_hand,reserved) VALUES ($1,$2,$3,0)", [makeId("inv"), variantId, Math.max(0, Number(body.stock ?? 0))]);
         return result.rows[0];
       });
+      await emitEvent("product.submitted", "supplier", context.supplierId, { productId: product.id });
       return response({ product: { id: product.id, name: product.name, sku: product.sku, status: product.status } }, 201);
     } catch (error: any) {
       if (error?.code === "23505") throw new HttpError(409, "DUPLICATE_SKU");
       throw error;
     }
+  }
+  if (path === "supplier/notifications" && method === "GET") return response(await listSupplierNotifications(context.supplierId));
+  if (path === "supplier/notifications/read-all" && method === "POST") return response(await markAllNotificationsRead(context.supplierId));
+  const notificationRead = path.match(/^supplier\/notifications\/([^/]+)\/read$/);
+  if (notificationRead && method === "POST") return response({ notification: await markNotificationRead(context.supplierId, notificationRead[1]) });
+  const resubmit = path.match(/^supplier\/products\/([^/]+)\/resubmit$/);
+  if (resubmit && method === "POST") {
+    await assertSupplierAllowed(context.supplierId, "edit_product");
+    return response(await resubmitSupplierProduct(context.supplierId, resubmit[1], await jsonBody(req)));
   }
   if (path === "supplier/orders" && method === "GET") return response({ orders: await purchaseOrders(context.supplierId) });
   const orderStatus = path.match(/^supplier\/orders\/([^/]+)\/status$/);
@@ -546,12 +647,14 @@ async function handleSupplier(req: NextRequest, path: string) {
       `INSERT INTO support_ticket (id,supplier_id,subject,category,message,priority) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
       [id, context.supplierId, body.subject.trim(), body.category?.trim() || "عمومی", body.message.trim(), ["low", "normal", "high"].includes(body.priority) ? body.priority : "normal"],
     );
+    await emitEvent("ticket.created", "supplier", context.supplierId, { ticketId: id });
     return response({ id }, 201);
   }
   throw new HttpError(404, "NOT_FOUND");
 }
 
 async function handleWholesale(req: NextRequest, path: string) {
+  await refreshMembershipLifecycle();
   if (path === "wholesale/apply" && req.method === "POST") {
     const claims = claimsFrom(req);
     if (!claims || !["customer", "vip"].includes(claims.role)) throw new HttpError(401, "UNAUTHORIZED");
@@ -590,7 +693,7 @@ async function handleWholesale(req: NextRequest, path: string) {
   const account = await activeAccount(claims.sub);
   if (!account) throw new HttpError(403, "VIP_ACCOUNT_INACTIVE");
   if (path === "wholesale/account" && req.method === "GET") return response({ account });
-  if (path === "wholesale/products" && req.method === "GET") return response({ products: await catalog("WHERE status='approved'") });
+  if (path === "wholesale/products" && req.method === "GET") return response({ products: await catalog("WHERE status='approved' AND wholesale_enabled=true AND owner_type IN ('supplier','kolbe')") });
   if (path === "wholesale/orders" && req.method === "GET") return response({ orders: await wholesaleOrders(account.id) });
   if (path === "wholesale/orders" && req.method === "POST") {
     const body = await jsonBody(req);
@@ -612,18 +715,37 @@ async function handleWholesale(req: NextRequest, path: string) {
         const quantity = Math.floor(Number(line.quantity));
         if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 100_000) throw new HttpError(422, "INVALID_QUANTITY");
         const item = (await client.query<any>(
-          `SELECT v.id AS variant_id,v.sku,p.id AS product_id,p.name,p.wholesale_price,i.on_hand,i.reserved
+          `SELECT v.id AS variant_id,v.sku,p.id AS product_id,p.supplier_id,p.name,p.wholesale_price,p.wholesale_enabled,
+                  COALESCE(i.on_hand,0) AS on_hand, COALESCE(i.reserved,0) AS reserved
            FROM supplier_variant v JOIN supplier_product p ON p.id=v.product_id
-           JOIN supplier_inventory i ON i.variant_id=v.id WHERE v.id=$1 AND p.status='approved' FOR UPDATE OF i`,
+           LEFT JOIN supplier_inventory i ON i.variant_id=v.id
+           WHERE v.id=$1 AND p.status='approved' AND p.wholesale_enabled=true FOR UPDATE OF v`,
           [line.variantId],
         )).rows[0];
         if (!item) throw new HttpError(404, "VARIANT_NOT_FOUND");
+        const wms = await warehouseStock(client, item.variant_id);
+        if (wms) {
+          item.on_hand = wms.on_hand;
+          item.reserved = wms.reserved;
+          item.stock_source = "wms";
+        } else item.stock_source = "legacy";
+        await assertSupplierAllowed(item.supplier_id, "receive_order", client);
         if (item.on_hand - item.reserved < quantity) throw new HttpError(409, "INSUFFICIENT_STOCK");
         resolved.push({ ...item, quantity });
         totalUnits += quantity;
         totalAmount += quantity * Number(item.wholesale_price);
       }
       if (totalUnits < 12) throw new HttpError(422, "BELOW_MIN_UNITS");
+      await assertBuyerAllowed(account.id, "place_order", client);
+      const creditLimit = Number(account.credit_limit ?? 0);
+      if (creditLimit > 0) {
+        const unpaid = (await client.query<any>(
+          `SELECT COALESCE(SUM(total_amount),0)::bigint AS total FROM wholesale_order
+           WHERE account_id=$1 AND payment_status NOT IN ('paid','refunded') AND status <> 'cancelled'`,
+          [account.id],
+        )).rows[0];
+        if (Number(unpaid.total) + totalAmount > creditLimit) throw new HttpError(422, "CREDIT_LIMIT_EXCEEDED");
+      }
       const orderId = makeId("word");
       const orderCode = `KV-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}`;
       await client.query(
@@ -631,15 +753,17 @@ async function handleWholesale(req: NextRequest, path: string) {
         [orderId, orderCode, account.id, totalAmount, totalUnits, idempotencyKey],
       );
       for (const item of resolved) {
-        await client.query("UPDATE supplier_inventory SET reserved=reserved+$2,updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
+        if (item.stock_source === "wms") await reserveWarehouse(client, item.variant_id, item.quantity);
+        else await client.query("UPDATE supplier_inventory SET reserved=reserved+$2,updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
         await client.query(
-          `INSERT INTO wholesale_order_item (id,order_id,product_id,variant_id,product_name,sku,quantity,unit_price)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [makeId("woi"), orderId, item.product_id, item.variant_id, item.name, item.sku, item.quantity, item.wholesale_price],
+          `INSERT INTO wholesale_order_item (id,order_id,product_id,variant_id,product_name,sku,quantity,unit_price,stock_source)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [makeId("woi"), orderId, item.product_id, item.variant_id, item.name, item.sku, item.quantity, item.wholesale_price, item.stock_source],
         );
       }
       return { orderCode, replay: false };
     });
+    if (!result.replay) await emitEvent("order.created", "buyer", account.id, { orderCode: result.orderCode });
     return response(result, result.replay ? 200 : 201);
   }
   throw new HttpError(404, "NOT_FOUND");
@@ -648,6 +772,21 @@ async function handleWholesale(req: NextRequest, path: string) {
 async function handleAdmin(req: NextRequest, path: string) {
   const claims = requireRole(req, "admin");
   const method = req.method;
+  if (isAdminExtensionPath(path)) {
+    const extension = await handleAdminExtensions({
+      path,
+      method,
+      url: req.url,
+      body: method === "GET" || method === "HEAD" ? {} : await jsonBody(req),
+    });
+    if (extension) {
+      const operations = path.match(/^admin\/orders\/([^/]+)\/operations$/);
+      const data = extension.data as { payment_status?: string; fulfillment_status?: string } | undefined;
+      if (operations && data?.payment_status === "paid") await syncOrderPaid(operations[1]);
+      if (operations && data?.fulfillment_status === "delivered") await emitEvent("order.delivered", "order", operations[1], {});
+      return response(extension.data, extension.status);
+    }
+  }
   if (path === "admin/site-settings" && method === "PUT") {
     const body = await jsonBody(req);
     if (!body.settings || typeof body.settings !== "object" || Array.isArray(body.settings)) throw new HttpError(422, "INVALID_SETTINGS");
@@ -736,9 +875,10 @@ async function handleAdmin(req: NextRequest, path: string) {
   const catalogStatus = path.match(/^admin\/catalog\/([^/]+)\/status$/);
   if (catalogStatus && method === "POST") {
     const body = await jsonBody(req);
-    if (!body.status) throw new HttpError(422, "INVALID_INPUT");
-    await rows("UPDATE supplier_product SET status=$2,updated_at=now() WHERE id=$1 RETURNING id", [catalogStatus[1], body.status]);
-    return response({ status: body.status });
+    const reviewed = await reviewSupplierProduct(catalogStatus[1], body, claims.sub);
+    if (body.status === "rejected") await emitEvent("product.rejected", "product", catalogStatus[1], { reason: body.reason ?? null });
+    if (body.status === "approved") await emitEvent("product.created", "product", catalogStatus[1], { status: "approved" });
+    return response(reviewed);
   }
   if (path === "admin/catalog/bulk-price" && method === "POST") {
     const body = await jsonBody(req);
@@ -757,16 +897,7 @@ async function handleAdmin(req: NextRequest, path: string) {
     return response({ status: body.status });
   }
   if (path === "admin/orders" && method === "GET") {
-    const [orders, accounts, suppliers, pos] = await Promise.all([wholesaleOrders(), rows<any>("SELECT * FROM wholesale_account"), rows<any>("SELECT * FROM supplier"), purchaseOrders()]);
-    const accountMap = new Map(accounts.map((account) => [account.id, account]));
-    const supplierMap = new Map(suppliers.map((supplier) => [supplier.id, supplier]));
-    return response({ orders: orders.map((order) => ({
-      ...order, store_name: accountMap.get(order.account_id)?.store_name ?? "—",
-      purchase_orders: pos.filter((po) => po.wholesale_order_id === order.id).map((po) => ({
-        id: po.id, order_code: po.order_code, status: po.status,
-        supplier_name: supplierMap.get(po.supplier_id)?.display_name ?? "—", tracking_code: po.tracking_code,
-      })),
-    })) });
+    return response({ orders: await queryAdminOrders(new URL(req.url).searchParams), sort: new URL(req.url).searchParams.get("sort") || "newest" });
   }
   const approveOrder = path.match(/^admin\/orders\/([^/]+)\/approve$/);
   if (approveOrder && method === "POST") {
@@ -781,6 +912,7 @@ async function handleAdmin(req: NextRequest, path: string) {
       for (const item of items) groups.set(item.supplier_id, [...(groups.get(item.supplier_id) ?? []), item]);
       let count = 0;
       for (const [supplierId, group] of groups) {
+        await assertSupplierAllowed(supplierId, "receive_order", client);
         count += 1;
         const poId = makeId("po");
         await client.query(
@@ -789,9 +921,9 @@ async function handleAdmin(req: NextRequest, path: string) {
           [poId, `PO-${new Date().getFullYear()}-${randomUUID().slice(0, 5).toUpperCase()}-${count}`, supplierId, order.id, body.dueDate ?? null, group.reduce((sum, item) => sum + item.quantity * Number(item.unit_price), 0)],
         );
         for (const item of group) await client.query(
-          `INSERT INTO purchase_order_item (id,purchase_order_id,product_name,sku,variant_id,quantity,unit_price,total_amount)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [makeId("poi"), poId, item.product_name, item.sku, item.variant_id, item.quantity, item.unit_price, item.quantity * Number(item.unit_price)],
+          `INSERT INTO purchase_order_item (id,purchase_order_id,product_name,sku,variant_id,quantity,unit_price,total_amount,stock_source)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [makeId("poi"), poId, item.product_name, item.sku, item.variant_id, item.quantity, item.unit_price, item.quantity * Number(item.unit_price), item.stock_source ?? "legacy"],
         );
       }
       await client.query("UPDATE wholesale_order SET status='approved',updated_at=now() WHERE id=$1", [order.id]);
@@ -806,7 +938,10 @@ async function handleAdmin(req: NextRequest, path: string) {
       if (!order) throw new HttpError(404, "ORDER_NOT_FOUND");
       if (order.status === "fulfilled") throw new HttpError(409, "ORDER_ALREADY_FULFILLED");
       const items = (await client.query<any>("SELECT * FROM wholesale_order_item WHERE order_id=$1", [order.id])).rows;
-      for (const item of items) await client.query("UPDATE supplier_inventory SET reserved=GREATEST(0,reserved-$2),updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
+      for (const item of items) {
+        if (item.stock_source === "wms") await releaseWarehouse(client, item.variant_id, item.quantity);
+        else await client.query("UPDATE supplier_inventory SET reserved=GREATEST(0,reserved-$2),updated_at=now() WHERE variant_id=$1", [item.variant_id, item.quantity]);
+      }
       await client.query("UPDATE purchase_order SET status='cancelled',updated_at=now() WHERE wholesale_order_id=$1 AND status IN ('pending','confirmed','preparing')", [order.id]);
       await client.query("UPDATE wholesale_order SET status='cancelled',updated_at=now() WHERE id=$1", [order.id]);
     });
@@ -895,6 +1030,26 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
     return result instanceof Response ? result : response(result);
   }
   await database();
+  await ensureCommerceSchema();
+  await ensureOperationsSchema();
+  await ensureCatalogFinanceSchema();
+  const earlyClaims = claimsFrom(req);
+  if (earlyClaims) {
+    const epoch = await sessionEpoch(earlyClaims.sub);
+    if (epoch > Number(earlyClaims.sv ?? 0)) throw new HttpError(401, "SESSION_REVOKED");
+  }
+  if (isCatalogFinancePath(path)) {
+    const result = await handleCatalogFinanceRequest(req, path, earlyClaims, new URL(req.url).search);
+    return result instanceof Response ? result : response(result.data, result.status);
+  }
+  if (isOperationsPath(path)) return handleOperationsRequest(req, path, earlyClaims);
+  if (isDiscoveryPath(path)) return handleDiscoveryRequest(req, path, claimsFrom(req));
+  if (isPlatformPath(path)) {
+    const result = await handlePlatformRequest(req, path, claimsFrom(req));
+    if (result instanceof Response) return result;
+    if (result) return response(result.data, result.status);
+    throw new HttpError(404, "NOT_FOUND");
+  }
   if (path === "health") return response({ ok: true, service: "kolbe-api", database: "postgresql" });
   if ((path === "site/hero-video" || path === "site/banner-video") && req.method === "GET") {
     const isBanner = path === "site/banner-video";
@@ -963,6 +1118,10 @@ async function handleRequest(req: NextRequest, pathParts: string[]) {
     }
     return response({ settings, updatedAt: setting?.updated_at ?? null });
   }
+  if (path === "catalog/product-types" && req.method === "GET") {
+    const listed = await handleAdminExtensions({ path, method: "GET", url: req.url, body: {} });
+    return response(listed?.data ?? { productTypes: [] });
+  }
   if (path.startsWith("auth/")) return handleAuth(req, path);
   if (path === "me" && req.method === "GET") {
     // Any authenticated role can read its own profile; exact-role checks belong to
@@ -1011,7 +1170,7 @@ export async function handleKolbeRequest(req: NextRequest, pathParts: string[]) 
   try {
     return applyCors(await handleRequest(req, pathParts), req);
   } catch (error: any) {
-    const status = error instanceof HttpError || isPerfectCorpError(error) ? error.status : 500;
+    const status = error instanceof HttpError || error instanceof OpsError || error instanceof DiscoveryError || error instanceof OpsCenterError || error instanceof CatalogFinanceError || isPerfectCorpError(error) ? error.status : 500;
     const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
     if (status >= 500) console.error("Kolbe API error", error);
     return applyCors(response({ error: code, message: status >= 500 ? "خطای داخلی سرور" : code }, status), req);

@@ -30,6 +30,8 @@ export type AdminProductRecord = Product & {
     mainImage: number;
     specTemplate: "clothing" | "shoe" | "hat" | "accessory";
     productTypeId?: ProductTypeId;
+    /** Catalog product type from PostgreSQL. Kept separate from the presentation schema id. */
+    catalogTypeId?: string;
     attributeValues?: Record<string, string>;
     media?: ProductMediaItem[];
     /** ست پیشنهادی اختصاصی این محصول — عکس محصول روی تن مدل + هاتاسپات مکملها */

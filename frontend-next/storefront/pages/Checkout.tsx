@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "../router";
 import { useStore } from "../store";
 import { trackCommerceEvent } from "../lib/analytics";
 import { toman, fa } from "../utils/format";
 import Icon from "../components/Icon";
 import { api, ApiError } from "../lib/api";
+import RecommendationSlot from "../components/RecommendationSlot";
 
 const provinces = [
   "تهران", "البرز", "اصفهان", "فارس", "خراسان رضوی", "آذربایجان شرقی", "آذربایجان غربی",
@@ -12,9 +13,9 @@ const provinces = [
 ];
 
 const shippingMethods = [
-  { id: "post", label: "پست عادی", time: "۵ تا ۷ روز کاری", price: 59_000 },
-  { id: "pishtaz", label: "پست پیشتاز", time: "۲ تا ۳ روز کاری", price: 89_000 },
-  { id: "tipax", label: "تیپاکس", time: "۱ تا ۲ روز کاری", price: 145_000 },
+  { id: "post", label: "پست عادی", time: "۵ تا ۷ روز کاری" },
+  { id: "pishtaz", label: "پست پیشتاز", time: "۲ تا ۳ روز کاری" },
+  { id: "tipax", label: "تیپاکس", time: "۱ تا ۲ روز کاری" },
 ];
 
 const payMethods = [
@@ -75,8 +76,25 @@ export default function Checkout() {
     province: "تهران", city: "", postal: "", address: "", plaque: "", unit: "", note: "",
   });
 
-  const shipPrice = pay === "cod" ? 0 : shippingMethods.find((m) => m.id === ship)!.price;
-  const total = cartTotal + (cartTotal >= 3_000_000 ? 0 : shipPrice);
+  const [couponCode, setCouponCode] = useState("");
+  const [quoted, setQuoted] = useState<number | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  useEffect(() => {
+    if (!lines.length) return;
+    const controller = new AbortController();
+    setQuoted(null);
+    api<{ amount: number }>("/store/kolbe/shipping/quote", {
+      method: "POST",
+      signal: controller.signal,
+      body: { method: ship, payMethod: pay, city: form.city, orderValue: cartTotal, lines: lines.map((line) => ({ id: line.id, qty: line.qty, colour: line.colour, size: line.size })) },
+    }).then((result) => { setQuoted(result.amount); setQuoteError(""); }).catch((error) => {
+      if (error instanceof DOMException) return;
+      setQuoteError("هزینه ارسال از سرور محاسبه نشد.");
+    });
+    return () => controller.abort();
+  }, [ship, pay, form.city, cartTotal, lines]);
+  const shipPrice = quoted ?? 0;
+  const total = cartTotal + shipPrice;
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -169,7 +187,7 @@ export default function Checkout() {
                     <span className="block text-[12.5px] font-medium">{m.label}</span>
                     <span className="block text-[11px] text-neutral-500">{m.time}</span>
                   </span>
-                  <span className="text-[12px] num-fa">{toman(m.price)}</span>
+                  <span className="text-[12px] num-fa">{ship === m.id ? (quoted == null ? "در حال محاسبه" : toman(quoted)) : "پس از انتخاب"}</span>
                 </button>
               ))}
             </div>
@@ -180,6 +198,9 @@ export default function Checkout() {
 
           <Step n={4} title="روش پرداخت" open={step === 4} done={false} onOpen={() => setStep(4)}>
             <div className="grid gap-2 sm:grid-cols-2">
+              <label className="mb-3 block text-[11px]">کد کوپن شخصی
+                <input value={couponCode} onChange={(event) => setCouponCode(event.target.value)} dir="ltr" className="mt-1 h-10 w-full border px-2" placeholder="فقط کد صادرشده برای همین حساب" />
+              </label>
               {payMethods.map((m) => (
                 <button
                   key={m.id}
@@ -214,9 +235,10 @@ export default function Checkout() {
                         province: form.province, city: form.city, address: form.address,
                         plaque: form.plaque, unit: form.unit, postal: form.postal, note: form.note,
                       },
-                      shipping: shippingMethods.find((m) => m.id === ship),
+                      shipping: { id: ship },
                       payMethod: pay,
-                      totals: { items: cartTotal, shipping: total - cartTotal, total },
+                      couponCode: couponCode.trim() || undefined,
+                      totals: { items: cartTotal, shipping: shipPrice, total },
                     },
                   });
                   setOrderCode(result.orderCode);
@@ -239,7 +261,7 @@ export default function Checkout() {
                   setSubmitting(false);
                 }
               }}
-              disabled={submitting}
+              disabled={submitting || quoted == null}
               className="mt-5 h-11 w-full rounded-[3px] bg-[#011c3a] text-[13px] font-medium text-white transition hover:bg-[#0a2c55] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "در حال ثبت سفارش…" : "پرداخت و ثبت نهایی سفارش"}
@@ -276,7 +298,7 @@ export default function Checkout() {
               </div>
               <div className="flex justify-between">
                 <span className="text-neutral-600">ارسال</span>
-                <span className="num-fa">{cartTotal >= 3_000_000 ? "رایگان" : toman(shipPrice)}</span>
+                <span className="num-fa">{quoteError || (quoted == null ? "در حال محاسبه" : shipPrice === 0 ? "رایگان" : toman(shipPrice))}</span>
               </div>
             </div>
             <div className="flex justify-between border-t border-neutral-200 pt-4 text-[14px] font-medium">
@@ -286,6 +308,7 @@ export default function Checkout() {
           </div>
         </aside>
       </div>
+      <RecommendationSlot slot="checkout.last_minute" title="پیشنهاد لحظه آخر" />
     </main>
   );
 }

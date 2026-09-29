@@ -6,10 +6,14 @@ import { fa, toman } from "../utils/format";
 import { loadTickets, saveTickets, type SupportTicket } from "../wholesaleSupport";
 import { loadWholesaleMembership } from "../wholesaleMembership";
 import { isBackendConfigured as isSupabaseConfigured } from "../lib/api";
-import { answerSupplierTicket, approveWholesaleOrder, bulkUpdateWholesalePrice, cancelWholesaleOrder, listSupplierApplications, listSupplierCatalogProducts, listSupplierTickets, listSuppliers, listWholesaleAccounts, listWholesaleFulfillmentOrders, updateSupplierApplication, updateSupplierProductStatus, updateWholesaleAccountStatus, type AdminSupplier, type AdminSupplierProduct, type AdminWholesaleAccount } from "../lib/wholesaleApi";
+import { ORDER_STATUS_LABEL, answerSupplierTicket, approveWholesaleOrder, bulkUpdateWholesalePrice, cancelWholesaleOrder, listRejectionReasons, listSupplierApplications, listSupplierCatalogProducts, listSupplierTickets, listSuppliers, listWholesaleAccounts, listWholesaleFulfillmentOrders, updateSupplierApplication, updateSupplierProductStatus, updateWholesaleAccountStatus, type AdminSupplier, type AdminSupplierProduct, type AdminWholesaleAccount } from "../lib/wholesaleApi";
 import WholesaleCatalogManager from "./WholesaleCatalogManager";
+import WholesaleOperationsDesk from "./WholesaleOperationsDesk";
+import WholesaleOrdersBoard from "./WholesaleOrdersBoard";
+import ProductTypeManager from "./ProductTypeManager";
+import { Buyer360Desk, CrmStudio, InvoiceCenter, Supplier360Desk } from "./PlatformDesk";
 
-type WholesaleTab = "overview" | "direct" | "marketplace" | "fulfillment" | "plans" | "members" | "accounts" | "orders" | "support" | "catalog";
+type WholesaleTab = "overview" | "ops" | "direct" | "marketplace" | "fulfillment" | "plans" | "members" | "accounts" | "orders" | "support" | "catalog" | "sizes" | "supplier360" | "buyer360" | "crm" | "invoices";
 type WholesaleOrder = { id?: string; code: string; totalQty: number; totalAmount?: number; status: string; date: string; storeName?: string; lines?: Array<{ productName: string; productCode: string; colour: string; size: string; qty: number }>; purchaseOrders?: Array<{ id: string; orderCode: string; status: string; supplierName: string; trackingCode: string | null }> };
 type WholesaleLead = { id?: string; name: string; store: string; city: string; phone: string; plan: string; status: "جدید" | "در تماس" | "تأیید شده" | "رد شده" };
 
@@ -27,13 +31,19 @@ function readStorage<T>(key: string, fallback: T): T {
 
 const tabs: Array<{ id: WholesaleTab; label: string; icon: string }> = [
   { id: "overview", label: "نمای عملیات", icon: "star" },
+  { id: "ops", label: "میز عملیات کلبه", icon: "activity" },
   { id: "direct", label: "محصولات عمده کلبه", icon: "bag" },
   { id: "marketplace", label: "کاتالوگ ساپلایرها", icon: "pin" },
   { id: "fulfillment", label: "تامین و تجمیع", icon: "truck" },
   { id: "plans", label: "پلن‌های VIP", icon: "shield" },
   { id: "members", label: "ساپلایرها", icon: "user" },
   { id: "accounts", label: "خریداران VIP", icon: "shield" },
+  { id: "supplier360", label: "پرونده تأمین‌کننده", icon: "user" },
+  { id: "buyer360", label: "پرونده خریدار", icon: "shield" },
+  { id: "crm", label: "برچسب و پیامک", icon: "mail" },
+  { id: "invoices", label: "اسناد مالی", icon: "check" },
   { id: "orders", label: "سفارش‌های عمده", icon: "truck" },
+  { id: "sizes", label: "قالب سایزها", icon: "check" },
   { id: "support", label: "پشتیبانی", icon: "mail" },
 ];
 
@@ -51,6 +61,7 @@ export default function WholesaleAdmin() {
   const [notice, setNotice] = useState("");
   const [remoteError, setRemoteError] = useState("");
   const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -59,10 +70,10 @@ export default function WholesaleAdmin() {
       setSuppliers(remoteSuppliers);
       setSupplierProducts(remoteProducts);
       setLeads(applications.map((item) => ({ id: item.id, name: item.representativeName, store: item.companyName, city: "—", phone: item.phone, plan: item.category, status: item.status === "pending" ? "جدید" : item.status === "reviewing" ? "در تماس" : item.status === "approved" ? "تأیید شده" : "رد شده" })));
-      setOrders(remoteOrders.map((order) => ({ id: order.id, code: order.orderCode, totalQty: order.totalUnits, totalAmount: order.totalAmount, storeName: order.storeName, status: order.status === "pending" ? "در انتظار تأیید" : order.status === "confirmed" ? "تأیید شده" : order.status === "preparing" ? "در حال آماده‌سازی" : order.status === "shipped" ? "ارسال شده" : order.status === "delivered" ? "تحویل شده" : "لغو شده", date: new Intl.DateTimeFormat("fa-IR").format(new Date(order.createdAt)), lines: order.items.map((item) => ({ productName: item.productName, productCode: item.sku, colour: "—", size: "—", qty: item.quantity })), purchaseOrders: order.purchaseOrders })));
+      setOrders(remoteOrders.map((order) => ({ id: order.id, code: order.orderCode, totalQty: order.totalUnits, totalAmount: order.totalAmount, storeName: order.storeName, status: order.status === "pending" ? "در انتظار تأیید" : order.status === "approved" || order.status === "confirmed" ? "تأیید شده" : order.status === "fulfilled" || order.status === "delivered" ? "تحویل شده" : order.status === "cancelled" ? "لغو شده" : (ORDER_STATUS_LABEL[order.status] ?? order.status), date: new Intl.DateTimeFormat("fa-IR").format(new Date(order.createdAt)), lines: order.items.map((item) => ({ productName: item.productName, productCode: item.sku, colour: item.color || "—", size: item.size || "—", qty: item.quantity })), purchaseOrders: order.purchaseOrders })));
       setTickets(remoteTickets.map((ticket) => ({ id: ticket.id, customerId: "supplier", subject: ticket.subject, category: ticket.category, message: ticket.message, status: ticket.status === "open" ? "باز" : ticket.status === "answered" ? "پاسخ داده شده" : "بسته", priority: ticket.priority === "urgent" ? "فوری" : "عادی", createdAt: new Intl.DateTimeFormat("fa-IR").format(new Date(ticket.created_at)) })));
     }).catch(() => setRemoteError("خواندن داده‌های مشترک انجام نشد؛ دسترسی حساب ادمین یا RLS را بررسی کنید.")).finally(() => setLoading(false));
-  }, []);
+  }, [refreshKey]);
 
   const persistLeads = (next: WholesaleLead[]) => { const changed = next.find((item, index) => item.status !== leads[index]?.status); setLeads(next); localStorage.setItem(leadKey, JSON.stringify(next)); setNotice("وضعیت درخواست همکاری ذخیره شد."); if (changed?.id && isSupabaseConfigured) updateSupplierApplication(changed.id, changed.status === "جدید" ? "pending" : changed.status === "در تماس" ? "reviewing" : changed.status === "تأیید شده" ? "approved" : "rejected").catch(() => setRemoteError("ثبت وضعیت درخواست در بک‌اند انجام نشد.")); };
   const persistOrders = async (next: WholesaleOrder[]) => { const changed = next.find((item, index) => item.status !== orders[index]?.status); if (!changed?.id) return; setRemoteError(""); try { if (changed.status === "تأیید شده") await approveWholesaleOrder(changed.id); else if (changed.status === "لغو شده") await cancelWholesaleOrder(changed.id); else throw new Error("وضعیت‌های اجرا و ارسال فقط توسط ساپلایر تغییر می‌کنند."); setOrders(next); setNotice(changed.status === "تأیید شده" ? "سفارش تأیید و برای ساپلایرها تفکیک شد." : "سفارش لغو و موجودی رزروشده آزاد شد."); } catch (reason) { setRemoteError(reason instanceof Error ? reason.message : "تغییر وضعیت سفارش انجام نشد."); } };
@@ -90,13 +101,19 @@ export default function WholesaleAdmin() {
         {remoteError && <div role="alert" className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-[10.5px] text-red-700">{remoteError}</div>}
         {notice && <div role="status" className="mb-4 flex items-center justify-between border border-[#b9cfbc] bg-[#edf3ee] px-4 py-2.5 text-[10.5px] text-[#36563a]"><span>{notice}</span><button type="button" onClick={() => setNotice("")} className={`underline ${focusRing}`}>بستن</button></div>}
         {tab === "overview" && <Overview membership={membership} suppliers={suppliers} leads={leads} orders={orders} tickets={tickets} pendingUnits={pendingUnits} openTickets={openTickets} onTab={setTab} accounts={accounts} />}
+        {tab === "ops" && <WholesaleOperationsDesk onChanged={() => setRefreshKey((value) => value + 1)} />}
         {tab === "direct" && <WholesaleCatalogManager />}
         {tab === "marketplace" && <><PageTitle eyebrow="SUPPLIER CATALOG" title="کاتالوگ فروشندگان دیگر" text="محصولات تاییدشده ساپلایرها، قیمت همکاری و موجودی قابل تخصیص." /><CatalogPanel supplierProducts={supplierProducts} onChange={setSupplierProducts} onNotice={setNotice} onError={setRemoteError} /></>}
         {tab === "fulfillment" && <><PageTitle eyebrow="MULTI SELLER FULFILLMENT" title="تامین، کنترل و ارسال تجمیعی" text="یک سفارش مشتری به سفارش‌های تامین تفکیک می‌شود؛ اقلام در هاب کلبه کنترل و در یک مرسوله ارسال می‌شوند." /><MultiSellerFlow orders={orders} suppliers={suppliers}/></>}
         {tab === "plans" && <VipPlanManager />}
         {tab === "members" && <><SuppliersPanel suppliers={suppliers} /><MembersPanel membership={membership} leads={leads} onChange={persistLeads} /></>}
         {tab === "accounts" && <AccountsPanel accounts={accounts} onChange={setAccounts} onNotice={setNotice} onError={setRemoteError} />}
-        {tab === "orders" && <OrdersPanel orders={orders} onChange={persistOrders} />}
+        {tab === "supplier360" && <Supplier360Desk />}
+        {tab === "buyer360" && <Buyer360Desk />}
+        {tab === "crm" && <CrmStudio />}
+        {tab === "invoices" && <InvoiceCenter />}
+        {tab === "orders" && <WholesaleOrdersBoard />}
+        {tab === "sizes" && <ProductTypeManager />}
         {tab === "support" && <SupportPanel tickets={tickets} onChange={persistTickets} />}
         {tab === "catalog" && <CatalogPanel supplierProducts={supplierProducts} onChange={setSupplierProducts} onNotice={setNotice} onError={setRemoteError} />}
       </div>
@@ -248,6 +265,12 @@ function AccountsPanel({ accounts, onChange, onNotice, onError }: { accounts: Ad
 
 function CatalogPanel({ supplierProducts, onChange, onNotice, onError }: { supplierProducts: AdminSupplierProduct[]; onChange: (products: AdminSupplierProduct[]) => void; onNotice: (message: string) => void; onError: (message: string) => void }) {
   const [query, setQuery] = useState("");
+  const [rejecting, setRejecting] = useState<{ id: string; status: "rejected" | "changes_requested" } | null>(null);
+  const [reasons, setReasons] = useState<Array<{ code: string; label: string }>>([]);
+  const [reasonCode, setReasonCode] = useState("images_unsuitable");
+  const [reasonText, setReasonText] = useState("");
+  const [reasonNote, setReasonNote] = useState("");
+  useEffect(() => { listRejectionReasons().then(setReasons).catch(() => setReasons([])); }, []);
   /* نیازسنجی 9-d: تغییر گروهی قیمت عمده (انتخاب + درصدی/مبلغی) — 10-a: بدون تأیید */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkMode, setBulkMode] = useState<"percent" | "amount">("percent");
@@ -270,11 +293,28 @@ function CatalogPanel({ supplierProducts, onChange, onNotice, onError }: { suppl
     } finally { setBulkBusy(false); }
   };
   const filtered = useMemo(() => supplierProducts.filter((product) => `${product.name} ${product.sku} ${product.supplierName}`.toLowerCase().includes(query.trim().toLowerCase())), [query, supplierProducts]);
-  const setStatus = async (id: string, status: AdminSupplierProduct["status"]) => {
+  const setStatus = async (id: string, status: AdminSupplierProduct["status"], review?: { reasonCode?: string; reasonText?: string; note?: string }) => {
+    if ((status === "rejected" || status === "changes_requested") && !review) {
+      setRejecting({ id, status });
+      setReasonCode("images_unsuitable");
+      setReasonText("");
+      setReasonNote("");
+      return;
+    }
     const previous = supplierProducts;
-    onChange(previous.map((product) => product.id === id ? { ...product, status } : product));
-    try { await updateSupplierProductStatus(id, status); onNotice("وضعیت محصول کاتالوگ ذخیره شد."); }
-    catch { onChange(previous); onError("تغییر وضعیت محصول ذخیره نشد."); }
+    onChange(previous.map((product) => product.id === id ? { ...product, status, rejectionReasonCode: review?.reasonCode ?? product.rejectionReasonCode, rejectionReason: review?.reasonText || product.rejectionReason, rejectionNote: review?.note ?? product.rejectionNote, reviewedAt: review ? new Date().toISOString() : product.reviewedAt } : product));
+    try { await updateSupplierProductStatus(id, status, review); onNotice(status === "rejected" ? "محصول رد شد و دلیل برای تأمین‌کننده ارسال شد." : status === "changes_requested" ? "محصول برای اصلاح برگردانده شد." : "وضعیت محصول کاتالوگ ذخیره شد."); }
+    catch (reason) { onChange(previous); onError(reason instanceof Error ? reason.message : "تغییر وضعیت محصول ذخیره نشد."); }
+  };
+  const confirmReject = () => {
+    if (!rejecting) return;
+    const preset = reasons.find((item) => item.code === reasonCode);
+    if (reasonCode === "other" && !reasonText.trim()) { onError("برای سایر موارد، توضیح دلیل الزامی است."); return; }
+    if (!reasonCode && !reasonText.trim()) { onError("رد محصول بدون دلیل ممکن نیست."); return; }
+    const id = rejecting.id;
+    const status = rejecting.status;
+    setRejecting(null);
+    setStatus(id, status, { reasonCode, reasonText: reasonCode === "other" ? reasonText.trim() : preset?.label, note: reasonNote.trim() });
   };
   return <section><PageTitle eyebrow="WHOLESALE CATALOG" title="کاتالوگ تأمین‌کنندگان" text="محصولات ارسالی ساپلایرها را بررسی، تأیید یا برای اصلاح برگردانید." />
     <label className="mb-4 block max-w-sm"><span className="sr-only">جستجوی محصول</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="نام، SKU یا تأمین‌کننده…" className={`h-10 w-full border border-neutral-300 bg-white px-3 text-[11px] ${focusRing}`} /></label>
@@ -289,7 +329,25 @@ function CatalogPanel({ supplierProducts, onChange, onNotice, onError }: { suppl
       <button onClick={() => setSelectedIds(new Set(filtered.map((product) => product.id)))} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-3 text-[10px]">انتخاب نتایج</button>
       <button onClick={() => setSelectedIds(new Set())} className="h-9 rounded-[3px] border border-neutral-300 bg-white px-3 text-[10px]">پاک‌سازی</button>
     </div>
-    <div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[920px] text-right text-[10.5px]"><thead className="bg-neutral-50 text-neutral-500"><tr><th className="w-10 border-b p-3"></th>{["محصول", "تأمین‌کننده", "دسته", "موجودی", "قیمت عمده", "وضعیت"].map((head) => <th key={head} className="border-b p-3 font-medium">{head}</th>)}</tr></thead><tbody>{filtered.map((product) => <tr key={product.id} className="border-b border-neutral-100 hover:bg-neutral-50"><td className="p-3"><input type="checkbox" aria-label={`انتخاب ${product.name}`} checked={selectedIds.has(product.id)} onChange={() => toggleSelect(product.id)} className="accent-[#011c3a]" /></td><td className="p-3"><div className="flex items-center gap-3">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-10 object-cover" /> : <div className="flex h-12 w-10 items-center justify-center bg-neutral-100 text-[9px] text-neutral-400">بدون عکس</div>}<div><b className="block font-medium">{product.name}</b><span className="mt-1 block text-neutral-400 num-fa">{product.sku}</span></div></div></td><td className="p-3">{product.supplierName}</td><td className="p-3">{product.category}</td><td className="p-3 num-fa">{fa(product.stock)} عدد</td><td className="p-3 num-fa">{toman(product.wholesalePrice)}</td><td className="p-3"><select aria-label={`وضعیت محصول ${product.name}`} value={product.status} onChange={(event) => setStatus(product.id, event.target.value as AdminSupplierProduct["status"])} className={`h-9 border border-neutral-300 bg-white px-2 ${focusRing}`}><option value="draft">پیش‌نویس</option><option value="submitted">در انتظار بررسی</option><option value="approved">تأیید و انتشار</option><option value="changes_requested">نیازمند اصلاح</option><option value="rejected">رد شده</option></select></td></tr>)}</tbody></table>{!filtered.length && <Empty title="محصولی در صف کاتالوگ نیست" text="محصول ثبت‌شده توسط ساپلایر در این بخش ظاهر می‌شود." />}</div>
+    <div className="overflow-x-auto border border-neutral-200 bg-white"><table className="w-full min-w-[920px] text-right text-[10.5px]"><thead className="bg-neutral-50 text-neutral-500"><tr><th className="w-10 border-b p-3"></th>{["محصول", "تأمین‌کننده", "دسته", "موجودی", "قیمت عمده", "وضعیت"].map((head) => <th key={head} className="border-b p-3 font-medium">{head}</th>)}</tr></thead><tbody>{filtered.map((product) => <tr key={product.id} className="border-b border-neutral-100 hover:bg-neutral-50"><td className="p-3"><input type="checkbox" aria-label={`انتخاب ${product.name}`} checked={selectedIds.has(product.id)} onChange={() => toggleSelect(product.id)} className="accent-[#011c3a]" /></td><td className="p-3"><div className="flex items-center gap-3">{product.imageUrl ? <img src={product.imageUrl} alt="" className="h-12 w-10 object-cover" /> : <div className="flex h-12 w-10 items-center justify-center bg-neutral-100 text-[9px] text-neutral-400">بدون عکس</div>}<div><b className="block font-medium">{product.name}</b><span className="mt-1 block text-neutral-400 num-fa">{product.sku}</span>{product.rejectionReason && <span className="mt-1 block max-w-xs text-[9px] leading-5 text-red-700">دلیل: {product.rejectionReason}{product.rejectionNote ? ` — ${product.rejectionNote}` : ""}</span>}</div></div></td><td className="p-3">{product.supplierName}</td><td className="p-3">{product.category}</td><td className="p-3 num-fa">{fa(product.stock)} عدد</td><td className="p-3 num-fa">{toman(product.wholesalePrice)}</td><td className="p-3"><select aria-label={`وضعیت محصول ${product.name}`} value={product.status} onChange={(event) => setStatus(product.id, event.target.value as AdminSupplierProduct["status"])} className={`h-9 border border-neutral-300 bg-white px-2 ${focusRing}`}><option value="draft">پیش‌نویس</option><option value="submitted">در انتظار بررسی</option><option value="approved">تأیید و انتشار</option><option value="changes_requested">نیازمند اصلاح</option><option value="rejected">رد شده</option></select></td></tr>)}</tbody></table>{!filtered.length && <Empty title="محصولی در صف کاتالوگ نیست" text="محصول ثبت‌شده توسط ساپلایر در این بخش ظاهر می‌شود." />}</div>
+    {rejecting && <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="reject-title">
+      <form className="w-full max-w-lg border border-neutral-200 bg-white p-5" onSubmit={(event) => { event.preventDefault(); confirmReject(); }}>
+        <p className="text-[9px] tracking-[0.18em] text-neutral-400">MARKETPLACE REVIEW</p>
+        <h2 id="reject-title" className="mt-2 text-[15px] font-medium">{rejecting.status === "rejected" ? "رد محصول تأمین‌کننده" : "بازگشت محصول برای اصلاح"}</h2>
+        <p className="mt-1 text-[10.5px] leading-6 text-neutral-500">تغییر وضعیت به‌تنهایی کافی نیست. دلیل ذخیره می‌شود و تأمین‌کننده در پنل خودش اعلان، دلیل، توضیح و تاریخ بررسی را می‌بیند.</p>
+        <label className="mt-4 block text-[10px] text-neutral-500">دلیل
+          <select aria-label="دلیل رد محصول" value={reasonCode} onChange={(event) => setReasonCode(event.target.value)} className={`mt-1 h-10 w-full border border-neutral-300 bg-white px-3 text-[11px] ${focusRing}`}>
+            {(reasons.length ? reasons : [{ code: "images_unsuitable", label: "تصاویر محصول مناسب نیست." }, { code: "other", label: "سایر موارد." }]).map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+          </select>
+        </label>
+        {reasonCode === "other" && <label className="mt-3 block text-[10px] text-neutral-500">دلیل آزاد<textarea required aria-label="دلیل آزاد رد محصول" value={reasonText} onChange={(event) => setReasonText(event.target.value)} rows={3} className="mt-1 w-full border border-neutral-300 p-3 text-[11px]" /></label>}
+        <label className="mt-3 block text-[10px] text-neutral-500">توضیح مدیر<textarea aria-label="توضیح مدیر برای تأمین‌کننده" value={reasonNote} onChange={(event) => setReasonNote(event.target.value)} rows={4} placeholder="مثلاً تصویر اصلی پس‌زمینه مناسبی ندارد و نمای پشت محصول نیز بارگذاری نشده است." className="mt-1 w-full border border-neutral-300 p-3 text-[11px]" /></label>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={() => setRejecting(null)} className={`h-9 border px-3 text-[10px] ${focusRing}`}>انصراف</button>
+          <button type="submit" className={`h-9 bg-[#011c3a] px-4 text-[10px] text-white ${focusRing}`}>ثبت دلیل و ارسال به تأمین‌کننده</button>
+        </div>
+      </form>
+    </div>}
   </section>;
 }
 

@@ -104,6 +104,77 @@ export type CreateSupplierProductInput = {
   color: string
   size: string
   stock: number
+  productTypeId?: string
+  seriesTemplateId?: string | null
+  seriesCount?: number
+  composition?: Array<{ sizeId: string; quantity: number }>
+}
+
+export type CatalogSize = { id: string; label: string; active: boolean; sortOrder: number }
+export type SeriesTemplate = {
+  id: string
+  code: string
+  name: string
+  description: string
+  lines: Array<{ sizeId: string; label: string; quantity: number; sortOrder: number }>
+}
+export type CatalogProductType = {
+  id: string
+  code: string
+  name: string
+  description: string
+  active: boolean
+  sortOrder: number
+  sizes: CatalogSize[]
+  templates: SeriesTemplate[]
+}
+
+export async function loadProductTypes(): Promise<CatalogProductType[]> {
+  const data = await api<{ productTypes: CatalogProductType[] }>('/store/kolbe/catalog/product-types')
+  return data.productTypes ?? []
+}
+
+export type SupplierNotification = {
+  id: string
+  productId: string | null
+  kind: string
+  title: string
+  body: string
+  payload: { reason?: string; note?: string; status?: string; reviewedAt?: string } | null
+  readAt: string | null
+  createdAt: string
+}
+
+export async function loadSupplierNotifications() {
+  const token = loadToken()
+  if (!token) return { unread: 0, notifications: [] as SupplierNotification[] }
+  const data = await api<{ unread: number; notifications: Array<any> }>('/store/kolbe/supplier/notifications', { token })
+  return {
+    unread: data.unread ?? 0,
+    notifications: (data.notifications ?? []).map((item) => ({
+      id: item.id,
+      productId: item.product_id,
+      kind: item.kind,
+      title: item.title,
+      body: item.body,
+      payload: item.payload ?? null,
+      readAt: item.read_at,
+      createdAt: item.created_at,
+    })),
+  }
+}
+
+export async function markSupplierNotificationsRead(id?: string) {
+  const token = loadToken()
+  if (!token) return
+  if (id) await api(`/store/kolbe/supplier/notifications/${id}/read`, { method: 'POST', token })
+  else await api('/store/kolbe/supplier/notifications/read-all', { method: 'POST', token })
+}
+
+export async function resubmitSupplierProduct(id: string, patch?: { name?: string; description?: string; wholesalePrice?: number; imageUrl?: string }) {
+  const token = loadToken()
+  if (!token) throw new Error('نشست منقضی شده است؛ دوباره وارد شوید.')
+  return api<{ id: string; status: string }>(`/store/kolbe/supplier/products/${id}/resubmit`, { method: 'POST', token, body: patch ?? {} })
 }
 
 export async function createSupplierProduct(input: CreateSupplierProductInput) {
@@ -116,7 +187,9 @@ export async function createSupplierProduct(input: CreateSupplierProductInput) {
       body: {
         name: input.name, sku: input.sku, category: input.category, description: input.description,
         wholesalePrice: input.wholesalePrice, imageUrl: input.imageUrl, color: input.color,
-        size: input.size, stock: input.stock,
+        size: input.size, stock: input.stock, productTypeId: input.productTypeId,
+        seriesTemplateId: input.seriesTemplateId, seriesCount: input.seriesCount,
+        composition: input.composition, lines: input.composition,
       },
     })
     return data.product

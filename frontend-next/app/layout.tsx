@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
+import { organizationJsonLd } from "@server/seo-discovery";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,10 +16,20 @@ export const viewport: Viewport = {
   themeColor: "#011c3a",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const headerList = await headers();
+  const host = headerList.get("x-forwarded-host") || headerList.get("host") || "";
+  const proto = headerList.get("x-forwarded-proto") || "https";
+  const origin = host ? `${proto}://${host}` : "";
+  const organization = await organizationJsonLd(origin).catch(() => null);
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        {organization && (
+          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organization).replaceAll("<", "\\u003c") }} />
+        )}
+        {children}
+      </body>
     </html>
   );
 }

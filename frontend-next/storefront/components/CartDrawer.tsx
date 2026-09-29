@@ -1,13 +1,20 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "../router";
 import { useStore, lineKey } from "../store";
 import { toman, fa } from "../utils/format";
 import Icon from "./Icon";
-
-const FREE_SHIPPING = 3_000_000;
+import { api } from "../lib/api";
 
 export default function CartDrawer() {
   const { cartOpen, setCartOpen, lines, cartTotal, removeLine, setLineQty } = useStore();
+  const [quote, setQuote] = useState<{ amount: number; freeThreshold: number | null } | null>(null);
+  useEffect(() => {
+    if (!cartOpen || !lines.length) return;
+    api<{ amount: number; freeThreshold: number | null }>("/store/kolbe/shipping/quote", {
+      method: "POST",
+      body: { method: "pishtaz", payMethod: "gateway", orderValue: cartTotal, lines: lines.map((line) => ({ id: line.id, qty: line.qty, colour: line.colour, size: line.size })) },
+    }).then(setQuote).catch(() => setQuote(null));
+  }, [cartOpen, lines, cartTotal]);
 
   useEffect(() => {
     document.body.style.overflow = cartOpen ? "hidden" : "";
@@ -18,8 +25,9 @@ export default function CartDrawer() {
 
   if (!cartOpen) return null;
 
-  const remaining = Math.max(0, FREE_SHIPPING - cartTotal);
-  const progress = Math.min(100, (cartTotal / FREE_SHIPPING) * 100);
+  const threshold = quote?.freeThreshold ?? null;
+  const remaining = threshold == null ? null : Math.max(0, threshold - cartTotal);
+  const progress = threshold ? Math.min(100, (cartTotal / threshold) * 100) : 0;
 
   return (
     <div className="fixed inset-0 z-[95]">
@@ -50,7 +58,7 @@ export default function CartDrawer() {
           <>
             <div className="border-b border-neutral-100 px-5 py-3">
               <p className="text-[11.5px] text-neutral-600">
-                {remaining > 0 ? (
+                {remaining == null ? "هزینه ارسال در تسویه از سرور محاسبه می‌شود" : remaining > 0 ? (
                   <>
                     <span className="num-fa">{toman(remaining)}</span> تا ارسال رایگان
                   </>

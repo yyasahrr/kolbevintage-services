@@ -11,6 +11,7 @@ import { loadHomepageArticles, subscribeToJournalSettings } from "../journalSett
 import HomepageHero from "../components/HomepageHero";
 import FestivalCountdownOverlay from "../components/FestivalCountdown";
 import { useSiteSettings } from "../siteSettings";
+import RecommendationSlot from "../components/RecommendationSlot";
 
 /* ---------------------------------- ۱. هیرو ---------------------------------- */
 
@@ -594,6 +595,10 @@ export default function Home() {
   return (
     <>
       {modeSections.map(renderSection)}
+      <div className="mx-auto w-full px-4 lg:px-8">
+        <RecommendationSlot slot="home.hero_recommendations" title="پیشنهادهای این روزها" />
+        <RecommendationSlot slot="home.for_you" title="برای شما" />
+      </div>
     </>
   );
 }

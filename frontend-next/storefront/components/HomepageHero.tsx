@@ -28,7 +28,7 @@ export default function HomepageHero() {
   if (hero.template === "split") {
     return <section className="storefront-hero hero-split grid overflow-hidden lg:grid-cols-[0.9fr_1.1fr]">
       <div className="hero-light-copy flex items-center px-6 py-16 sm:px-10 lg:px-14"><HeroCopy /></div>
-      <img src={images[0]} alt={hero.title} fetchPriority="high" className="h-[52svh] min-h-[420px] w-full object-cover lg:h-full" />
+      <img src={images[0]} alt={hero.title} fetchPriority="high" loading="eager" className="h-[52svh] min-h-[420px] w-full object-cover lg:h-full" />
     </section>;
   }
 
@@ -36,7 +36,7 @@ export default function HomepageHero() {
     return <section className="storefront-hero hero-mosaic grid overflow-hidden lg:grid-cols-[0.82fr_1.18fr]">
       <div className="hero-light-copy flex items-center px-6 py-16 sm:px-10 lg:px-14"><HeroCopy /></div>
       <div className="grid min-h-[520px] grid-cols-2 grid-rows-2 gap-2 p-2">
-        <img src={images[0]} alt="" className="row-span-2 h-full w-full object-cover" />
+        <img src={images[0]} alt="" fetchPriority="high" loading="eager" className="row-span-2 h-full w-full object-cover" />
         <img src={images[1]} alt="" className="h-full w-full object-cover" />
         <img src={images[2]} alt="" className="h-full w-full object-cover" />
       </div>
@@ -45,7 +45,7 @@ export default function HomepageHero() {
 
   if (hero.template === "duo") {
     return <section className="storefront-hero hero-duo relative grid min-h-[610px] overflow-hidden sm:grid-cols-2">
-      <img src={images[0]} alt="" className="h-full min-h-[320px] w-full object-cover" />
+      <img src={images[0]} alt="" fetchPriority="high" loading="eager" className="h-full min-h-[320px] w-full object-cover" />
       <img src={images[1]} alt="" className="h-full min-h-[320px] w-full object-cover" />
       <div className="absolute inset-0 bg-black/45" />
       <div className="absolute inset-0 flex items-center px-6 sm:px-10 lg:px-14"><div className="mx-auto w-full max-w-[1240px] text-white"><HeroCopy /></div></div>
@@ -55,12 +55,12 @@ export default function HomepageHero() {
   if (hero.template === "minimal") {
     return <section className="storefront-hero hero-minimal grid min-h-[570px] overflow-hidden lg:grid-cols-[1.1fr_0.9fr]">
       <div className="hero-light-copy flex items-center px-6 py-16 sm:px-10 lg:px-14"><HeroCopy /></div>
-      <div className="p-3 sm:p-5"><img src={images[0]} alt={hero.title} className="h-full min-h-[390px] w-full object-cover" /></div>
+      <div className="p-3 sm:p-5"><img src={images[0]} alt={hero.title} fetchPriority="high" loading="eager" className="h-full min-h-[390px] w-full object-cover" /></div>
     </section>;
   }
 
   return <section className="storefront-hero hero-cover relative min-h-[620px] w-full overflow-hidden bg-neutral-200 sm:min-h-[590px] lg:h-[72svh] lg:max-h-[760px] lg:min-h-[610px]">
-    <img src={images[0]} alt={hero.title} fetchPriority="high" decoding="async" className="h-full w-full object-cover object-center" />
+    <img src={images[0]} alt={hero.title} fetchPriority="high" loading="eager" decoding="async" className="h-full w-full object-cover object-center" />
     <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-black/10" />
     <div className="absolute inset-0 flex items-end px-5 pb-14 pt-16 text-white sm:px-8 lg:items-center lg:px-12 lg:pb-10">
       <div className="mx-auto w-full max-w-[1280px]"><HeroCopy /></div>

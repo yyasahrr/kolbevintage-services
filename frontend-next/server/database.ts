@@ -1,5 +1,8 @@
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { seedProductCatalog } from "./product-type-seed";
+import { ensurePlatformSchema } from "./platform-360";
+import { ensureCommerceSchema } from "./commerce-discovery";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -125,6 +128,51 @@ CREATE UNIQUE INDEX IF NOT EXISTS wholesale_order_idempotency ON wholesale_order
 CREATE INDEX IF NOT EXISTS wholesale_order_account ON wholesale_order(account_id);
 CREATE INDEX IF NOT EXISTS purchase_order_supplier ON purchase_order(supplier_id);
 CREATE INDEX IF NOT EXISTS supplier_product_status ON supplier_product(status);
+ALTER TABLE wholesale_order ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'unpaid';
+ALTER TABLE wholesale_order ADD COLUMN IF NOT EXISTS fulfillment_status text NOT NULL DEFAULT 'pending';
+ALTER TABLE wholesale_order ADD COLUMN IF NOT EXISTS operational_priority integer NOT NULL DEFAULT 0;
+ALTER TABLE wholesale_order ADD COLUMN IF NOT EXISTS shipped_at timestamptz;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS rejection_reason_code text;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS rejection_reason text;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS rejection_note text;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS reviewed_by text;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS resubmitted_at timestamptz;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS product_type_id text;
+ALTER TABLE supplier_product ADD COLUMN IF NOT EXISTS series_template_id text;
+ALTER TABLE supplier_variant ADD COLUMN IF NOT EXISTS size_id text;
+CREATE TABLE IF NOT EXISTS supplier_notification (
+  id text PRIMARY KEY, supplier_id text NOT NULL, product_id text, kind text NOT NULL,
+  title text NOT NULL, body text NOT NULL, payload jsonb NOT NULL DEFAULT '{}', read_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS supplier_notification_supplier ON supplier_notification(supplier_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS product_type (
+  id text PRIMARY KEY, code text NOT NULL UNIQUE, name text NOT NULL, description text NOT NULL DEFAULT '',
+  active boolean NOT NULL DEFAULT true, sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS product_type_size (
+  id text PRIMARY KEY, product_type_id text NOT NULL, label text NOT NULL,
+  active boolean NOT NULL DEFAULT true, sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS product_type_size_label ON product_type_size(product_type_id, label);
+CREATE INDEX IF NOT EXISTS product_type_size_order ON product_type_size(product_type_id, sort_order, id);
+CREATE TABLE IF NOT EXISTS series_template (
+  id text PRIMARY KEY, product_type_id text NOT NULL, code text NOT NULL, name text NOT NULL,
+  description text NOT NULL DEFAULT '', active boolean NOT NULL DEFAULT true, sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (product_type_id, code)
+);
+CREATE TABLE IF NOT EXISTS series_template_line (
+  id text PRIMARY KEY, template_id text NOT NULL, size_id text NOT NULL, quantity integer NOT NULL DEFAULT 0,
+  UNIQUE (template_id, size_id)
+);
+CREATE INDEX IF NOT EXISTS wholesale_order_created ON wholesale_order(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS wholesale_order_updated ON wholesale_order(updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS wholesale_order_amount ON wholesale_order(total_amount DESC, id DESC);
+CREATE INDEX IF NOT EXISTS wholesale_order_priority ON wholesale_order(operational_priority DESC, updated_at DESC);
 `;
 
 export function makeId(prefix: string) {
@@ -224,6 +272,9 @@ async function seed(client: PoolClient) {
       [id, name, price],
     );
   }
+  await seedProductCatalog(client);
+  await ensurePlatformSchema(client);
+  await ensureCommerceSchema(client);
 }
 
 async function initialize() {
